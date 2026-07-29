@@ -1,0 +1,40 @@
+import type { EntrySummary } from './entry';
+import type { EntryId, PaneId } from './ids';
+import type { Location } from './location';
+
+/**
+ * The loading state of a pane's directory listing, mirroring
+ * `fm_transport_dto::LoadingStateDto`'s `type` tag.
+ */
+export type LoadingState =
+  | { type: 'idle' }
+  | { type: 'loading' }
+  | { type: 'loaded' }
+  | { type: 'error'; message: string };
+
+/**
+ * A batch of directory entries for one pane, at a specific revision (spec
+ * §5.4), mirroring `fm_transport_dto::DirectorySnapshotDto`.
+ */
+export interface DirectorySnapshot {
+  paneId: PaneId;
+  requestId: string;
+  revision: number;
+  location: Location;
+  entries: EntrySummary[];
+  totalKnownEntries?: number;
+  hasMore: boolean;
+  continuationToken?: string;
+  loadingState: LoadingState;
+}
+
+/**
+ * An incremental change to a previously delivered {@link DirectorySnapshot}
+ * (spec §5.4); delivered over the event stream (task 0014/0032), never
+ * fetched via a request/response call.
+ */
+export type DirectoryDelta =
+  | { type: 'entriesAdded'; revision: number; entries: EntrySummary[] }
+  | { type: 'entriesUpdated'; revision: number; entries: EntrySummary[] }
+  | { type: 'entriesRemoved'; revision: number; entryIds: EntryId[] }
+  | { type: 'reset'; snapshot: DirectorySnapshot };
