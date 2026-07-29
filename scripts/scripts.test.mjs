@@ -2,7 +2,7 @@
 // their underlying features are not implemented yet, per TASKS/0003.
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
+import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { test } from 'node:test';
@@ -25,6 +25,14 @@ function runScript(scriptName, args = []) {
       stderr: error.stderr,
     };
   }
+}
+
+/** Maps every file under `dir` to its contents, for before/after diffing. */
+function snapshotDir(dir) {
+  const entries = readdirSync(dir, { recursive: true, encoding: 'utf8' }).filter((entry) =>
+    statSync(join(dir, entry)).isFile(),
+  );
+  return Object.fromEntries(entries.sort().map((entry) => [entry, readFileSync(join(dir, entry))]));
 }
 
 test('scripts/export-openapi.sh, generate-api.sh and not-implemented.sh are executable', () => {
@@ -53,10 +61,15 @@ test('scripts/export-openapi.sh writes a deterministic OpenAPI document (task 00
   }
 });
 
-test('scripts/generate-api.sh fails clearly until task 0010 lands', () => {
-  const { exitCode, stderr } = runScript('generate-api.sh');
-  assert.notEqual(exitCode, 0);
-  assert.match(stderr, /not implemented until task 0010/);
+test('scripts/generate-api.sh regenerates a byte-identical client (task 0010)', () => {
+  const generatedDir = join(repoRoot, 'frontend', 'src', 'api', 'generated');
+  const before = snapshotDir(generatedDir);
+
+  const result = runScript('generate-api.sh');
+  assert.equal(result.exitCode, 0, result.stderr);
+
+  const after = snapshotDir(generatedDir);
+  assert.deepEqual(after, before, 're-running the generator must produce no diff');
 });
 
 test('scripts/not-implemented.sh reports the script name and task number', () => {

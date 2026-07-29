@@ -35,6 +35,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+      - uses: Swatinem/rust-cache@v2
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
@@ -50,6 +51,8 @@ jobs:
         run: pnpm run test:frontend
       - name: Production build
         run: pnpm run build:frontend
+      - name: OpenAPI document and generated client are up to date
+        run: pnpm run api:check
 
   audit:
     name: Dependency audit
