@@ -1,3 +1,5 @@
+import { invoke } from '@tauri-apps/api/core';
+
 import type {
   ActionDescriptor,
   ActionResult,
@@ -18,65 +20,74 @@ import type {
   Workspace,
   WorkspaceId,
 } from '../../models';
+import { TauriEventStream } from '../events/tauri-event-stream';
 import { type FileManagerClient, NotImplementedError } from './file-manager-client';
-
-const OWNING_TASK = '0015';
 
 /**
  * Tauri transport adapter, calling `FileManagerService` through `invoke`
- * (spec §11, §12). Every method is completed by task {@link OWNING_TASK};
- * until then each call throws {@link NotImplementedError}.
+ * (spec §11, §12). Only commands registered on the Rust side (task 0015) are
+ * implemented; the rest throw {@link NotImplementedError} naming the task
+ * that will add their command, mirroring `HttpFileManagerClient`.
  */
 export class TauriFileManagerClient implements FileManagerClient {
-  private notImplemented(methodName: string): never {
-    throw new NotImplementedError(`TauriFileManagerClient.${methodName}`, OWNING_TASK);
+  private readonly eventStream = new TauriEventStream();
+
+  private notImplemented(methodName: string, taskNumber: string): never {
+    throw new NotImplementedError(`TauriFileManagerClient.${methodName}`, taskNumber);
   }
 
-  getRuntimeCapabilities(_signal?: AbortSignal): Promise<RuntimeCapabilities> {
-    return this.notImplemented('getRuntimeCapabilities');
+  async getRuntimeCapabilities(_signal?: AbortSignal): Promise<RuntimeCapabilities> {
+    return invoke<RuntimeCapabilities>('get_runtime_capabilities');
   }
 
+  // No task currently owns a `get_workspace` command (spec §8 lists the REST
+  // endpoint, but no TASKS/*.md claims a Tauri command for it yet).
   getWorkspace(_workspaceId: WorkspaceId, _signal?: AbortSignal): Promise<Workspace> {
-    return this.notImplemented('getWorkspace');
+    return this.notImplemented('getWorkspace', 'TBD');
   }
 
   navigatePane(_request: NavigateRequest, _signal?: AbortSignal): Promise<DirectorySnapshot> {
-    return this.notImplemented('navigatePane');
+    return this.notImplemented('navigatePane', '0019');
   }
 
   listDirectory(_request: ListDirectoryRequest, _signal?: AbortSignal): Promise<DirectorySnapshot> {
-    return this.notImplemented('listDirectory');
+    return this.notImplemented('listDirectory', '0019');
   }
 
   getEntryMetadata(_request: EntryMetadataRequest, _signal?: AbortSignal): Promise<EntryMetadata> {
-    return this.notImplemented('getEntryMetadata');
+    return this.notImplemented('getEntryMetadata', '0019');
   }
 
   startOperation(_request: StartOperationRequest, _signal?: AbortSignal): Promise<Operation> {
-    return this.notImplemented('startOperation');
+    return this.notImplemented('startOperation', '0036');
   }
 
   cancelOperation(_operationId: OperationId, _signal?: AbortSignal): Promise<void> {
-    return this.notImplemented('cancelOperation');
+    return this.notImplemented('cancelOperation', '0036');
   }
 
   resolveConflict(_request: ResolveConflictRequest, _signal?: AbortSignal): Promise<void> {
-    return this.notImplemented('resolveConflict');
+    return this.notImplemented('resolveConflict', '0036');
   }
 
   listActions(_signal?: AbortSignal): Promise<ActionDescriptor[]> {
-    return this.notImplemented('listActions');
+    return this.notImplemented('listActions', '0049');
   }
 
   invokeAction(_request: InvokeActionRequest, _signal?: AbortSignal): Promise<ActionResult> {
-    return this.notImplemented('invokeAction');
+    return this.notImplemented('invokeAction', '0049');
   }
 
   listPlugins(_signal?: AbortSignal): Promise<PluginDescriptor[]> {
-    return this.notImplemented('listPlugins');
+    return this.notImplemented('listPlugins', '0053');
   }
 
-  subscribe(_listener: (event: BackendEvent) => void): Promise<Unsubscribe> {
-    return this.notImplemented('subscribe');
+  /** TODO(0034): full EventBus → Tauri channel parity; connects the minimal skeleton for now. */
+  async subscribe(listener: (event: BackendEvent) => void): Promise<Unsubscribe> {
+    const unsubscribeListener = this.eventStream.listeners.subscribe(listener);
+    await this.eventStream.connect();
+    return () => {
+      unsubscribeListener();
+    };
   }
 }

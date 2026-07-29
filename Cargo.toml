@@ -1,6 +1,11 @@
 [workspace]
 resolver = "3"
-members = ["crates/*", "apps/*"]
+# `apps/fm-desktop/src-tauri` is listed explicitly: Tauri's own convention
+# nests the Rust crate under `<app>/src-tauri`, one level deeper than the
+# `apps/*` glob reaches. `apps/fm-desktop` itself holds no Cargo.toml (only
+# `src-tauri` does), so it is excluded from the glob match.
+members = ["crates/*", "apps/*", "apps/fm-desktop/src-tauri"]
+exclude = ["apps/fm-desktop"]
 
 [workspace.package]
 version = "0.1.0"
@@ -32,6 +37,8 @@ serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 tempfile = "3.15.0"
 thiserror = "2.0.19"
+tauri = "2"
+tauri-build = "2"
 tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros", "net"] }
 tokio-util = "0.7.19"
 tower = "0.5.3"

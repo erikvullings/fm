@@ -54,6 +54,26 @@ jobs:
       - name: OpenAPI document and generated client are up to date
         run: pnpm run api:check
 
+  desktop:
+    name: Tauri build (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: Swatinem/rust-cache@v2
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Build Tauri app (task 0015)
+        run: pnpm run build:tauri
+
   audit:
     name: Dependency audit
     runs-on: ubuntu-latest

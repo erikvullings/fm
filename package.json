@@ -8,7 +8,7 @@
     "dev": "pnpm --dir frontend dev",
     "dev:mock": "cross-env VITE_RUNTIME=mock pnpm --dir frontend dev",
     "dev:http": "cross-env VITE_RUNTIME=http pnpm --dir frontend dev",
-    "dev:tauri": "bash scripts/not-implemented.sh dev:tauri 0015",
+    "dev:tauri": "cd apps/fm-desktop/src-tauri && pnpm exec tauri dev",
     "test": "pnpm run test:rust && pnpm run test:frontend && pnpm run test:scripts",
     "test:rust": "cargo test --workspace",
     "test:frontend": "pnpm --dir frontend test",
@@ -22,10 +22,11 @@
     "build": "pnpm run build:rust && pnpm run build:frontend",
     "build:rust": "cargo build --workspace --release",
     "build:frontend": "pnpm --dir frontend build",
-    "build:tauri": "bash scripts/not-implemented.sh build:tauri 0015"
+    "build:tauri": "cd apps/fm-desktop/src-tauri && pnpm exec tauri build"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.6",
+    "@tauri-apps/cli": "^2",
     "cross-env": "^10.1.0",
     "js-yaml": "^5.2.2"
   }

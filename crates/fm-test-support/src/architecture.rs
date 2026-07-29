@@ -51,6 +51,7 @@ const CRATE_LAYERS: &[(&str, u8)] = &[
     ("fm-test-support", 3),
     // Layer 4 - hosts.
     ("fm-cli", 4),
+    ("fm-desktop", 4),
     ("fm-server", 4),
 ];
 
