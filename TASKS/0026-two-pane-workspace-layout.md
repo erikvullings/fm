@@ -14,7 +14,9 @@ exactly two panes (§5.3), but the first UI shows two.
 ## Acceptance Criteria
 - Main window layout matches §14: application bar, workspace toolbar row, left/right panes,
   operation centre area (placeholder until 0036), optional function-key bar.
-- Two panes side by side with a draggable splitter; the split ratio persists (0030).
+- Two panes side by side with a draggable splitter; the split ratio persists via the workspace's
+  `UpdateLayout` command (0080), debounced per §5.3.8 — not via 0030, which no longer owns live
+  workspace layout state.
 - Exactly one pane is active; `Tab` switches panes and focus follows, with visible focus (§29).
 - Clicking anywhere in a pane makes it active.
 - The layout is driven by `WorkspaceLayout` from the backend workspace model, so a future

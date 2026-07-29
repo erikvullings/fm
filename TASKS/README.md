@@ -4,7 +4,10 @@ Derived from `file-manager-coding-agent-spec.md`. One file per task; every task 
 sections it implements. Ordering follows the spec's implementation sequence (§33).
 
 Pick the lowest-numbered `open` task whose `Depends on` tasks are all `done`.
-Note the one out-of-order dependency: **0020** needs the event bus from **0031**.
+Note the out-of-order dependencies: **0020** needs the event bus from **0031**; **0078**–**0082**
+(workspace service, §5.3) are numbered late but only depend on already-`done` tasks (0006, 0008) —
+pick them up early, ideally right after Step 2, since later steps 5, 6 and 7 assume the real
+`WorkspaceService` exists (see the note under Step 2 below).
 
 ```bash
 # Terminal 1
@@ -28,6 +31,19 @@ pnpm run dev:http
 - 0008 Axum server with runtime capabilities, OpenAPI JSON and Swagger UI
 - 0009 Deterministic OpenAPI export command
 - 0010 Orval-generated Fetch client and api:check
+
+## Step 2b — Workspace service (§5.3)
+
+Added after §5.3 was fleshed out in detail; numbered late (next free ids) but only depends on
+already-`done` work, so tackle it here rather than at the end. 0030 was narrowed to drop workspace
+persistence, 0069 now depends on 0080 instead of 0030, and 0026's split-ratio note points at 0080 —
+see each file's Context/Implementation Notes for details.
+
+- 0078 Workspace domain model refinement (aligns 0006's types with the detailed §5.3)
+- 0079 Workspace repository, validation and default-workspace lifecycle
+- 0080 Workspace semantic commands, revisions and REST/Tauri surface
+- 0081 Workspace events over the shared event bus *(needs 0031)*
+- 0082 Frontend WorkspaceProjection, state slice and command dispatch
 
 ## Step 3 — Transport abstraction (§33.3)
 
@@ -56,9 +72,10 @@ pnpm run dev:http
 - 0027 Directory navigation, parent navigation and history
 - 0028 Selection model and keyboard navigation
 - 0029 Sorting and file metadata summary
-- 0030 Settings service and persisted last workspace
+- 0030 Settings service
 
-**Milestone 1 (§16) is complete after 0030.**
+**Milestone 1 (§16) is complete after 0030 and 0078–0082** (persisted-workspace restore moved to
+the workspace-service tasks; see Step 2b above).
 
 ## Step 6 — Event delivery (§33.6)
 
