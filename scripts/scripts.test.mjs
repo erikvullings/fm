@@ -19,7 +19,11 @@ function runScript(scriptName, args = []) {
     });
     return { exitCode: 0, stdout, stderr: '' };
   } catch (error) {
-    return { exitCode: error.status, stdout: error.stdout ?? '', stderr: error.stderr };
+    return {
+      exitCode: error.status,
+      stdout: error.stdout ?? '',
+      stderr: error.stderr,
+    };
   }
 }
 
