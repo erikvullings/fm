@@ -2,5 +2,10 @@
 /target/
 **/*.rs.bk
 
+# Frontend
+node_modules/
+dist/
+*.tsbuildinfo
+
 # macOS
 .DS_Store

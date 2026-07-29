@@ -1,0 +1,27 @@
+{
+  "name": "@fm/frontend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Mithril frontend for the dual-pane file manager, shared by the Axum and Tauri hosts.",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "mithril": "^2.3.8",
+    "mithril-materialized": "^3.17.6"
+  },
+  "devDependencies": {
+    "@types/mithril": "^2.2.8",
+    "@types/node": "^26.1.2",
+    "jsdom": "^29.1.1",
+    "typescript": "^7.0.2",
+    "vite": "^8.1.5",
+    "vitest": "^4.1.10"
+  }
+}

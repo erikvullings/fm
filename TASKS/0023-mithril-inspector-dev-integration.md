@@ -23,6 +23,9 @@ coding agents debug component behaviour, and forbids it from reaching production
 - Documented in the README: how to open it and what it is useful for.
 
 ## Implementation Notes
+- There is no `mithril-inspector` package on npm (checked in task 0002). It ships as a scoped set:
+  `@mithril-inspector/vite` (the bundler plugin), plus `runtime`, `overlay`, `server`, `protocol`,
+  `transform` and builds for rollup/esbuild — all at 0.3.2. Start from the Vite plugin.
 - Keep the integration in a single `frontend/src/app/dev-tools.ts` module.
 - Guard against double-initialisation under Vite HMR.
 
