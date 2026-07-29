@@ -5,7 +5,7 @@ import type { AddressInfo } from 'node:net';
 import { createServer as createViteServer, type ViteDevServer } from 'vite';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { API_PREFIX, DEFAULT_BACKEND_ORIGIN, createApiProxyOptions } from './api-proxy';
+import { API_PREFIX, createApiProxyOptions, DEFAULT_BACKEND_ORIGIN } from './api-proxy';
 
 let origin: Server | undefined;
 let vite: ViteDevServer | undefined;

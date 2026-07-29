@@ -1,0 +1,31 @@
+{
+  "name": "fm",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "packageManager": "pnpm@11.17.0",
+  "scripts": {
+    "dev": "pnpm --dir frontend dev",
+    "dev:mock": "cross-env VITE_RUNTIME=mock pnpm --dir frontend dev",
+    "dev:http": "cross-env VITE_RUNTIME=http pnpm --dir frontend dev",
+    "dev:tauri": "bash scripts/not-implemented.sh dev:tauri 0015",
+    "test": "pnpm run test:rust && pnpm run test:frontend && pnpm run test:scripts",
+    "test:rust": "cargo test --workspace",
+    "test:frontend": "pnpm --dir frontend test",
+    "test:scripts": "node --test scripts/*.test.mjs",
+    "lint": "pnpm run lint:rust && pnpm run lint:frontend",
+    "lint:rust": "cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings",
+    "lint:frontend": "biome check .",
+    "api:export": "bash scripts/export-openapi.sh",
+    "api:generate": "bash scripts/generate-api.sh",
+    "api:check": "pnpm run api:export && pnpm run api:generate && git diff --exit-code",
+    "build": "pnpm run build:rust && pnpm run build:frontend",
+    "build:rust": "cargo build --workspace --release",
+    "build:frontend": "pnpm --dir frontend build",
+    "build:tauri": "bash scripts/not-implemented.sh build:tauri 0015"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.6",
+    "cross-env": "^10.1.0"
+  }
+}

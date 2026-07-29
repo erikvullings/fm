@@ -6,6 +6,20 @@
 node_modules/
 dist/
 *.tsbuildinfo
+.vite/
 
-# macOS
+# Tooling caches / logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+.eslintcache
+
+# Editors and OS
 .DS_Store
+Thumbs.db
+.idea/
+*.swp
+
+# Local env overrides (never commit secrets)
+.env
+.env.local

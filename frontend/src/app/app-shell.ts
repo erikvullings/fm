@@ -1,5 +1,5 @@
 import m, { type FactoryComponent } from 'mithril';
-import { ThemeManager, ThemeSwitcher, type Theme } from 'mithril-materialized';
+import { type Theme, ThemeManager, ThemeSwitcher } from 'mithril-materialized';
 
 import type { RuntimeKind } from '../utilities/runtime';
 
