@@ -21,6 +21,7 @@ pub use ids::{
 pub use location::Location;
 pub use snapshot::{DirectoryDelta, DirectorySnapshot, LoadingState};
 pub use workspace::{
-    DirectoryViewState, NavigationHistory, PaneState, SortDirection, SortField, SortKey,
-    SplitDirection, TabState, Workspace, WorkspaceLayout,
+    ColumnConfiguration, DirectoryViewConfiguration, NavigationHistory, OperationCentrePreferences,
+    PaneState, PersistedFilter, SortDescriptor, SortDirection, SplitAxis, TabState, Workspace,
+    WorkspaceLayout,
 };

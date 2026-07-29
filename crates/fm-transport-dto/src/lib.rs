@@ -25,6 +25,7 @@ pub use requests::{EntryMetadataRequest, ListDirectoryRequest, NavigateRequest};
 pub use runtime::{PlatformKindDto, RuntimeCapabilitiesDto, RuntimeKindDto};
 pub use snapshot::{DirectorySnapshotDto, LoadingStateDto};
 pub use workspace::{
-    DirectoryViewStateDto, NavigationHistoryDto, PaneStateDto, SortDirectionDto, SortFieldDto,
-    SortKeyDto, SplitDirectionDto, TabStateDto, WorkspaceDto, WorkspaceLayoutDto,
+    ColumnConfigurationDto, DirectoryViewConfigurationDto, NavigationHistoryDto,
+    OperationCentrePreferencesDto, PaneStateDto, PersistedFilterDto, SortDescriptorDto,
+    SortDirectionDto, SplitAxisDto, TabStateDto, WorkspaceDto, WorkspaceLayoutDto,
 };

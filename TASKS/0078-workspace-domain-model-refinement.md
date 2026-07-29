@@ -1,9 +1,9 @@
 # 0078 Workspace domain model refinement (spec §5.3)
 
-Status: open
+Status: done
 Priority: high
 Owner: unassigned
-Agent: unassigned
+Agent: claude
 Area: backend
 Depends on: 0006
 
@@ -61,4 +61,72 @@ concrete deviations matter beyond naming:
   forces); new DTO fields/endpoints for the command surface are task 0080's concern.
 
 ## Agent Notes
-- Not started.
+- 2026-07-29 claude: Two acceptance-criteria forks were left explicitly open to a choice; asked the
+  user rather than guessing, per the acceptance criteria's own wording:
+  - `SortKey { field: SortField }` (closed enum) → replaced with `SortDescriptor { column_id:
+    String, direction }`, matching §5.3.15's `{"columnId":"core.name",...}` shape and putting
+    built-in and plugin-provided columns on the same open-string footing as `ColumnConfiguration`.
+    `SortField` is removed entirely (no remaining callers).
+  - `NavigationHistory` keeps only `back`/`forward`; the user chose **not** to add an explicit
+    `current: Location` field, so `TabState.location` stays the sole source of truth for the
+    current location. Documented directly on `NavigationHistory` as a considered deviation from
+    §5.3.4, not an oversight.
+- `crates/fm-domain/src/workspace.rs`: `Workspace` gained `schema_version`, `created_at`,
+  `updated_at`, `revision`, `operation_centre: OperationCentrePreferences { visible, height }`.
+  `PaneState` gained `title: Option<String>` and `default_view: DirectoryViewConfiguration`.
+  `DirectoryViewState` was replaced by `DirectoryViewConfiguration { sort, columns, show_hidden,
+  folders_first, quick_filter }` — `#[serde(deny_unknown_fields)]` so it runtime-rejects
+  `selectedEntryIds`/`cursorEntryId` in addition to not having Rust fields for them (verified by
+  `directory_view_configuration_cannot_represent_selection_or_cursor_state`). Added
+  `ColumnConfiguration { column_id, width, visible }` and a minimal `PersistedFilter { query:
+  String }` (spec §24: plain-text quick filter only for now; glob/regex is a later feature, no
+  `PersistedFilter` shape is spelled out elsewhere in the spec). `TabState` gained
+  `title_override: Option<String>` and `pinned: bool`. `WorkspaceLayout::Pane` is now a struct
+  variant `{ pane_id }`; `SplitDirection` is renamed `SplitAxis`, and the `Split` variant's field is
+  renamed `direction` → `axis` to match §5.3.5's JSON key — required a per-variant
+  `#[serde(rename_all = "camelCase")]` on `WorkspaceLayout`'s struct variants (the enum-level
+  `rename_all` alone does not rename struct-variant fields in serde); a dedicated test asserts the
+  serialized `Pane` JSON is byte-for-byte `{"type":"pane","paneId":"..."}`.
+- Deliberately did **not** apply camelCase to the rest of `fm-domain`'s workspace types: every other
+  `fm-domain` type (including `Location`) keeps Rust-native snake_case JSON, and only
+  `fm-transport-dto` owns the camelCase wire format — matching the crate's existing, pre-existing
+  convention. `WorkspaceLayout` is the one type the spec's own Rust snippet (§5.3.5) shows with
+  `#[serde(tag = "type", rename_all = "camelCase")]` directly on the domain type, so that one stays
+  camelCase-tagged in `fm-domain` too. Consequently the "round trip against the literal §5.3.15
+  JSON" test lives in two places: `fm-domain::workspace::tests::workspace_round_trips_against_the_literal_spec_example_json`
+  transcribes the same example's content into this crate's snake_case convention, while
+  `fm-transport-dto::workspace::tests::workspace_dto_round_trips_against_the_literal_spec_example_json`
+  deserializes the §5.3.15 JSON **verbatim** (byte-for-byte, including the `+02:00` offset
+  timestamps) into `WorkspaceDto`, which is where the wire format is actually owned.
+- `crates/fm-transport-dto/src/workspace.rs`: updated `WorkspaceDto`/`PaneStateDto`/`TabStateDto`
+  and added `OperationCentrePreferencesDto`, `DirectoryViewConfigurationDto`,
+  `ColumnConfigurationDto`, `SortDescriptorDto`, `PersistedFilterDto`, `SplitAxisDto` to mirror the
+  domain changes field-for-field; existing `From`/`Into` conversions were updated in place (no
+  duplicated logic). `SortFieldDto` removed (no replacement needed — DTOs never used it beyond
+  `SortKeyDto`).
+- Confirmed via `grep` before renaming that only `fm-domain` and `fm-transport-dto` reference these
+  types; `fm-events`' `WorkspacePayload`/`PaneStatePayload`/etc. are intentionally independent
+  mirrors (its own module doc: "mirror the OpenAPI-facing DTOs rather than depending on
+  `fm-transport-dto`") and do not import from either crate, so they were left untouched — they now
+  represent an older, unrefined shape (no `title`/`pinned`/`operationCentre`/etc., still tuple-style
+  `SortField`). This is a known follow-up, likely for whichever task next touches
+  `workspace.*Changed` events, not a silent gap in this task's own scope.
+  `frontend/src/models/workspace.ts` is a hand-written TS mirror in the same position — also
+  untouched, out of scope per the task's own note (0080/0082 own the command surface and frontend
+  projection).
+  `frontend/openapi/openapi.json`/the Orval client do not yet reference `WorkspaceDto` in any
+  endpoint (workspace REST endpoints are task 0080's concern), so `pnpm run api:check` has nothing
+  to regenerate from this change.
+- Verified: `cargo test -p fm-domain` — 29 tests, all passing (was 25 before this task; net +4 new
+  tests: the byte-for-byte `Pane` shape test, the `deny_unknown_fields` selection/cursor-rejection
+  test, the literal-example round trip, plus the pre-existing tests updated for the renamed types).
+  `cargo test -p fm-transport-dto` — 30 tests, all passing (+1 new: the verbatim §5.3.15 round trip
+  through `WorkspaceDto`). `cargo test --workspace` — 41 passing test binaries/suites, 0 failed,
+  confirming `fm-events`, `fm-application` and every other crate still compile and pass unaffected.
+  `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings` and
+  `cargo doc -p fm-domain -p fm-transport-dto --no-deps` (proxy for the `missing_docs` lint) are all
+  clean.
+- Known gap: none against this task's own (post-clarification) acceptance criteria. The
+  `fm-events`/frontend-model divergence noted above is an explicitly out-of-scope follow-up, not a
+  gap in this task.
+
