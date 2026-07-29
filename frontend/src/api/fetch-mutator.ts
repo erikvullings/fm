@@ -117,7 +117,10 @@ export async function fetchMutator<T>(url: string, options: RequestInit = {}): P
     headers.set(sessionHeader.name, sessionHeader.value);
   }
 
-  const response = await fetch(`${resolveBaseUrl()}${url}`, { ...options, headers });
+  const response = await fetch(`${resolveBaseUrl()}${url}`, {
+    ...options,
+    headers,
+  });
 
   if (!response.ok) {
     throw await toApiError(response);

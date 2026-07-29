@@ -52,7 +52,10 @@ describe('fetchMutator', () => {
   it('attaches the configured session header to every request', async () => {
     const fetchSpy = vi.fn().mockResolvedValue(jsonResponse(200, { status: 'ok' }));
     vi.stubGlobal('fetch', fetchSpy);
-    setSessionHeaderProvider(() => ({ name: 'Authorization', value: 'Bearer token123' }));
+    setSessionHeaderProvider(() => ({
+      name: 'Authorization',
+      value: 'Bearer token123',
+    }));
 
     await fetchMutator('/api/v1/health', {});
 
@@ -87,11 +90,12 @@ describe('fetchMutator', () => {
   it('falls back to a generic ApiError when the error body has no code/message shape', async () => {
     vi.stubGlobal(
       'fetch',
-      vi
-        .fn()
-        .mockResolvedValue(
-          new Response('internal error', { status: 500, statusText: 'Internal Server Error' }),
-        ),
+      vi.fn().mockResolvedValue(
+        new Response('internal error', {
+          status: 500,
+          statusText: 'Internal Server Error',
+        }),
+      ),
     );
 
     let error: ApiError | undefined;

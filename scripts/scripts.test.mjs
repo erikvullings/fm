@@ -29,9 +29,10 @@ function runScript(scriptName, args = []) {
 
 /** Maps every file under `dir` to its contents, for before/after diffing. */
 function snapshotDir(dir) {
-  const entries = readdirSync(dir, { recursive: true, encoding: 'utf8' }).filter((entry) =>
-    statSync(join(dir, entry)).isFile(),
-  );
+  const entries = readdirSync(dir, {
+    recursive: true,
+    encoding: 'utf8',
+  }).filter((entry) => statSync(join(dir, entry)).isFile());
   return Object.fromEntries(entries.sort().map((entry) => [entry, readFileSync(join(dir, entry))]));
 }
 
