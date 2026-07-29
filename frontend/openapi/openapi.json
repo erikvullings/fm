@@ -1,0 +1,178 @@
+{
+  "components": {
+    "schemas": {
+      "HealthDto": {
+        "description": "Response body for `GET /api/v1/health`.",
+        "example": {
+          "status": "ok"
+        },
+        "properties": {
+          "status": {
+            "$ref": "#/components/schemas/HealthStatusDto",
+            "description": "Current health status."
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "type": "object"
+      },
+      "HealthStatusDto": {
+        "description": "Health status of the backend process.",
+        "enum": [
+          "ok"
+        ],
+        "type": "string"
+      },
+      "PlatformKindDto": {
+        "description": "The host operating system, when known.",
+        "enum": [
+          "macos",
+          "windows",
+          "linux",
+          "unknown"
+        ],
+        "type": "string"
+      },
+      "RuntimeCapabilitiesDto": {
+        "description": "Capabilities the current runtime and platform support, so the frontend can\nrespond to capabilities rather than detecting operating systems directly\n(spec §21).",
+        "example": {
+          "clipboard": true,
+          "nativeDragOut": false,
+          "nativeFileIcons": false,
+          "nativeMenus": false,
+          "nativeThumbnails": false,
+          "openTerminal": false,
+          "platform": "macos",
+          "plugins": false,
+          "revealInSystemFileManager": false,
+          "runtime": "browserServer",
+          "serverAdministration": false,
+          "systemTrash": false
+        },
+        "properties": {
+          "clipboard": {
+            "description": "Whether OS clipboard integration is available.",
+            "type": "boolean"
+          },
+          "nativeDragOut": {
+            "description": "Whether dragging entries out to the OS is supported.",
+            "type": "boolean"
+          },
+          "nativeFileIcons": {
+            "description": "Whether native file icons can be fetched.",
+            "type": "boolean"
+          },
+          "nativeMenus": {
+            "description": "Whether native OS menus are available.",
+            "type": "boolean"
+          },
+          "nativeThumbnails": {
+            "description": "Whether native thumbnails can be fetched.",
+            "type": "boolean"
+          },
+          "openTerminal": {
+            "description": "Whether opening a terminal at a location is supported.",
+            "type": "boolean"
+          },
+          "platform": {
+            "$ref": "#/components/schemas/PlatformKindDto",
+            "description": "The host operating system, when known."
+          },
+          "plugins": {
+            "description": "Whether plugins can be loaded.",
+            "type": "boolean"
+          },
+          "revealInSystemFileManager": {
+            "description": "Whether entries can be revealed in the system file manager.",
+            "type": "boolean"
+          },
+          "runtime": {
+            "$ref": "#/components/schemas/RuntimeKindDto",
+            "description": "Which host is serving the application."
+          },
+          "serverAdministration": {
+            "description": "Whether server administration endpoints are available.",
+            "type": "boolean"
+          },
+          "systemTrash": {
+            "description": "Whether deleting sends to the system trash/recycle bin.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "runtime",
+          "platform",
+          "nativeMenus",
+          "nativeFileIcons",
+          "nativeThumbnails",
+          "nativeDragOut",
+          "systemTrash",
+          "revealInSystemFileManager",
+          "openTerminal",
+          "clipboard",
+          "plugins",
+          "serverAdministration"
+        ],
+        "type": "object"
+      },
+      "RuntimeKindDto": {
+        "description": "Which host is serving the application.",
+        "enum": [
+          "browserServer",
+          "tauri",
+          "mock"
+        ],
+        "type": "string"
+      }
+    }
+  },
+  "info": {
+    "description": "Axum host exposing the file manager over REST and Server-Sent Events.",
+    "license": {
+      "identifier": "MIT OR Apache-2.0",
+      "name": "MIT OR Apache-2.0"
+    },
+    "title": "File Manager API",
+    "version": "1.0.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/v1/health": {
+      "get": {
+        "operationId": "getHealth",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthDto"
+                }
+              }
+            },
+            "description": "The backend is healthy"
+          }
+        },
+        "summary": "Reports that the backend process is running and able to serve requests."
+      }
+    },
+    "/api/v1/runtime": {
+      "get": {
+        "operationId": "getRuntimeCapabilities",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuntimeCapabilitiesDto"
+                }
+              }
+            },
+            "description": "Current runtime capabilities"
+          }
+        },
+        "summary": "Reports the capabilities available for the current runtime and platform."
+      }
+    }
+  }
+}

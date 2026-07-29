@@ -5,6 +5,7 @@
 
 pub mod config;
 mod error;
+pub mod openapi_export;
 mod routes;
 mod state;
 
@@ -26,6 +27,24 @@ use utoipa_swagger_ui::SwaggerUi;
 use config::ServerConfig;
 use state::AppState;
 
+/// Registers every route once, shared by [`build_router`] (which serves the
+/// resulting document at `/api/v1/openapi.json`) and [`openapi_document`]
+/// (which the `export-openapi` CLI command uses). Sharing one builder means
+/// the served and exported documents can never drift apart.
+fn api_router() -> OpenApiRouter<AppState> {
+    OpenApiRouter::with_openapi(routes::api_doc())
+        .routes(utoipa_axum::routes!(routes::health::get_health))
+        .routes(utoipa_axum::routes!(
+            routes::runtime::get_runtime_capabilities
+        ))
+}
+
+/// Builds the OpenAPI document without constructing application state or
+/// binding a port (task 0009).
+pub fn openapi_document() -> utoipa::openapi::OpenApi {
+    api_router().into_openapi()
+}
+
 /// Builds the Axum [`Router`] for the given configuration.
 ///
 /// Wires tracing, request-size limits, CORS, request correlation ids and the
@@ -36,13 +55,8 @@ pub fn build_router(config: &ServerConfig) -> Router {
     let service = Arc::new(FileManagerService::new(RuntimeKindDto::BrowserServer));
     let state = AppState { service };
 
-    let (router, api) = OpenApiRouter::with_openapi(routes::api_doc())
-        .routes(utoipa_axum::routes!(routes::health::get_health))
-        .routes(utoipa_axum::routes!(
-            routes::runtime::get_runtime_capabilities
-        ))
-        .with_state(state)
-        .split_for_parts();
+    let (router, api) = api_router().split_for_parts();
+    let router = router.with_state(state);
 
     // Each `Router::layer` call re-erases the response body back to
     // `axum::body::Body`, so layers that change the body type (like the

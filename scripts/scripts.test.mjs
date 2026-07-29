@@ -2,23 +2,24 @@
 // their underlying features are not implemented yet, per TASKS/0003.
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { statSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 
-function runScript(scriptName) {
+function runScript(scriptName, args = []) {
   try {
-    execFileSync('bash', [join('scripts', scriptName)], {
+    const stdout = execFileSync('bash', [join('scripts', scriptName), ...args], {
       cwd: repoRoot,
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'pipe'],
     });
-    return { exitCode: 0, stderr: '' };
+    return { exitCode: 0, stdout, stderr: '' };
   } catch (error) {
-    return { exitCode: error.status, stderr: error.stderr };
+    return { exitCode: error.status, stdout: error.stdout ?? '', stderr: error.stderr };
   }
 }
 
@@ -29,10 +30,23 @@ test('scripts/export-openapi.sh, generate-api.sh and not-implemented.sh are exec
   }
 });
 
-test('scripts/export-openapi.sh fails clearly until task 0009 lands', () => {
-  const { exitCode, stderr } = runScript('export-openapi.sh');
-  assert.notEqual(exitCode, 0);
-  assert.match(stderr, /not implemented until task 0009/);
+test('scripts/export-openapi.sh writes a deterministic OpenAPI document (task 0009)', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'fm-export-openapi-'));
+  const outputPath = join(dir, 'openapi.json');
+
+  try {
+    const first = runScript('export-openapi.sh', [outputPath]);
+    assert.equal(first.exitCode, 0, first.stderr);
+    const firstBytes = readFileSync(outputPath);
+
+    const second = runScript('export-openapi.sh', [outputPath]);
+    assert.equal(second.exitCode, 0, second.stderr);
+    const secondBytes = readFileSync(outputPath);
+
+    assert.deepEqual(firstBytes, secondBytes, 're-running the export must produce no diff');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('scripts/generate-api.sh fails clearly until task 0010 lands', () => {

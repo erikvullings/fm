@@ -1,13 +1,12 @@
 //! Axum host for the file manager backend (spec §2.2, §8, §9, §21, §33 step 2).
 //!
-//! The deterministic OpenAPI export command arrives in task 0009, and the SSE
-//! endpoint in task 0032. Handlers stay thin: all behaviour lives in
-//! `fm-application`.
+//! The SSE endpoint arrives in task 0032. Handlers stay thin: all behaviour
+//! lives in `fm-application`.
 
 use std::net::IpAddr;
 use std::path::PathBuf;
 
-use clap::Parser;
+use clap::{Parser, Subcommand};
 use fm_server::config::ServerConfig;
 use tokio::net::TcpListener;
 use tracing_subscriber::EnvFilter;
@@ -16,6 +15,9 @@ use tracing_subscriber::EnvFilter;
 #[derive(Parser, Debug)]
 #[command(name = "fm-server", about = "File manager backend")]
 struct Cli {
+    /// Subcommand to run instead of serving (task 0009). Absent means "serve".
+    #[command(subcommand)]
+    command: Option<Command>,
     /// Address to bind to. Defaults to loopback (spec §22).
     #[arg(long, env = "FM_SERVER_BIND", default_value = "127.0.0.1")]
     bind: IpAddr,
@@ -35,6 +37,17 @@ struct Cli {
     root: Vec<PathBuf>,
 }
 
+/// Subcommands that run instead of serving requests.
+#[derive(Subcommand, Debug)]
+enum Command {
+    /// Writes the deterministic OpenAPI document to `path` and exits without
+    /// binding a port (spec §9).
+    ExportOpenapi {
+        /// Output file path for the exported OpenAPI document.
+        path: PathBuf,
+    },
+}
+
 impl From<Cli> for ServerConfig {
     fn from(cli: Cli) -> Self {
         Self {
@@ -49,13 +62,26 @@ impl From<Cli> for ServerConfig {
 
 #[tokio::main]
 async fn main() {
+    let mut cli = Cli::parse();
+
+    if let Some(Command::ExportOpenapi { path }) = std::mem::take(&mut cli.command) {
+        fm_server::openapi_export::write_to_file(&path).unwrap_or_else(|err| {
+            panic!(
+                "failed to export OpenAPI document to {}: {err}",
+                path.display()
+            )
+        });
+        println!("wrote OpenAPI document to {}", path.display());
+        return;
+    }
+
     tracing_subscriber::fmt()
         .with_env_filter(
             EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
         )
         .init();
 
-    let config: ServerConfig = Cli::parse().into();
+    let config: ServerConfig = cli.into();
     let router = fm_server::build_router(&config);
 
     let listener = TcpListener::bind((config.bind_address, config.port))
