@@ -10,6 +10,9 @@ license = "MIT OR Apache-2.0"
 
 [workspace.dependencies]
 
+# Internal crates, versioned together with the rest of the workspace.
+fm-domain = { path = "crates/fm-domain" }
+
 # External dependencies. Versions are coordinated here; member crates opt in
 # with `dependency.workspace = true`.
 async-trait = "0.1.91"

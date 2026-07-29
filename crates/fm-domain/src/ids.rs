@@ -59,6 +59,18 @@ macro_rules! uuid_id {
                 Ok(Self(Uuid::from_str(s)?))
             }
         }
+
+        impl From<Uuid> for $name {
+            fn from(value: Uuid) -> Self {
+                Self(value)
+            }
+        }
+
+        impl From<$name> for Uuid {
+            fn from(value: $name) -> Self {
+                value.0
+            }
+        }
     };
 }
 
@@ -172,6 +184,13 @@ mod tests {
     fn distinct_uuid_ids_are_not_equal() {
         assert_ne!(EntryId::new(), EntryId::new());
         assert_ne!(OperationId::new(), OperationId::new());
+    }
+
+    #[test]
+    fn uuid_id_round_trips_through_the_uuid_conversion_traits() {
+        let id = EntryId::new();
+        let uuid: Uuid = id.into();
+        assert_eq!(EntryId::from(uuid), id);
     }
 
     #[test]
