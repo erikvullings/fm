@@ -1,0 +1,199 @@
+//! Schema migrations for persisted [`fm_domain::Workspace`] JSON (spec §5.3.6
+//! invariant 13, §5.3.8).
+//!
+//! Migrations operate on [`serde_json::Value`] rather than a typed struct,
+//! because an older schema version cannot, by definition, be represented by
+//! the current [`fm_domain::Workspace`] type.
+
+use chrono::Utc;
+use fm_domain::CURRENT_WORKSPACE_SCHEMA_VERSION;
+use serde_json::{Value, json};
+
+use super::error::WorkspaceError;
+
+/// Migrates a raw workspace JSON value forward to
+/// [`CURRENT_WORKSPACE_SCHEMA_VERSION`], applying each version's migration in
+/// turn. A value with no `schema_version` field is treated as schema version
+/// 0.
+///
+/// Version 0 names the field set task 0078 shipped for [`fm_domain::Workspace`]
+/// before this task (0079) introduced `schema_version`-gated migrations and a
+/// real persistence layer: no workspace file existed on disk before this
+/// task, so there is no historical v0 file format to match beyond that one.
+pub(super) fn migrate_workspace_json(mut value: Value) -> Result<Value, WorkspaceError> {
+    let mut version = u32::try_from(
+        value
+            .get("schema_version")
+            .and_then(Value::as_u64)
+            .unwrap_or(0),
+    )
+    .unwrap_or(u32::MAX);
+
+    if version > CURRENT_WORKSPACE_SCHEMA_VERSION {
+        return Err(WorkspaceError::UnsupportedSchemaVersion {
+            schema_version: version,
+        });
+    }
+
+    while version < CURRENT_WORKSPACE_SCHEMA_VERSION {
+        value = match version {
+            0 => migrate_v0_to_v1(value)?,
+            other => {
+                return Err(WorkspaceError::UnsupportedSchemaVersion {
+                    schema_version: other,
+                });
+            }
+        };
+        version += 1;
+    }
+
+    Ok(value)
+}
+
+/// Upgrades the pre-schema-versioning field set to schema version 1: adds
+/// `operation_centre`/`created_at`/`updated_at`/`revision` at the workspace
+/// level, `title`/`default_view` per pane, and `title_override`/`pinned` per
+/// tab, each defaulted to a value consistent with what already existed
+/// (§5.3.6 invariant 13's "the workspace schema is supported or can be
+/// migrated").
+fn migrate_v0_to_v1(mut value: Value) -> Result<Value, WorkspaceError> {
+    let now = Utc::now().to_rfc3339();
+
+    let object = value.as_object_mut().ok_or_else(|| {
+        WorkspaceError::Serialization("workspace JSON is not an object".to_owned())
+    })?;
+
+    object.insert("schema_version".to_owned(), json!(1));
+    object.entry("created_at").or_insert(json!(now));
+    object.entry("updated_at").or_insert(json!(now));
+    object.entry("revision").or_insert(json!(1));
+    object
+        .entry("operation_centre")
+        .or_insert(json!({ "visible": false, "height": 0 }));
+
+    if let Some(panes) = object.get_mut("panes").and_then(Value::as_array_mut) {
+        for pane in panes {
+            let default_view = pane
+                .get("tabs")
+                .and_then(Value::as_array)
+                .and_then(|tabs| tabs.first())
+                .and_then(|tab| tab.get("view"))
+                .cloned()
+                .unwrap_or_else(default_directory_view_configuration);
+
+            let Some(pane_object) = pane.as_object_mut() else {
+                continue;
+            };
+            pane_object.entry("title").or_insert(json!(null));
+            pane_object.entry("default_view").or_insert(default_view);
+
+            if let Some(tabs) = pane_object.get_mut("tabs").and_then(Value::as_array_mut) {
+                for tab in tabs {
+                    if let Some(tab_object) = tab.as_object_mut() {
+                        tab_object.entry("title_override").or_insert(json!(null));
+                        tab_object.entry("pinned").or_insert(json!(false));
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(value)
+}
+
+fn default_directory_view_configuration() -> Value {
+    json!({
+        "sort": [],
+        "columns": [],
+        "show_hidden": false,
+        "folders_first": false,
+        "quick_filter": null,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use fm_domain::Workspace;
+    use serde_json::json;
+
+    use super::*;
+
+    /// A representative pre-0079 (task 0078-shaped) workspace: no
+    /// `schema_version`, `operation_centre`, `created_at`, `updated_at`,
+    /// `revision`, per-pane `title`/`default_view` or per-tab
+    /// `title_override`/`pinned`.
+    fn v0_fixture() -> Value {
+        json!({
+            "id": "985d4d6e-c37b-4135-90a0-ce0afe165fd9",
+            "name": "Development",
+            "layout": {
+                "type": "pane",
+                "paneId": "11e67e3e-813c-44c5-9426-53be347ad5da"
+            },
+            "active_pane_id": "11e67e3e-813c-44c5-9426-53be347ad5da",
+            "panes": [
+                {
+                    "id": "11e67e3e-813c-44c5-9426-53be347ad5da",
+                    "active_tab_id": "97512c58-9cf8-4f17-a931-94f0be87a1da",
+                    "tabs": [
+                        {
+                            "id": "97512c58-9cf8-4f17-a931-94f0be87a1da",
+                            "location": { "provider_id": "local", "uri": "file:///Users/erik/dev" },
+                            "history": { "back": [], "forward": [] },
+                            "view": {
+                                "sort": [{ "column_id": "core.name", "direction": "Ascending" }],
+                                "columns": [{ "column_id": "core.name", "width": 360, "visible": true }],
+                                "show_hidden": true,
+                                "folders_first": true,
+                                "quick_filter": null
+                            }
+                        }
+                    ]
+                }
+            ]
+        })
+    }
+
+    #[test]
+    fn migrates_a_v0_fixture_forward_into_a_valid_current_workspace() {
+        let migrated = migrate_workspace_json(v0_fixture()).expect("migration must succeed");
+        let workspace: Workspace =
+            serde_json::from_value(migrated).expect("migrated JSON must deserialize");
+
+        assert_eq!(workspace.schema_version, CURRENT_WORKSPACE_SCHEMA_VERSION);
+        assert_eq!(workspace.revision, 1);
+        assert_eq!(workspace.panes[0].title, None);
+        assert_eq!(
+            workspace.panes[0].default_view.sort[0].column_id,
+            "core.name"
+        );
+        assert!(!workspace.panes[0].tabs[0].pinned);
+        assert_eq!(workspace.panes[0].tabs[0].title_override, None);
+        assert!(workspace.validate().is_ok());
+    }
+
+    #[test]
+    fn migration_is_idempotent_once_already_at_the_current_version() {
+        let migrated_once =
+            migrate_workspace_json(v0_fixture()).expect("first migration must succeed");
+        let migrated_twice =
+            migrate_workspace_json(migrated_once.clone()).expect("second migration must succeed");
+
+        assert_eq!(migrated_once, migrated_twice);
+    }
+
+    #[test]
+    fn a_schema_version_newer_than_current_is_rejected() {
+        let mut value = v0_fixture();
+        value["schema_version"] = json!(CURRENT_WORKSPACE_SCHEMA_VERSION + 1);
+
+        let error =
+            migrate_workspace_json(value).expect_err("future schema version must be rejected");
+        assert_eq!(
+            error,
+            WorkspaceError::UnsupportedSchemaVersion {
+                schema_version: CURRENT_WORKSPACE_SCHEMA_VERSION + 1
+            }
+        );
+    }
+}

@@ -7,6 +7,7 @@
 
 mod error;
 mod service;
+pub mod workspace;
 
 pub use error::ApplicationError;
 pub use service::FileManagerService;
