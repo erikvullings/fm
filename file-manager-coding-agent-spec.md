@@ -56,8 +56,7 @@ The project should begin with basic local filesystem functionality and one or tw
 Use:
 
 - Vite 8;
-- pnpm
-- TypeScript 7 with strict compiler settings;
+- TypeScript with strict compiler settings;
 - Mithril.js;
 - `mithril-materialized`;
 - `mithril-inspector`;
@@ -406,34 +405,630 @@ Use a separate detailed metadata endpoint for:
 - archive information;
 - plugin-provided fields.
 
-## 5.3 Workspace and pane state
+## 5.3 Workspace model
 
-Model a workspace as serializable state:
+### 5.3.1 Definition and purpose
+
+A workspace is a named, restorable arrangement of the file-manager window. It is comparable to an editor workspace or a saved terminal session.
+
+A workspace records:
+
+- the pane layout;
+- the panes that exist;
+- the tabs open in each pane;
+- the active pane and active tab per pane;
+- each tab's current location and navigation history;
+- per-tab or per-pane view configuration;
+- workspace-specific UI preferences such as preview and operation-centre visibility.
+
+A workspace is **not**:
+
+- a filesystem directory;
+- a filesystem provider;
+- a security boundary or allowed root;
+- a copy of directory contents;
+- an operation queue;
+- a plugin runtime.
+
+For example, a workspace named `Development` could reopen the left pane at `file:///Users/erik/dev`, the right pane at `file:///Users/erik/Downloads`, restore several tabs, and use source-code-oriented columns. A workspace named `Photos` could restore a different layout, locations and preview settings.
+
+### 5.3.2 Ownership and source of truth
+
+The Rust `WorkspaceService` is the authoritative owner of workspace configuration. The frontend keeps a projection for rendering, but must mutate workspaces through semantic commands rather than independently persisting another copy.
+
+Use the following ownership split:
+
+| State | Owner | Persisted |
+|---|---|---|
+| Workspace identity and name | Workspace service | Yes |
+| Pane layout | Workspace service | Yes |
+| Open tabs and tab order | Workspace service | Yes |
+| Active pane and active tabs | Workspace service | Yes |
+| Tab locations and bounded history | Workspace service | Yes |
+| Sort and column configuration | Workspace service | Yes |
+| Directory entries | Directory service | No |
+| Metadata and thumbnails | Cache/metadata services | No |
+| Current row selection and cursor | Frontend session state | No initially |
+| Hover, context menu and drag state | Frontend | No |
+| Running operations | Operation service | Stored separately |
+| Plugin runtime state | Plugin service | Stored separately |
+
+Never serialize directory snapshots into a workspace. Restoring a workspace must reopen each location and obtain a fresh directory snapshot.
+
+### 5.3.3 Separate durable, runtime and view state
+
+Do not create one structure containing persisted configuration, directory contents and temporary UI state. Separate three layers:
+
+1. `WorkspaceDefinition`: durable, serializable configuration.
+2. `WorkspaceRuntime`: process-local sessions, request IDs, subscriptions and loading state.
+3. `WorkspaceViewState`: frontend-only cursor, selection, dialogs and drag state.
 
 ```rust
-pub struct Workspace {
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkspaceDefinition {
+    pub schema_version: u32,
     pub id: WorkspaceId,
     pub name: String,
-    pub panes: Vec<PaneState>,
-    pub active_pane_id: PaneId,
     pub layout: WorkspaceLayout,
+    pub panes: Vec<PaneDefinition>,
+    pub active_pane_id: PaneId,
+    pub operation_centre: OperationCentrePreferences,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    pub revision: u64,
 }
 
-pub struct PaneState {
-    pub id: PaneId,
-    pub tabs: Vec<TabState>,
-    pub active_tab_id: TabId,
-}
-
-pub struct TabState {
-    pub id: TabId,
-    pub location: Location,
-    pub history: NavigationHistory,
-    pub view: DirectoryViewState,
+#[derive(Debug)]
+pub struct WorkspaceRuntime {
+    pub workspace_id: WorkspaceId,
+    pub pane_sessions: HashMap<PaneId, PaneRuntime>,
+    pub opened_at: DateTime<Utc>,
 }
 ```
 
-Although the first UI has two panes, do not hard-code exactly two panes into the engine.
+```ts
+export interface WorkspaceViewState {
+  focusedPaneId: PaneId;
+  paneViews: Record<PaneId, PaneViewState>;
+  openDialog?: DialogState;
+  dragState?: DragState;
+}
+```
+
+### 5.3.4 Pane and tab definitions
+
+A pane is a navigational region that owns one or more tabs. Although version 1 shows two panes, the engine must support an arbitrary layout tree so later versions can support one, three or four panes, comparison panes or preview regions.
+
+```rust
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PaneDefinition {
+    pub id: PaneId,
+    pub title: Option<String>,
+    pub tabs: Vec<TabDefinition>,
+    pub active_tab_id: TabId,
+    pub default_view: DirectoryViewConfiguration,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TabDefinition {
+    pub id: TabId,
+    pub title_override: Option<String>,
+    pub history: NavigationHistory,
+    pub view: DirectoryViewConfiguration,
+    pub pinned: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NavigationHistory {
+    pub back: Vec<Location>,
+    pub current: Location,
+    pub forward: Vec<Location>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DirectoryViewConfiguration {
+    pub sort: Vec<SortDescriptor>,
+    pub columns: Vec<ColumnConfiguration>,
+    pub show_hidden: bool,
+    pub folders_first: bool,
+    pub quick_filter: Option<PersistedFilter>,
+}
+```
+
+A pane must always contain at least one tab in the MVP. Closing its final tab should create a replacement tab at the user's home directory rather than leaving an invalid empty pane.
+
+Navigation rules:
+
+- normal navigation pushes the previous location onto `back` and clears `forward`;
+- back navigation moves the previous current location to `forward`;
+- forward navigation moves the previous current location to `back`;
+- refresh does not create a history entry;
+- sort, filter and column changes do not affect navigation history;
+- consecutive duplicate locations are removed;
+- history is bounded, for example to 100 locations per tab;
+- inaccessible locations remain representable and produce a recoverable error when opened.
+
+### 5.3.5 Layout tree
+
+Do not encode the layout using fixed `leftPane` and `rightPane` fields. Use a recursive layout tree:
+
+```rust
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "camelCase")]
+pub enum WorkspaceLayout {
+    Pane {
+        pane_id: PaneId,
+    },
+    Split {
+        axis: SplitAxis,
+        ratio: f32,
+        first: Box<WorkspaceLayout>,
+        second: Box<WorkspaceLayout>,
+    },
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum SplitAxis {
+    Horizontal,
+    Vertical,
+}
+```
+
+Use this convention consistently:
+
+- `horizontal`: left/right children separated by a vertical divider;
+- `vertical`: top/bottom children separated by a horizontal divider.
+
+Example initial layout:
+
+```json
+{
+  "type": "split",
+  "axis": "horizontal",
+  "ratio": 0.5,
+  "first": { "type": "pane", "paneId": "pane-left" },
+  "second": { "type": "pane", "paneId": "pane-right" }
+}
+```
+
+Clamp ratios to a safe range such as `0.1..=0.9`. Each visible pane must appear exactly once in the layout tree.
+
+### 5.3.6 Workspace invariants
+
+Validate these invariants in Rust before accepting or persisting changes:
+
+1. Workspace, pane and tab IDs are unique in their scopes.
+2. A workspace contains at least one pane.
+3. Every pane contains at least one tab.
+4. `active_pane_id` references an existing pane.
+5. Every `active_tab_id` references a tab in its pane.
+6. Every pane referenced in the layout exists.
+7. Every visible pane appears exactly once in the layout.
+8. Split ratios are finite and inside the allowed range.
+9. Every tab has a valid provider-neutral current location.
+10. Navigation history stays within its configured bound.
+11. Column IDs are unique within a tab view.
+12. Unknown plugin columns are preserved but marked unavailable.
+13. The workspace schema is supported or can be migrated.
+14. The revision increases monotonically.
+
+Return structured validation errors. Do not silently discard unknown plugin configuration or repair arbitrary corruption without reporting it.
+
+### 5.3.7 Workspace lifecycle
+
+#### Startup
+
+1. Load workspace summaries and the last-active workspace ID.
+2. Select an explicitly requested workspace, otherwise the last-active workspace.
+3. If none exists, create a default workspace.
+4. Validate and migrate the definition.
+5. Create the runtime object.
+6. Open active tabs first.
+7. Load inactive tabs lazily.
+8. Emit `workspace.opened`.
+9. Emit directory snapshots independently as locations load.
+
+Do not block the application shell until all tabs are loaded.
+
+#### Default workspace
+
+Create:
+
+- one workspace named `Default`;
+- two panes in a 50/50 split;
+- one tab in each pane;
+- the user's home directory as the initial location, or a configured secondary location for the right pane.
+
+Resolve the home directory through a platform adapter. Do not hard-code operating-system paths.
+
+#### Switching workspaces
+
+1. Flush pending debounced workspace updates.
+2. Keep running file operations alive in the operation service.
+3. close old directory subscriptions;
+4. open the selected workspace;
+5. load active tabs first;
+6. emit close/open events.
+
+Switching workspaces must not cancel copy, move or delete jobs.
+
+#### Shutdown
+
+Persist dirty workspace definitions and the last-active workspace ID, stop directory watchers, and leave operation recovery to the operation service. Do not persist transient dialogs, hover state or incomplete rename text.
+
+### 5.3.8 Persistence repository
+
+Use a dedicated repository abstraction:
+
+```rust
+#[async_trait]
+pub trait WorkspaceRepository: Send + Sync {
+    async fn list(&self) -> Result<Vec<WorkspaceSummary>, WorkspaceError>;
+
+    async fn load(
+        &self,
+        id: WorkspaceId,
+    ) -> Result<Option<WorkspaceDefinition>, WorkspaceError>;
+
+    async fn save(
+        &self,
+        workspace: &WorkspaceDefinition,
+        expected_revision: Option<u64>,
+    ) -> Result<WorkspaceDefinition, WorkspaceError>;
+
+    async fn delete(
+        &self,
+        id: WorkspaceId,
+        expected_revision: Option<u64>,
+    ) -> Result<(), WorkspaceError>;
+}
+```
+
+For the MVP, use SQLite when it is already used for settings and operation history; otherwise versioned JSON files are acceptable.
+
+Persistence requirements:
+
+- atomic saves;
+- schema versioning and migrations;
+- recovery from malformed data;
+- optimistic revision checks;
+- no synchronous storage writes from frontend event handlers;
+- debounced saving for divider and column resizing;
+- prompt saving for structural changes such as adding or closing tabs.
+
+A debounce interval around 250–750 ms is appropriate for rapidly changing layout preferences.
+
+### 5.3.9 Semantic commands
+
+Do not allow the frontend to replace arbitrary workspace JSON. Use focused commands:
+
+```rust
+pub enum WorkspaceCommand {
+    RenameWorkspace {
+        workspace_id: WorkspaceId,
+        name: String,
+        expected_revision: u64,
+    },
+    SetActivePane {
+        workspace_id: WorkspaceId,
+        pane_id: PaneId,
+        expected_revision: u64,
+    },
+    AddTab {
+        workspace_id: WorkspaceId,
+        pane_id: PaneId,
+        location: Location,
+        expected_revision: u64,
+    },
+    CloseTab {
+        workspace_id: WorkspaceId,
+        pane_id: PaneId,
+        tab_id: TabId,
+        expected_revision: u64,
+    },
+    ActivateTab {
+        workspace_id: WorkspaceId,
+        pane_id: PaneId,
+        tab_id: TabId,
+        expected_revision: u64,
+    },
+    NavigateTab {
+        workspace_id: WorkspaceId,
+        pane_id: PaneId,
+        tab_id: TabId,
+        location: Location,
+        navigation_mode: NavigationMode,
+        expected_revision: u64,
+    },
+    UpdateView {
+        workspace_id: WorkspaceId,
+        pane_id: PaneId,
+        tab_id: TabId,
+        patch: DirectoryViewPatch,
+        expected_revision: u64,
+    },
+    UpdateLayout {
+        workspace_id: WorkspaceId,
+        layout: WorkspaceLayout,
+        expected_revision: u64,
+    },
+}
+```
+
+For each command, the service should:
+
+1. verify the expected revision;
+2. validate the command;
+3. apply the mutation;
+4. increment the workspace revision;
+5. persist the definition;
+6. update runtime sessions if required;
+7. emit a focused event;
+8. return the changed projection or mutation result.
+
+### 5.3.10 Revision conflicts
+
+Every persisted workspace has a monotonically increasing `revision`. Frontend mutations include the last known revision.
+
+Return a structured conflict when stale:
+
+```json
+{
+  "code": "workspaceRevisionConflict",
+  "message": "The workspace changed after this view was loaded.",
+  "details": {
+    "workspaceId": "...",
+    "expectedRevision": 14,
+    "actualRevision": 16
+  }
+}
+```
+
+This supports future multiple windows, duplicate browser tabs, reconnecting clients and plugin-triggered mutations. The frontend should reload the latest projection and only retry changes that are safely idempotent.
+
+### 5.3.11 Events
+
+Emit focused events:
+
+```text
+workspace.created
+workspace.renamed
+workspace.opened
+workspace.closed
+workspace.deleted
+workspace.layoutChanged
+workspace.activePaneChanged
+workspace.tabAdded
+workspace.tabClosed
+workspace.tabActivated
+workspace.tabNavigated
+workspace.tabViewChanged
+```
+
+Each event should include:
+
+- event ID;
+- timestamp;
+- workspace ID;
+- workspace revision;
+- mutation-specific payload.
+
+Workspace events describe configuration changes. Directory contents must continue to arrive through separate snapshot and delta events.
+
+### 5.3.12 REST and Tauri surface
+
+Recommended initial REST endpoints:
+
+```text
+GET    /api/v1/workspaces
+POST   /api/v1/workspaces
+GET    /api/v1/workspaces/{workspaceId}
+PATCH  /api/v1/workspaces/{workspaceId}
+DELETE /api/v1/workspaces/{workspaceId}
+POST   /api/v1/workspaces/{workspaceId}/open
+POST   /api/v1/workspaces/{workspaceId}/commands
+```
+
+The command endpoint may accept a tagged `WorkspaceCommandDto`. Explicit endpoints are also acceptable when they produce a clearer generated OpenAPI client, but the Rust service should remain command-oriented.
+
+Tauri commands must call the same `WorkspaceService` methods.
+
+### 5.3.13 Frontend projection
+
+Keep a normalized frontend projection:
+
+```ts
+export interface WorkspaceProjection {
+  id: WorkspaceId;
+  name: string;
+  revision: number;
+  layout: WorkspaceLayout;
+  paneOrder: PaneId[];
+  panesById: Record<PaneId, PaneProjection>;
+  activePaneId: PaneId;
+  operationCentre: OperationCentrePreferences;
+}
+
+export interface PaneProjection {
+  id: PaneId;
+  tabOrder: TabId[];
+  tabsById: Record<TabId, TabProjection>;
+  activeTabId: TabId;
+}
+
+export interface TabProjection {
+  id: TabId;
+  title: string;
+  location: Location;
+  canNavigateBack: boolean;
+  canNavigateForward: boolean;
+  view: DirectoryViewConfiguration;
+}
+```
+
+Store directory snapshots separately by tab or directory-session ID. A small workspace mutation must not replace or copy large entry arrays.
+
+For the MVP:
+
+- persist active pane and active tabs;
+- do not persist row selection;
+- keep selection and cursor per tab in frontend memory;
+- do not persist hover, drag state, context menus or incomplete rename text;
+- consider persisted scroll position only as a later session-restoration feature.
+
+### 5.3.14 Configuration scope
+
+Use clear scopes:
+
+- global settings: theme, default row height, default shortcuts and operation concurrency;
+- workspace settings: layout, open tabs, preview visibility and operation-centre visibility;
+- pane settings: pane defaults and optional title;
+- tab settings: location, history, sort, columns and quick filter;
+- favourites: global by default, with workspace-specific groups as a later feature.
+
+Use a documented inheritance chain:
+
+```text
+application default
+→ user global setting
+→ workspace override
+→ pane default
+→ tab override
+```
+
+Do not duplicate the same preference at multiple scopes without this precedence rule.
+
+### 5.3.15 Example persisted workspace
+
+```json
+{
+  "schemaVersion": 1,
+  "id": "985d4d6e-c37b-4135-90a0-ce0afe165fd9",
+  "name": "Development",
+  "revision": 12,
+  "layout": {
+    "type": "split",
+    "axis": "horizontal",
+    "ratio": 0.52,
+    "first": {
+      "type": "pane",
+      "paneId": "11e67e3e-813c-44c5-9426-53be347ad5da"
+    },
+    "second": {
+      "type": "pane",
+      "paneId": "479ec0f0-0ea6-4a34-b67e-f654373596af"
+    }
+  },
+  "panes": [
+    {
+      "id": "11e67e3e-813c-44c5-9426-53be347ad5da",
+      "title": null,
+      "activeTabId": "97512c58-9cf8-4f17-a931-94f0be87a1da",
+      "tabs": [
+        {
+          "id": "97512c58-9cf8-4f17-a931-94f0be87a1da",
+          "titleOverride": null,
+          "history": {
+            "back": [],
+            "current": {
+              "providerId": "local",
+              "uri": "file:///Users/erik/dev"
+            },
+            "forward": []
+          },
+          "view": {
+            "sort": [{ "columnId": "core.name", "direction": "ascending" }],
+            "columns": [
+              { "columnId": "core.name", "width": 360, "visible": true },
+              { "columnId": "core.size", "width": 100, "visible": true },
+              { "columnId": "core.modified", "width": 170, "visible": true }
+            ],
+            "showHidden": true,
+            "foldersFirst": true,
+            "quickFilter": null
+          },
+          "pinned": false
+        }
+      ]
+    },
+    {
+      "id": "479ec0f0-0ea6-4a34-b67e-f654373596af",
+      "title": null,
+      "activeTabId": "5e8be42f-d6ef-45fb-89ea-d77122076bc3",
+      "tabs": [
+        {
+          "id": "5e8be42f-d6ef-45fb-89ea-d77122076bc3",
+          "titleOverride": null,
+          "history": {
+            "back": [],
+            "current": {
+              "providerId": "local",
+              "uri": "file:///Users/erik/Downloads"
+            },
+            "forward": []
+          },
+          "view": {
+            "sort": [{ "columnId": "core.modified", "direction": "descending" }],
+            "columns": [
+              { "columnId": "core.name", "width": 340, "visible": true },
+              { "columnId": "core.size", "width": 100, "visible": true },
+              { "columnId": "core.modified", "width": 170, "visible": true }
+            ],
+            "showHidden": false,
+            "foldersFirst": true,
+            "quickFilter": null
+          },
+          "pinned": false
+        }
+      ]
+    }
+  ],
+  "activePaneId": "11e67e3e-813c-44c5-9426-53be347ad5da",
+  "operationCentre": {
+    "visible": true,
+    "height": 180
+  },
+  "createdAt": "2026-07-29T18:00:00+02:00",
+  "updatedAt": "2026-07-29T18:40:00+02:00"
+}
+```
+
+### 5.3.16 Implementation sequence
+
+Implement workspace support in this order:
+
+1. IDs, definitions, validation and schema version.
+2. In-memory repository.
+3. Default-workspace creation.
+4. List, create, open, rename and delete.
+5. Active pane and active tab.
+6. Tab creation, closing and reordering.
+7. Navigation and bounded history.
+8. Layout-ratio updates.
+9. Persistent repository.
+10. Revisions and conflict handling.
+11. SSE and Tauri workspace events.
+12. Migration and recovery tests.
+13. Lazy restoration of inactive tabs.
+14. Workspace duplication and import/export later.
+
+### 5.3.17 Acceptance criteria
+
+Workspace support is complete for the MVP when:
+
+1. A fresh installation creates a valid default two-pane workspace.
+2. Restarting restores layout, active pane, tabs, locations, history, sort and columns.
+3. Directory entries are reloaded rather than restored from serialized snapshots.
+4. Switching workspaces does not cancel running file operations.
+5. Missing or inaccessible locations show a recoverable tab error.
+6. Malformed workspace data does not crash startup.
+7. Unknown plugin columns are retained and become active again when the plugin returns.
+8. Rapid splitter and column changes do not cause excessive writes.
+9. Stale mutations return a workspace revision conflict.
+10. Browser/Axum and Tauri behaviour is equivalent.
+11. Unit tests cover every invariant.
+12. Integration tests cover save, restart, restore and migration.
 
 ## 5.4 Directory snapshots
 
