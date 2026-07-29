@@ -462,6 +462,12 @@ dependencies = [
 [[package]]
 name = "fm-events"
 version = "0.1.0"
+dependencies = [
+ "chrono",
+ "fm-domain",
+ "serde",
+ "serde_json",
+]
 
 [[package]]
 name = "fm-metadata"

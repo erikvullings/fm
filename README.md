@@ -15,6 +15,10 @@ For deterministic frontend development without Axum or Tauri, run `pnpm dev:mock
 adapter provides nested and special-case directory fixtures, configurable loading/failure states,
 scriptable backend events, and lazily generated directories of up to 1,000,000 entries.
 
+Backend-to-frontend updates use one typed event contract for both browser SSE and Tauri channels.
+The frontend event-stream abstraction exposes connection status and listener registration while
+ignoring unknown future event types for forward compatibility.
+
 ## CI
 
 `.github/workflows/ci.yml` runs on every push to `main` and every pull request:

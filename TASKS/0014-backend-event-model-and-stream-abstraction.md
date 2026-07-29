@@ -1,9 +1,9 @@
 # 0014 Typed backend event model and event-stream abstraction
 
-Status: open
+Status: done
 Priority: high
 Owner: unassigned
-Agent: unassigned
+Agent: codex
 Area: frontend
 Depends on: 0011
 
@@ -32,4 +32,21 @@ Tauri channels (0034) exist.
 - Do not use events for request/response semantics (§10).
 
 ## Agent Notes
-- Not started.
+- 2026-07-29 codex: Implemented the typed backend event contract and transport-neutral frontend
+  stream abstraction.
+  - `fm-events` now defines the generic camelCase `EventEnvelope`, all 12 named
+    `BackendEventPayload` variants, and strongly typed manual wire projections for workspace,
+    directory, operation, plugin, conflict, and notification data. These projections mirror the
+    OpenAPI/frontend models without depending on the peer-layer `fm-transport-dto` crate.
+  - `frontend/src/models/events.ts` now exposes the matching discriminated union.
+    `frontend/src/api/events/event-stream.ts` defines `EventStream`, its four-state status
+    observable, a listener registry, and tolerant parsing. Unknown future types are ignored and
+    logged once in development.
+  - Added a checked-in Rust serialization fixture consumed directly by Vitest.
+  - Verified 3 task-specific Rust tests with `cargo test -p fm-events` and 4 task-specific Vitest
+    tests with `vitest run src/api/events/event-stream.test.ts`; `pnpm test` passes the complete
+    workspace suite, `pnpm --dir frontend run typecheck` is clean, Rust fmt/clippy are clean, and
+    scoped Biome checks are clean.
+  - Known unrelated lint baseline: root `pnpm run lint` still reports pre-existing formatting in
+    `scripts/architecture-docs.test.mjs` and `scripts/ci-workflow.test.mjs`, plus an informational
+    suggestion in `frontend/vite.config.ts`; this task leaves those files untouched.
