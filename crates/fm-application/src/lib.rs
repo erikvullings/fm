@@ -4,3 +4,9 @@
 //! navigate, start an operation, invoke an action - rather than raw filesystem
 //! primitives. Both the Axum host and the Tauri host are thin adapters over
 //! this crate, which is what guarantees the two behave identically.
+
+mod error;
+mod service;
+
+pub use error::ApplicationError;
+pub use service::FileManagerService;
