@@ -30,6 +30,9 @@ step 1 requires architecture documentation as part of the bootstrap.
 - `docs/plugin-api/` and `docs/screenshots/` directories exist with a placeholder README.
 
 ## Implementation Notes
+- The crate layering is already enforced in code by `crates/fm-test-support/src/architecture.rs`
+  (task 0001). `docs/architecture/overview.md` should describe and link to it rather than restating
+  the layer map, so the prose and the test cannot drift apart.
 - ADRs are short (roughly one page). They record intent, not implementation detail.
 - ADR 7 (frontend state) should record the decision to use a small explicit state model
   (Meiosis-style patch updates) rather than a generic state framework (§13, §35).

@@ -1,0 +1,44 @@
+[workspace]
+resolver = "3"
+members = ["crates/*", "apps/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.97"
+license = "MIT OR Apache-2.0"
+
+[workspace.dependencies]
+
+# External dependencies. Versions are coordinated here; member crates opt in
+# with `dependency.workspace = true`.
+async-trait = "0.1.91"
+axum = "0.8.9"
+bitflags = "2.13.1"
+chrono = { version = "0.4.45", features = ["serde"] }
+clap = { version = "4.6.4", features = ["derive"] }
+futures = "0.3.31"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+thiserror = "2.0.19"
+tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros"] }
+tokio-util = "0.7.19"
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
+utoipa = { version = "5.5.0", features = ["chrono", "uuid"] }
+uuid = { version = "1.24.0", features = ["serde", "v4"] }
+
+# `anyhow` is reserved for executables in `apps/`; libraries use `thiserror`.
+# This is enforced by the architecture fitness test in `fm-test-support`.
+anyhow = "1.0.104"
+
+[workspace.lints.rust]
+missing_docs = "warn"
+unsafe_code = "deny"
+unreachable_pub = "warn"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+dbg_macro = "warn"
+todo = "warn"
+unwrap_used = "warn"

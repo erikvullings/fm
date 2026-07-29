@@ -1,0 +1,12 @@
+[package]
+name = "fm-server"
+description = "Axum host exposing the file manager over REST and Server-Sent Events."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+
+[lints]
+workspace = true

@@ -1,0 +1,12 @@
+[package]
+name = "fm-operations"
+description = "Operation engine: jobs, scheduling, progress and conflict handling."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+
+[lints]
+workspace = true

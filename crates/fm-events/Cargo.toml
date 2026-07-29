@@ -1,0 +1,12 @@
+[package]
+name = "fm-events"
+description = "Event envelope, payload types and the in-process event bus."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+
+[lints]
+workspace = true

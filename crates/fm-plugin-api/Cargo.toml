@@ -1,0 +1,12 @@
+[package]
+name = "fm-plugin-api"
+description = "Stable, versioned contract exposed to plugins."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+
+[lints]
+workspace = true

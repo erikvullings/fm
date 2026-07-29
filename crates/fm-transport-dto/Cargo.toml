@@ -1,0 +1,12 @@
+[package]
+name = "fm-transport-dto"
+description = "JSON DTOs and OpenAPI schemas shared by the Axum and Tauri hosts."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+
+[lints]
+workspace = true
