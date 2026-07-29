@@ -2,12 +2,13 @@ import m from 'mithril';
 import { ThemeManager } from 'mithril-materialized';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { createFileManagerClient } from '../api/client/create-client';
 import { AppShell } from './app-shell';
 
 let root: HTMLElement;
 
 function mountShell(runtime: 'http' | 'tauri' | 'mock' = 'http'): void {
-  m.mount(root, { view: () => m(AppShell, { runtime }) });
+  m.mount(root, { view: () => m(AppShell, { runtime, client: createFileManagerClient(runtime) }) });
 }
 
 /**
@@ -96,7 +97,9 @@ describe('AppShell', () => {
     // A fresh mount must not inherit the previous instance's closure state.
     const second = document.createElement('div');
     document.body.appendChild(second);
-    m.mount(second, { view: () => m(AppShell, { runtime: 'http' }) });
+    m.mount(second, {
+      view: () => m(AppShell, { runtime: 'http', client: createFileManagerClient('http') }),
+    });
 
     expect(themeButtonIn(second, 'Auto').classList.contains('active')).toBe(true);
     expect(themeButtonIn(second, 'Dark').classList.contains('active')).toBe(false);

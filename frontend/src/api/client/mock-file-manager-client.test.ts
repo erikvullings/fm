@@ -1,0 +1,190 @@
+import { describe, expect, it, vi } from 'vitest';
+
+import type { BackendEvent, DirectoryDelta } from '../../models';
+import { MockClientError, MockFileManagerClient } from './mock-file-manager-client';
+
+const ROOT_REQUEST = {
+  paneId: 'left',
+  requestId: 'request-1',
+  location: { providerId: 'file', uri: 'mock:///' },
+} as const;
+
+describe('MockFileManagerClient directories', () => {
+  it('lists deterministic nested and special-case fixture entries', async () => {
+    const client = new MockFileManagerClient();
+
+    const root = await client.listDirectory(ROOT_REQUEST);
+    const nested = await client.listDirectory({
+      ...ROOT_REQUEST,
+      requestId: 'request-2',
+      location: { providerId: 'file', uri: 'mock:///Documents' },
+    });
+
+    expect(root.entries.map(({ name, kind, hidden }) => ({ name, kind, hidden }))).toEqual([
+      { name: 'Documents', kind: 'directory', hidden: false },
+      { name: 'Empty', kind: 'directory', hidden: false },
+      { name: 'Unreadable', kind: 'directory', hidden: false },
+      { name: '.env', kind: 'file', hidden: true },
+      { name: '日本語.txt', kind: 'file', hidden: false },
+      { name: 'documents-link', kind: 'symlink', hidden: false },
+    ]);
+    expect(nested.entries.map((entry) => entry.name)).toEqual(['Projects', 'report.pdf']);
+  });
+
+  it('pages a million-entry directory without returning every entry', async () => {
+    const client = new MockFileManagerClient({ pageSize: 25, seed: 99 });
+
+    const first = await client.listDirectory({
+      ...ROOT_REQUEST,
+      location: { providerId: 'file', uri: 'mock:///large/1000000' },
+    });
+    const nextToken = first.continuationToken;
+    expect(nextToken).toBe('25');
+    if (nextToken === undefined) {
+      throw new Error('Expected the first large-directory page to have a continuation token');
+    }
+    const second = await client.listDirectory({
+      ...ROOT_REQUEST,
+      continuationToken: nextToken,
+      location: { providerId: 'file', uri: 'mock:///large/1000000' },
+    });
+
+    expect(first.entries).toHaveLength(25);
+    expect(first.totalKnownEntries).toBe(1_000_000);
+    expect(first.hasMore).toBe(true);
+    expect(second.entries[0]?.id).not.toBe(first.entries[0]?.id);
+  });
+
+  it('returns error and loading snapshots for configured directory states', async () => {
+    const client = new MockFileManagerClient({
+      loadingLocations: ['mock:///Documents'],
+    });
+
+    const unreadable = await client.listDirectory({
+      ...ROOT_REQUEST,
+      location: { providerId: 'file', uri: 'mock:///Unreadable' },
+    });
+    const loading = await client.navigatePane({
+      ...ROOT_REQUEST,
+      location: { providerId: 'file', uri: 'mock:///Documents' },
+    });
+
+    expect(unreadable.loadingState).toEqual({
+      type: 'error',
+      message: 'Directory is not readable',
+    });
+    expect(loading.loadingState).toEqual({ type: 'loading' });
+  });
+});
+
+describe('MockFileManagerClient API', () => {
+  it('provides deterministic capabilities, workspace, metadata, actions, and plugins', async () => {
+    const client = new MockFileManagerClient();
+
+    const capabilities = await client.getRuntimeCapabilities();
+    const workspace = await client.getWorkspace('mock-workspace');
+    const metadata = await client.getEntryMetadata({
+      entryId: 'mock:///日本語.txt',
+      location: { providerId: 'file', uri: 'mock:///%E6%97%A5%E6%9C%AC%E8%AA%9E.txt' },
+    });
+    const actions = await client.listActions();
+    const plugins = await client.listPlugins();
+    const actionResult = await client.invokeAction({ actionId: 'core.refresh' });
+
+    expect(capabilities.runtime).toBe('mock');
+    expect(workspace.id).toBe('mock-workspace');
+    expect(metadata.entryId).toBe('mock:///日本語.txt');
+    expect(actions.map((action) => action.id)).toEqual(['core.refresh']);
+    expect(plugins.map((plugin) => plugin.id)).toEqual(['mock.archive']);
+    expect(actionResult).toEqual({ actionId: 'core.refresh', invoked: true });
+  });
+
+  it('tracks operation lifecycle calls in memory', async () => {
+    const client = new MockFileManagerClient({ seed: 22 });
+    const operation = await client.startOperation({
+      kind: 'copy',
+      sources: [
+        {
+          id: 'source-1',
+          location: { providerId: 'file', uri: 'mock:///Documents/report.pdf' },
+        },
+      ],
+      destination: { providerId: 'file', uri: 'mock:///Empty' },
+      conflictPolicy: 'ask',
+    });
+
+    await client.resolveConflict({
+      operationId: operation.id,
+      resolution: 'skip',
+      applyToAll: false,
+    });
+    await client.cancelOperation(operation.id);
+
+    expect(client.getOperation(operation.id)).toMatchObject({
+      state: 'cancelled',
+      conflictPolicy: 'skip',
+    });
+  });
+});
+
+describe('MockFileManagerClient controls', () => {
+  it('delivers scripted directory-delta and operation-progress events on demand', async () => {
+    const client = new MockFileManagerClient();
+    const listener = vi.fn();
+    const unsubscribe = await client.subscribe(listener);
+    const events: BackendEvent[] = [
+      {
+        eventId: 1,
+        timestamp: '2026-01-01T00:00:00.000Z',
+        payload: {
+          type: 'directory.delta',
+          delta: {
+            type: 'entriesRemoved',
+            revision: 2,
+            entryIds: ['entry-1'],
+          } satisfies DirectoryDelta,
+        },
+      },
+      {
+        eventId: 2,
+        timestamp: '2026-01-01T00:00:01.000Z',
+        payload: {
+          type: 'operation.progress',
+          operationId: 'operation-1',
+          progress: { completedItems: 1, completedBytes: 512 },
+        },
+      },
+    ];
+
+    client.scriptEvents(events);
+    expect(client.emitNextEvent()).toBe(true);
+    expect(client.emitNextEvent()).toBe(true);
+    expect(client.emitNextEvent()).toBe(false);
+    unsubscribe();
+    client.emit(events[0] as BackendEvent);
+
+    expect(listener.mock.calls.map((call) => (call[0] as BackendEvent).eventId)).toEqual([1, 2]);
+  });
+
+  it('applies artificial latency and supports aborting during the delay', async () => {
+    vi.useFakeTimers();
+    const client = new MockFileManagerClient({ latencyMs: 500 });
+    const controller = new AbortController();
+    const result = client.getRuntimeCapabilities(controller.signal);
+    const rejection = expect(result).rejects.toMatchObject({ name: 'AbortError' });
+    controller.abort();
+    await vi.runAllTimersAsync();
+
+    await rejection;
+    vi.useRealTimers();
+  });
+
+  it('injects configured failures by method', async () => {
+    const failure = new MockClientError('offline', 'Mock backend is offline');
+    const client = new MockFileManagerClient({
+      failures: { listDirectory: failure },
+    });
+
+    await expect(client.listDirectory(ROOT_REQUEST)).rejects.toBe(failure);
+  });
+});

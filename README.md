@@ -11,6 +11,10 @@ specification and [TASKS/README.md](TASKS/README.md) for the implementation task
 See [AGENTS.md](AGENTS.md) for repository conventions, and run `pnpm run <script>` at the repo
 root (`dev`, `test`, `lint`, `build`, ...) — see the root `package.json` for the full list.
 
+For deterministic frontend development without Axum or Tauri, run `pnpm dev:mock`. The mock
+adapter provides nested and special-case directory fixtures, configurable loading/failure states,
+scriptable backend events, and lazily generated directories of up to 1,000,000 entries.
+
 ## CI
 
 `.github/workflows/ci.yml` runs on every push to `main` and every pull request:

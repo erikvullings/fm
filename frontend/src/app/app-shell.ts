@@ -1,12 +1,15 @@
 import m, { type FactoryComponent } from 'mithril';
 import { type Theme, ThemeManager, ThemeSwitcher } from 'mithril-materialized';
 
+import type { FileManagerClient } from '../api/client/file-manager-client';
 import type { RuntimeKind } from '../utilities/runtime';
 
 /** Attributes of the application shell. */
 export interface AppShellAttrs {
   /** Transport this build talks to, resolved from `VITE_RUNTIME`. */
   runtime: RuntimeKind;
+  /** Transport-neutral client selected once by the application bootstrap. */
+  client: FileManagerClient;
 }
 
 const DEFAULT_THEME: Theme = 'auto';
