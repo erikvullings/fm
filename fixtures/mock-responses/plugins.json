@@ -1,0 +1,8 @@
+[
+  {
+    "id": "mock.archive",
+    "name": "Mock Archive",
+    "version": "1.0.0",
+    "enabled": true
+  }
+]

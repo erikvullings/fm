@@ -1,0 +1,10 @@
+[
+  {
+    "id": "core.refresh",
+    "title": "Refresh",
+    "category": "navigation",
+    "defaultShortcuts": [{ "key": "r", "ctrl": true }],
+    "contextRequirements": {},
+    "source": { "kind": "core" }
+  }
+]

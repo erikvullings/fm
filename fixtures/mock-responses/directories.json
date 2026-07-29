@@ -1,0 +1,19 @@
+{
+  "mock:///": [
+    { "name": "Documents", "kind": "directory" },
+    { "name": "Empty", "kind": "directory" },
+    { "name": "Unreadable", "kind": "directory", "readable": false },
+    { "name": ".env", "kind": "file", "size": 42, "hidden": true },
+    { "name": "日本語.txt", "kind": "file", "size": 128 },
+    { "name": "documents-link", "kind": "symlink" }
+  ],
+  "mock:///Documents": [
+    { "name": "Projects", "kind": "directory" },
+    { "name": "report.pdf", "kind": "file", "size": 8192 }
+  ],
+  "mock:///Documents/Projects": [
+    { "name": "file-manager.md", "kind": "file", "size": 2048 }
+  ],
+  "mock:///Empty": [],
+  "mock:///Unreadable": []
+}
