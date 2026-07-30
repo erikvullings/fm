@@ -1,4 +1,5 @@
 import 'mithril-materialized/index.css';
+import './themes/theme.css';
 
 import m from 'mithril';
 

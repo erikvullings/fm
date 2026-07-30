@@ -37,6 +37,7 @@ beforeEach(() => {
 afterEach(() => {
   m.mount(root, null);
   root.remove();
+  document.documentElement.removeAttribute('data-theme');
 });
 
 describe('AppShell', () => {
@@ -86,6 +87,23 @@ describe('AppShell', () => {
     expect(setTheme).toHaveBeenCalledWith('dark');
     expect(themeButton('Dark').classList.contains('active')).toBe(true);
     expect(themeButton('Light').classList.contains('active')).toBe(false);
+  });
+
+  it('switches light, dark and follow-system themes without remounting', () => {
+    mountShell();
+
+    themeButton('Light').click();
+    m.redraw.sync();
+    expect(document.documentElement.dataset.theme).toBe('light');
+
+    themeButton('Dark').click();
+    m.redraw.sync();
+    expect(document.documentElement.dataset.theme).toBe('dark');
+
+    themeButton('Auto').click();
+    m.redraw.sync();
+    expect(document.documentElement.hasAttribute('data-theme')).toBe(false);
+    expect(root.querySelector('.fm-app-shell')).not.toBeNull();
   });
 
   it('keeps per-instance theme state in the factory closure', () => {

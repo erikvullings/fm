@@ -1,6 +1,6 @@
 # 0022 CSS variable themes: light, dark and follow-system
 
-Status: open
+Status: done
 Priority: medium
 Owner: unassigned
 Agent: unassigned
@@ -33,4 +33,17 @@ compact, keyboard-first, information-dense and consistent across macOS and Windo
   marker as well.
 
 ## Agent Notes
-- Not started.
+- 2026-07-30 codex: Implemented the complete `--fm-*` token palette in
+  `frontend/src/themes/theme.css`, with explicit light/dark themes and attribute-free follow-system
+  mode compatible with mithril-materialized's existing `ThemeManager`. Materialized `--mm-*`
+  variables derive from the same tokens. Added active/inactive selection styling, distinct
+  non-colour selection/cursor markers, and a reduced-motion override.
+- 2026-07-30 codex: Added 8 task-specific tests: 6 stylesheet/contrast/marker tests and 1
+  source-colour guard in the two new theme test files, plus 1 runtime-switching AppShell test.
+  Verified those tests explicitly; the full frontend suite passes (86 tests), `pnpm test` passes,
+  frontend typecheck and production build pass, and Biome reports no warnings or errors in the
+  touched frontend files. Documented the runtime contract and measured WCAG contrast ratios in
+  `docs/architecture/theming.md`.
+- 2026-07-30 codex: Repository-wide `pnpm run lint` remains blocked by pre-existing Biome findings
+  in `frontend/vite.config.ts`, `scripts/architecture-docs.test.mjs`, and
+  `scripts/ci-workflow.test.mjs`; these files were outside this task and were not changed.
