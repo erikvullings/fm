@@ -1,6 +1,6 @@
 # 0016 VFS provider trait, capabilities and errors
 
-Status: open
+Status: done
 Priority: high
 Owner: unassigned
 Agent: unassigned
@@ -35,4 +35,26 @@ without redesigning the core.
   whole files.
 
 ## Agent Notes
-- Not started.
+- 2026-07-30 codex: Implemented the documented `fm-vfs` boundary as focused modules for the async
+  `FileSystemProvider` trait, all fourteen §6 `ProviderCapabilities` flags, provider-neutral request
+  and page types, boxed `AsyncRead`/`AsyncWrite` streams, a `DirectoryDelta` change stream, typed
+  `VfsError` values with stable camel-case codes, and `ProviderRegistry` dispatch by
+  `Location.provider_id`. Every async provider operation accepts a `CancellationToken`; safe
+  defaults prevent recursive/trash removal and overwrite unless explicitly requested.
+- 2026-07-30 codex: Followed TDD through the public crate API: first added the integration contract
+  tests and confirmed they failed with unresolved `fm-vfs` imports, then implemented the minimum
+  contract and refactored it into capability, error, provider, registry and supporting-type
+  modules. Five task-specific tests cover the exact capability bits, pre-I/O rejection of an
+  unsupported capability, registry success/unknown-provider failure, and every required stable
+  error code.
+- 2026-07-30 codex: Verified `cargo test -p fm-vfs` (5 task-specific tests), `cargo test
+  --workspace`, and `pnpm test` (full Rust, 70 frontend and 28 script tests) all pass.
+  `cargo fmt --all --check` and `cargo clippy --workspace --all-targets -- -D warnings` are clean.
+  `pnpm run lint` reaches and passes the Rust checks but remains non-zero on pre-existing,
+  task-unrelated Biome findings in `frontend/vite.config.ts`,
+  `scripts/architecture-docs.test.mjs`, and `scripts/ci-workflow.test.mjs`; none was changed.
+  `CLAUDE.md` is absent from this repository, so there was no scoped file to update.
+- 2026-07-30 codex: Confirmed `fm-vfs` depends only on `fm-domain` and general-purpose async/error
+  crates; the workspace architecture fitness test passes and the crate has no Axum, Tauri or
+  `fm-application` dependency. Known gap: none within task 0016; concrete providers remain owned by
+  their planned tasks.

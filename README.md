@@ -19,6 +19,10 @@ Backend-to-frontend updates use one typed event contract for both browser SSE an
 The frontend event-stream abstraction exposes connection status and listener registration while
 ignoring unknown future event types for forward compatibility.
 
+Filesystem access is isolated behind the `fm-vfs` provider contract. Providers advertise explicit
+capabilities, expose cancellable asynchronous operations and streaming reads/writes, and are
+resolved from provider-neutral locations through a typed registry.
+
 ## CI
 
 `.github/workflows/ci.yml` runs on every push to `main` and every pull request:

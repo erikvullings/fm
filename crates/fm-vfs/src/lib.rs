@@ -4,3 +4,18 @@
 //! results and remote filesystems to be added later without redesigning the
 //! core. Providers advertise what they can do through capability flags rather
 //! than failing at call time.
+
+mod capabilities;
+mod error;
+mod provider;
+mod registry;
+mod types;
+
+pub use capabilities::ProviderCapabilities;
+pub use error::VfsError;
+pub use provider::FileSystemProvider;
+pub use registry::ProviderRegistry;
+pub use types::{
+    DirectoryPage, EntryRef, ListOptions, ProviderChangeStream, ProviderReadStream,
+    ProviderWriteStream, RemoveOptions, WriteOptions,
+};
