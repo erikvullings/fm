@@ -15,6 +15,11 @@ For deterministic frontend development without Axum or Tauri, run `pnpm dev:mock
 adapter provides nested and special-case directory fixtures, configurable loading/failure states,
 scriptable backend events, and lazily generated directories of up to 1,000,000 entries.
 
+The custom Mithril directory table uses fixed-height virtual rows from `--fm-row-height`, so large
+and lazy mock directories mount only the visible window plus overscan. It exposes semantic grid
+rows and cells, cursor/selection rendering hooks, explicit loading/empty/error states, and a
+reproducible million-entry rendering check via `pnpm --dir frontend benchmark:directory-table`.
+
 Development builds include Mithril Inspector. Open the docked inspector with the `M` toggle at the
 bottom of the page, or press `Alt+Shift+M` to select a rendered element. Use it to trace elements to
 their source components, inspect the component tree, and view component attrs and local state. The

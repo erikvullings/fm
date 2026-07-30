@@ -1,9 +1,9 @@
 # 0024 Virtualized directory table component
 
-Status: open
+Status: done
 Priority: high
 Owner: unassigned
-Agent: unassigned
+Agent: codex
 Area: frontend
 Depends on: 0021, 0022, 0013
 
@@ -35,4 +35,21 @@ Depends on: 0021, 0022, 0013
   source and drop target — leave the seams without implementing them (§15, §35).
 
 ## Agent Notes
-- Not started.
+- 2026-07-30 codex: Implemented a custom fixed-row Mithril grid backed by a random-access entry
+  source, with bounded visible-window rendering and overscan, stable `EntryId` keys, initial
+  name/type/size/modified columns, loading/empty/error states, hidden and link/junction badges, and
+  cursor/selection rendering hooks. Added semantic grid/row/cell metadata, keyboard-visible focus,
+  active-row announcement, and non-colour status indicators. The column descriptor boundary,
+  random-access source, and rendering-only cursor/selection inputs leave the planned extension
+  points without implementing tasks 0028/0029.
+- 2026-07-30 codex: Added and explicitly verified 15 task-specific Vitest tests across
+  `windowing.test.ts`, `directory-table.test.ts`, and `directory-table.benchmark.test.ts`. Coverage
+  includes windowing maths, scroll-to-index, every state, stable keyed patching, semantic/status
+  rendering, 1,000/10,000/100,000 materialized entries, and bounded DOM scrolling/cursor redraws
+  against a lazy 1,000,000-entry source. Strict frontend typecheck, production build, all 110
+  frontend tests, the complete repository test command, Rust fmt/clippy, and scoped Biome checks
+  pass. Real Chrome verification mounted 17–20 rows while scrolling the million-entry harness
+  halfway and kept the header sticky.
+  Repository-wide `pnpm run lint` remains blocked only by the pre-existing Biome formatting
+  failures in `scripts/architecture-docs.test.mjs` and `scripts/ci-workflow.test.mjs`; no Tauri
+  runtime UI smoke test was added because this host-neutral component has no transport integration.

@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "benchmark:directory-table": "vitest run src/features/directory-table/directory-table.benchmark.test.ts"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",

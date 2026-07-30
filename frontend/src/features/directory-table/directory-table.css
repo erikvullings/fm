@@ -1,0 +1,111 @@
+.fm-directory-table {
+  position: relative;
+  overflow: auto;
+  box-sizing: border-box;
+  width: 100%;
+  border: 1px solid var(--fm-border);
+  background: var(--fm-surface);
+  color: var(--fm-text);
+  outline: none;
+}
+
+.fm-directory-table:focus-visible {
+  outline: 2px solid var(--fm-accent);
+  outline-offset: 2px;
+}
+
+.fm-directory-header,
+.fm-directory-row {
+  display: grid;
+  grid-template-columns: minmax(12rem, 1fr) minmax(6rem, 0.25fr) minmax(6rem, 0.2fr) minmax(
+      10rem,
+      0.35fr
+    );
+  align-items: center;
+  box-sizing: border-box;
+}
+
+.fm-directory-header {
+  position: sticky;
+  z-index: 2;
+  top: 0;
+  height: var(--fm-row-height);
+  border-bottom: 1px solid var(--fm-border);
+  background: var(--fm-surface-elevated);
+  color: var(--fm-text-muted);
+  font-weight: 600;
+}
+
+.fm-directory-body {
+  position: relative;
+}
+
+.fm-directory-row {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  border-bottom: 1px solid var(--fm-border);
+}
+
+.fm-directory-row:hover {
+  background: var(--fm-hover);
+}
+
+.fm-directory-cell {
+  overflow: hidden;
+  box-sizing: border-box;
+  padding: 0 0.5rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fm-directory-size {
+  text-align: end;
+  font-variant-numeric: tabular-nums;
+}
+
+.fm-hidden-entry {
+  font-style: italic;
+  opacity: 0.72;
+}
+
+.fm-entry-status {
+  display: inline-block;
+  margin-inline-start: 0.5rem;
+  border: 1px solid currentcolor;
+  border-radius: var(--fm-radius);
+  padding: 0 0.25rem;
+  color: var(--fm-text-muted);
+  font-size: 0.8em;
+  font-style: normal;
+}
+
+.fm-directory-state {
+  display: grid;
+  place-content: center;
+  min-height: calc(var(--fm-row-height) * 3);
+  gap: 0.25rem;
+  color: var(--fm-text-muted);
+  text-align: center;
+}
+
+.fm-directory-error {
+  color: var(--fm-error);
+}
+
+.fm-directory-placeholder {
+  width: min(36rem, 70vw);
+  border-bottom: 1px solid var(--fm-border);
+  background: var(--fm-hover);
+}
+
+.fm-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
