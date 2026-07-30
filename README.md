@@ -18,6 +18,9 @@ scriptable backend events, and lazily generated directories of up to 1,000,000 e
 Backend-to-frontend updates use one typed event contract for both browser SSE and Tauri channels.
 The frontend event-stream abstraction exposes connection status and listener registration while
 ignoring unknown future event types for forward compatibility.
+Shared frontend data lives in a readonly, explicit Meiosis-style state tree. Typed actions enqueue
+immutable Mergerino patches through one animation-frame batch, while targeted subscriptions let
+directory and operation views redraw only when their selected slice changes.
 The Rust event bus assigns monotonic event IDs, filters each subscription by session and workspace,
 retains bounded replay history for reconnects, and reports explicit gaps when a client must
 resynchronise.

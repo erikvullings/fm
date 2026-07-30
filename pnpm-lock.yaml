@@ -26,6 +26,9 @@ importers:
       '@tauri-apps/api':
         specifier: ^2
         version: 2.11.1
+      mergerino:
+        specifier: ^0.4.0
+        version: 0.4.0
       mithril:
         specifier: ^2.3.8
         version: 2.3.8
@@ -1137,6 +1140,9 @@ packages:
 
   mdurl@2.1.0:
     resolution: {integrity: sha512-1+HBaOx0zi/dQWht8rNv9MYf9qqpqL/kxI0hXImU6Y547zM6Sni8BQibt7ifgMcYtQg41ao3Ivd6cnSM86inpg==}
+
+  mergerino@0.4.0:
+    resolution: {integrity: sha512-dvyWWLp9GN7OZoAoqn1u2ewCDV06oggVi6AwFsgHxUV8jNnaTOMEyux3fZ7Njm7Hg/ypK2+M0p6liCIEWcJnbg==}
 
   minimatch@10.2.6:
     resolution: {integrity: sha512-vpLQEs+VLCr1nU0BXS07maYoFwlDAH0gngQuuttxIwutDFEMHq2blX+8vpgxDdK3J1PwjCJiep77OitTZ4Ll1A==}
@@ -2407,6 +2413,8 @@ snapshots:
   mdn-data@2.27.1: {}
 
   mdurl@2.1.0: {}
+
+  mergerino@0.4.0: {}
 
   minimatch@10.2.6:
     dependencies:

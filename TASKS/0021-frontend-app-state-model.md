@@ -1,6 +1,6 @@
 # 0021 Frontend application state model
 
-Status: open
+Status: done
 Priority: high
 Owner: unassigned
 Agent: unassigned
@@ -30,4 +30,19 @@ state-management framework (§35 forbids introducing one without demonstrated ne
   table component (0024).
 
 ## Agent Notes
-- Not started.
+- 2026-07-30 codex: Implemented the readonly, strongly typed `AppState` and its `runtime`,
+  `workspace`, `operations`, `plugins`, `notifications`, and `connection` slices under
+  `frontend/src/state/`. The Meiosis loop uses `mithril/stream` (the supported Mithril 2.x stream
+  module) with immutable Mergerino patches, one injected animation-frame scheduler, and targeted
+  selector subscriptions. Workspace and directory snapshots are replaced wholesale; directory
+  projections normalize entries into stable-`EntryId` maps. Pure slice reducers and typed actions
+  keep application logic outside Mithril components.
+- 2026-07-30 codex: Added 7 task-specific Vitest tests across `store.test.ts`,
+  `reducers.test.ts`, and `actions.test.ts`, covering immutable patch application, preservation of
+  prior snapshots, N-to-one frame batching/redraw, targeted subscriptions, wholesale snapshots,
+  realistically interleaved directory deltas, and isolated slice reducers/actions. Verified those
+  exact files 7/7, the full frontend suite 78/78, strict `tsc --noEmit`, and the production Vite
+  build. `pnpm run lint:frontend` still reports only pre-existing formatting failures in
+  `scripts/architecture-docs.test.mjs` and `scripts/ci-workflow.test.mjs` plus an informational
+  suggestion in `frontend/vite.config.ts`; `pnpm exec biome check frontend/src/state
+  frontend/package.json` is clean.
