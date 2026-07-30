@@ -1204,6 +1204,15 @@ dependencies = [
 [[package]]
 name = "fm-vfs-local"
 version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "fm-domain",
+ "fm-vfs",
+ "tempfile",
+ "tokio",
+ "tokio-util",
+]
 
 [[package]]
 name = "fnv"

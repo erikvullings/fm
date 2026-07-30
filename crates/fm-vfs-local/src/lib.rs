@@ -1,7 +1,327 @@
-//! The local filesystem provider (task 0018).
+//! Local filesystem implementation of the virtual filesystem provider.
 //!
-//! Responsible for the awkward cases the rest of the application should never
-//! have to think about: hidden entries, symbolic links, Windows reparse points
-//! and junctions, unreadable directories, very long paths and Unicode names.
-//!
-//! Symbolic links are never followed recursively by default.
+//! Directory entries are inspected without following symbolic links. macOS
+//! Finder aliases are not detected yet and are treated as regular files.
+
+use std::{collections::BTreeMap, io, path::Path};
+
+use async_trait::async_trait;
+use chrono::{DateTime, Utc};
+use fm_domain::{
+    EntryId, EntryKind, EntryMetadata, EntrySummary, Location, PermissionsInfo, ProviderId,
+};
+use fm_vfs::{
+    DirectoryPage, EntryRef, FileSystemProvider, ListOptions, ProviderCapabilities,
+    ProviderChangeStream, ProviderReadStream, ProviderWriteStream, RemoveOptions, VfsError,
+    WriteOptions,
+};
+use tokio_util::sync::CancellationToken;
+
+/// Provider for the host's local filesystem.
+#[derive(Debug, Default)]
+pub struct LocalFileSystemProvider;
+
+impl LocalFileSystemProvider {
+    /// Creates a local filesystem provider.
+    #[must_use]
+    pub const fn new() -> Self {
+        Self
+    }
+}
+
+#[async_trait]
+impl FileSystemProvider for LocalFileSystemProvider {
+    fn id(&self) -> ProviderId {
+        ProviderId::new("local")
+    }
+
+    fn capabilities(&self) -> ProviderCapabilities {
+        ProviderCapabilities::LIST
+    }
+
+    async fn list(
+        &self,
+        location: &Location,
+        options: ListOptions,
+        cancellation: CancellationToken,
+    ) -> Result<DirectoryPage, VfsError> {
+        if cancellation.is_cancelled() {
+            return Err(VfsError::Cancelled);
+        }
+        if options.page_size == 0 {
+            return Err(VfsError::InvalidLocation {
+                location: location.uri.clone(),
+            });
+        }
+        let path = location
+            .to_native_path()
+            .map_err(|_| invalid_location(location))?;
+        let offset = decode_token(options.continuation_token.as_deref(), location)?;
+        let mut directory = tokio::fs::read_dir(&path)
+            .await
+            .map_err(|error| map_io_error(error, &location.uri))?;
+        let mut skipped = 0_usize;
+        while skipped < offset {
+            if cancellation.is_cancelled() {
+                return Err(VfsError::Cancelled);
+            }
+            match directory
+                .next_entry()
+                .await
+                .map_err(|error| map_io_error(error, &location.uri))?
+            {
+                Some(_) => skipped += 1,
+                None => return Ok(empty_page()),
+            }
+        }
+
+        let mut entries = Vec::with_capacity(options.page_size);
+        while entries.len() < options.page_size {
+            if cancellation.is_cancelled() {
+                return Err(VfsError::Cancelled);
+            }
+            let Some(entry) = directory
+                .next_entry()
+                .await
+                .map_err(|error| map_io_error(error, &location.uri))?
+            else {
+                break;
+            };
+            entries.push(summarize_entry(entry, location).await?);
+        }
+        let has_more = directory
+            .next_entry()
+            .await
+            .map_err(|error| map_io_error(error, &location.uri))?
+            .is_some();
+        let continuation_token = has_more.then(|| (offset + entries.len()).to_string());
+        Ok(DirectoryPage {
+            entries,
+            total_known_entries: None,
+            has_more,
+            continuation_token,
+        })
+    }
+
+    async fn metadata(
+        &self,
+        entry: &EntryRef,
+        cancellation: CancellationToken,
+    ) -> Result<EntryMetadata, VfsError> {
+        if cancellation.is_cancelled() {
+            return Err(VfsError::Cancelled);
+        }
+        let path = entry
+            .location
+            .to_native_path()
+            .map_err(|_| invalid_location(&entry.location))?;
+        let metadata = tokio::fs::symlink_metadata(path)
+            .await
+            .map_err(|error| map_io_error(error, &entry.location.uri))?;
+        Ok(EntryMetadata {
+            entry_id: entry.id,
+            permissions: Some(permissions(&metadata)),
+            ownership: None,
+            extended_attributes: BTreeMap::new(),
+            checksums: BTreeMap::new(),
+            image_dimensions: None,
+            media: None,
+            archive: None,
+            plugin_fields: BTreeMap::new(),
+        })
+    }
+
+    async fn create_directory(
+        &self,
+        _location: &Location,
+        _name: &str,
+        _cancellation: CancellationToken,
+    ) -> Result<EntryRef, VfsError> {
+        unsupported(ProviderCapabilities::CREATE_DIRECTORY)
+    }
+
+    async fn rename(
+        &self,
+        _source: &EntryRef,
+        _destination: &Location,
+        _cancellation: CancellationToken,
+    ) -> Result<EntryRef, VfsError> {
+        unsupported(ProviderCapabilities::RENAME)
+    }
+
+    async fn remove(
+        &self,
+        _entry: &EntryRef,
+        _options: RemoveOptions,
+        _cancellation: CancellationToken,
+    ) -> Result<(), VfsError> {
+        unsupported(ProviderCapabilities::DELETE)
+    }
+
+    async fn open_read(
+        &self,
+        _entry: &EntryRef,
+        _cancellation: CancellationToken,
+    ) -> Result<ProviderReadStream, VfsError> {
+        unsupported(ProviderCapabilities::READ)
+    }
+
+    async fn open_write(
+        &self,
+        _destination: &Location,
+        _options: WriteOptions,
+        _cancellation: CancellationToken,
+    ) -> Result<ProviderWriteStream, VfsError> {
+        unsupported(ProviderCapabilities::WRITE)
+    }
+
+    async fn watch(
+        &self,
+        _location: &Location,
+        _cancellation: CancellationToken,
+    ) -> Result<ProviderChangeStream, VfsError> {
+        unsupported(ProviderCapabilities::WATCH)
+    }
+}
+
+async fn summarize_entry(
+    entry: tokio::fs::DirEntry,
+    parent: &Location,
+) -> Result<EntrySummary, VfsError> {
+    let name = entry
+        .file_name()
+        .into_string()
+        .map_err(|_| VfsError::InvalidLocation {
+            location: parent.uri.clone(),
+        })?;
+    let location = parent.join(&name).map_err(|_| invalid_location(parent))?;
+    let metadata = tokio::fs::symlink_metadata(entry.path())
+        .await
+        .map_err(|error| map_io_error(error, &location.uri))?;
+    let file_type = entry
+        .file_type()
+        .await
+        .map_err(|error| map_io_error(error, &location.uri))?;
+    let kind = if is_link(&file_type, &metadata) {
+        EntryKind::Symlink
+    } else if file_type.is_dir() {
+        EntryKind::Directory
+    } else {
+        EntryKind::File
+    };
+    Ok(EntrySummary {
+        id: EntryId::new(),
+        location,
+        extension: Path::new(&name)
+            .extension()
+            .and_then(|extension| extension.to_str())
+            .map(str::to_owned),
+        hidden: is_hidden(&name, &metadata),
+        name,
+        kind,
+        size: (kind == EntryKind::File).then_some(metadata.len()),
+        modified_at: metadata.modified().ok().map(DateTime::<Utc>::from),
+        created_at: metadata.created().ok().map(DateTime::<Utc>::from),
+        read_only: metadata.permissions().readonly(),
+        mime_type: None,
+        icon_key: None,
+        metadata_revision: 0,
+    })
+}
+
+#[cfg(windows)]
+fn is_link(file_type: &std::fs::FileType, metadata: &std::fs::Metadata) -> bool {
+    use std::os::windows::fs::MetadataExt;
+    const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
+    file_type.is_symlink() || metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
+}
+
+#[cfg(not(windows))]
+fn is_link(file_type: &std::fs::FileType, _metadata: &std::fs::Metadata) -> bool {
+    file_type.is_symlink()
+}
+
+fn decode_token(token: Option<&str>, location: &Location) -> Result<usize, VfsError> {
+    token.map_or(Ok(0), |value| {
+        value.parse().map_err(|_| invalid_location(location))
+    })
+}
+
+fn empty_page() -> DirectoryPage {
+    DirectoryPage {
+        entries: Vec::new(),
+        total_known_entries: None,
+        has_more: false,
+        continuation_token: None,
+    }
+}
+
+fn permissions(metadata: &std::fs::Metadata) -> PermissionsInfo {
+    PermissionsInfo {
+        readable: true,
+        writable: !metadata.permissions().readonly(),
+        executable: executable(metadata),
+        unix_mode: unix_mode(metadata),
+    }
+}
+
+#[cfg(unix)]
+fn executable(metadata: &std::fs::Metadata) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    metadata.permissions().mode() & 0o111 != 0
+}
+
+#[cfg(not(unix))]
+fn executable(_metadata: &std::fs::Metadata) -> bool {
+    false
+}
+
+#[cfg(unix)]
+fn unix_mode(metadata: &std::fs::Metadata) -> Option<u32> {
+    use std::os::unix::fs::PermissionsExt;
+    Some(metadata.permissions().mode())
+}
+
+#[cfg(not(unix))]
+fn unix_mode(_metadata: &std::fs::Metadata) -> Option<u32> {
+    None
+}
+
+#[cfg(windows)]
+fn is_hidden(name: &str, metadata: &std::fs::Metadata) -> bool {
+    use std::os::windows::fs::MetadataExt;
+    const FILE_ATTRIBUTE_HIDDEN: u32 = 0x2;
+    name.starts_with('.') || metadata.file_attributes() & FILE_ATTRIBUTE_HIDDEN != 0
+}
+
+#[cfg(not(windows))]
+fn is_hidden(name: &str, _metadata: &std::fs::Metadata) -> bool {
+    name.starts_with('.')
+}
+
+fn invalid_location(location: &Location) -> VfsError {
+    VfsError::InvalidLocation {
+        location: location.uri.clone(),
+    }
+}
+
+fn map_io_error(error: io::Error, location: &str) -> VfsError {
+    match error.kind() {
+        io::ErrorKind::NotFound => VfsError::NotFound {
+            location: location.to_owned(),
+        },
+        io::ErrorKind::PermissionDenied => VfsError::PermissionDenied {
+            location: location.to_owned(),
+        },
+        io::ErrorKind::NotADirectory => VfsError::NotADirectory {
+            location: location.to_owned(),
+        },
+        _ => VfsError::Io {
+            message: error.to_string(),
+        },
+    }
+}
+
+fn unsupported<T>(capability: ProviderCapabilities) -> Result<T, VfsError> {
+    Err(VfsError::UnsupportedCapability { capability })
+}

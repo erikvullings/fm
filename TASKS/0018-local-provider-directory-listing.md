@@ -1,6 +1,6 @@
 # 0018 Local filesystem provider: listing, paging and metadata
 
-Status: open
+Status: done
 Priority: high
 Owner: unassigned
 Agent: unassigned
@@ -37,4 +37,25 @@ on top of it.
   Windows) — needed by 0040 and 0044.
 
 ## Agent Notes
-- Not started.
+- 2026-07-30 codex: Implemented `LocalFileSystemProvider` with truthful `LIST` capabilities,
+  cancellable async directory listing, bounded offset-token paging, lightweight `EntrySummary`
+  construction, separate detailed permission metadata, typed filesystem errors, and explicit
+  unsupported results for read/write/mutation/watch operations. Symlinks are inspected without
+  following them; Windows reparse attributes (including junctions) are treated as links.
+- 2026-07-30 codex: Added nine temporary-directory integration tests covering files, directories,
+  dotfiles, Unicode and shell-sensitive names, empty and sparse files, long paths, typed missing
+  and not-directory failures, unreadable Unix directories where permissions are enforced,
+  cancellation, metadata/capabilities, symlinks, multi-page completeness, and a 100,000-entry
+  directory whose first 64-entry page is returned without a known-total scan. Windows hidden and
+  reparse behavior has a `cfg(windows)` test that reports explicitly when link creation privileges
+  are unavailable.
+- 2026-07-30 codex: Verified the nine task-specific tests with `cargo test -p fm-vfs-local`,
+  `cargo check -p fm-vfs-local --all-targets`, repository-wide Rust formatting and strict Clippy,
+  and the full `pnpm test` suite. `pnpm run lint` passes all Rust checks but remains non-zero on
+  pre-existing, task-unrelated Biome findings in `frontend/vite.config.ts`,
+  `scripts/architecture-docs.test.mjs`, and `scripts/ci-workflow.test.mjs`; none was changed.
+  `CLAUDE.md` is absent, so there was no scoped file to update.
+- 2026-07-30 codex: Known platform gaps: macOS Finder aliases remain ordinary files as explicitly
+  deferred by the task; Windows-specific behavior is CI-gated but was not executable on this macOS
+  host. No recursive traversal helper is introduced by listing or metadata, so cycle protection
+  remains required when tasks 0040/0044 add recursive traversal.

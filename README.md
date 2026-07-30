@@ -28,6 +28,10 @@ strings. Conversion preserves POSIX, Windows drive, UNC, long-path and Unicode f
 normalization is constrained to a configured root. See
 [`docs/architecture/locations.md`](docs/architecture/locations.md) for the stable URI syntax.
 
+The local provider lists directories in bounded, cancellable pages and fetches detailed metadata
+separately. Listings identify dotfiles, Windows hidden attributes, symbolic links and reparse
+points without following links; Finder alias detection remains a later macOS enhancement.
+
 ## CI
 
 `.github/workflows/ci.yml` runs on every push to `main` and every pull request:
