@@ -1110,6 +1110,7 @@ dependencies = [
  "fm-domain",
  "serde",
  "serde_json",
+ "tokio",
 ]
 
 [[package]]

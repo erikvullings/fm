@@ -1,6 +1,6 @@
 # 0031 Rust event bus
 
-Status: open
+Status: done
 Priority: high
 Owner: unassigned
 Agent: unassigned
@@ -32,4 +32,17 @@ channels, so the bus lives in `fm-events` and knows nothing about either transpo
   throttling policy in one place (§28).
 
 ## Agent Notes
-- Not started.
+
+- 2026-07-30 codex: Added a bounded, cloneable `EventBus` with monotonic envelopes, explicit
+  global/session/workspace audiences, session-authorized workspace filtering, bounded replay from
+  `Last-Event-ID`, and typed gap delivery for both expired replay and lagging live subscribers.
+- 2026-07-30 codex: Added `BackendEventPayload::should_coalesce` for directory deltas and operation
+  progress. Added 6 task-specific public-contract tests covering ordering, realistically
+  interleaved audience filtering, replay/live handoff, expired replay, lag/non-blocking bounded
+  publication, and coalescing hints.
+- 2026-07-30 codex: Verified `cargo check -p fm-events --all-targets`, exact task tests,
+  `cargo test -p fm-events`, workspace Clippy with `-D warnings`, and the full `pnpm test` suite.
+  Full `pnpm run lint` passes its Rust phase and remains blocked only by pre-existing Biome findings
+  in `frontend/vite.config.ts`, `scripts/architecture-docs.test.mjs`, and
+  `scripts/ci-workflow.test.mjs`. `CLAUDE.md` does not exist. Transport adapters remain owned by
+  tasks 0032 and 0034.

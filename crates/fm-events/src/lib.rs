@@ -10,9 +10,16 @@
 //! contracts. The shared JSON fixture below cross-checks this manual mapping
 //! against the frontend union.
 
+mod bus;
+
 use chrono::{DateTime, Utc};
 use fm_domain::{EntryId, OperationId, PaneId, PluginId, ProviderId, TabId, WorkspaceId};
 use serde::{Deserialize, Serialize};
+
+pub use bus::{
+    DEFAULT_EVENT_BUS_CAPACITY, EventAudience, EventBus, EventSubscription, SessionId,
+    SubscriptionClosed, SubscriptionEvent,
+};
 
 /// Transport-neutral wrapper shared by SSE and Tauri event delivery.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -627,6 +634,18 @@ pub enum BackendEventPayload {
         /// Created notification.
         notification: NotificationPayload,
     },
+}
+
+impl BackendEventPayload {
+    /// Indicates payloads that transports may replace with a newer value
+    /// while preserving the latest observable state.
+    #[must_use]
+    pub const fn should_coalesce(&self) -> bool {
+        matches!(
+            self,
+            Self::DirectoryDelta { .. } | Self::OperationProgress { .. }
+        )
+    }
 }
 
 #[cfg(test)]
