@@ -1,29 +1,30 @@
 //! An injectable seam for publishing workspace mutation events (spec §5.3.9
 //! step 7, §5.3.11).
 //!
-//! Building the real fine-grained `workspace.*` event set (§5.3.11) is task
-//! 0081's concern, once `fm-events`' event bus exists. `WorkspaceService`
-//! only needs somewhere to call after every successful [`fm_domain::WorkspaceCommand`]
-//! so 0081 can wire in real publishing without changing `apply_command`'s
-//! signature again.
+//! `WorkspaceService` constructs a focused [`fm_events::BackendEventPayload`]
+//! after every lifecycle transition and successful
+//! [`fm_domain::WorkspaceCommand`] and hands it to this seam (task 0081).
+//! Publishing the payload onto a real shared event bus (task 0031) is left
+//! to whichever host wires a concrete [`WorkspaceCommandPublisher`] in; this
+//! seam only guarantees the payload is constructed correctly and handed off
+//! exactly once per transition.
 
 use fm_domain::WorkspaceId;
+use fm_events::BackendEventPayload;
 
-/// Notified after a [`fm_domain::WorkspaceCommand`] is applied and persisted.
-///
-/// `command_kind` is the applied variant's name (for example
-/// `"renameWorkspace"`), a lightweight stand-in for the real per-variant
-/// event payloads task 0081 will add.
+/// Notified after a workspace lifecycle transition or
+/// [`fm_domain::WorkspaceCommand`] is applied and persisted.
 pub trait WorkspaceCommandPublisher: Send + Sync {
-    /// Called once, after the mutated workspace has been persisted.
-    fn publish(&self, workspace_id: WorkspaceId, revision: u64, command_kind: &'static str);
+    /// Called once, after the workspace change has been persisted, with the
+    /// focused event payload describing what changed.
+    fn publish(&self, workspace_id: WorkspaceId, payload: BackendEventPayload);
 }
 
 /// Default publisher used until a host wires in a real event bus (task
-/// 0081).
+/// 0031).
 #[derive(Debug, Clone, Copy, Default)]
 pub struct NoopWorkspaceCommandPublisher;
 
 impl WorkspaceCommandPublisher for NoopWorkspaceCommandPublisher {
-    fn publish(&self, _workspace_id: WorkspaceId, _revision: u64, _command_kind: &'static str) {}
+    fn publish(&self, _workspace_id: WorkspaceId, _payload: BackendEventPayload) {}
 }

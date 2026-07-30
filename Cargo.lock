@@ -1054,6 +1054,7 @@ dependencies = [
  "chrono",
  "dirs",
  "fm-domain",
+ "fm-events",
  "fm-transport-dto",
  "serde",
  "serde_json",

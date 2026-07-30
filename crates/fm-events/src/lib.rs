@@ -142,20 +142,6 @@ pub struct DirectorySnapshotPayload {
     pub loading_state: LoadingStatePayload,
 }
 
-/// Workspace sort field.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub enum SortFieldPayload {
-    /// Name.
-    Name,
-    /// Extension.
-    Extension,
-    /// Size.
-    Size,
-    /// Modification time.
-    ModifiedAt,
-}
-
 /// Workspace sort direction.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -166,63 +152,56 @@ pub enum SortDirectionPayload {
     Descending,
 }
 
-/// One workspace sort key.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+/// A single sort descriptor: an open column id and a direction, mirroring
+/// the persisted `fm_domain::SortDescriptor` (spec §5.3.4).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct SortKeyPayload {
-    /// Sorted field.
-    pub field: SortFieldPayload,
+pub struct SortDescriptorPayload {
+    /// The sorted column, e.g. `"core.name"` or a plugin-provided column.
+    pub column_id: String,
     /// Sort direction.
     pub direction: SortDirectionPayload,
 }
 
-/// Back/forward history for one tab.
+/// Persisted width and visibility for a single directory-table column,
+/// mirroring `fm_domain::ColumnConfiguration`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct NavigationHistoryPayload {
-    /// Back stack.
-    pub back: Vec<LocationPayload>,
-    /// Forward stack.
-    pub forward: Vec<LocationPayload>,
+pub struct ColumnConfigurationPayload {
+    /// The column's identifier.
+    pub column_id: String,
+    /// The column's width in pixels.
+    pub width: u32,
+    /// Whether the column is currently visible.
+    pub visible: bool,
 }
 
-/// Presentation state for one directory view.
+/// A persisted quick-filter query, mirroring `fm_domain::PersistedFilter`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct DirectoryViewStatePayload {
-    /// Sort keys in priority order.
-    pub sort: Vec<SortKeyPayload>,
-    /// Selected entries.
-    pub selected_entry_ids: Vec<EntryId>,
-    /// Keyboard cursor entry.
+pub struct PersistedFilterPayload {
+    /// The filter's plain-text query.
+    pub query: String,
+}
+
+/// Persisted directory-view configuration (sort, columns, filters) carried by
+/// `workspace.tabViewChanged` (spec §5.3.9's `UpdateView`, §5.3.11), mirroring
+/// `fm_domain::DirectoryViewConfiguration`. Contains no frontend-only
+/// selection/cursor state, matching the domain type it projects.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DirectoryViewConfigurationPayload {
+    /// The active sort descriptors, in priority order.
+    pub sort: Vec<SortDescriptorPayload>,
+    /// Per-column width and visibility.
+    pub columns: Vec<ColumnConfigurationPayload>,
+    /// Whether hidden entries are shown.
+    pub show_hidden: bool,
+    /// Whether directories are grouped before files.
+    pub folders_first: bool,
+    /// A persisted quick-filter query, if one is saved with the tab.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub cursor_entry_id: Option<EntryId>,
-}
-
-/// One workspace tab.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TabStatePayload {
-    /// Stable tab identifier.
-    pub id: TabId,
-    /// Current location.
-    pub location: LocationPayload,
-    /// Navigation history.
-    pub history: NavigationHistoryPayload,
-    /// Directory presentation state.
-    pub view: DirectoryViewStatePayload,
-}
-
-/// One workspace pane.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PaneStatePayload {
-    /// Stable pane identifier.
-    pub id: PaneId,
-    /// Pane tabs.
-    pub tabs: Vec<TabStatePayload>,
-    /// Active tab identifier.
-    pub active_tab_id: TabId,
+    pub quick_filter: Option<PersistedFilterPayload>,
 }
 
 /// Workspace split direction.
@@ -237,7 +216,11 @@ pub enum SplitDirectionPayload {
 
 /// Recursive workspace layout.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "camelCase")]
+#[serde(
+    tag = "type",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum WorkspaceLayoutPayload {
     /// Pane leaf.
     Pane {
@@ -255,22 +238,6 @@ pub enum WorkspaceLayoutPayload {
         /// Second region.
         second: Box<WorkspaceLayoutPayload>,
     },
-}
-
-/// Current workspace projection.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct WorkspacePayload {
-    /// Stable workspace identifier.
-    pub id: WorkspaceId,
-    /// Display name.
-    pub name: String,
-    /// Workspace panes.
-    pub panes: Vec<PaneStatePayload>,
-    /// Focused pane.
-    pub active_pane_id: PaneId,
-    /// Pane arrangement.
-    pub layout: WorkspaceLayoutPayload,
 }
 
 /// Initial operation kinds from specification §17.
@@ -480,16 +447,117 @@ pub enum NotificationLevelPayload {
 
 /// All backend-to-frontend event payloads named by specification §10.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "type")]
+#[serde(tag = "type", rename_all_fields = "camelCase")]
 pub enum BackendEventPayload {
     /// Runtime startup completed.
     #[serde(rename = "runtime.ready")]
     RuntimeReady,
-    /// Workspace state changed.
-    #[serde(rename = "workspace.updated")]
-    WorkspaceUpdated {
-        /// Current workspace projection.
-        workspace: WorkspacePayload,
+    /// A new workspace was created (spec §5.3.11).
+    #[serde(rename = "workspace.created")]
+    WorkspaceCreated {
+        /// The workspace's revision at creation.
+        revision: u64,
+    },
+    /// The workspace was renamed.
+    #[serde(rename = "workspace.renamed")]
+    WorkspaceRenamed {
+        /// The workspace's new revision.
+        revision: u64,
+        /// The new name.
+        name: String,
+    },
+    /// The workspace became the active workspace (spec §5.3.7 startup and
+    /// workspace-switching lifecycle transitions, not only explicit
+    /// `openWorkspace` requests).
+    #[serde(rename = "workspace.opened")]
+    WorkspaceOpened {
+        /// The workspace's current revision.
+        revision: u64,
+    },
+    /// The workspace stopped being the active workspace (spec §5.3.7's
+    /// workspace-switching lifecycle transition).
+    #[serde(rename = "workspace.closed")]
+    WorkspaceClosed {
+        /// The workspace's revision when it was closed.
+        revision: u64,
+    },
+    /// The workspace was deleted.
+    #[serde(rename = "workspace.deleted")]
+    WorkspaceDeleted {
+        /// The workspace's revision immediately before deletion.
+        revision: u64,
+    },
+    /// The workspace's pane layout tree changed.
+    #[serde(rename = "workspace.layoutChanged")]
+    WorkspaceLayoutChanged {
+        /// The workspace's new revision.
+        revision: u64,
+        /// The new layout.
+        layout: WorkspaceLayoutPayload,
+    },
+    /// The focused pane changed.
+    #[serde(rename = "workspace.activePaneChanged")]
+    WorkspaceActivePaneChanged {
+        /// The workspace's new revision.
+        revision: u64,
+        /// The newly focused pane.
+        pane_id: PaneId,
+    },
+    /// A new tab was opened in a pane.
+    #[serde(rename = "workspace.tabAdded")]
+    WorkspaceTabAdded {
+        /// The workspace's new revision.
+        revision: u64,
+        /// The pane the tab was added to.
+        pane_id: PaneId,
+        /// The new tab's identifier.
+        tab_id: TabId,
+        /// The new tab's initial location.
+        location: LocationPayload,
+    },
+    /// A tab was closed.
+    #[serde(rename = "workspace.tabClosed")]
+    WorkspaceTabClosed {
+        /// The workspace's new revision.
+        revision: u64,
+        /// The pane the tab belonged to.
+        pane_id: PaneId,
+        /// The closed tab's identifier.
+        tab_id: TabId,
+    },
+    /// A pane's active tab changed.
+    #[serde(rename = "workspace.tabActivated")]
+    WorkspaceTabActivated {
+        /// The workspace's new revision.
+        revision: u64,
+        /// The pane the tab belongs to.
+        pane_id: PaneId,
+        /// The newly activated tab.
+        tab_id: TabId,
+    },
+    /// A tab navigated to a new location.
+    #[serde(rename = "workspace.tabNavigated")]
+    WorkspaceTabNavigated {
+        /// The workspace's new revision.
+        revision: u64,
+        /// The pane the tab belongs to.
+        pane_id: PaneId,
+        /// The navigated tab's identifier.
+        tab_id: TabId,
+        /// The tab's new location.
+        location: LocationPayload,
+    },
+    /// A tab's persisted view configuration changed.
+    #[serde(rename = "workspace.tabViewChanged")]
+    WorkspaceTabViewChanged {
+        /// The workspace's new revision.
+        revision: u64,
+        /// The pane the tab belongs to.
+        pane_id: PaneId,
+        /// The updated tab's identifier.
+        tab_id: TabId,
+        /// The tab's new persisted view configuration.
+        view: DirectoryViewConfigurationPayload,
     },
     /// Full directory state is available.
     #[serde(rename = "directory.snapshot")]
@@ -566,21 +634,23 @@ mod tests {
     use std::str::FromStr;
 
     use chrono::{TimeZone, Utc};
-    use fm_domain::{OperationId, PluginId, ProviderId, WorkspaceId};
+    use fm_domain::{OperationId, PaneId, PluginId, ProviderId, TabId, WorkspaceId};
     use serde_json::json;
 
     use super::{
-        BackendEventPayload, ConflictPolicyPayload, DirectoryDeltaPayload,
-        DirectorySnapshotPayload, DirectoryViewStatePayload, EventEnvelope, LoadingStatePayload,
-        LocationPayload, NavigationHistoryPayload, NotificationLevelPayload, NotificationPayload,
-        OperationConflictPayload, OperationKindPayload, OperationPayload, OperationProgressDetails,
-        OperationProgressPayload, OperationStatePayload, PaneStatePayload, PluginPayload,
-        SortDirectionPayload, SortFieldPayload, SortKeyPayload, TabStatePayload,
-        WorkspaceLayoutPayload, WorkspacePayload,
+        BackendEventPayload, ColumnConfigurationPayload, ConflictPolicyPayload,
+        DirectoryDeltaPayload, DirectorySnapshotPayload, DirectoryViewConfigurationPayload,
+        EventEnvelope, LoadingStatePayload, LocationPayload, NotificationLevelPayload,
+        NotificationPayload, OperationConflictPayload, OperationKindPayload, OperationPayload,
+        OperationProgressDetails, OperationProgressPayload, OperationStatePayload,
+        PersistedFilterPayload, PluginPayload, SortDescriptorPayload, SortDirectionPayload,
+        WorkspaceLayoutPayload,
     };
 
     const WORKSPACE_ID: &str = "11111111-1111-4111-8111-111111111111";
     const OPERATION_ID: &str = "22222222-2222-4222-8222-222222222222";
+    const PANE_ID: &str = "33333333-3333-4333-8333-333333333333";
+    const TAB_ID: &str = "44444444-4444-4444-8444-444444444444";
 
     fn fixture_envelope() -> EventEnvelope<BackendEventPayload> {
         EventEnvelope {
@@ -606,44 +676,6 @@ mod tests {
                     },
                 },
             },
-        }
-    }
-
-    fn sample_workspace() -> WorkspacePayload {
-        let pane_id = "33333333-3333-4333-8333-333333333333"
-            .parse()
-            .expect("fixture pane id must be valid");
-        let tab_id = "44444444-4444-4444-8444-444444444444"
-            .parse()
-            .expect("fixture tab id must be valid");
-        WorkspacePayload {
-            id: WORKSPACE_ID.parse().expect("fixture id must be valid"),
-            name: "Fixture".to_owned(),
-            panes: vec![PaneStatePayload {
-                id: pane_id,
-                tabs: vec![TabStatePayload {
-                    id: tab_id,
-                    location: LocationPayload {
-                        provider_id: ProviderId::new("file"),
-                        uri: "file:///fixture".to_owned(),
-                    },
-                    history: NavigationHistoryPayload {
-                        back: vec![],
-                        forward: vec![],
-                    },
-                    view: DirectoryViewStatePayload {
-                        sort: vec![SortKeyPayload {
-                            field: SortFieldPayload::Name,
-                            direction: SortDirectionPayload::Ascending,
-                        }],
-                        selected_entry_ids: vec![],
-                        cursor_entry_id: None,
-                    },
-                }],
-                active_tab_id: tab_id,
-            }],
-            active_pane_id: pane_id,
-            layout: WorkspaceLayoutPayload::Pane { pane_id },
         }
     }
 
@@ -678,6 +710,136 @@ mod tests {
     }
 
     #[test]
+    fn every_named_workspace_event_matches_its_shared_fixture() {
+        let workspace_id =
+            WorkspaceId::from_str(WORKSPACE_ID).expect("fixture workspace id must be valid");
+        let pane_id = PaneId::from_str(PANE_ID).expect("fixture pane id must be valid");
+        let tab_id = TabId::from_str(TAB_ID).expect("fixture tab id must be valid");
+        let timestamp = Utc
+            .with_ymd_and_hms(2026, 7, 29, 12, 34, 56)
+            .single()
+            .expect("fixture timestamp must be valid");
+        let location = LocationPayload {
+            provider_id: ProviderId::new("file"),
+            uri: "file:///fixture".to_owned(),
+        };
+
+        macro_rules! assert_matches_fixture {
+            ($fixture:literal, $payload:expr) => {{
+                let envelope = EventEnvelope {
+                    event_id: 2000,
+                    timestamp,
+                    workspace_id: Some(workspace_id),
+                    payload: $payload,
+                };
+                let actual = serde_json::to_value(envelope).expect("serialization must succeed");
+                let expected: serde_json::Value = serde_json::from_str(include_str!(concat!(
+                    "../../../fixtures/events/",
+                    $fixture
+                )))
+                .expect("shared fixture must be valid JSON");
+                assert_eq!(actual, expected, "fixture {} mismatch", $fixture);
+            }};
+        }
+
+        assert_matches_fixture!(
+            "workspace-created.json",
+            BackendEventPayload::WorkspaceCreated { revision: 1 }
+        );
+        assert_matches_fixture!(
+            "workspace-renamed.json",
+            BackendEventPayload::WorkspaceRenamed {
+                revision: 2,
+                name: "Photos".to_owned(),
+            }
+        );
+        assert_matches_fixture!(
+            "workspace-opened.json",
+            BackendEventPayload::WorkspaceOpened { revision: 1 }
+        );
+        assert_matches_fixture!(
+            "workspace-closed.json",
+            BackendEventPayload::WorkspaceClosed { revision: 1 }
+        );
+        assert_matches_fixture!(
+            "workspace-deleted.json",
+            BackendEventPayload::WorkspaceDeleted { revision: 3 }
+        );
+        assert_matches_fixture!(
+            "workspace-layout-changed.json",
+            BackendEventPayload::WorkspaceLayoutChanged {
+                revision: 2,
+                layout: WorkspaceLayoutPayload::Pane { pane_id },
+            }
+        );
+        assert_matches_fixture!(
+            "workspace-active-pane-changed.json",
+            BackendEventPayload::WorkspaceActivePaneChanged {
+                revision: 2,
+                pane_id,
+            }
+        );
+        assert_matches_fixture!(
+            "workspace-tab-added.json",
+            BackendEventPayload::WorkspaceTabAdded {
+                revision: 2,
+                pane_id,
+                tab_id,
+                location: location.clone(),
+            }
+        );
+        assert_matches_fixture!(
+            "workspace-tab-closed.json",
+            BackendEventPayload::WorkspaceTabClosed {
+                revision: 2,
+                pane_id,
+                tab_id,
+            }
+        );
+        assert_matches_fixture!(
+            "workspace-tab-activated.json",
+            BackendEventPayload::WorkspaceTabActivated {
+                revision: 2,
+                pane_id,
+                tab_id,
+            }
+        );
+        assert_matches_fixture!(
+            "workspace-tab-navigated.json",
+            BackendEventPayload::WorkspaceTabNavigated {
+                revision: 2,
+                pane_id,
+                tab_id,
+                location: location.clone(),
+            }
+        );
+        assert_matches_fixture!(
+            "workspace-tab-view-changed.json",
+            BackendEventPayload::WorkspaceTabViewChanged {
+                revision: 2,
+                pane_id,
+                tab_id,
+                view: DirectoryViewConfigurationPayload {
+                    sort: vec![SortDescriptorPayload {
+                        column_id: "core.name".to_owned(),
+                        direction: SortDirectionPayload::Ascending,
+                    }],
+                    columns: vec![ColumnConfigurationPayload {
+                        column_id: "core.name".to_owned(),
+                        width: 240,
+                        visible: true,
+                    }],
+                    show_hidden: false,
+                    folders_first: true,
+                    quick_filter: Some(PersistedFilterPayload {
+                        query: "report".to_owned(),
+                    }),
+                },
+            }
+        );
+    }
+
+    #[test]
     fn every_backend_event_uses_the_named_type_discriminator() {
         let events = BackendEventPayload::fixture_variants();
         let actual = events
@@ -696,7 +858,18 @@ mod tests {
             actual,
             [
                 "runtime.ready",
-                "workspace.updated",
+                "workspace.created",
+                "workspace.renamed",
+                "workspace.opened",
+                "workspace.closed",
+                "workspace.deleted",
+                "workspace.layoutChanged",
+                "workspace.activePaneChanged",
+                "workspace.tabAdded",
+                "workspace.tabClosed",
+                "workspace.tabActivated",
+                "workspace.tabNavigated",
+                "workspace.tabViewChanged",
                 "directory.snapshot",
                 "directory.delta",
                 "operation.created",
@@ -759,10 +932,63 @@ mod tests {
                 started_at: None,
                 completed_at: None,
             };
+            let pane_id = PaneId::from_str(PANE_ID).expect("fixture pane id must be valid");
+            let tab_id = TabId::from_str(TAB_ID).expect("fixture tab id must be valid");
+            let location = LocationPayload {
+                provider_id: ProviderId::new("file"),
+                uri: "file:///fixture".to_owned(),
+            };
             vec![
                 Self::RuntimeReady,
-                Self::WorkspaceUpdated {
-                    workspace: sample_workspace(),
+                Self::WorkspaceCreated { revision: 1 },
+                Self::WorkspaceRenamed {
+                    revision: 2,
+                    name: "Photos".to_owned(),
+                },
+                Self::WorkspaceOpened { revision: 1 },
+                Self::WorkspaceClosed { revision: 1 },
+                Self::WorkspaceDeleted { revision: 3 },
+                Self::WorkspaceLayoutChanged {
+                    revision: 2,
+                    layout: WorkspaceLayoutPayload::Pane { pane_id },
+                },
+                Self::WorkspaceActivePaneChanged {
+                    revision: 2,
+                    pane_id,
+                },
+                Self::WorkspaceTabAdded {
+                    revision: 2,
+                    pane_id,
+                    tab_id,
+                    location: location.clone(),
+                },
+                Self::WorkspaceTabClosed {
+                    revision: 2,
+                    pane_id,
+                    tab_id,
+                },
+                Self::WorkspaceTabActivated {
+                    revision: 2,
+                    pane_id,
+                    tab_id,
+                },
+                Self::WorkspaceTabNavigated {
+                    revision: 2,
+                    pane_id,
+                    tab_id,
+                    location: location.clone(),
+                },
+                Self::WorkspaceTabViewChanged {
+                    revision: 2,
+                    pane_id,
+                    tab_id,
+                    view: DirectoryViewConfigurationPayload {
+                        sort: vec![],
+                        columns: vec![],
+                        show_hidden: false,
+                        folders_first: true,
+                        quick_filter: None,
+                    },
                 },
                 Self::DirectorySnapshot {
                     snapshot: sample_snapshot(),

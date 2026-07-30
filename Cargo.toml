@@ -18,6 +18,7 @@ license = "MIT OR Apache-2.0"
 # Internal crates, versioned together with the rest of the workspace.
 fm-application = { path = "crates/fm-application" }
 fm-domain = { path = "crates/fm-domain" }
+fm-events = { path = "crates/fm-events" }
 fm-transport-dto = { path = "crates/fm-transport-dto" }
 
 # External dependencies. Versions are coordinated here; member crates opt in

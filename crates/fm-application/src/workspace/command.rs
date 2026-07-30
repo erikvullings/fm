@@ -93,7 +93,10 @@ pub(crate) fn apply(
     workspace.validate().map_err(WorkspaceError::Invalid)
 }
 
-fn find_pane(workspace: &Workspace, pane_id: PaneId) -> Result<&PaneState, WorkspaceError> {
+pub(super) fn find_pane(
+    workspace: &Workspace,
+    pane_id: PaneId,
+) -> Result<&PaneState, WorkspaceError> {
     workspace
         .panes
         .iter()
@@ -132,6 +135,23 @@ fn find_tab_mut(
         .ok_or(WorkspaceError::TabNotFound {
             workspace_id,
             pane_id,
+            tab_id,
+        })
+}
+
+/// Immutable counterpart to [`find_tab_mut`], used to read back a tab's
+/// post-mutation state when building an event payload.
+pub(super) fn find_tab(
+    pane: &PaneState,
+    workspace_id: fm_domain::WorkspaceId,
+    tab_id: TabId,
+) -> Result<&TabState, WorkspaceError> {
+    pane.tabs
+        .iter()
+        .find(|tab| tab.id == tab_id)
+        .ok_or(WorkspaceError::TabNotFound {
+            workspace_id,
+            pane_id: pane.id,
             tab_id,
         })
 }

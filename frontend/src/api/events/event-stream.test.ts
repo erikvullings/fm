@@ -1,6 +1,18 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import fixture from '../../../../fixtures/events/operation-progress.json';
+import workspaceActivePaneChangedFixture from '../../../../fixtures/events/workspace-active-pane-changed.json';
+import workspaceClosedFixture from '../../../../fixtures/events/workspace-closed.json';
+import workspaceCreatedFixture from '../../../../fixtures/events/workspace-created.json';
+import workspaceDeletedFixture from '../../../../fixtures/events/workspace-deleted.json';
+import workspaceLayoutChangedFixture from '../../../../fixtures/events/workspace-layout-changed.json';
+import workspaceOpenedFixture from '../../../../fixtures/events/workspace-opened.json';
+import workspaceRenamedFixture from '../../../../fixtures/events/workspace-renamed.json';
+import workspaceTabActivatedFixture from '../../../../fixtures/events/workspace-tab-activated.json';
+import workspaceTabAddedFixture from '../../../../fixtures/events/workspace-tab-added.json';
+import workspaceTabClosedFixture from '../../../../fixtures/events/workspace-tab-closed.json';
+import workspaceTabNavigatedFixture from '../../../../fixtures/events/workspace-tab-navigated.json';
+import workspaceTabViewChangedFixture from '../../../../fixtures/events/workspace-tab-view-changed.json';
 import type { BackendEvent } from '../../models';
 import {
   BackendEventListenerRegistry,
@@ -13,6 +25,23 @@ describe('parseBackendEvent', () => {
     const event = parseBackendEvent(fixture);
 
     expect(event).toEqual(fixture);
+  });
+
+  it.each([
+    workspaceCreatedFixture,
+    workspaceRenamedFixture,
+    workspaceOpenedFixture,
+    workspaceClosedFixture,
+    workspaceDeletedFixture,
+    workspaceLayoutChangedFixture,
+    workspaceActivePaneChangedFixture,
+    workspaceTabAddedFixture,
+    workspaceTabClosedFixture,
+    workspaceTabActivatedFixture,
+    workspaceTabNavigatedFixture,
+    workspaceTabViewChangedFixture,
+  ])('round-trips the Rust-generated $payload.type fixture', (workspaceFixture) => {
+    expect(parseBackendEvent(workspaceFixture)).toEqual(workspaceFixture);
   });
 
   it('ignores a future event type without throwing and logs it once in development', () => {
@@ -32,6 +61,20 @@ describe('parseBackendEvent', () => {
   it('ignores malformed envelopes without throwing', () => {
     expect(parseBackendEvent({ payload: { type: 'runtime.ready' } })).toBeUndefined();
     expect(parseBackendEvent(null)).toBeUndefined();
+  });
+});
+
+describe('type safety', () => {
+  it('never lets a directory snapshot satisfy a workspace event payload', () => {
+    const directorySnapshotShaped = {
+      type: 'directory.snapshot',
+      snapshot: { paneId: 'pane', requestId: 'req', revision: 1 },
+    };
+
+    // @ts-expect-error a directory.snapshot payload must never satisfy the workspace.opened shape.
+    const asWorkspaceOpened: { type: 'workspace.opened'; revision: number } =
+      directorySnapshotShaped;
+    void asWorkspaceOpened;
   });
 });
 

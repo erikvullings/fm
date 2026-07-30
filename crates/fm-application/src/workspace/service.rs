@@ -8,6 +8,7 @@ use fm_domain::{Workspace, WorkspaceCommand, WorkspaceId};
 use super::command;
 use super::default_workspace::{default_workspace, resolve_home_directory};
 use super::error::WorkspaceError;
+use super::events;
 use super::publisher::{NoopWorkspaceCommandPublisher, WorkspaceCommandPublisher};
 use super::repository::{LastActiveWorkspaceStore, WorkspaceRepository, WorkspaceSummary};
 
@@ -81,16 +82,23 @@ where
             workspace.name = name;
         }
         validate_or_error(&workspace)?;
-        self.repository.save(&workspace, None).await
+        let persisted = self.repository.save(&workspace, None).await?;
+        self.publisher
+            .publish(persisted.id, events::workspace_created(&persisted));
+        Ok(persisted)
     }
 
     /// Creates, persists and selects a fresh default workspace (spec §5.3.7's
-    /// "Default workspace").
+    /// "Default workspace"), emitting both `workspace.created` and
+    /// `workspace.opened` (creating a workspace this way always also selects
+    /// it as active).
     pub async fn create_default(&self) -> Result<Workspace, WorkspaceError> {
         let persisted = self.create(None).await?;
         self.repository
             .set_last_active_workspace_id(Some(persisted.id))
             .await?;
+        self.publisher
+            .publish(persisted.id, events::workspace_opened(&persisted));
         Ok(persisted)
     }
 
@@ -100,7 +108,22 @@ where
         id: WorkspaceId,
         expected_revision: Option<u64>,
     ) -> Result<(), WorkspaceError> {
-        self.repository.delete(id, expected_revision).await
+        // A corrupt or already-vanished workspace can still be deleted; only
+        // the event's revision field defaults to 0 in that edge case, not
+        // the deletion's own revision-conflict check below.
+        let revision = self
+            .repository
+            .load(id)
+            .await
+            .ok()
+            .flatten()
+            .map(|workspace| workspace.revision)
+            .unwrap_or_default();
+
+        self.repository.delete(id, expected_revision).await?;
+        self.publisher
+            .publish(id, events::workspace_deleted(revision));
+        Ok(())
     }
 
     /// Selects an existing workspace as the last-active workspace and
@@ -111,29 +134,40 @@ where
     /// recovery behaviour is specific to application startup, not to an
     /// explicit request to open a named workspace.
     pub async fn open(&self, id: WorkspaceId) -> Result<Workspace, WorkspaceError> {
+        let previous_active_id = self.repository.last_active_workspace_id().await?;
+
         let workspace = self.load(id).await?;
         self.repository
             .set_last_active_workspace_id(Some(id))
             .await?;
+
+        if let Some(previous_id) = previous_active_id
+            && previous_id != id
+            && let Ok(Some(previous)) = self.repository.load(previous_id).await
+        {
+            self.publisher
+                .publish(previous_id, events::workspace_closed(previous.revision));
+        }
+        self.publisher
+            .publish(workspace.id, events::workspace_opened(&workspace));
+
         Ok(workspace)
     }
 
     /// Applies a semantic mutation command (spec §5.3.9): verifies the
     /// expected revision, validates and applies the mutation, persists the
     /// result (which increments the revision) and notifies the configured
-    /// publisher, returning the changed projection.
+    /// publisher with the focused event describing the change, returning the
+    /// changed projection.
     ///
-    /// Runtime-session updates (step 6) and real event emission beyond the
-    /// publisher seam (step 7, spec §5.3.11) are deferred: no runtime-session
-    /// concept exists yet, and building the fine-grained event payloads
-    /// ahead of the event bus (task 0081) would be speculative.
+    /// Runtime-session updates (spec §5.3.9 step 6) are deferred: no
+    /// runtime-session concept exists yet.
     pub async fn apply_command(
         &self,
         command: WorkspaceCommand,
     ) -> Result<Workspace, WorkspaceError> {
         let workspace_id = command.workspace_id();
         let expected_revision = command.expected_revision();
-        let command_kind = command_kind(&command);
 
         let mut workspace = self.load(workspace_id).await?;
         if workspace.revision != expected_revision {
@@ -144,15 +178,15 @@ where
             });
         }
 
-        command::apply(&mut workspace, command, &self.home_directory)?;
+        command::apply(&mut workspace, command.clone(), &self.home_directory)?;
 
         let persisted = self
             .repository
             .save(&workspace, Some(expected_revision))
             .await?;
 
-        self.publisher
-            .publish(persisted.id, persisted.revision, command_kind);
+        let event = events::command_event(&command, &persisted)?;
+        self.publisher.publish(persisted.id, event);
 
         Ok(persisted)
     }
@@ -161,7 +195,10 @@ where
     /// explicitly requested workspace, otherwise the last-active one,
     /// otherwise create a default; a missing or corrupt selection is
     /// recovered from by substituting a fresh default rather than failing
-    /// startup.
+    /// startup. Emits `workspace.opened` (spec §5.3.7 step 8) exactly once:
+    /// [`WorkspaceService::create_default`] already emits it when a fresh
+    /// default is selected, so this only emits it itself when reselecting an
+    /// existing workspace.
     pub async fn start(
         &self,
         requested_workspace_id: Option<WorkspaceId>,
@@ -173,7 +210,14 @@ where
 
         let workspace = match selected_id {
             Some(id) => match self.load(id).await {
-                Ok(workspace) => workspace,
+                Ok(workspace) => {
+                    self.repository
+                        .set_last_active_workspace_id(Some(workspace.id))
+                        .await?;
+                    self.publisher
+                        .publish(workspace.id, events::workspace_opened(&workspace));
+                    workspace
+                }
                 Err(WorkspaceError::NotFound { .. } | WorkspaceError::Corrupt { .. }) => {
                     self.create_default().await?
                 }
@@ -181,10 +225,6 @@ where
             },
             None => self.create_default().await?,
         };
-
-        self.repository
-            .set_last_active_workspace_id(Some(workspace.id))
-            .await?;
 
         Ok(workspace)
     }
@@ -194,29 +234,13 @@ fn validate_or_error(workspace: &Workspace) -> Result<(), WorkspaceError> {
     workspace.validate().map_err(WorkspaceError::Invalid)
 }
 
-/// A stable, human-readable label for the applied command variant, passed to
-/// the [`WorkspaceCommandPublisher`] until task 0081 replaces it with real
-/// per-variant event payloads.
-fn command_kind(command: &WorkspaceCommand) -> &'static str {
-    match command {
-        WorkspaceCommand::RenameWorkspace { .. } => "renameWorkspace",
-        WorkspaceCommand::SetActivePane { .. } => "setActivePane",
-        WorkspaceCommand::AddTab { .. } => "addTab",
-        WorkspaceCommand::CloseTab { .. } => "closeTab",
-        WorkspaceCommand::ActivateTab { .. } => "activateTab",
-        WorkspaceCommand::NavigateTab { .. } => "navigateTab",
-        WorkspaceCommand::UpdateView { .. } => "updateView",
-        WorkspaceCommand::UpdateLayout { .. } => "updateLayout",
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use std::path::Path;
-    use std::sync::Arc;
-    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::{Arc, Mutex};
 
     use fm_domain::{Location, PaneId, ProviderId};
+    use fm_events::BackendEventPayload;
 
     use super::super::memory::InMemoryWorkspaceRepository;
     use super::*;
@@ -477,22 +501,20 @@ mod tests {
     #[tokio::test]
     async fn apply_command_notifies_the_configured_publisher() {
         #[derive(Default)]
-        struct CountingPublisher {
-            calls: AtomicUsize,
+        struct RecordingPublisher {
+            events: Mutex<Vec<(WorkspaceId, BackendEventPayload)>>,
         }
 
-        impl WorkspaceCommandPublisher for Arc<CountingPublisher> {
-            fn publish(
-                &self,
-                _workspace_id: WorkspaceId,
-                _revision: u64,
-                _command_kind: &'static str,
-            ) {
-                self.calls.fetch_add(1, Ordering::SeqCst);
+        impl WorkspaceCommandPublisher for Arc<RecordingPublisher> {
+            fn publish(&self, workspace_id: WorkspaceId, payload: BackendEventPayload) {
+                self.events
+                    .lock()
+                    .expect("mutex must not be poisoned")
+                    .push((workspace_id, payload));
             }
         }
 
-        let publisher = Arc::new(CountingPublisher::default());
+        let publisher = Arc::new(RecordingPublisher::default());
         let service = WorkspaceService::new(InMemoryWorkspaceRepository::new())
             .with_secondary_location(PathBuf::from("/Users/erik/Downloads"))
             .with_publisher(Arc::clone(&publisher));
@@ -507,7 +529,183 @@ mod tests {
             .await
             .expect("apply_command must succeed");
 
-        assert_eq!(publisher.calls.load(Ordering::SeqCst), 1);
+        let events = publisher.events.lock().expect("mutex must not be poisoned");
+        let (workspace_id, payload) = events.last().expect("a rename event must be published");
+        assert_eq!(*workspace_id, workspace.id);
+        assert_eq!(
+            *payload,
+            BackendEventPayload::WorkspaceRenamed {
+                revision: workspace.revision + 1,
+                name: "Photos".to_owned(),
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn create_publishes_workspace_created() {
+        #[derive(Default)]
+        struct RecordingPublisher {
+            events: Mutex<Vec<(WorkspaceId, BackendEventPayload)>>,
+        }
+
+        impl WorkspaceCommandPublisher for Arc<RecordingPublisher> {
+            fn publish(&self, workspace_id: WorkspaceId, payload: BackendEventPayload) {
+                self.events
+                    .lock()
+                    .expect("mutex must not be poisoned")
+                    .push((workspace_id, payload));
+            }
+        }
+
+        let publisher = Arc::new(RecordingPublisher::default());
+        let service = WorkspaceService::new(InMemoryWorkspaceRepository::new())
+            .with_publisher(Arc::clone(&publisher));
+
+        let workspace = service.create(None).await.expect("create must succeed");
+
+        let events = publisher.events.lock().expect("mutex must not be poisoned");
+        assert_eq!(
+            *events,
+            vec![(
+                workspace.id,
+                BackendEventPayload::WorkspaceCreated {
+                    revision: workspace.revision,
+                }
+            )]
+        );
+    }
+
+    #[tokio::test]
+    async fn create_default_publishes_created_then_opened() {
+        #[derive(Default)]
+        struct RecordingPublisher {
+            events: Mutex<Vec<(WorkspaceId, BackendEventPayload)>>,
+        }
+
+        impl WorkspaceCommandPublisher for Arc<RecordingPublisher> {
+            fn publish(&self, workspace_id: WorkspaceId, payload: BackendEventPayload) {
+                self.events
+                    .lock()
+                    .expect("mutex must not be poisoned")
+                    .push((workspace_id, payload));
+            }
+        }
+
+        let publisher = Arc::new(RecordingPublisher::default());
+        let service = WorkspaceService::new(InMemoryWorkspaceRepository::new())
+            .with_publisher(Arc::clone(&publisher));
+
+        let workspace = service
+            .create_default()
+            .await
+            .expect("create_default must succeed");
+
+        let events = publisher.events.lock().expect("mutex must not be poisoned");
+        assert_eq!(
+            *events,
+            vec![
+                (
+                    workspace.id,
+                    BackendEventPayload::WorkspaceCreated {
+                        revision: workspace.revision,
+                    }
+                ),
+                (
+                    workspace.id,
+                    BackendEventPayload::WorkspaceOpened {
+                        revision: workspace.revision,
+                    }
+                ),
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn delete_publishes_workspace_deleted_with_the_pre_deletion_revision() {
+        #[derive(Default)]
+        struct RecordingPublisher {
+            events: Mutex<Vec<(WorkspaceId, BackendEventPayload)>>,
+        }
+
+        impl WorkspaceCommandPublisher for Arc<RecordingPublisher> {
+            fn publish(&self, workspace_id: WorkspaceId, payload: BackendEventPayload) {
+                self.events
+                    .lock()
+                    .expect("mutex must not be poisoned")
+                    .push((workspace_id, payload));
+            }
+        }
+
+        let publisher = Arc::new(RecordingPublisher::default());
+        let service = WorkspaceService::new(InMemoryWorkspaceRepository::new())
+            .with_publisher(Arc::clone(&publisher));
+        let workspace = service.create_default().await.unwrap();
+
+        service
+            .delete(workspace.id, Some(workspace.revision))
+            .await
+            .expect("delete must succeed");
+
+        let events = publisher.events.lock().expect("mutex must not be poisoned");
+        assert_eq!(
+            events.last(),
+            Some(&(
+                workspace.id,
+                BackendEventPayload::WorkspaceDeleted {
+                    revision: workspace.revision,
+                }
+            ))
+        );
+    }
+
+    #[tokio::test]
+    async fn open_publishes_closed_for_the_previous_workspace_then_opened_for_the_new_one() {
+        #[derive(Default)]
+        struct RecordingPublisher {
+            events: Mutex<Vec<(WorkspaceId, BackendEventPayload)>>,
+        }
+
+        impl WorkspaceCommandPublisher for Arc<RecordingPublisher> {
+            fn publish(&self, workspace_id: WorkspaceId, payload: BackendEventPayload) {
+                self.events
+                    .lock()
+                    .expect("mutex must not be poisoned")
+                    .push((workspace_id, payload));
+            }
+        }
+
+        let publisher = Arc::new(RecordingPublisher::default());
+        let service = WorkspaceService::new(InMemoryWorkspaceRepository::new())
+            .with_publisher(Arc::clone(&publisher));
+        let first = service.create_default().await.unwrap();
+        let second = service.create(None).await.unwrap();
+
+        publisher
+            .events
+            .lock()
+            .expect("mutex must not be poisoned")
+            .clear();
+
+        let opened = service.open(second.id).await.expect("open must succeed");
+
+        let events = publisher.events.lock().expect("mutex must not be poisoned");
+        assert_eq!(
+            *events,
+            vec![
+                (
+                    first.id,
+                    BackendEventPayload::WorkspaceClosed {
+                        revision: first.revision,
+                    }
+                ),
+                (
+                    second.id,
+                    BackendEventPayload::WorkspaceOpened {
+                        revision: opened.revision,
+                    }
+                ),
+            ]
+        );
     }
 
     #[tokio::test]
