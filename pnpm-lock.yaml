@@ -36,6 +36,9 @@ importers:
         specifier: ^3.17.7
         version: 3.17.7
     devDependencies:
+      '@mithril-inspector/vite':
+        specifier: 0.3.2
+        version: 0.3.2(vite@8.1.5(@types/node@26.1.2)(esbuild@0.28.1)(jiti@2.7.0)(yaml@2.9.0))
       '@types/mithril':
         specifier: ^2.2.8
         version: 2.2.8
@@ -67,6 +70,23 @@ packages:
   '@asamuzakjp/dom-selector@8.3.0':
     resolution: {integrity: sha512-UJLfKXBhrc8i1vH2eJXuYQMwlsLKWFw3O+CPqXSuVEiikeAim3UgrfWX0k4tA/X8cRFM8iZ7OaqBokFGbYusdg==}
     engines: {node: ^22.13.0 || >=24.0.0}
+
+  '@babel/helper-string-parser@8.0.0':
+    resolution: {integrity: sha512-6mJgmFFFIIO82vvoLt9XtRC7/TkzXfts1t/SpRX4IHSzMgqoPYCWesVu1udUPUWioAE/2fcG6WuI8zrkE1gwrg==}
+    engines: {node: ^22.18.0 || >=24.11.0}
+
+  '@babel/helper-validator-identifier@8.0.4':
+    resolution: {integrity: sha512-4wFaiLd0bVo4cIoTXI3zKI038NIWE/cr3jvBjejOVYVxV/m8Ltav1USiGzG1fmS5J2RhgEOgXNNK46cRPnRsrg==}
+    engines: {node: ^22.18.0 || >=24.11.0}
+
+  '@babel/parser@8.0.4':
+    resolution: {integrity: sha512-srpptsAkEbbNIC/q8nT7o+m6CQe8CJUTV/t7MYc9NnWlgYVtHOb7JH6SorxMhN0kuRJjVqXbKClG6xSbPtzz+g==}
+    engines: {node: ^22.18.0 || >=24.11.0}
+    hasBin: true
+
+  '@babel/types@8.0.4':
+    resolution: {integrity: sha512-eY+Yn3dCqTGmyiq2QRU66lA5FL8lqqqvecHt0fF3uHONIa7ToYsaCiWV8lOKqAs0Rb2SjixiKFROngnulPtt2g==}
+    engines: {node: ^22.18.0 || >=24.11.0}
 
   '@biomejs/biome@2.5.6':
     resolution: {integrity: sha512-lxVNjv7UF6KfhMJfL9gaUHbWdJdHbsAj6OSmwSYNdhRuG67NxNQ4Xdvh3TUxsSK9sBzJBQhEJj3AopmmNJ5pSA==}
@@ -353,6 +373,29 @@ packages:
   '@jridgewell/sourcemap-codec@1.5.5':
     resolution: {integrity: sha512-cYQ9310grqxueWbl+WuIUIaiUaDcj7WOq5fVhEljNVgRfOUhY9fy2zTvfoqWsnebh8Sl70VScFbICvJnLKB0Og==}
 
+  '@mithril-inspector/adapter-kit@0.3.2':
+    resolution: {integrity: sha512-GxpGxCCoxbsUOCCCTpfVPKve5nn3xgpqNNIgiIFQ1Vyeo+ph58ThGIC2F/aHqn5rzh276MqBiGfnRM2ItgwwzA==}
+
+  '@mithril-inspector/overlay@0.3.2':
+    resolution: {integrity: sha512-hvDQYAwIya4ekMZxwr7zg28FC1wbQNgkc29PFdwVkvSMaBJVSobzOLTVcepwUGYqKK/bDGy5zUq5O7E38pjpiQ==}
+
+  '@mithril-inspector/protocol@0.3.2':
+    resolution: {integrity: sha512-d3YplWodz8XkcfVLtLssgsE2HTsLcQQrMjuJ6qYLGX/bxI5bFjOfzAIpA3EfoN00PVZlcKLmdpDs9WwnhidoXQ==}
+
+  '@mithril-inspector/runtime@0.3.2':
+    resolution: {integrity: sha512-0EkGBQ2lBBTitKFzeqlxI5q/jnVzqQM0HJJ7UMPIVFupvSAT4/3jP14ufbUlpPQY8U+cg4p48/QyzdruH+o32A==}
+
+  '@mithril-inspector/server@0.3.2':
+    resolution: {integrity: sha512-+2J4YBB6Zbksuxo/1fPaXTIlNPiVv4sCuLHIc165Efr5JC8TB52v0lCKEnH1WNl8k0oWIv7s9sol7cmr8uhJOA==}
+
+  '@mithril-inspector/transform@0.3.2':
+    resolution: {integrity: sha512-//+8JRTYkO3/33ET2CXTugzGKvPJUdTS/O49ox3rCfxx/RPyE55QMVHrHqga6yTzGSOY5G6ooxtLSx0PPcZABQ==}
+
+  '@mithril-inspector/vite@0.3.2':
+    resolution: {integrity: sha512-bSGaz3dtnJlgyegn5RjIQwJ9nJOaGXRrFBSLguH6my9yqA6tNRwJaCf2tJGt6MMu64yZbuxY1RXJUeYHidVRdw==}
+    peerDependencies:
+      vite: ^5.0.0 || ^6.0.0 || ^7.0.0 || ^8.0.0
+
   '@napi-rs/wasm-runtime@1.2.0':
     resolution: {integrity: sha512-kDoONqMa+VnZ4vvvu/ZUurpJ4gkZU57e7g69qpNgWhYcZFPUHZM2CEMKm+cG6ufDVALbjMvfmMjFVqaK7uEMnA==}
     engines: {node: ^20.19.0 || ^22.13.0 || >=23.5.0}
@@ -507,6 +550,15 @@ packages:
   '@rolldown/pluginutils@1.0.1':
     resolution: {integrity: sha512-2j9bGt5Jh8hj+vPtgzPtl72j0yRxHAyumoo6TNfAjsLB04UtpSvPbPcDcBMxz7n+9CYB0c1GxQFxYRg2jimqGw==}
 
+  '@rollup/pluginutils@5.4.0':
+    resolution: {integrity: sha512-MfPp06CjRLfXQ3wY0R8vJDYBy/MvVcc9OulEfR0B8Iv9ko+GCNaRZ+EpJYFl27LhKsZK0o420sYCRHCjfCgeUg==}
+    engines: {node: '>=14.0.0'}
+    peerDependencies:
+      rollup: ^1.20.0||^2.0.0||^3.0.0||^4.0.0
+    peerDependenciesMeta:
+      rollup:
+        optional: true
+
   '@scalar/helpers@0.9.2':
     resolution: {integrity: sha512-hjyMpMZjTBZQhyByZmz5oUgRKUQJO5V5AOiJxsVEGbUmgA7sJRQeTrXLB+BEwzaKS5nm2opJeNyMBYLFNK4hiQ==}
     engines: {node: '>=22'}
@@ -640,6 +692,9 @@ packages:
 
   '@types/chai@5.2.3':
     resolution: {integrity: sha512-Mw558oeA9fFbv65/y4mHtXDs9bPnFMZAL/jxdPFUpOHHIXX91mcgEHbS5Lahr+pwZFR8A7GQleRWeI6cGFC2UA==}
+
+  '@types/connect@3.4.38':
+    resolution: {integrity: sha512-K6uROf1LD88uDQqJCktA4yzL1YYAK6NgfsI0v/mTgyPKWsX1CnJ0XPSDhViejru1GcRkLWb8RlzFYJRqGUbaug==}
 
   '@types/deep-eql@4.0.2':
     resolution: {integrity: sha512-c9h9dVVMigMPc4bwTvC5dxqtqJZwQPePsWjPlpSOnojbor6pGqdk541lfA7AqFQr5pB1BRdq0juY9db81BwyFw==}
@@ -917,6 +972,9 @@ packages:
     engines: {node: '>=18'}
     hasBin: true
 
+  estree-walker@2.0.2:
+    resolution: {integrity: sha512-Rfkk/Mp/DL7JVje3u18FxFujQlTNR2q6QfMSMB7AvCBx91NGj/ba3kCfza0f6dVDbw7YlRf/nDrn7pQrCCyQ/w==}
+
   estree-walker@3.0.3:
     resolution: {integrity: sha512-7RUKfXgSMMkzt6ZuXmqapOurLGPPfgj6l9uRZ7lRGolvk0y2yocc35LdcxKC5PQZdn2DMqioAQ2NoWcrTKmm6g==}
 
@@ -1130,6 +1188,9 @@ packages:
 
   magic-string@0.30.21:
     resolution: {integrity: sha512-vd2F4YUyEXKGcLHoq+TEyCjxueSeHnFxyyjNp80yg0XV4vUhnDer/lvvlqM/arB5bXQN5K2/3oinyCRyx8T2CQ==}
+
+  magic-string@1.1.0:
+    resolution: {integrity: sha512-kS3VHe0nEPST2saQV4Rbkchcd3UBRkVTQHo1D3h/ZTwFDhai/mfKkmtPAtD129EOI7K3HlHIsFOt0WrI2/oU9g==}
 
   markdown-it@14.3.0:
     resolution: {integrity: sha512-RCEsPjR+sr0x+AuYp601tKTkgFG4YEPLCzHST3cQ/fhlJkqAkz1L2/Qbp1j9qw5SBwQHFBoW8+hoN5xssOF0Tw==}
@@ -1515,6 +1576,19 @@ snapshots:
       is-potential-custom-element-name: 1.0.1
       lru-cache: 11.5.2
 
+  '@babel/helper-string-parser@8.0.0': {}
+
+  '@babel/helper-validator-identifier@8.0.4': {}
+
+  '@babel/parser@8.0.4':
+    dependencies:
+      '@babel/types': 8.0.4
+
+  '@babel/types@8.0.4':
+    dependencies:
+      '@babel/helper-string-parser': 8.0.0
+      '@babel/helper-validator-identifier': 8.0.4
+
   '@biomejs/biome@2.5.6':
     optionalDependencies:
       '@biomejs/cli-darwin-arm64': 2.5.6
@@ -1689,6 +1763,53 @@ snapshots:
       '@shikijs/vscode-textmate': 10.0.2
 
   '@jridgewell/sourcemap-codec@1.5.5': {}
+
+  '@mithril-inspector/adapter-kit@0.3.2':
+    dependencies:
+      '@mithril-inspector/overlay': 0.3.2
+      '@mithril-inspector/protocol': 0.3.2
+      '@mithril-inspector/runtime': 0.3.2
+      '@mithril-inspector/server': 0.3.2
+      '@mithril-inspector/transform': 0.3.2
+    transitivePeerDependencies:
+      - rollup
+
+  '@mithril-inspector/overlay@0.3.2':
+    dependencies:
+      '@mithril-inspector/protocol': 0.3.2
+      mithril: 2.3.8
+
+  '@mithril-inspector/protocol@0.3.2': {}
+
+  '@mithril-inspector/runtime@0.3.2':
+    dependencies:
+      '@mithril-inspector/protocol': 0.3.2
+
+  '@mithril-inspector/server@0.3.2':
+    dependencies:
+      '@mithril-inspector/protocol': 0.3.2
+      '@types/connect': 3.4.38
+
+  '@mithril-inspector/transform@0.3.2':
+    dependencies:
+      '@babel/parser': 8.0.4
+      '@mithril-inspector/protocol': 0.3.2
+      '@rollup/pluginutils': 5.4.0
+      magic-string: 1.1.0
+    transitivePeerDependencies:
+      - rollup
+
+  '@mithril-inspector/vite@0.3.2(vite@8.1.5(@types/node@26.1.2)(esbuild@0.28.1)(jiti@2.7.0)(yaml@2.9.0))':
+    dependencies:
+      '@mithril-inspector/adapter-kit': 0.3.2
+      '@mithril-inspector/overlay': 0.3.2
+      '@mithril-inspector/protocol': 0.3.2
+      '@mithril-inspector/runtime': 0.3.2
+      '@mithril-inspector/server': 0.3.2
+      '@mithril-inspector/transform': 0.3.2
+      vite: 8.1.5(@types/node@26.1.2)(esbuild@0.28.1)(jiti@2.7.0)(yaml@2.9.0)
+    transitivePeerDependencies:
+      - rollup
 
   '@napi-rs/wasm-runtime@1.2.0(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)':
     dependencies:
@@ -1868,6 +1989,12 @@ snapshots:
 
   '@rolldown/pluginutils@1.0.1': {}
 
+  '@rollup/pluginutils@5.4.0':
+    dependencies:
+      '@types/estree': 1.0.9
+      estree-walker: 2.0.2
+      picomatch: 4.0.5
+
   '@scalar/helpers@0.9.2': {}
 
   '@scalar/json-magic@0.12.19':
@@ -1981,6 +2108,10 @@ snapshots:
     dependencies:
       '@types/deep-eql': 4.0.2
       assertion-error: 2.0.1
+
+  '@types/connect@3.4.38':
+    dependencies:
+      '@types/node': 26.1.2
 
   '@types/deep-eql@4.0.2': {}
 
@@ -2208,6 +2339,8 @@ snapshots:
       '@esbuild/win32-ia32': 0.28.1
       '@esbuild/win32-x64': 0.28.1
 
+  estree-walker@2.0.2: {}
+
   estree-walker@3.0.3:
     dependencies:
       '@types/estree': 1.0.9
@@ -2398,6 +2531,10 @@ snapshots:
   lunr@2.3.9: {}
 
   magic-string@0.30.21:
+    dependencies:
+      '@jridgewell/sourcemap-codec': 1.5.5
+
+  magic-string@1.1.0:
     dependencies:
       '@jridgewell/sourcemap-codec': 1.5.5
 

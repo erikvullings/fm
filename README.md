@@ -15,6 +15,11 @@ For deterministic frontend development without Axum or Tauri, run `pnpm dev:mock
 adapter provides nested and special-case directory fixtures, configurable loading/failure states,
 scriptable backend events, and lazily generated directories of up to 1,000,000 entries.
 
+Development builds include Mithril Inspector. Open the docked inspector with the `M` toggle at the
+bottom of the page, or press `Alt+Shift+M` to select a rendered element. Use it to trace elements to
+their source components, inspect the component tree, and view component attrs and local state. The
+inspector and its editor endpoint are excluded from production builds.
+
 Backend-to-frontend updates use one typed event contract for both browser SSE and Tauri channels.
 The frontend event-stream abstraction exposes connection status and listener registration while
 ignoring unknown future event types for forward compatibility.

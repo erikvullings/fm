@@ -19,6 +19,7 @@
     "mithril-materialized": "^3.17.7"
   },
   "devDependencies": {
+    "@mithril-inspector/vite": "0.3.2",
     "@types/mithril": "^2.2.8",
     "@types/node": "^26.1.2",
     "jsdom": "^30.0.1",
