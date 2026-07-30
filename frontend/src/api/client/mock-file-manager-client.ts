@@ -5,6 +5,7 @@ import type {
   ActionDescriptor,
   ActionResult,
   BackendEvent,
+  CreateWorkspaceRequest,
   DirectorySnapshot,
   EntryMetadata,
   EntryMetadataRequest,
@@ -18,8 +19,10 @@ import type {
   RuntimeCapabilities,
   StartOperationRequest,
   Unsubscribe,
-  Workspace,
+  WorkspaceCommand,
   WorkspaceId,
+  WorkspaceProjection,
+  WorkspaceSummary,
 } from '../../models';
 import type { FileManagerClient } from './file-manager-client';
 import {
@@ -43,6 +46,12 @@ const plugins = pluginFixtures as PluginDescriptor[];
 export type MockClientMethod =
   | 'getRuntimeCapabilities'
   | 'getWorkspace'
+  | 'listWorkspaces'
+  | 'createWorkspace'
+  | 'renameWorkspace'
+  | 'deleteWorkspace'
+  | 'openWorkspace'
+  | 'dispatchWorkspaceCommand'
   | 'navigatePane'
   | 'listDirectory'
   | 'getEntryMetadata'
@@ -84,6 +93,68 @@ function fixtureEntry(
   };
 }
 
+function createMockWorkspace(id: WorkspaceId, name = 'Mock Workspace'): WorkspaceProjection {
+  return {
+    id,
+    name,
+    revision: 1,
+    paneOrder: ['left', 'right'],
+    panesById: {
+      left: {
+        id: 'left',
+        tabOrder: ['left-tab'],
+        tabsById: {
+          'left-tab': {
+            id: 'left-tab',
+            title: 'Mock files',
+            location: { providerId: 'file', uri: 'mock:///' },
+            canNavigateBack: false,
+            canNavigateForward: false,
+            view: {
+              sort: [],
+              columns: [],
+              showHidden: false,
+              foldersFirst: true,
+              quickFilter: null,
+            },
+          },
+        },
+        activeTabId: 'left-tab',
+      },
+      right: {
+        id: 'right',
+        tabOrder: ['right-tab'],
+        tabsById: {
+          'right-tab': {
+            id: 'right-tab',
+            title: 'Documents',
+            location: { providerId: 'file', uri: 'mock:///Documents' },
+            canNavigateBack: false,
+            canNavigateForward: false,
+            view: {
+              sort: [],
+              columns: [],
+              showHidden: false,
+              foldersFirst: true,
+              quickFilter: null,
+            },
+          },
+        },
+        activeTabId: 'right-tab',
+      },
+    },
+    activePaneId: 'left',
+    layout: {
+      type: 'split',
+      axis: 'horizontal',
+      ratio: 0.5,
+      first: { type: 'pane', paneId: 'left' },
+      second: { type: 'pane', paneId: 'right' },
+    },
+    operationCentre: { visible: false, height: 180 },
+  };
+}
+
 /** Strictly typed controls for the deterministic in-memory frontend adapter. */
 export class MockFileManagerClient implements FileManagerClient {
   private readonly pageSize: number;
@@ -94,7 +165,10 @@ export class MockFileManagerClient implements FileManagerClient {
   private readonly listeners = new Set<(event: BackendEvent) => void>();
   private readonly scriptedEvents: BackendEvent[] = [];
   private readonly operations = new Map<OperationId, Operation>();
+  private readonly workspaces = new Map<WorkspaceId, WorkspaceProjection>();
   private operationSequence = 0;
+  private tabSequence = 0;
+  private workspaceSequence = 0;
 
   constructor(options: MockFileManagerClientOptions = {}) {
     this.pageSize = options.pageSize ?? 100;
@@ -121,45 +195,210 @@ export class MockFileManagerClient implements FileManagerClient {
     }));
   }
 
-  getWorkspace(workspaceId: WorkspaceId, signal?: AbortSignal): Promise<Workspace> {
-    return this.perform('getWorkspace', signal, () => ({
-      id: workspaceId,
-      name: 'Mock Workspace',
-      panes: [
-        {
-          id: 'left',
-          tabs: [
-            {
-              id: 'left-tab',
-              location: { providerId: 'file', uri: 'mock:///' },
-              history: { back: [], forward: [] },
-              view: { sort: [{ field: 'name', direction: 'ascending' }], selectedEntryIds: [] },
+  listWorkspaces(signal?: AbortSignal): Promise<WorkspaceSummary[]> {
+    return this.perform('listWorkspaces', signal, () =>
+      [...this.workspaces.values()].map(({ id, name, revision }) => ({
+        id,
+        name,
+        revision,
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      })),
+    );
+  }
+
+  createWorkspace(
+    request: CreateWorkspaceRequest,
+    signal?: AbortSignal,
+  ): Promise<WorkspaceProjection> {
+    return this.perform('createWorkspace', signal, () => {
+      this.workspaceSequence += 1;
+      const workspace = createMockWorkspace(
+        `mock-workspace-${this.workspaceSequence}`,
+        request.name ?? 'Default',
+      );
+      this.workspaces.set(workspace.id, workspace);
+      return structuredClone(workspace);
+    });
+  }
+
+  getWorkspace(workspaceId: WorkspaceId, signal?: AbortSignal): Promise<WorkspaceProjection> {
+    return this.perform('getWorkspace', signal, () => {
+      const workspace = this.workspaces.get(workspaceId) ?? createMockWorkspace(workspaceId);
+      this.workspaces.set(workspaceId, workspace);
+      return structuredClone(workspace);
+    });
+  }
+
+  renameWorkspace(
+    workspaceId: WorkspaceId,
+    name: string,
+    expectedRevision: number,
+    signal?: AbortSignal,
+  ): Promise<WorkspaceProjection> {
+    return this.dispatchWorkspaceCommand(
+      { type: 'renameWorkspace', workspaceId, name, expectedRevision },
+      signal,
+    );
+  }
+
+  deleteWorkspace(
+    workspaceId: WorkspaceId,
+    expectedRevision?: number,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    return this.perform('deleteWorkspace', signal, () => {
+      const workspace = this.workspaces.get(workspaceId);
+      if (workspace !== undefined && expectedRevision !== undefined) {
+        this.requireWorkspaceRevision(workspace, expectedRevision);
+      }
+      this.workspaces.delete(workspaceId);
+    });
+  }
+
+  openWorkspace(workspaceId: WorkspaceId, signal?: AbortSignal): Promise<WorkspaceProjection> {
+    return this.perform('openWorkspace', signal, () => {
+      const workspace = this.workspaces.get(workspaceId) ?? createMockWorkspace(workspaceId);
+      this.workspaces.set(workspaceId, workspace);
+      return structuredClone(workspace);
+    });
+  }
+
+  dispatchWorkspaceCommand(
+    command: WorkspaceCommand,
+    signal?: AbortSignal,
+  ): Promise<WorkspaceProjection> {
+    return this.perform('dispatchWorkspaceCommand', signal, () => {
+      const current =
+        this.workspaces.get(command.workspaceId) ?? createMockWorkspace(command.workspaceId);
+      this.requireWorkspaceRevision(current, command.expectedRevision);
+      let changed: WorkspaceProjection;
+      switch (command.type) {
+        case 'renameWorkspace':
+          changed = { ...current, name: command.name, revision: current.revision + 1 };
+          break;
+        case 'setActivePane':
+          changed = {
+            ...current,
+            activePaneId: command.paneId,
+            revision: current.revision + 1,
+          };
+          break;
+        case 'updateLayout':
+          changed = { ...current, layout: command.layout, revision: current.revision + 1 };
+          break;
+        case 'addTab': {
+          const pane = current.panesById[command.paneId];
+          if (pane === undefined) {
+            throw new MockClientError('paneNotFound', `No mock pane with id ${command.paneId}`);
+          }
+          this.tabSequence += 1;
+          const tabId = `mock-tab-${this.tabSequence}`;
+          const tab = {
+            id: tabId,
+            title: command.location.uri.split('/').at(-1) || command.location.uri,
+            location: command.location,
+            canNavigateBack: false,
+            canNavigateForward: false,
+            view: {
+              sort: [],
+              columns: [],
+              showHidden: false,
+              foldersFirst: true,
+              quickFilter: null,
             },
-          ],
-          activeTabId: 'left-tab',
-        },
-        {
-          id: 'right',
-          tabs: [
-            {
-              id: 'right-tab',
-              location: { providerId: 'file', uri: 'mock:///Documents' },
-              history: { back: [], forward: [] },
-              view: { sort: [{ field: 'name', direction: 'ascending' }], selectedEntryIds: [] },
+          };
+          changed = {
+            ...current,
+            revision: current.revision + 1,
+            panesById: {
+              ...current.panesById,
+              [pane.id]: {
+                ...pane,
+                tabOrder: [...pane.tabOrder, tabId],
+                tabsById: { ...pane.tabsById, [tabId]: tab },
+                activeTabId: tabId,
+              },
             },
-          ],
-          activeTabId: 'right-tab',
-        },
-      ],
-      activePaneId: 'left',
-      layout: {
-        type: 'split',
-        direction: 'horizontal',
-        ratio: 0.5,
-        first: { type: 'pane', paneId: 'left' },
-        second: { type: 'pane', paneId: 'right' },
-      },
-    }));
+          };
+          break;
+        }
+        case 'closeTab':
+        case 'activateTab':
+        case 'navigateTab':
+        case 'updateView': {
+          const pane = current.panesById[command.paneId];
+          if (pane === undefined) {
+            throw new MockClientError('paneNotFound', `No mock pane with id ${command.paneId}`);
+          }
+          if (command.type === 'closeTab') {
+            const tabsById = { ...pane.tabsById };
+            delete tabsById[command.tabId];
+            const tabOrder = pane.tabOrder.filter((tabId) => tabId !== command.tabId);
+            changed = {
+              ...current,
+              revision: current.revision + 1,
+              panesById: {
+                ...current.panesById,
+                [pane.id]: {
+                  ...pane,
+                  tabOrder,
+                  tabsById,
+                  activeTabId: tabOrder[0] ?? pane.activeTabId,
+                },
+              },
+            };
+            break;
+          }
+          const tab = pane.tabsById[command.tabId];
+          if (tab === undefined) {
+            throw new MockClientError('tabNotFound', `No mock tab with id ${command.tabId}`);
+          }
+          const nextTab =
+            command.type === 'navigateTab'
+              ? {
+                  ...tab,
+                  location: command.location,
+                  canNavigateBack: command.navigationMode !== 'back',
+                  canNavigateForward: command.navigationMode === 'back',
+                }
+              : command.type === 'updateView'
+                ? {
+                    ...tab,
+                    view: {
+                      ...tab.view,
+                      ...Object.fromEntries(
+                        Object.entries(command.patch).filter(([, value]) => value !== null),
+                      ),
+                    },
+                  }
+                : tab;
+          changed = {
+            ...current,
+            revision: current.revision + 1,
+            panesById: {
+              ...current.panesById,
+              [pane.id]: {
+                ...pane,
+                activeTabId: command.type === 'activateTab' ? command.tabId : pane.activeTabId,
+                tabsById: { ...pane.tabsById, [tab.id]: nextTab },
+              },
+            },
+          };
+          break;
+        }
+      }
+      this.workspaces.set(changed.id, changed);
+      return structuredClone(changed);
+    });
+  }
+
+  private requireWorkspaceRevision(workspace: WorkspaceProjection, expectedRevision: number): void {
+    if (workspace.revision !== expectedRevision) {
+      throw new MockClientError(
+        'workspaceRevisionConflict',
+        'The workspace changed after this view was loaded.',
+      );
+    }
   }
 
   navigatePane(request: NavigateRequest, signal?: AbortSignal): Promise<DirectorySnapshot> {

@@ -4,6 +4,7 @@ import type {
   ActionDescriptor,
   ActionResult,
   BackendEvent,
+  CreateWorkspaceRequest,
   DirectorySnapshot,
   EntryMetadata,
   EntryMetadataRequest,
@@ -17,10 +18,14 @@ import type {
   RuntimeCapabilities,
   StartOperationRequest,
   Unsubscribe,
-  Workspace,
+  WorkspaceCommand,
   WorkspaceId,
+  WorkspaceProjection,
+  WorkspaceSummary,
 } from '../../models';
+import { workspaceProjectionFromDto } from '../../models/workspace';
 import { TauriEventStream } from '../events/tauri-event-stream';
+import type { WorkspaceDto } from '../generated/models/workspaceDto';
 import { type FileManagerClient, NotImplementedError } from './file-manager-client';
 
 /**
@@ -40,10 +45,60 @@ export class TauriFileManagerClient implements FileManagerClient {
     return invoke<RuntimeCapabilities>('get_runtime_capabilities');
   }
 
-  // No task currently owns a `get_workspace` command (spec §8 lists the REST
-  // endpoint, but no TASKS/*.md claims a Tauri command for it yet).
-  getWorkspace(_workspaceId: WorkspaceId, _signal?: AbortSignal): Promise<Workspace> {
-    return this.notImplemented('getWorkspace', 'TBD');
+  listWorkspaces(_signal?: AbortSignal): Promise<WorkspaceSummary[]> {
+    return invoke<WorkspaceSummary[]>('list_workspaces');
+  }
+
+  async createWorkspace(
+    request: CreateWorkspaceRequest,
+    _signal?: AbortSignal,
+  ): Promise<WorkspaceProjection> {
+    return workspaceProjectionFromDto(await invoke<WorkspaceDto>('create_workspace', { request }));
+  }
+
+  async getWorkspace(
+    workspaceId: WorkspaceId,
+    _signal?: AbortSignal,
+  ): Promise<WorkspaceProjection> {
+    return workspaceProjectionFromDto(await invoke<WorkspaceDto>('get_workspace', { workspaceId }));
+  }
+
+  renameWorkspace(
+    workspaceId: WorkspaceId,
+    name: string,
+    expectedRevision: number,
+    signal?: AbortSignal,
+  ): Promise<WorkspaceProjection> {
+    return this.dispatchWorkspaceCommand(
+      { type: 'renameWorkspace', workspaceId, name, expectedRevision },
+      signal,
+    );
+  }
+
+  async deleteWorkspace(
+    workspaceId: WorkspaceId,
+    expectedRevision?: number,
+    _signal?: AbortSignal,
+  ): Promise<void> {
+    await invoke('delete_workspace', { workspaceId, expectedRevision });
+  }
+
+  async openWorkspace(
+    workspaceId: WorkspaceId,
+    _signal?: AbortSignal,
+  ): Promise<WorkspaceProjection> {
+    return workspaceProjectionFromDto(
+      await invoke<WorkspaceDto>('open_workspace', { workspaceId }),
+    );
+  }
+
+  async dispatchWorkspaceCommand(
+    command: WorkspaceCommand,
+    _signal?: AbortSignal,
+  ): Promise<WorkspaceProjection> {
+    return workspaceProjectionFromDto(
+      await invoke<WorkspaceDto>('apply_workspace_command', { command }),
+    );
   }
 
   navigatePane(request: NavigateRequest, _signal?: AbortSignal): Promise<DirectorySnapshot> {

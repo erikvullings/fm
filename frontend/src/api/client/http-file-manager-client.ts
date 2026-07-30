@@ -2,6 +2,7 @@ import type {
   ActionDescriptor,
   ActionResult,
   BackendEvent,
+  CreateWorkspaceRequest,
   DirectorySnapshot,
   EntryMetadata,
   EntryMetadataRequest,
@@ -15,14 +16,23 @@ import type {
   RuntimeCapabilities,
   StartOperationRequest,
   Unsubscribe,
-  Workspace,
+  WorkspaceCommand,
   WorkspaceId,
+  WorkspaceProjection,
+  WorkspaceSummary,
 } from '../../models';
+import { workspaceProjectionFromDto } from '../../models/workspace';
 import {
   listDirectory as requestDirectory,
   getEntryMetadata as requestEntryMetadata,
   navigatePane as requestNavigation,
   getRuntimeCapabilities as requestRuntimeCapabilities,
+  getWorkspace as requestWorkspace,
+  applyWorkspaceCommand as requestWorkspaceCommand,
+  createWorkspace as requestWorkspaceCreation,
+  deleteWorkspace as requestWorkspaceDeletion,
+  openWorkspace as requestWorkspaceOpen,
+  listWorkspaces as requestWorkspaces,
 } from '../generated/file-manager-api';
 import { type FileManagerClient, NotImplementedError } from './file-manager-client';
 
@@ -48,10 +58,87 @@ export class HttpFileManagerClient implements FileManagerClient {
     return response.data;
   }
 
-  // No task currently owns `GET /api/v1/workspaces/{workspaceId}` (spec §8 lists it,
-  // but no TASKS/*.md claims it yet) — flagged as a known gap rather than guessed at.
-  getWorkspace(_workspaceId: WorkspaceId, _signal?: AbortSignal): Promise<Workspace> {
-    return this.notImplemented('getWorkspace', 'TBD');
+  async listWorkspaces(signal?: AbortSignal): Promise<WorkspaceSummary[]> {
+    const response = await requestWorkspaces(signal === undefined ? undefined : { signal });
+    return response.data;
+  }
+
+  async createWorkspace(
+    request: CreateWorkspaceRequest,
+    signal?: AbortSignal,
+  ): Promise<WorkspaceProjection> {
+    const response = await requestWorkspaceCreation(
+      request,
+      signal === undefined ? undefined : { signal },
+    );
+    if (response.status !== 201) {
+      throw new Error(`Unexpected createWorkspace response status: ${response.status}`);
+    }
+    return workspaceProjectionFromDto(response.data);
+  }
+
+  async getWorkspace(workspaceId: WorkspaceId, signal?: AbortSignal): Promise<WorkspaceProjection> {
+    const response = await requestWorkspace(
+      workspaceId,
+      signal === undefined ? undefined : { signal },
+    );
+    if (response.status !== 200) {
+      throw new Error(`Unexpected getWorkspace response status: ${response.status}`);
+    }
+    return workspaceProjectionFromDto(response.data);
+  }
+
+  renameWorkspace(
+    workspaceId: WorkspaceId,
+    name: string,
+    expectedRevision: number,
+    signal?: AbortSignal,
+  ): Promise<WorkspaceProjection> {
+    return this.dispatchWorkspaceCommand(
+      { type: 'renameWorkspace', workspaceId, name, expectedRevision },
+      signal,
+    );
+  }
+
+  async deleteWorkspace(
+    workspaceId: WorkspaceId,
+    expectedRevision?: number,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    await requestWorkspaceDeletion(
+      workspaceId,
+      expectedRevision === undefined ? undefined : { expectedRevision },
+      signal === undefined ? undefined : { signal },
+    );
+  }
+
+  async openWorkspace(
+    workspaceId: WorkspaceId,
+    signal?: AbortSignal,
+  ): Promise<WorkspaceProjection> {
+    const response = await requestWorkspaceOpen(
+      workspaceId,
+      signal === undefined ? undefined : { signal },
+    );
+    if (response.status !== 200) {
+      throw new Error(`Unexpected openWorkspace response status: ${response.status}`);
+    }
+    return workspaceProjectionFromDto(response.data);
+  }
+
+  async dispatchWorkspaceCommand(
+    command: WorkspaceCommand,
+    signal?: AbortSignal,
+  ): Promise<WorkspaceProjection> {
+    const response = await requestWorkspaceCommand(
+      command.workspaceId,
+      command,
+      signal === undefined ? undefined : { signal },
+    );
+    if (response.status !== 200) {
+      throw new Error(`Unexpected applyWorkspaceCommand response status: ${response.status}`);
+    }
+    return workspaceProjectionFromDto(response.data);
   }
 
   async navigatePane(request: NavigateRequest, signal?: AbortSignal): Promise<DirectorySnapshot> {

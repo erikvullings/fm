@@ -5,7 +5,7 @@ import type {
   EntrySummary,
   Operation,
   PluginDescriptor,
-  Workspace,
+  WorkspaceProjection,
 } from '../models';
 import { createInitialAppState } from './model';
 import {
@@ -18,6 +18,7 @@ import {
   pluginPatch,
   runtimePatch,
   workspaceSnapshotPatch,
+  workspaceViewPatch,
 } from './reducers';
 import { applyAppPatches } from './store';
 
@@ -35,13 +36,16 @@ function entry(id: string, name = id): EntrySummary {
   };
 }
 
-function workspace(name: string): Workspace {
+function workspace(name: string): WorkspaceProjection {
   return {
     id: 'workspace-1',
     name,
-    panes: [],
+    revision: 1,
+    paneOrder: [],
+    panesById: {},
     activePaneId: 'pane-1',
     layout: { type: 'pane', paneId: 'pane-1' },
+    operationCentre: { visible: false, height: 180 },
   };
 }
 
@@ -79,8 +83,41 @@ describe('state slice reducers', () => {
     const next = applyAppPatches(initial, workspaceSnapshotPatch(workspace('After')));
 
     expect(next.workspace.current?.name).toBe('After');
-    expect(next.workspace.directories).toEqual({});
+    expect(next.workspace.directories).toBe(initial.workspace.directories);
     expect(beforeWorkspace.current?.name).toBe('Before');
+  });
+
+  it('leaves previously stored directory entries untouched by a workspace mutation', () => {
+    const withDirectory = applyAppPatches(
+      createInitialAppState('mock'),
+      directorySnapshotPatch(snapshot([entry('a'), entry('b')])),
+    );
+    const entries = withDirectory.workspace.directories['request-1']?.entriesById;
+    const next = applyAppPatches(
+      withDirectory,
+      workspaceSnapshotPatch(workspace('After mutation')),
+    );
+
+    expect(next.workspace.directories['request-1']?.entriesById).toBe(entries);
+    expect(next.workspace.directories['request-1']?.entryIds).toEqual(['a', 'b']);
+  });
+
+  it('keeps cursor and selection in a frontend-only slice', () => {
+    const projection = workspace('Workspace');
+    const state = applyAppPatches(
+      createInitialAppState('mock'),
+      workspaceSnapshotPatch(projection),
+      workspaceViewPatch({
+        focusedPaneId: 'pane-1',
+        paneViews: {
+          'pane-1': { selectedEntryIds: ['entry-1'], cursorEntryId: 'entry-1' },
+        },
+      }),
+    );
+
+    expect(state.workspaceView?.paneViews['pane-1']?.selectedEntryIds).toEqual(['entry-1']);
+    expect(state.workspace.current).toEqual(projection);
+    expect(state.workspace.current).not.toHaveProperty('paneViews');
   });
 
   it('keys directory entries by stable EntryId and immutably applies interleaved deltas', () => {
@@ -88,7 +125,7 @@ describe('state slice reducers', () => {
       createInitialAppState('mock'),
       directorySnapshotPatch(snapshot([entry('b'), entry('a')])),
     );
-    const beforeDirectory = initial.workspace.directories['pane-1'];
+    const beforeDirectory = initial.workspace.directories['request-1'];
     const updated = applyAppPatches(
       initial,
       directoryDeltaPatch('pane-1', {
@@ -108,9 +145,9 @@ describe('state slice reducers', () => {
       }),
     );
 
-    expect(updated.workspace.directories['pane-1']?.entryIds).toEqual(['a', 'c', 'b']);
-    expect(updated.workspace.directories['pane-1']?.entriesById.a?.name).toBe('A2');
-    expect(updated.workspace.directories['pane-1']?.entriesById.b?.name).toBe('B3');
+    expect(updated.workspace.directories['request-1']?.entryIds).toEqual(['a', 'c', 'b']);
+    expect(updated.workspace.directories['request-1']?.entriesById.a?.name).toBe('A2');
+    expect(updated.workspace.directories['request-1']?.entriesById.b?.name).toBe('B3');
     expect(beforeDirectory?.entryIds).toEqual(['b', 'a']);
     expect(beforeDirectory?.entriesById.a?.name).toBe('a');
   });

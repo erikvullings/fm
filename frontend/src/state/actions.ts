@@ -7,7 +7,8 @@ import type {
   OperationProgress,
   PaneId,
   PluginDescriptor,
-  Workspace,
+  WorkspaceProjection,
+  WorkspaceViewState,
 } from '../models';
 import type { ConnectionState, RuntimeState } from './model';
 import type { AppUpdate } from './patch';
@@ -21,12 +22,14 @@ import {
   pluginPatch,
   runtimePatch,
   workspaceSnapshotPatch,
+  workspaceViewPatch,
 } from './reducers';
 
 /** Typed mutations available to components and backend-event producers. */
 export interface AppActions {
   setRuntime(runtime: RuntimeState): void;
-  replaceWorkspace(workspace: Workspace): void;
+  replaceWorkspace(workspace: WorkspaceProjection): void;
+  replaceWorkspaceView(viewState: WorkspaceViewState): void;
   replaceDirectory(snapshot: DirectorySnapshot): void;
   applyDirectoryDelta(paneId: PaneId, delta: DirectoryDelta): void;
   upsertOperation(operation: Operation): void;
@@ -41,6 +44,7 @@ export function createAppActions(update: AppUpdate): AppActions {
   return {
     setRuntime: (runtime) => update(runtimePatch(runtime)),
     replaceWorkspace: (workspace) => update(workspaceSnapshotPatch(workspace)),
+    replaceWorkspaceView: (viewState) => update(workspaceViewPatch(viewState)),
     replaceDirectory: (snapshot) => update(directorySnapshotPatch(snapshot)),
     applyDirectoryDelta: (paneId, delta) => update(directoryDeltaPatch(paneId, delta)),
     upsertOperation: (operation) => update(operationPatch(operation)),

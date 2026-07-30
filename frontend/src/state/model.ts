@@ -8,7 +8,8 @@ import type {
   PluginDescriptor,
   PluginId,
   RuntimeCapabilities,
-  Workspace,
+  WorkspaceProjection,
+  WorkspaceViewState,
 } from '../models';
 import type { RuntimeKind } from '../utilities/runtime';
 
@@ -29,16 +30,18 @@ export interface RuntimeState {
 
 /** A normalized directory snapshot whose entries are keyed by stable identifiers. */
 export interface DirectoryState {
+  readonly paneId: PaneId;
+  readonly sessionId: string;
   readonly requestId: string;
   readonly revision: number;
   readonly entryIds: readonly EntryId[];
   readonly entriesById: Readonly<Partial<Record<EntryId, DeepReadonly<EntrySummary>>>>;
 }
 
-/** Authoritative workspace projection and per-pane directory snapshots. */
+/** Authoritative workspace projection and separately cached directory snapshots. */
 export interface WorkspaceState {
-  readonly current?: DeepReadonly<Workspace>;
-  readonly directories: Readonly<Partial<Record<PaneId, DirectoryState>>>;
+  readonly current?: DeepReadonly<WorkspaceProjection>;
+  readonly directories: Readonly<Partial<Record<string, DirectoryState>>>;
 }
 
 /** File operations keyed by stable operation identifier. */
@@ -67,6 +70,7 @@ export interface ConnectionState {
 export interface AppState {
   readonly runtime: RuntimeState;
   readonly workspace: WorkspaceState;
+  readonly workspaceView: DeepReadonly<WorkspaceViewState> | undefined;
   readonly operations: OperationsState;
   readonly plugins: PluginsState;
   readonly notifications: NotificationsState;
@@ -78,6 +82,7 @@ export function createInitialAppState(kind: RuntimeKind): AppState {
   return {
     runtime: { kind },
     workspace: { directories: {} },
+    workspaceView: undefined,
     operations: { byId: {} },
     plugins: { byId: {} },
     notifications: { items: [] },

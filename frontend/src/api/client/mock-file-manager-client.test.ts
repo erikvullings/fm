@@ -126,6 +126,26 @@ describe('MockFileManagerClient API', () => {
       conflictPolicy: 'skip',
     });
   });
+
+  it('implements workspace lifecycle and semantic commands in memory', async () => {
+    const client = new MockFileManagerClient();
+    const created = await client.createWorkspace({ name: 'Projects' });
+    const renamed = await client.renameWorkspace(created.id, 'Development', created.revision);
+    const changed = await client.dispatchWorkspaceCommand({
+      type: 'addTab',
+      workspaceId: created.id,
+      expectedRevision: renamed.revision,
+      paneId: 'left',
+      location: { providerId: 'file', uri: 'mock:///Documents' },
+    });
+
+    expect((await client.listWorkspaces()).map((workspace) => workspace.name)).toEqual([
+      'Development',
+    ]);
+    expect(changed.panesById.left?.tabOrder).toHaveLength(2);
+    await client.deleteWorkspace(changed.id, changed.revision);
+    expect(await client.listWorkspaces()).toEqual([]);
+  });
 });
 
 describe('MockFileManagerClient controls', () => {

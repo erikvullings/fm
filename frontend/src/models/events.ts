@@ -3,7 +3,7 @@ import type { Location } from './location';
 import type { Operation, OperationProgress, OperationState } from './operation';
 import type { PluginDescriptor } from './plugin';
 import type { DirectoryDelta, DirectorySnapshot } from './snapshot';
-import type { SortDirection, WorkspaceLayout } from './workspace';
+import type { DirectoryViewConfiguration, WorkspaceLayout } from './workspace';
 
 /** Shared tagged event envelope for backend-to-frontend events (spec §10). */
 export interface EventEnvelope<T> {
@@ -25,37 +25,6 @@ export interface BackendNotification {
   id: string;
   level: 'info' | 'warning' | 'error';
   message: string;
-}
-
-/** A single sort descriptor: a column and a direction (mirrors `fm_domain::SortDescriptor`). */
-export interface SortDescriptor {
-  columnId: string;
-  direction: SortDirection;
-}
-
-/** Persisted width and visibility for a single directory-table column. */
-export interface ColumnConfiguration {
-  columnId: string;
-  width: number;
-  visible: boolean;
-}
-
-/** A persisted quick-filter query. */
-export interface PersistedFilter {
-  query: string;
-}
-
-/**
- * Persisted view configuration for a directory listing: sorting, columns and
- * filters (mirrors `fm_domain::DirectoryViewConfiguration`). Contains no
- * frontend-only session state (selection, keyboard cursor).
- */
-export interface DirectoryViewConfiguration {
-  sort: SortDescriptor[];
-  columns: ColumnConfiguration[];
-  showHidden: boolean;
-  foldersFirst: boolean;
-  quickFilter?: PersistedFilter;
 }
 
 /** Typed payloads named by specification §10. */

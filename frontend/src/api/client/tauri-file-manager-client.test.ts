@@ -76,10 +76,23 @@ describe('TauriFileManagerClient', () => {
     });
   });
 
-  describe('methods with no registered Tauri command yet', () => {
-    it('keeps unrelated unimplemented methods explicit', () => {
+  describe('workspace methods', () => {
+    it('invokes get_workspace and normalizes the result', async () => {
+      invoke.mockResolvedValue({
+        id: 'workspace-1',
+        name: 'Workspace',
+        revision: 1,
+        layout: { type: 'pane', paneId: 'pane-1' },
+        panes: [],
+        activePaneId: 'pane-1',
+        operationCentre: { visible: false, height: 180 },
+      });
       const client = new TauriFileManagerClient();
-      expect(() => client.getWorkspace('workspace-1')).toThrow(/TBD/);
+
+      await expect(client.getWorkspace('workspace-1')).resolves.toEqual(
+        expect.objectContaining({ id: 'workspace-1', panesById: {} }),
+      );
+      expect(invoke).toHaveBeenCalledWith('get_workspace', { workspaceId: 'workspace-1' });
     });
   });
 

@@ -10,7 +10,8 @@ import type {
   PaneId,
   PluginDescriptor,
   RuntimeCapabilities,
-  Workspace,
+  WorkspaceProjection,
+  WorkspaceViewState,
 } from '../models';
 import type { RuntimeKind } from '../utilities/runtime';
 import type {
@@ -39,9 +40,23 @@ function normalizeEntries(entries: readonly EntrySummary[]): {
 
 function directoryFromSnapshot(snapshot: DirectorySnapshot): DirectoryState {
   return {
+    paneId: snapshot.paneId,
+    sessionId: snapshot.requestId,
     requestId: snapshot.requestId,
     revision: snapshot.revision,
     ...normalizeEntries(snapshot.entries),
+  };
+}
+
+function replaceDirectorySession(
+  directories: WorkspaceState['directories'],
+  snapshot: DirectorySnapshot,
+): WorkspaceState['directories'] {
+  return {
+    ...Object.fromEntries(
+      Object.entries(directories).filter(([, directory]) => directory?.paneId !== snapshot.paneId),
+    ),
+    [snapshot.requestId]: directoryFromSnapshot(snapshot),
   };
 }
 
@@ -58,20 +73,19 @@ export function runtimeState(
   return capabilities === undefined ? { kind } : { kind, capabilities };
 }
 
-/** Replaces the major workspace snapshot and invalidates its directory projections. */
-export function workspaceSnapshotPatch(workspace: Workspace): AppPatch {
-  return { workspace: () => ({ current: workspace, directories: {} }) };
+/** Replaces the workspace projection without copying or invalidating directory sessions. */
+export function workspaceSnapshotPatch(workspace: WorkspaceProjection): AppPatch {
+  return {
+    workspace: (current) => ({ current: workspace, directories: current.directories }),
+  };
 }
 
-/** Replaces one pane's major directory snapshot with a stable-ID normalized projection. */
+/** Replaces one pane's directory session with a stable-ID normalized projection. */
 export function directorySnapshotPatch(snapshot: DirectorySnapshot): AppPatch {
   return {
     workspace: (workspace) => ({
       ...workspace,
-      directories: {
-        ...workspace.directories,
-        [snapshot.paneId]: directoryFromSnapshot(snapshot),
-      },
+      directories: replaceDirectorySession(workspace.directories, snapshot),
     }),
   };
 }
@@ -118,13 +132,12 @@ function applyDirectoryDelta(
   if (delta.type === 'reset') {
     return {
       ...workspace,
-      directories: {
-        ...workspace.directories,
-        [paneId]: directoryFromSnapshot(delta.snapshot),
-      },
+      directories: replaceDirectorySession(workspace.directories, delta.snapshot),
     };
   }
-  const directory = workspace.directories[paneId];
+  const directory = Object.values(workspace.directories).find(
+    (candidate) => candidate?.paneId === paneId,
+  );
   if (directory === undefined) {
     return workspace;
   }
@@ -134,13 +147,18 @@ function applyDirectoryDelta(
       : upsertEntries(directory, delta.entries, delta.revision);
   return {
     ...workspace,
-    directories: { ...workspace.directories, [paneId]: next },
+    directories: { ...workspace.directories, [directory.sessionId]: next },
   };
 }
 
 /** Applies an incremental directory change without relying on input ordering. */
 export function directoryDeltaPatch(paneId: PaneId, delta: DirectoryDelta): AppPatch {
   return { workspace: (workspace) => applyDirectoryDelta(workspace, paneId, delta) };
+}
+
+/** Replaces transient cursor, selection, dialog and drag state independently. */
+export function workspaceViewPatch(viewState: WorkspaceViewState): AppPatch {
+  return { workspaceView: () => viewState };
 }
 
 /** Inserts or replaces a complete operation snapshot. */

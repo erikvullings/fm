@@ -2,6 +2,7 @@ import type {
   ActionDescriptor,
   ActionResult,
   BackendEvent,
+  CreateWorkspaceRequest,
   DirectorySnapshot,
   EntryMetadata,
   EntryMetadataRequest,
@@ -15,8 +16,10 @@ import type {
   RuntimeCapabilities,
   StartOperationRequest,
   Unsubscribe,
-  Workspace,
+  WorkspaceCommand,
   WorkspaceId,
+  WorkspaceProjection,
+  WorkspaceSummary,
 } from '../../models';
 
 /**
@@ -40,7 +43,34 @@ export class NotImplementedError extends Error {
 export interface FileManagerClient {
   getRuntimeCapabilities(signal?: AbortSignal): Promise<RuntimeCapabilities>;
 
-  getWorkspace(workspaceId: WorkspaceId, signal?: AbortSignal): Promise<Workspace>;
+  listWorkspaces(signal?: AbortSignal): Promise<WorkspaceSummary[]>;
+
+  createWorkspace(
+    request: CreateWorkspaceRequest,
+    signal?: AbortSignal,
+  ): Promise<WorkspaceProjection>;
+
+  getWorkspace(workspaceId: WorkspaceId, signal?: AbortSignal): Promise<WorkspaceProjection>;
+
+  renameWorkspace(
+    workspaceId: WorkspaceId,
+    name: string,
+    expectedRevision: number,
+    signal?: AbortSignal,
+  ): Promise<WorkspaceProjection>;
+
+  deleteWorkspace(
+    workspaceId: WorkspaceId,
+    expectedRevision?: number,
+    signal?: AbortSignal,
+  ): Promise<void>;
+
+  openWorkspace(workspaceId: WorkspaceId, signal?: AbortSignal): Promise<WorkspaceProjection>;
+
+  dispatchWorkspaceCommand(
+    command: WorkspaceCommand,
+    signal?: AbortSignal,
+  ): Promise<WorkspaceProjection>;
 
   navigatePane(request: NavigateRequest, signal?: AbortSignal): Promise<DirectorySnapshot>;
 

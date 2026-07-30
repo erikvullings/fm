@@ -6,12 +6,24 @@ const getRuntimeCapabilities = vi.fn();
 const listDirectory = vi.fn();
 const navigatePane = vi.fn();
 const getEntryMetadata = vi.fn();
+const listWorkspaces = vi.fn();
+const createWorkspace = vi.fn();
+const getWorkspace = vi.fn();
+const deleteWorkspace = vi.fn();
+const openWorkspace = vi.fn();
+const applyWorkspaceCommand = vi.fn();
 
 vi.mock('../generated/file-manager-api', () => ({
   getRuntimeCapabilities: (...args: unknown[]) => getRuntimeCapabilities(...args),
   listDirectory: (...args: unknown[]) => listDirectory(...args),
   navigatePane: (...args: unknown[]) => navigatePane(...args),
   getEntryMetadata: (...args: unknown[]) => getEntryMetadata(...args),
+  listWorkspaces: (...args: unknown[]) => listWorkspaces(...args),
+  createWorkspace: (...args: unknown[]) => createWorkspace(...args),
+  getWorkspace: (...args: unknown[]) => getWorkspace(...args),
+  deleteWorkspace: (...args: unknown[]) => deleteWorkspace(...args),
+  openWorkspace: (...args: unknown[]) => openWorkspace(...args),
+  applyWorkspaceCommand: (...args: unknown[]) => applyWorkspaceCommand(...args),
 }));
 
 const { HttpFileManagerClient } = await import('./http-file-manager-client');
@@ -38,6 +50,12 @@ afterEach(() => {
   listDirectory.mockReset();
   navigatePane.mockReset();
   getEntryMetadata.mockReset();
+  listWorkspaces.mockReset();
+  createWorkspace.mockReset();
+  getWorkspace.mockReset();
+  deleteWorkspace.mockReset();
+  openWorkspace.mockReset();
+  applyWorkspaceCommand.mockReset();
 });
 
 describe('HttpFileManagerClient', () => {
@@ -126,6 +144,38 @@ describe('HttpFileManagerClient', () => {
         request,
         expect.objectContaining({ signal: controller.signal }),
       );
+    });
+  });
+
+  describe('workspace methods', () => {
+    it('normalizes workspace DTOs returned by semantic command dispatch', async () => {
+      const dto = {
+        id: 'workspace-1',
+        name: 'Renamed',
+        revision: 2,
+        layout: { type: 'pane', paneId: 'pane-1' },
+        panes: [],
+        activePaneId: 'pane-1',
+        operationCentre: { visible: false, height: 180 },
+      };
+      applyWorkspaceCommand.mockResolvedValue({ status: 200, data: dto, headers: new Headers() });
+      const client = new HttpFileManagerClient();
+      const command = {
+        type: 'renameWorkspace',
+        workspaceId: 'workspace-1',
+        expectedRevision: 1,
+        name: 'Renamed',
+      } as const;
+
+      await expect(client.dispatchWorkspaceCommand(command)).resolves.toEqual(
+        expect.objectContaining({
+          id: 'workspace-1',
+          name: 'Renamed',
+          paneOrder: [],
+          panesById: {},
+        }),
+      );
+      expect(applyWorkspaceCommand).toHaveBeenCalledWith('workspace-1', command, undefined);
     });
   });
 

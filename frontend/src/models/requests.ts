@@ -1,4 +1,4 @@
-import type { SortDescriptor } from './events';
+import type { SortDescriptorDto as SortDescriptor } from '../api/generated/models/sortDescriptorDto';
 import type { ActionId, EntryId, OperationId, PaneId } from './ids';
 import type { EntryRef, Location } from './location';
 import type { ConflictPolicy, OperationKind } from './operation';

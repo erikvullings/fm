@@ -1,6 +1,6 @@
 # 0082 Frontend WorkspaceProjection, state slice and command dispatch
 
-Status: open
+Status: done
 Priority: high
 Owner: unassigned
 Agent: unassigned
@@ -42,4 +42,27 @@ keep a normalized projection rather than copying directory entries into workspac
   HTTP/mock/Tauri adapters if they were stubbed with a stale task number before this task lands.
 
 ## Agent Notes
-- Not started.
+- 2026-07-30 codex: Implemented the exact normalized `WorkspaceProjection`/`PaneProjection`/
+  `TabProjection` model from §5.3.13 and a DTO normalizer covered by the persisted-workspace example
+  fixture. `AppState.workspace.current` now holds that projection; normalized directory entries are
+  retained separately by opaque request/session id, and projection mutations preserve the directory
+  cache by identity. Added an independent `workspaceView` slice plus typed actions for frontend-only
+  cursor, selection, dialog and drag state.
+- 2026-07-30 codex: Extended `FileManagerClient` and the HTTP, Tauri and deterministic mock adapters
+  with list/create/get/rename/delete/open/semantic-command workspace operations. Command dispatch
+  reloads the latest projection on `workspaceRevisionConflict`; state-setting commands retry at the
+  new revision, `navigateTab` retries only for `refresh`, and `addTab`/`closeTab` surface the conflict
+  after reload without replay.
+- 2026-07-30 codex: This deliberately breaks task 0011's provisional consumers: the former
+  `Workspace`/`PaneState`/`TabState` shape and its persisted `DirectoryViewState` selection/cursor
+  fields were replaced, and the layout discriminator now uses the generated backend's `axis` field
+  instead of the old ad hoc `direction`. Existing state and all three adapters were migrated; no
+  Mithril component consumed the removed shape.
+- 2026-07-30 codex: Added 7 task-specific Vitest cases across `workspace.test.ts`,
+  `dispatch-workspace-command.test.ts`, `reducers.test.ts`, `http-file-manager-client.test.ts`, and
+  `mock-file-manager-client.test.ts`; the Tauri adapter's former TBD test was replaced with a real
+  projection test. Verified the exact affected test files, strict `tsc --noEmit`, the production
+  Vite build, all 95 frontend tests, and the repository-wide `pnpm test` (Rust, frontend and script
+  suites). Task-touched files pass Biome. `pnpm run lint` still fails only on pre-existing formatting
+  in `scripts/architecture-docs.test.mjs` and `scripts/ci-workflow.test.mjs`; the existing
+  `frontend/vite.config.ts` literal-key suggestion remains informational.
