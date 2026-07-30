@@ -13,6 +13,7 @@ pub mod requests;
 pub mod runtime;
 pub mod snapshot;
 pub mod workspace;
+pub mod workspace_command;
 
 pub use entry::{
     ArchiveInfoDto, EntryKindDto, EntryMetadataDto, EntrySummaryDto, ImageDimensionsDto,
@@ -25,7 +26,11 @@ pub use requests::{EntryMetadataRequest, ListDirectoryRequest, NavigateRequest};
 pub use runtime::{PlatformKindDto, RuntimeCapabilitiesDto, RuntimeKindDto};
 pub use snapshot::{DirectorySnapshotDto, LoadingStateDto};
 pub use workspace::{
-    ColumnConfigurationDto, DirectoryViewConfigurationDto, NavigationHistoryDto,
-    OperationCentrePreferencesDto, PaneStateDto, PersistedFilterDto, SortDescriptorDto,
-    SortDirectionDto, SplitAxisDto, TabStateDto, WorkspaceDto, WorkspaceLayoutDto,
+    ColumnConfigurationDto, CreateWorkspaceRequestDto, DirectoryViewConfigurationDto,
+    NavigationHistoryDto, OperationCentrePreferencesDto, PaneStateDto, PersistedFilterDto,
+    SortDescriptorDto, SortDirectionDto, SplitAxisDto, TabStateDto, WorkspaceDto,
+    WorkspaceLayoutDto, WorkspaceSummaryDto,
+};
+pub use workspace_command::{
+    DirectoryViewPatchDto, NavigationModeDto, QuickFilterPatchDto, WorkspaceCommandDto,
 };

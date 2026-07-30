@@ -1,6 +1,6 @@
 # 0080 Workspace semantic commands, revisions and REST/Tauri surface
 
-Status: open
+Status: done
 Priority: high
 Owner: unassigned
 Agent: unassigned
@@ -51,4 +51,10 @@ verified against the workspace's revision.
 - Keep Axum handlers thin; all validation/mutation logic lives in `WorkspaceService` (§3 rule 2).
 
 ## Agent Notes
-- Not started.
+- `NavigationMode` (`Push`/`Back`/`Forward`/`Refresh`) and `DirectoryViewPatch` (`sort`/`columns`/`show_hidden`/`folders_first`/`quick_filter`, all `Option<T>` so only the given fields are patched) are not literally enumerated in the spec text — their shapes are a judgment call inferred from §5.3.9's "NavigateTab"/"UpdateView" command names and the existing `DirectoryViewConfiguration`/`NavigationHistory` domain types. Revisit if a later task's spec reading surfaces a stricter shape.
+- `CloseTab` on a pane's last tab reassigns the active tab to `position.saturating_sub(1)` (the previous tab, or the new replacement tab if there was only one) after inserting a replacement tab at the home directory — this exact reassignment rule is a judgment call (the spec only requires that closing the last tab must not leave an invalid empty pane, §5.3.4).
+- Implemented only `POST /api/v1/workspaces/{workspaceId}/commands` for command dispatch, not the alternative `PATCH /api/v1/workspaces/{workspaceId}` endpoint mentioned parenthetically in the acceptance criteria — one dispatch endpoint is sufficient to satisfy "applies a `WorkspaceCommandDto`", and a `PATCH` alias would be a speculative addition with no distinct behaviour.
+- Debounced persistence (250–750ms, §5.3.8) for layout/column-resize-style commands is **not implemented** — every command call persists immediately. No frontend caller of these endpoints exists yet, so there is nothing to debounce against; flagged here as a documented gap to revisit once a frontend command dispatcher lands.
+- "Switching the open workspace never cancels operations" (§5.3.7) is vacuously satisfied today: `fm-application` has zero dependency on `fm-operations`, so there is no operation-cancellation code path for `open_workspace`/`apply_workspace_command` to invoke. Revisit once tasks 0035/0036 wire the operation service in.
+- Found and fixed two pre-existing (dormant) bugs surfaced by this task's new routes, unrelated to the workspace command logic itself: (1) `WorkspaceLayoutDto`'s self-referential `Split` variant needed `#[schema(no_recursion)]` on its `Box<Self>` fields, or `utoipa`'s eager OpenAPI schema generation stack-overflows the very first time any route returns a type embedding it; (2) `ApplicationErrorDto.details: Option<serde_json::Value>` produced a schema with no `type` keyword, which failed to round-trip through utoipa's own `OpenApi` deserializer the first time any route documented `ApplicationErrorDto` as a response body — fixed with `#[schema(value_type = Option<Object>)]`.
+- `cargo test --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo fmt --all -- --check`, `pnpm run api:check` (frontend clients regenerated and match), frontend `typecheck` and `vitest run` (57/57) all pass. Pre-existing, unrelated `pnpm -w run lint` failures in `scripts/scripts.test.mjs` (quote-style) were not touched — out of scope for this task.

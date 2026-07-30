@@ -24,6 +24,8 @@ pub struct ServerConfig {
     /// by the VFS layer; recorded now so task 0064 can harden access without
     /// restructuring this type.
     pub roots: Vec<PathBuf>,
+    /// Directory workspaces are persisted under (spec §5.3.8).
+    pub workspace_directory: PathBuf,
 }
 
 impl Default for ServerConfig {
@@ -34,6 +36,8 @@ impl Default for ServerConfig {
             cors_allowed_origins: Vec::new(),
             max_body_bytes: 10 * 1024 * 1024,
             roots: Vec::new(),
+            workspace_directory:
+                fm_application::workspace::JsonFileWorkspaceRepository::default_directory(),
         }
     }
 }

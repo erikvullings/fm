@@ -10,6 +10,7 @@ pub mod ids;
 pub mod location;
 pub mod snapshot;
 pub mod workspace;
+pub mod workspace_command;
 
 pub use entry::{
     ArchiveInfo, EntryKind, EntryMetadata, EntrySummary, ImageDimensions, MediaMetadata,
@@ -25,4 +26,7 @@ pub use workspace::{
     MAX_NAVIGATION_HISTORY_LEN, NavigationHistory, OperationCentrePreferences, PaneState,
     PersistedFilter, SPLIT_RATIO_RANGE, SortDescriptor, SortDirection, SplitAxis, TabState,
     Workspace, WorkspaceLayout, WorkspaceValidationError,
+};
+pub use workspace_command::{
+    DirectoryViewPatch, NavigationMode, QuickFilterPatch, WorkspaceCommand,
 };

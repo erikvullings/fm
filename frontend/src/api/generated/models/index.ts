@@ -3,8 +3,31 @@
  * Run `pnpm api:generate` (or `pnpm api:check`) to regenerate.
  */
 
+export * from './applicationErrorCode';
+export * from './applicationErrorDto';
+export * from './applicationErrorDtoDetails';
+export * from './columnConfigurationDto';
+export * from './createWorkspaceRequestDto';
+export * from './deleteWorkspaceParams';
+export * from './directoryViewConfigurationDto';
+export * from './directoryViewPatchDto';
 export * from './healthDto';
 export * from './healthStatusDto';
+export * from './locationDto';
+export * from './navigationHistoryDto';
+export * from './navigationModeDto';
+export * from './operationCentrePreferencesDto';
+export * from './paneStateDto';
+export * from './persistedFilterDto';
 export * from './platformKindDto';
+export * from './quickFilterPatchDto';
 export * from './runtimeCapabilitiesDto';
 export * from './runtimeKindDto';
+export * from './sortDescriptorDto';
+export * from './sortDirectionDto';
+export * from './splitAxisDto';
+export * from './tabStateDto';
+export * from './workspaceCommandDto';
+export * from './workspaceDto';
+export * from './workspaceLayoutDto';
+export * from './workspaceSummaryDto';

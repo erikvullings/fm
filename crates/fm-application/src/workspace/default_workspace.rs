@@ -22,7 +22,7 @@ pub fn resolve_home_directory() -> PathBuf {
     dirs::home_dir().unwrap_or_else(|| PathBuf::from("/"))
 }
 
-fn location_for(path: &Path) -> Location {
+pub(crate) fn location_for(path: &Path) -> Location {
     Location::new(
         ProviderId::new("file"),
         format!("file://{}", path.display()),
@@ -58,22 +58,31 @@ fn default_directory_view() -> DirectoryViewConfiguration {
     }
 }
 
+/// Builds a fresh tab at `location`, with empty navigation history and the
+/// default view configuration. Also used by `WorkspaceService::apply_command`
+/// to replace a pane's last tab at the home directory rather than leaving an
+/// invalid empty pane (spec §5.3.4, task 0080).
+pub(crate) fn build_tab(location: Location) -> TabState {
+    TabState {
+        id: TabId::new(),
+        location,
+        title_override: None,
+        history: NavigationHistory {
+            back: vec![],
+            forward: vec![],
+        },
+        view: default_directory_view(),
+        pinned: false,
+    }
+}
+
 fn default_pane(location: Location) -> PaneState {
-    let tab_id = TabId::new();
+    let tab = build_tab(location);
+    let tab_id = tab.id;
     PaneState {
         id: PaneId::new(),
         title: None,
-        tabs: vec![TabState {
-            id: tab_id,
-            location,
-            title_override: None,
-            history: NavigationHistory {
-                back: vec![],
-                forward: vec![],
-            },
-            view: default_directory_view(),
-            pinned: false,
-        }],
+        tabs: vec![tab],
         active_tab_id: tab_id,
         default_view: default_directory_view(),
     }

@@ -1,6 +1,196 @@
 {
   "components": {
     "schemas": {
+      "ApplicationErrorCode": {
+        "description": "A closed set of machine-readable error codes.\n\nCodes are stable and additive: existing variants are never renamed or\nremoved, only appended to.",
+        "enum": [
+          "notFound",
+          "permissionDenied",
+          "invalidRequest",
+          "destinationAlreadyExists",
+          "providerUnavailable",
+          "operationCancelled",
+          "workspaceRevisionConflict",
+          "internal"
+        ],
+        "type": "string"
+      },
+      "ApplicationErrorDto": {
+        "description": "A structured, user-facing error, never a raw OS error string (spec §8).",
+        "example": {
+          "code": "destinationAlreadyExists",
+          "details": {
+            "destination": "file:///Users/erik/Documents/report.pdf"
+          },
+          "message": "A file named report.pdf already exists.",
+          "requestId": "e1ce66cc-64a8-4ae7-9cc1-2882bc80de4e"
+        },
+        "properties": {
+          "code": {
+            "$ref": "#/components/schemas/ApplicationErrorCode",
+            "description": "A stable, machine-readable error code."
+          },
+          "details": {
+            "description": "Additional, code-specific structured context.",
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "message": {
+            "description": "A user-readable description, never a raw OS error.",
+            "type": "string"
+          },
+          "requestId": {
+            "description": "Correlates this error with the request that produced it.",
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "requestId"
+        ],
+        "type": "object"
+      },
+      "ColumnConfigurationDto": {
+        "description": "Persisted width and visibility for a single directory-table column.",
+        "properties": {
+          "columnId": {
+            "description": "The column's identifier, e.g. `\"core.name\"` or a plugin-provided column.",
+            "type": "string"
+          },
+          "visible": {
+            "description": "Whether the column is currently visible.",
+            "type": "boolean"
+          },
+          "width": {
+            "description": "The column's width in pixels.",
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "columnId",
+          "width",
+          "visible"
+        ],
+        "type": "object"
+      },
+      "CreateWorkspaceRequestDto": {
+        "description": "Requests a new workspace (`POST /api/v1/workspaces`).",
+        "example": {
+          "name": "Photos"
+        },
+        "properties": {
+          "name": {
+            "description": "The new workspace's name; defaults to `\"Default\"` when omitted.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "DirectoryViewConfigurationDto": {
+        "description": "Persisted view configuration for a directory listing: sorting, columns\nand filters. Contains no frontend-only selection/cursor fields.",
+        "properties": {
+          "columns": {
+            "description": "Per-column width and visibility.",
+            "items": {
+              "$ref": "#/components/schemas/ColumnConfigurationDto"
+            },
+            "type": "array"
+          },
+          "foldersFirst": {
+            "description": "Whether directories are grouped before files.",
+            "type": "boolean"
+          },
+          "quickFilter": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PersistedFilterDto",
+                "description": "A persisted quick-filter query, if one is saved with the tab."
+              }
+            ]
+          },
+          "showHidden": {
+            "description": "Whether hidden entries are shown.",
+            "type": "boolean"
+          },
+          "sort": {
+            "description": "The active sort descriptors, in priority order.",
+            "items": {
+              "$ref": "#/components/schemas/SortDescriptorDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "sort",
+          "columns",
+          "showHidden",
+          "foldersFirst"
+        ],
+        "type": "object"
+      },
+      "DirectoryViewPatchDto": {
+        "description": "A partial update to a tab's persisted view configuration; only fields\nset to `Some` are changed (spec §5.3.9 `UpdateView`).",
+        "properties": {
+          "columns": {
+            "description": "Replace the column configuration, if present.",
+            "items": {
+              "$ref": "#/components/schemas/ColumnConfigurationDto"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "foldersFirst": {
+            "description": "Replace whether directories are grouped before files, if present.",
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "quickFilter": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/QuickFilterPatchDto",
+                "description": "Set or clear the saved quick-filter, if present."
+              }
+            ]
+          },
+          "showHidden": {
+            "description": "Replace whether hidden entries are shown, if present.",
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "sort": {
+            "description": "Replace the active sort descriptors, if present.",
+            "items": {
+              "$ref": "#/components/schemas/SortDescriptorDto"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
       "HealthDto": {
         "description": "Response body for `GET /api/v1/health`.",
         "example": {
@@ -24,6 +214,135 @@
         ],
         "type": "string"
       },
+      "LocationDto": {
+        "description": "A provider-neutral pointer to a location, for example a directory.",
+        "example": {
+          "providerId": "local",
+          "uri": "file:///Users/erik/Documents"
+        },
+        "properties": {
+          "providerId": {
+            "description": "The virtual filesystem provider that owns this location.",
+            "type": "string"
+          },
+          "uri": {
+            "description": "The full, provider-specific URI text.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "providerId",
+          "uri"
+        ],
+        "type": "object"
+      },
+      "NavigationHistoryDto": {
+        "description": "Back/forward navigation history for a single tab.",
+        "properties": {
+          "back": {
+            "description": "Locations reachable by navigating back, most recent last.",
+            "items": {
+              "$ref": "#/components/schemas/LocationDto"
+            },
+            "type": "array"
+          },
+          "forward": {
+            "description": "Locations reachable by navigating forward, most recent last.",
+            "items": {
+              "$ref": "#/components/schemas/LocationDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "back",
+          "forward"
+        ],
+        "type": "object"
+      },
+      "NavigationModeDto": {
+        "description": "How a tab's location changed, so navigation history can be updated\ncorrectly (spec §5.3.4, §5.3.9).",
+        "enum": [
+          "push",
+          "back",
+          "forward",
+          "refresh"
+        ],
+        "type": "string"
+      },
+      "OperationCentrePreferencesDto": {
+        "description": "Workspace-level operation-centre visibility and sizing preferences.",
+        "properties": {
+          "height": {
+            "description": "The panel's height in pixels.",
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "visible": {
+            "description": "Whether the operation centre panel is visible.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "visible",
+          "height"
+        ],
+        "type": "object"
+      },
+      "PaneStateDto": {
+        "description": "A single pane, holding one or more tabs.",
+        "properties": {
+          "activeTabId": {
+            "description": "The tab currently shown in this pane.",
+            "format": "uuid",
+            "type": "string"
+          },
+          "defaultView": {
+            "$ref": "#/components/schemas/DirectoryViewConfigurationDto",
+            "description": "The view configuration new tabs in this pane start from."
+          },
+          "id": {
+            "description": "Stable identifier for this pane.",
+            "format": "uuid",
+            "type": "string"
+          },
+          "tabs": {
+            "description": "The tabs open in this pane.",
+            "items": {
+              "$ref": "#/components/schemas/TabStateDto"
+            },
+            "type": "array"
+          },
+          "title": {
+            "description": "An optional user-facing title override for this pane.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "tabs",
+          "activeTabId",
+          "defaultView"
+        ],
+        "type": "object"
+      },
+      "PersistedFilterDto": {
+        "description": "A persisted quick-filter query.",
+        "properties": {
+          "query": {
+            "description": "The filter's plain-text query.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "type": "object"
+      },
       "PlatformKindDto": {
         "description": "The host operating system, when known.",
         "enum": [
@@ -33,6 +352,46 @@
           "unknown"
         ],
         "type": "string"
+      },
+      "QuickFilterPatchDto": {
+        "description": "Sets or clears a tab's persisted quick-filter as part of a\n[`DirectoryViewPatchDto`].",
+        "oneOf": [
+          {
+            "description": "Remove the tab's saved quick-filter.",
+            "properties": {
+              "type": {
+                "enum": [
+                  "clear"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "type"
+            ],
+            "type": "object"
+          },
+          {
+            "description": "Replace the tab's saved quick-filter.",
+            "properties": {
+              "filter": {
+                "$ref": "#/components/schemas/PersistedFilterDto",
+                "description": "The new quick-filter query."
+              },
+              "type": {
+                "enum": [
+                  "set"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "filter",
+              "type"
+            ],
+            "type": "object"
+          }
+        ]
       },
       "RuntimeCapabilitiesDto": {
         "description": "Capabilities the current runtime and platform support, so the frontend can\nrespond to capabilities rather than detecting operating systems directly\n(spec §21).",
@@ -124,6 +483,587 @@
           "mock"
         ],
         "type": "string"
+      },
+      "SortDescriptorDto": {
+        "description": "A single sort descriptor: a column and a direction.",
+        "properties": {
+          "columnId": {
+            "description": "The column to sort by, e.g. `\"core.name\"` or a plugin-provided column.",
+            "type": "string"
+          },
+          "direction": {
+            "$ref": "#/components/schemas/SortDirectionDto",
+            "description": "The direction to sort in."
+          }
+        },
+        "required": [
+          "columnId",
+          "direction"
+        ],
+        "type": "object"
+      },
+      "SortDirectionDto": {
+        "description": "A sort direction.",
+        "enum": [
+          "ascending",
+          "descending"
+        ],
+        "type": "string"
+      },
+      "SplitAxisDto": {
+        "description": "The axis a [`WorkspaceLayoutDto::Split`] is arranged on.",
+        "enum": [
+          "horizontal",
+          "vertical"
+        ],
+        "type": "string"
+      },
+      "TabStateDto": {
+        "description": "A single tab: a location, its navigation history and its view configuration.",
+        "properties": {
+          "history": {
+            "$ref": "#/components/schemas/NavigationHistoryDto",
+            "description": "Back/forward navigation history for this tab."
+          },
+          "id": {
+            "description": "Stable identifier for this tab.",
+            "format": "uuid",
+            "type": "string"
+          },
+          "location": {
+            "$ref": "#/components/schemas/LocationDto",
+            "description": "The location currently shown in this tab."
+          },
+          "pinned": {
+            "description": "Whether this tab is pinned.",
+            "type": "boolean"
+          },
+          "titleOverride": {
+            "description": "An optional user-facing title override for this tab.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "view": {
+            "$ref": "#/components/schemas/DirectoryViewConfigurationDto",
+            "description": "Persisted view configuration (sort, columns, filters) for this tab."
+          }
+        },
+        "required": [
+          "id",
+          "location",
+          "history",
+          "view",
+          "pinned"
+        ],
+        "type": "object"
+      },
+      "WorkspaceCommandDto": {
+        "description": "A semantic workspace mutation (spec §5.3.9). Every variant carries the\n`workspaceId` it targets and the `expectedRevision` it was issued\nagainst, so the service can detect a stale-view conflict (spec §5.3.10)\nbefore applying the mutation.",
+        "oneOf": [
+          {
+            "description": "Renames the workspace.",
+            "properties": {
+              "expectedRevision": {
+                "description": "The revision this command was issued against.",
+                "format": "int64",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "name": {
+                "description": "The new, non-empty name.",
+                "type": "string"
+              },
+              "type": {
+                "enum": [
+                  "renameWorkspace"
+                ],
+                "type": "string"
+              },
+              "workspaceId": {
+                "description": "The target workspace.",
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "workspaceId",
+              "name",
+              "expectedRevision",
+              "type"
+            ],
+            "type": "object"
+          },
+          {
+            "description": "Activates a different pane.",
+            "properties": {
+              "expectedRevision": {
+                "description": "The revision this command was issued against.",
+                "format": "int64",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "paneId": {
+                "description": "The pane to activate.",
+                "format": "uuid",
+                "type": "string"
+              },
+              "type": {
+                "enum": [
+                  "setActivePane"
+                ],
+                "type": "string"
+              },
+              "workspaceId": {
+                "description": "The target workspace.",
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "workspaceId",
+              "paneId",
+              "expectedRevision",
+              "type"
+            ],
+            "type": "object"
+          },
+          {
+            "description": "Appends a new tab to a pane and activates it.",
+            "properties": {
+              "expectedRevision": {
+                "description": "The revision this command was issued against.",
+                "format": "int64",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "location": {
+                "$ref": "#/components/schemas/LocationDto",
+                "description": "The new tab's initial location."
+              },
+              "paneId": {
+                "description": "The pane to append the tab to.",
+                "format": "uuid",
+                "type": "string"
+              },
+              "type": {
+                "enum": [
+                  "addTab"
+                ],
+                "type": "string"
+              },
+              "workspaceId": {
+                "description": "The target workspace.",
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "workspaceId",
+              "paneId",
+              "location",
+              "expectedRevision",
+              "type"
+            ],
+            "type": "object"
+          },
+          {
+            "description": "Closes a tab; if it was the pane's only tab, a replacement tab at the\nhost's home directory is created (spec §5.3.9).",
+            "properties": {
+              "expectedRevision": {
+                "description": "The revision this command was issued against.",
+                "format": "int64",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "paneId": {
+                "description": "The pane the tab belongs to.",
+                "format": "uuid",
+                "type": "string"
+              },
+              "tabId": {
+                "description": "The tab to close.",
+                "format": "uuid",
+                "type": "string"
+              },
+              "type": {
+                "enum": [
+                  "closeTab"
+                ],
+                "type": "string"
+              },
+              "workspaceId": {
+                "description": "The target workspace.",
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "workspaceId",
+              "paneId",
+              "tabId",
+              "expectedRevision",
+              "type"
+            ],
+            "type": "object"
+          },
+          {
+            "description": "Activates a different tab within a pane.",
+            "properties": {
+              "expectedRevision": {
+                "description": "The revision this command was issued against.",
+                "format": "int64",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "paneId": {
+                "description": "The pane the tab belongs to.",
+                "format": "uuid",
+                "type": "string"
+              },
+              "tabId": {
+                "description": "The tab to activate.",
+                "format": "uuid",
+                "type": "string"
+              },
+              "type": {
+                "enum": [
+                  "activateTab"
+                ],
+                "type": "string"
+              },
+              "workspaceId": {
+                "description": "The target workspace.",
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "workspaceId",
+              "paneId",
+              "tabId",
+              "expectedRevision",
+              "type"
+            ],
+            "type": "object"
+          },
+          {
+            "description": "Navigates a tab to a new location, updating its history according to\n`navigationMode`.",
+            "properties": {
+              "expectedRevision": {
+                "description": "The revision this command was issued against.",
+                "format": "int64",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "location": {
+                "$ref": "#/components/schemas/LocationDto",
+                "description": "The tab's new location."
+              },
+              "navigationMode": {
+                "$ref": "#/components/schemas/NavigationModeDto",
+                "description": "How the navigation affects history."
+              },
+              "paneId": {
+                "description": "The pane the tab belongs to.",
+                "format": "uuid",
+                "type": "string"
+              },
+              "tabId": {
+                "description": "The tab to navigate.",
+                "format": "uuid",
+                "type": "string"
+              },
+              "type": {
+                "enum": [
+                  "navigateTab"
+                ],
+                "type": "string"
+              },
+              "workspaceId": {
+                "description": "The target workspace.",
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "workspaceId",
+              "paneId",
+              "tabId",
+              "location",
+              "navigationMode",
+              "expectedRevision",
+              "type"
+            ],
+            "type": "object"
+          },
+          {
+            "description": "Patches a tab's persisted view configuration.",
+            "properties": {
+              "expectedRevision": {
+                "description": "The revision this command was issued against.",
+                "format": "int64",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "paneId": {
+                "description": "The pane the tab belongs to.",
+                "format": "uuid",
+                "type": "string"
+              },
+              "patch": {
+                "$ref": "#/components/schemas/DirectoryViewPatchDto",
+                "description": "The fields to change."
+              },
+              "tabId": {
+                "description": "The tab to patch.",
+                "format": "uuid",
+                "type": "string"
+              },
+              "type": {
+                "enum": [
+                  "updateView"
+                ],
+                "type": "string"
+              },
+              "workspaceId": {
+                "description": "The target workspace.",
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "workspaceId",
+              "paneId",
+              "tabId",
+              "patch",
+              "expectedRevision",
+              "type"
+            ],
+            "type": "object"
+          },
+          {
+            "description": "Replaces the workspace's pane layout tree.",
+            "properties": {
+              "expectedRevision": {
+                "description": "The revision this command was issued against.",
+                "format": "int64",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "layout": {
+                "$ref": "#/components/schemas/WorkspaceLayoutDto",
+                "description": "The new layout; must reference every existing pane exactly once."
+              },
+              "type": {
+                "enum": [
+                  "updateLayout"
+                ],
+                "type": "string"
+              },
+              "workspaceId": {
+                "description": "The target workspace.",
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "workspaceId",
+              "layout",
+              "expectedRevision",
+              "type"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "WorkspaceDto": {
+        "description": "A workspace: a named collection of panes arranged in a\n[`WorkspaceLayoutDto`].",
+        "example": {
+          "activePaneId": "5b1b6b1e-9b1b-4b1b-8b1b-1b1b1b1b1b1b",
+          "createdAt": "2026-07-29T18:00:00Z",
+          "id": "5b1b6b1e-9b1b-4b1b-8b1b-1b1b1b1b1b1b",
+          "layout": {
+            "paneId": "5b1b6b1e-9b1b-4b1b-8b1b-1b1b1b1b1b1b",
+            "type": "pane"
+          },
+          "name": "Default",
+          "operationCentre": {
+            "height": 180,
+            "visible": true
+          },
+          "panes": [],
+          "revision": 1,
+          "schemaVersion": 1,
+          "updatedAt": "2026-07-29T18:40:00Z"
+        },
+        "properties": {
+          "activePaneId": {
+            "description": "The pane that currently has focus.",
+            "format": "uuid",
+            "type": "string"
+          },
+          "createdAt": {
+            "description": "When this workspace was first created.",
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "description": "Stable identifier for this workspace.",
+            "format": "uuid",
+            "type": "string"
+          },
+          "layout": {
+            "$ref": "#/components/schemas/WorkspaceLayoutDto",
+            "description": "How the panes are arranged on screen."
+          },
+          "name": {
+            "description": "A user-facing name for this workspace.",
+            "type": "string"
+          },
+          "operationCentre": {
+            "$ref": "#/components/schemas/OperationCentrePreferencesDto",
+            "description": "Operation-centre visibility and sizing preferences for this workspace."
+          },
+          "panes": {
+            "description": "The panes making up this workspace.",
+            "items": {
+              "$ref": "#/components/schemas/PaneStateDto"
+            },
+            "type": "array"
+          },
+          "revision": {
+            "description": "Monotonically increasing revision, used for optimistic conflict checks.",
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "schemaVersion": {
+            "description": "Version of the persisted workspace schema, for migrations.",
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "updatedAt": {
+            "description": "When this workspace was last persisted.",
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "id",
+          "name",
+          "layout",
+          "panes",
+          "activePaneId",
+          "operationCentre",
+          "createdAt",
+          "updatedAt",
+          "revision"
+        ],
+        "type": "object"
+      },
+      "WorkspaceLayoutDto": {
+        "description": "How a workspace's panes are arranged on screen.",
+        "oneOf": [
+          {
+            "description": "A leaf holding a single pane.",
+            "properties": {
+              "paneId": {
+                "description": "The pane occupying this leaf.",
+                "format": "uuid",
+                "type": "string"
+              },
+              "type": {
+                "enum": [
+                  "pane"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "paneId",
+              "type"
+            ],
+            "type": "object"
+          },
+          {
+            "description": "Two regions separated by a single draggable splitter.",
+            "properties": {
+              "axis": {
+                "$ref": "#/components/schemas/SplitAxisDto",
+                "description": "The axis the splitter is arranged on."
+              },
+              "first": {
+                "$ref": "#/components/schemas/WorkspaceLayoutDto",
+                "description": "The first (left or top) region."
+              },
+              "ratio": {
+                "description": "The fraction of space (0.0-1.0) given to `first`.",
+                "format": "float",
+                "type": "number"
+              },
+              "second": {
+                "$ref": "#/components/schemas/WorkspaceLayoutDto",
+                "description": "The second (right or bottom) region."
+              },
+              "type": {
+                "enum": [
+                  "split"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "axis",
+              "ratio",
+              "first",
+              "second",
+              "type"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "WorkspaceSummaryDto": {
+        "description": "A lightweight projection of a stored workspace, cheap enough to list\nwithout loading every pane and tab (spec §5.3.8, `GET /api/v1/workspaces`).\n\nThe conversion from `fm_application::workspace::WorkspaceSummary` lives in\n`fm-application` (not here): that type is defined in a higher layer this\ncrate must never depend on, and Rust's orphan rules permit the impl to\nlive on either side as long as one of the two types is local to the\ncrate writing it.",
+        "example": {
+          "id": "5b1b6b1e-9b1b-4b1b-8b1b-1b1b1b1b1b1b",
+          "name": "Default",
+          "revision": 1,
+          "updatedAt": "2026-07-29T18:40:00Z"
+        },
+        "properties": {
+          "id": {
+            "description": "The workspace's id.",
+            "format": "uuid",
+            "type": "string"
+          },
+          "name": {
+            "description": "The workspace's user-facing name.",
+            "type": "string"
+          },
+          "revision": {
+            "description": "The workspace's current revision.",
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "updatedAt": {
+            "description": "When the workspace was last persisted.",
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "updatedAt",
+          "revision"
+        ],
+        "type": "object"
       }
     }
   },
@@ -172,6 +1112,265 @@
           }
         },
         "summary": "Reports the capabilities available for the current runtime and platform."
+      }
+    },
+    "/api/v1/workspaces": {
+      "get": {
+        "operationId": "listWorkspaces",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/WorkspaceSummaryDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Every stored workspace"
+          }
+        },
+        "summary": "Lists every stored workspace as a lightweight summary."
+      },
+      "post": {
+        "operationId": "createWorkspace",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateWorkspaceRequestDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceDto"
+                }
+              }
+            },
+            "description": "The created workspace"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationErrorDto"
+                }
+              }
+            },
+            "description": "The request was invalid"
+          }
+        },
+        "summary": "Creates and persists a new workspace."
+      }
+    },
+    "/api/v1/workspaces/{workspaceId}": {
+      "delete": {
+        "operationId": "deleteWorkspace",
+        "parameters": [
+          {
+            "description": "The workspace to delete",
+            "in": "path",
+            "name": "workspaceId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The revision the caller last observed; enforces the same optimistic\nconcurrency check as every other mutation (spec §5.3.10).",
+            "in": "query",
+            "name": "expectedRevision",
+            "required": false,
+            "schema": {
+              "format": "int64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "The workspace was deleted"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationErrorDto"
+                }
+              }
+            },
+            "description": "No workspace exists with this id"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationErrorDto"
+                }
+              }
+            },
+            "description": "The workspace's revision changed"
+          }
+        },
+        "summary": "Deletes a workspace."
+      },
+      "get": {
+        "operationId": "getWorkspace",
+        "parameters": [
+          {
+            "description": "The workspace to load",
+            "in": "path",
+            "name": "workspaceId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceDto"
+                }
+              }
+            },
+            "description": "The workspace"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationErrorDto"
+                }
+              }
+            },
+            "description": "No workspace exists with this id"
+          }
+        },
+        "summary": "Loads a single workspace by id."
+      }
+    },
+    "/api/v1/workspaces/{workspaceId}/commands": {
+      "post": {
+        "operationId": "applyWorkspaceCommand",
+        "parameters": [
+          {
+            "description": "The workspace the command targets",
+            "in": "path",
+            "name": "workspaceId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkspaceCommandDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceDto"
+                }
+              }
+            },
+            "description": "The changed workspace"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationErrorDto"
+                }
+              }
+            },
+            "description": "The path and body workspace ids did not match"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationErrorDto"
+                }
+              }
+            },
+            "description": "No workspace exists with this id"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationErrorDto"
+                }
+              }
+            },
+            "description": "The workspace's revision changed"
+          }
+        },
+        "summary": "Applies a semantic mutation command (spec §5.3.9). The path's\n`workspaceId` must match the id embedded in the command body."
+      }
+    },
+    "/api/v1/workspaces/{workspaceId}/open": {
+      "post": {
+        "operationId": "openWorkspace",
+        "parameters": [
+          {
+            "description": "The workspace to open",
+            "in": "path",
+            "name": "workspaceId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceDto"
+                }
+              }
+            },
+            "description": "The opened workspace"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationErrorDto"
+                }
+              }
+            },
+            "description": "No workspace exists with this id"
+          }
+        },
+        "summary": "Selects an existing workspace as the last-active workspace."
       }
     }
   }

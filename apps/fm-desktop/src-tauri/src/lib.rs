@@ -35,9 +35,20 @@ fn build_context<R: tauri::Runtime>() -> tauri::Context<R> {
 pub fn run() {
     tauri::Builder::default()
         .manage(AppState {
-            service: Arc::new(FileManagerService::new(RuntimeKindDto::Tauri)),
+            service: Arc::new(FileManagerService::new(
+                RuntimeKindDto::Tauri,
+                fm_application::workspace::JsonFileWorkspaceRepository::default_directory(),
+            )),
         })
-        .invoke_handler(tauri::generate_handler![commands::get_runtime_capabilities])
+        .invoke_handler(tauri::generate_handler![
+            commands::get_runtime_capabilities,
+            commands::list_workspaces,
+            commands::create_workspace,
+            commands::get_workspace,
+            commands::delete_workspace,
+            commands::open_workspace,
+            commands::apply_workspace_command,
+        ])
         .run(build_context())
         .expect("error while running the Tauri application");
 }
@@ -52,11 +63,24 @@ mod tests {
     use super::*;
 
     fn create_app<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::App<R> {
+        let workspace_directory =
+            tempfile::tempdir().expect("must create a temp workspace directory");
         builder
             .manage(AppState {
-                service: Arc::new(FileManagerService::new(RuntimeKindDto::Tauri)),
+                service: Arc::new(FileManagerService::new(
+                    RuntimeKindDto::Tauri,
+                    workspace_directory.keep(),
+                )),
             })
-            .invoke_handler(tauri::generate_handler![commands::get_runtime_capabilities])
+            .invoke_handler(tauri::generate_handler![
+                commands::get_runtime_capabilities,
+                commands::list_workspaces,
+                commands::create_workspace,
+                commands::get_workspace,
+                commands::delete_workspace,
+                commands::open_workspace,
+                commands::apply_workspace_command,
+            ])
             // Uses the app's real `tauri.conf.json` config (same as `run()`)
             // rather than `mock_context(noop_assets())`'s empty default config,
             // so `is_local_url` resolves the same dev/prod URLs production does.

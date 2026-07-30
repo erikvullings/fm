@@ -3,8 +3,14 @@
  * Run `pnpm api:generate` (or `pnpm api:check`) to regenerate.
  */
 import type {
+  ApplicationErrorDto,
+  CreateWorkspaceRequestDto,
+  DeleteWorkspaceParams,
   HealthDto,
-  RuntimeCapabilitiesDto
+  RuntimeCapabilitiesDto,
+  WorkspaceCommandDto,
+  WorkspaceDto,
+  WorkspaceSummaryDto
 } from './models';
 
 import { fetchMutator } from '../fetch-mutator';
@@ -74,6 +80,283 @@ export const getRuntimeCapabilities = async ( options?: Parameters<typeof fetchM
   {
     ...options,
     method: 'GET'
+
+
+  }
+);}
+
+
+
+export type listWorkspacesResponse200 = {
+  data: WorkspaceSummaryDto[]
+  status: 200
+}
+
+export type listWorkspacesResponseSuccess = (listWorkspacesResponse200) & {
+  headers: Headers;
+};
+;
+
+export type listWorkspacesResponse = (listWorkspacesResponseSuccess)
+
+export const getListWorkspacesUrl = () => {
+
+
+
+
+  return `/api/v1/workspaces`
+}
+
+/**
+ * @summary Lists every stored workspace as a lightweight summary.
+ */
+export const listWorkspaces = async ( options?: Parameters<typeof fetchMutator>[1]): Promise<listWorkspacesResponse> => {
+
+  return fetchMutator<listWorkspacesResponse>(getListWorkspacesUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+export type createWorkspaceResponse201 = {
+  data: WorkspaceDto
+  status: 201
+}
+
+export type createWorkspaceResponse400 = {
+  data: ApplicationErrorDto
+  status: 400
+}
+
+export type createWorkspaceResponseSuccess = (createWorkspaceResponse201) & {
+  headers: Headers;
+};
+export type createWorkspaceResponseError = (createWorkspaceResponse400) & {
+  headers: Headers;
+};
+
+export type createWorkspaceResponse = (createWorkspaceResponseSuccess | createWorkspaceResponseError)
+
+export const getCreateWorkspaceUrl = () => {
+
+
+
+
+  return `/api/v1/workspaces`
+}
+
+/**
+ * @summary Creates and persists a new workspace.
+ */
+export const createWorkspace = async (createWorkspaceRequestDto: CreateWorkspaceRequestDto, options?: Parameters<typeof fetchMutator>[1]): Promise<createWorkspaceResponse> => {
+
+  return fetchMutator<createWorkspaceResponse>(getCreateWorkspaceUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(createWorkspaceRequestDto)
+  }
+);}
+
+
+
+export type deleteWorkspaceResponse204 = {
+  data: void
+  status: 204
+}
+
+export type deleteWorkspaceResponse404 = {
+  data: ApplicationErrorDto
+  status: 404
+}
+
+export type deleteWorkspaceResponse409 = {
+  data: ApplicationErrorDto
+  status: 409
+}
+
+export type deleteWorkspaceResponseSuccess = (deleteWorkspaceResponse204) & {
+  headers: Headers;
+};
+export type deleteWorkspaceResponseError = (deleteWorkspaceResponse404 | deleteWorkspaceResponse409) & {
+  headers: Headers;
+};
+
+export type deleteWorkspaceResponse = (deleteWorkspaceResponseSuccess | deleteWorkspaceResponseError)
+
+export const getDeleteWorkspaceUrl = (workspaceId: string,
+    params?: DeleteWorkspaceParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/workspaces/${workspaceId}?${stringifiedParams}` : `/api/v1/workspaces/${workspaceId}`
+}
+
+/**
+ * @summary Deletes a workspace.
+ */
+export const deleteWorkspace = async (workspaceId: string,
+    params?: DeleteWorkspaceParams, options?: Parameters<typeof fetchMutator>[1]): Promise<deleteWorkspaceResponse> => {
+
+  return fetchMutator<deleteWorkspaceResponse>(getDeleteWorkspaceUrl(workspaceId,params),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+export type getWorkspaceResponse200 = {
+  data: WorkspaceDto
+  status: 200
+}
+
+export type getWorkspaceResponse404 = {
+  data: ApplicationErrorDto
+  status: 404
+}
+
+export type getWorkspaceResponseSuccess = (getWorkspaceResponse200) & {
+  headers: Headers;
+};
+export type getWorkspaceResponseError = (getWorkspaceResponse404) & {
+  headers: Headers;
+};
+
+export type getWorkspaceResponse = (getWorkspaceResponseSuccess | getWorkspaceResponseError)
+
+export const getGetWorkspaceUrl = (workspaceId: string,) => {
+
+
+
+
+  return `/api/v1/workspaces/${workspaceId}`
+}
+
+/**
+ * @summary Loads a single workspace by id.
+ */
+export const getWorkspace = async (workspaceId: string, options?: Parameters<typeof fetchMutator>[1]): Promise<getWorkspaceResponse> => {
+
+  return fetchMutator<getWorkspaceResponse>(getGetWorkspaceUrl(workspaceId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+export type applyWorkspaceCommandResponse200 = {
+  data: WorkspaceDto
+  status: 200
+}
+
+export type applyWorkspaceCommandResponse400 = {
+  data: ApplicationErrorDto
+  status: 400
+}
+
+export type applyWorkspaceCommandResponse404 = {
+  data: ApplicationErrorDto
+  status: 404
+}
+
+export type applyWorkspaceCommandResponse409 = {
+  data: ApplicationErrorDto
+  status: 409
+}
+
+export type applyWorkspaceCommandResponseSuccess = (applyWorkspaceCommandResponse200) & {
+  headers: Headers;
+};
+export type applyWorkspaceCommandResponseError = (applyWorkspaceCommandResponse400 | applyWorkspaceCommandResponse404 | applyWorkspaceCommandResponse409) & {
+  headers: Headers;
+};
+
+export type applyWorkspaceCommandResponse = (applyWorkspaceCommandResponseSuccess | applyWorkspaceCommandResponseError)
+
+export const getApplyWorkspaceCommandUrl = (workspaceId: string,) => {
+
+
+
+
+  return `/api/v1/workspaces/${workspaceId}/commands`
+}
+
+/**
+ * @summary Applies a semantic mutation command (spec §5.3.9). The path's
+`workspaceId` must match the id embedded in the command body.
+ */
+export const applyWorkspaceCommand = async (workspaceId: string,
+    workspaceCommandDto: WorkspaceCommandDto, options?: Parameters<typeof fetchMutator>[1]): Promise<applyWorkspaceCommandResponse> => {
+
+  return fetchMutator<applyWorkspaceCommandResponse>(getApplyWorkspaceCommandUrl(workspaceId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(workspaceCommandDto)
+  }
+);}
+
+
+
+export type openWorkspaceResponse200 = {
+  data: WorkspaceDto
+  status: 200
+}
+
+export type openWorkspaceResponse404 = {
+  data: ApplicationErrorDto
+  status: 404
+}
+
+export type openWorkspaceResponseSuccess = (openWorkspaceResponse200) & {
+  headers: Headers;
+};
+export type openWorkspaceResponseError = (openWorkspaceResponse404) & {
+  headers: Headers;
+};
+
+export type openWorkspaceResponse = (openWorkspaceResponseSuccess | openWorkspaceResponseError)
+
+export const getOpenWorkspaceUrl = (workspaceId: string,) => {
+
+
+
+
+  return `/api/v1/workspaces/${workspaceId}/open`
+}
+
+/**
+ * @summary Selects an existing workspace as the last-active workspace.
+ */
+export const openWorkspace = async (workspaceId: string, options?: Parameters<typeof fetchMutator>[1]): Promise<openWorkspaceResponse> => {
+
+  return fetchMutator<openWorkspaceResponse>(getOpenWorkspaceUrl(workspaceId),
+  {
+    ...options,
+    method: 'POST'
 
 
   }

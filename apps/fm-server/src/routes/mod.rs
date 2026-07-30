@@ -3,6 +3,7 @@
 
 pub(crate) mod health;
 pub(crate) mod runtime;
+pub(crate) mod workspace;
 
 use utoipa::OpenApi;
 

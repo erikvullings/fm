@@ -23,6 +23,9 @@ pub enum ApplicationErrorCode {
     ProviderUnavailable,
     /// The operation was cancelled by the caller.
     OperationCancelled,
+    /// A workspace mutation's `expected_revision` no longer matches the
+    /// stored revision (spec §5.3.10).
+    WorkspaceRevisionConflict,
     /// An unexpected, unclassified failure occurred.
     Internal,
 }
@@ -44,6 +47,7 @@ pub struct ApplicationErrorDto {
     /// Correlates this error with the request that produced it.
     pub request_id: Uuid,
     /// Additional, code-specific structured context.
+    #[schema(value_type = Option<Object>)]
     pub details: Option<serde_json::Value>,
 }
 
@@ -102,10 +106,18 @@ mod tests {
             ApplicationErrorCode::DestinationAlreadyExists,
             ApplicationErrorCode::ProviderUnavailable,
             ApplicationErrorCode::OperationCancelled,
+            ApplicationErrorCode::WorkspaceRevisionConflict,
             ApplicationErrorCode::Internal,
         ] {
             let json = serde_json::to_string(&code).expect("serialization must succeed");
             assert!(json.starts_with('"') && json.ends_with('"'));
         }
+    }
+
+    #[test]
+    fn workspace_revision_conflict_code_serializes_to_the_spec_string() {
+        let json = serde_json::to_string(&ApplicationErrorCode::WorkspaceRevisionConflict)
+            .expect("serialization must succeed");
+        assert_eq!(json, "\"workspaceRevisionConflict\"");
     }
 }

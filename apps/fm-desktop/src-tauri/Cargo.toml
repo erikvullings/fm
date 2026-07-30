@@ -21,9 +21,11 @@ fm-transport-dto.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tauri.workspace = true
+uuid.workspace = true
 
 [dev-dependencies]
 tauri = { workspace = true, features = ["test"] }
+tempfile.workspace = true
 tokio.workspace = true
 
 [lints]

@@ -53,4 +53,29 @@ pub enum WorkspaceError {
     /// corruption case (for example encoding a value back to disk).
     #[error("workspace serialization error: {0}")]
     Serialization(String),
+    /// A [`fm_domain::WorkspaceCommand`] targeted a pane that does not exist
+    /// in the workspace (task 0080).
+    #[error("pane {pane_id} does not exist in workspace {workspace_id}")]
+    PaneNotFound {
+        /// The workspace the command targeted.
+        workspace_id: WorkspaceId,
+        /// The dangling pane id.
+        pane_id: fm_domain::PaneId,
+    },
+    /// A [`fm_domain::WorkspaceCommand`] targeted a tab that does not exist
+    /// in the given pane (task 0080).
+    #[error("tab {tab_id} does not exist in pane {pane_id} of workspace {workspace_id}")]
+    TabNotFound {
+        /// The workspace the command targeted.
+        workspace_id: WorkspaceId,
+        /// The pane the command targeted.
+        pane_id: fm_domain::PaneId,
+        /// The dangling tab id.
+        tab_id: fm_domain::TabId,
+    },
+    /// A command's own fields failed validation, distinct from a stored
+    /// workspace's structural invariants (spec §5.3.6), for example an empty
+    /// `RenameWorkspace` name (task 0080).
+    #[error("invalid command: {0}")]
+    InvalidCommand(String),
 }

@@ -37,6 +37,14 @@ fn api_router() -> OpenApiRouter<AppState> {
         .routes(utoipa_axum::routes!(
             routes::runtime::get_runtime_capabilities
         ))
+        .routes(utoipa_axum::routes!(routes::workspace::list_workspaces))
+        .routes(utoipa_axum::routes!(routes::workspace::create_workspace))
+        .routes(utoipa_axum::routes!(routes::workspace::get_workspace))
+        .routes(utoipa_axum::routes!(routes::workspace::delete_workspace))
+        .routes(utoipa_axum::routes!(routes::workspace::open_workspace))
+        .routes(utoipa_axum::routes!(
+            routes::workspace::apply_workspace_command
+        ))
 }
 
 /// Builds the OpenAPI document without constructing application state or
@@ -52,7 +60,10 @@ pub fn openapi_document() -> utoipa::openapi::OpenApi {
 /// request into a [`FileManagerService`] call and back into a DTO; no
 /// filesystem logic lives in this crate (spec §3 rule 2).
 pub fn build_router(config: &ServerConfig) -> Router {
-    let service = Arc::new(FileManagerService::new(RuntimeKindDto::BrowserServer));
+    let service = Arc::new(FileManagerService::new(
+        RuntimeKindDto::BrowserServer,
+        config.workspace_directory.clone(),
+    ));
     let state = AppState { service };
 
     let (router, api) = api_router().split_for_parts();
@@ -106,5 +117,6 @@ fn cors_layer(config: &ServerConfig) -> CorsLayer {
 
     CorsLayer::new()
         .allow_origin(origins)
-        .allow_methods([Method::GET])
+        .allow_methods([Method::GET, Method::POST, Method::PATCH, Method::DELETE])
+        .allow_headers([axum::http::header::CONTENT_TYPE])
 }

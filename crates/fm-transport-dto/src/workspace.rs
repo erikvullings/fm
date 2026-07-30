@@ -322,8 +322,10 @@ pub enum WorkspaceLayoutDto {
         /// The fraction of space (0.0-1.0) given to `first`.
         ratio: f32,
         /// The first (left or top) region.
+        #[schema(no_recursion)]
         first: Box<WorkspaceLayoutDto>,
         /// The second (right or bottom) region.
+        #[schema(no_recursion)]
         second: Box<WorkspaceLayoutDto>,
     },
 }
@@ -469,6 +471,43 @@ impl From<WorkspaceDto> for Workspace {
             revision: dto.revision,
         }
     }
+}
+
+/// A lightweight projection of a stored workspace, cheap enough to list
+/// without loading every pane and tab (spec §5.3.8, `GET /api/v1/workspaces`).
+///
+/// The conversion from `fm_application::workspace::WorkspaceSummary` lives in
+/// `fm-application` (not here): that type is defined in a higher layer this
+/// crate must never depend on, and Rust's orphan rules permit the impl to
+/// live on either side as long as one of the two types is local to the
+/// crate writing it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(example = json!({
+    "id": "5b1b6b1e-9b1b-4b1b-8b1b-1b1b1b1b1b1b",
+    "name": "Default",
+    "updatedAt": "2026-07-29T18:40:00Z",
+    "revision": 1
+}))]
+pub struct WorkspaceSummaryDto {
+    /// The workspace's id.
+    pub id: Uuid,
+    /// The workspace's user-facing name.
+    pub name: String,
+    /// When the workspace was last persisted.
+    pub updated_at: DateTime<Utc>,
+    /// The workspace's current revision.
+    pub revision: u64,
+}
+
+/// Requests a new workspace (`POST /api/v1/workspaces`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(example = json!({"name": "Photos"}))]
+pub struct CreateWorkspaceRequestDto {
+    /// The new workspace's name; defaults to `"Default"` when omitted.
+    #[serde(default)]
+    pub name: Option<String>,
 }
 
 #[cfg(test)]
@@ -730,5 +769,28 @@ mod tests {
         let domain: Workspace = dto.into();
         let back_to_dto: WorkspaceDto = domain.into();
         assert_eq!(back_to_dto, round_tripped);
+    }
+
+    #[test]
+    fn workspace_summary_dto_round_trips_and_uses_camel_case() {
+        let summary = WorkspaceSummaryDto {
+            id: Uuid::new_v4(),
+            name: "Default".to_owned(),
+            updated_at: Utc::now(),
+            revision: 3,
+        };
+        let json = serde_json::to_string(&summary).expect("serialization must succeed");
+        assert!(json.contains("\"updatedAt\""));
+        let parsed: WorkspaceSummaryDto =
+            serde_json::from_str(&json).expect("deserialization must succeed");
+        assert_eq!(summary, parsed);
+    }
+
+    #[test]
+    fn create_workspace_request_dto_defaults_the_name_to_none() {
+        let json = "{}";
+        let request: CreateWorkspaceRequestDto =
+            serde_json::from_str(json).expect("an empty body must deserialize");
+        assert_eq!(request.name, None);
     }
 }
