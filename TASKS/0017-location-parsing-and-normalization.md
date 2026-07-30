@@ -1,6 +1,6 @@
 # 0017 Location parsing and path normalization
 
-Status: open
+Status: done
 Priority: high
 Owner: unassigned
 Agent: unassigned
@@ -37,4 +37,24 @@ validation) and is exercised by every later feature.
   return "unsupported provider" for them.
 
 ## Agent Notes
-- Not started.
+- 2026-07-30 codex: Implemented validated provider-neutral location parsing in `fm-domain`.
+  `file:` URIs dispatch to provider ID `local`; `archive`, `search` and `sftp` are reserved with a
+  typed unsupported-provider error. Added typed failures for malformed URIs and percent encoding,
+  null bytes, empty segments, provider/scheme mismatches, unsafe child names, root escapes and
+  reserved Windows device names.
+- 2026-07-30 codex: Added native path conversion for POSIX, Windows drive and UNC paths, including
+  byte-preserving Unix encoding for decomposed macOS names and automatic Windows `\\?\`/`\\?\UNC\`
+  prefixing at the legacy path limit. `normalize_within`, `parent`, `join` and `name` operate
+  lexically on decoded path segments without filesystem access or URI string concatenation.
+- 2026-07-30 codex: Followed TDD through the public `Location` API. Six task-specific contract
+  tests cover provider dispatch and typed rejection, root-constrained normalization, helpers,
+  Unicode/shell-sensitive POSIX paths, platform-gated Windows drive/UNC/long paths, and a proptest
+  native-path round trip. Verified independently with `cargo test -p fm-domain --test
+  location_contract` (6 tests), plus `cargo test -p fm-domain`, `cargo check -p fm-domain
+  --all-targets`, and Clippy with `-D warnings`.
+- 2026-07-30 codex: Verified `pnpm test` passes the full Rust workspace, 70 frontend tests and 28
+  script tests. Repository-wide Rust formatting and Clippy pass. `pnpm run lint` remains non-zero
+  only for pre-existing, task-unrelated Biome findings in `frontend/vite.config.ts`,
+  `scripts/architecture-docs.test.mjs` and `scripts/ci-workflow.test.mjs`; none was changed.
+  `CLAUDE.md` is absent, so there was no scoped file to update. Windows-specific tests are
+  `cfg(windows)` and run in the existing CI OS matrix, but were not executable on this macOS host.

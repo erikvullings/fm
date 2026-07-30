@@ -23,6 +23,11 @@ Filesystem access is isolated behind the `fm-vfs` provider contract. Providers a
 capabilities, expose cancellable asynchronous operations and streaming reads/writes, and are
 resolved from provider-neutral locations through a typed registry.
 
+Local paths are represented as validated, percent-encoded `file:` locations rather than raw path
+strings. Conversion preserves POSIX, Windows drive, UNC, long-path and Unicode forms; lexical
+normalization is constrained to a configured root. See
+[`docs/architecture/locations.md`](docs/architecture/locations.md) for the stable URI syntax.
+
 ## CI
 
 `.github/workflows/ci.yml` runs on every push to `main` and every pull request:

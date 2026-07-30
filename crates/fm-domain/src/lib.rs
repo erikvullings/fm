@@ -19,7 +19,7 @@ pub use entry::{
 pub use ids::{
     ActionId, EntryId, IdParseError, OperationId, PaneId, PluginId, ProviderId, TabId, WorkspaceId,
 };
-pub use location::Location;
+pub use location::{Location, LocationError};
 pub use snapshot::{DirectoryDelta, DirectorySnapshot, LoadingState};
 pub use workspace::{
     CURRENT_WORKSPACE_SCHEMA_VERSION, ColumnConfiguration, DirectoryViewConfiguration,
