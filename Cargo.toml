@@ -32,6 +32,7 @@ chrono = { version = "0.4.45", features = ["serde"] }
 clap = { version = "4.6.4", features = ["derive", "env"] }
 dirs = "6.0.0"
 futures = "0.3.31"
+notify = "8.2.0"
 reqwest = { version = "0.13.4", default-features = false, features = [
   "json",
   "rustls",
@@ -57,7 +58,7 @@ tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 utoipa = { version = "5.5.0", features = ["chrono", "uuid"] }
 utoipa-axum = "0.2.0"
 utoipa-swagger-ui = { version = "9.0.2", features = ["axum"] }
-uuid = { version = "1.24.0", features = ["serde", "v4"] }
+uuid = { version = "1.24.0", features = ["serde", "v4", "v5"] }
 
 # `anyhow` is reserved for executables in `apps/`; libraries use `thiserror`.
 # This is enforced by the architecture fitness test in `fm-test-support`.

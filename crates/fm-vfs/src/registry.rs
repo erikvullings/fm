@@ -6,7 +6,7 @@ use fm_domain::{Location, ProviderId};
 use crate::{FileSystemProvider, VfsError};
 
 /// Collection of providers addressable by [`Location::provider_id`].
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct ProviderRegistry {
     providers: HashMap<ProviderId, Arc<dyn FileSystemProvider>>,
 }

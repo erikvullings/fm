@@ -4,6 +4,7 @@ import type { BackendEvent, DirectoryDelta } from '../../models';
 import { MockClientError, MockFileManagerClient } from './mock-file-manager-client';
 
 const ROOT_REQUEST = {
+  workspaceId: 'workspace-1',
   paneId: 'left',
   requestId: 'request-1',
   location: { providerId: 'file', uri: 'mock:///' },
@@ -138,6 +139,7 @@ describe('MockFileManagerClient controls', () => {
         timestamp: '2026-01-01T00:00:00.000Z',
         payload: {
           type: 'directory.delta',
+          paneId: 'left',
           delta: {
             type: 'entriesRemoved',
             revision: 2,

@@ -1,15 +1,22 @@
 //! Authoritative directory listing state shared by every transport.
 
 use std::cmp::Ordering;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 
 use fm_domain::{DirectorySnapshot, EntryKind, EntryMetadata, LoadingState, PaneId};
+use fm_events::{
+    BackendEventPayload, DirectoryDeltaPayload, EntrySummaryPayload, EventAudience, EventBus,
+};
 use fm_transport_dto::{
     EntryMetadataRequest, ListDirectoryRequest, NavigateRequest, SortDescriptorDto,
     SortDirectionDto,
 };
-use fm_vfs::{EntryRef, ListOptions, ProviderRegistry};
-use tokio::sync::Mutex;
+use fm_vfs::{
+    EntryRef, FileSystemProvider, ListOptions, ProviderChange, ProviderRegistry, VfsError,
+};
+use futures::StreamExt;
+use tokio::sync::{Mutex, broadcast};
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
@@ -18,22 +25,45 @@ use crate::ApplicationError;
 struct PaneRequest {
     request_id: Uuid,
     cancellation: CancellationToken,
+    watch_cancellation: CancellationToken,
     revision: u64,
+    snapshot: Option<DirectorySnapshot>,
+}
+
+struct SharedWatch {
+    sender: broadcast::Sender<ProviderChange>,
+    cancellation: CancellationToken,
+    references: usize,
+}
+
+#[derive(Default)]
+struct WatchHub {
+    watches: Mutex<HashMap<fm_domain::Location, SharedWatch>>,
 }
 
 /// Lists directories and owns per-pane cancellation and revision state.
 pub struct DirectoryService {
     providers: ProviderRegistry,
-    panes: Mutex<HashMap<PaneId, PaneRequest>>,
+    panes: Arc<Mutex<HashMap<PaneId, PaneRequest>>>,
+    watches: Arc<WatchHub>,
+    events: EventBus,
 }
 
 impl DirectoryService {
     /// Creates a directory service backed by the given provider registry.
     #[must_use]
     pub fn new(providers: ProviderRegistry) -> Self {
+        Self::with_event_bus(providers, EventBus::default())
+    }
+
+    /// Creates a directory service publishing changes through `events`.
+    #[must_use]
+    pub fn with_event_bus(providers: ProviderRegistry, events: EventBus) -> Self {
         Self {
             providers,
-            panes: Mutex::new(HashMap::new()),
+            panes: Arc::new(Mutex::new(HashMap::new())),
+            watches: Arc::new(WatchHub::default()),
+            events,
         }
     }
 
@@ -43,23 +73,45 @@ impl DirectoryService {
         request: ListDirectoryRequest,
     ) -> Result<DirectorySnapshot, ApplicationError> {
         let pane_id = PaneId::from(request.pane_id);
+        let location: fm_domain::Location = request.location.clone().into();
+        let first_page = request.continuation_token.is_none();
         let cancellation = CancellationToken::new();
         {
             let mut panes = self.panes.lock().await;
             let revision = panes.get(&pane_id).map_or(0, |state| state.revision);
-            if let Some(previous) = panes.insert(
+            let previous = panes.remove(&pane_id);
+            let continuing_same_directory = !first_page
+                && previous
+                    .as_ref()
+                    .and_then(|state| state.snapshot.as_ref())
+                    .is_some_and(|snapshot| snapshot.location == location);
+            let (watch_cancellation, snapshot) = if continuing_same_directory {
+                let previous = previous.as_ref().expect("checked above");
+                (
+                    previous.watch_cancellation.clone(),
+                    previous.snapshot.clone(),
+                )
+            } else {
+                (CancellationToken::new(), None)
+            };
+            panes.insert(
                 pane_id,
                 PaneRequest {
                     request_id: request.request_id,
                     cancellation: cancellation.clone(),
+                    watch_cancellation,
                     revision,
+                    snapshot,
                 },
-            ) {
+            );
+            if let Some(previous) = previous {
                 previous.cancellation.cancel();
+                if !continuing_same_directory {
+                    previous.watch_cancellation.cancel();
+                }
             }
         }
 
-        let location = request.location.into();
         let provider = self.providers.resolve(&location)?;
         let page = provider
             .list(
@@ -85,7 +137,7 @@ impl DirectoryService {
         }
         sort_entries(&mut entries, &request.sort, request.folders_first);
 
-        Ok(DirectorySnapshot {
+        let snapshot = DirectorySnapshot {
             pane_id,
             request_id: request.request_id,
             revision: state.revision,
@@ -95,7 +147,53 @@ impl DirectoryService {
             has_more: page.has_more,
             continuation_token: page.continuation_token,
             loading_state: LoadingState::Loaded,
-        })
+        };
+        if first_page {
+            state.snapshot = Some(snapshot.clone());
+        } else if let Some(accumulated) = state.snapshot.as_mut() {
+            accumulated.request_id = snapshot.request_id;
+            accumulated.revision = snapshot.revision;
+            accumulated.entries.extend(snapshot.entries.iter().cloned());
+            sort_entries(
+                &mut accumulated.entries,
+                &request.sort,
+                request.folders_first,
+            );
+            accumulated.total_known_entries = snapshot.total_known_entries;
+            accumulated.has_more = snapshot.has_more;
+            accumulated.continuation_token = snapshot.continuation_token.clone();
+        } else {
+            state.snapshot = Some(snapshot.clone());
+        }
+        let watch_cancellation = state.watch_cancellation.clone();
+        drop(panes);
+
+        if first_page
+            && provider
+                .capabilities()
+                .contains(fm_vfs::ProviderCapabilities::WATCH)
+        {
+            let receiver = self
+                .watches
+                .acquire(provider.clone(), snapshot.location.clone())
+                .await?;
+            spawn_pane_watch(PaneWatch {
+                provider,
+                location: snapshot.location.clone(),
+                workspace_id: request.workspace_id.into(),
+                pane_id,
+                show_hidden: request.show_hidden,
+                folders_first: request.folders_first,
+                sort: request.sort,
+                cancellation: watch_cancellation,
+                receiver,
+                panes: Arc::clone(&self.panes),
+                watches: Arc::clone(&self.watches),
+                events: self.events.clone(),
+            });
+        }
+
+        Ok(snapshot)
     }
 
     /// Navigates a pane to a location, cancelling any older pane request.
@@ -104,6 +202,7 @@ impl DirectoryService {
         request: NavigateRequest,
     ) -> Result<DirectorySnapshot, ApplicationError> {
         self.list(ListDirectoryRequest {
+            workspace_id: request.workspace_id,
             pane_id: request.pane_id,
             request_id: request.request_id,
             location: request.location,
@@ -140,6 +239,269 @@ impl DirectoryService {
             )
             .await
             .map_err(Into::into)
+    }
+}
+
+impl WatchHub {
+    async fn acquire(
+        &self,
+        provider: Arc<dyn FileSystemProvider>,
+        location: fm_domain::Location,
+    ) -> Result<broadcast::Receiver<ProviderChange>, VfsError> {
+        let mut watches = self.watches.lock().await;
+        if let Some(watch) = watches.get_mut(&location) {
+            watch.references += 1;
+            return Ok(watch.sender.subscribe());
+        }
+
+        let cancellation = CancellationToken::new();
+        let mut stream = provider.watch(&location, cancellation.clone()).await?;
+        let (sender, receiver) = broadcast::channel(16);
+        let forward = sender.clone();
+        let source_cancellation = cancellation.clone();
+        tokio::spawn(async move {
+            loop {
+                tokio::select! {
+                    () = source_cancellation.cancelled() => break,
+                    item = stream.next() => match item {
+                        Some(Ok(change)) => { let _ = forward.send(change); }
+                        Some(Err(_)) => { let _ = forward.send(ProviderChange::ResetRequired); }
+                        None => break,
+                    }
+                }
+            }
+        });
+        watches.insert(
+            location,
+            SharedWatch {
+                sender,
+                cancellation,
+                references: 1,
+            },
+        );
+        Ok(receiver)
+    }
+
+    async fn release(&self, location: &fm_domain::Location) {
+        let mut watches = self.watches.lock().await;
+        let remove = watches.get_mut(location).is_some_and(|watch| {
+            watch.references -= 1;
+            watch.references == 0
+        });
+        if remove && let Some(watch) = watches.remove(location) {
+            watch.cancellation.cancel();
+        }
+    }
+
+    #[cfg(test)]
+    async fn registration_count(&self) -> usize {
+        self.watches.lock().await.len()
+    }
+}
+
+struct PaneWatch {
+    provider: Arc<dyn FileSystemProvider>,
+    location: fm_domain::Location,
+    workspace_id: fm_domain::WorkspaceId,
+    pane_id: PaneId,
+    show_hidden: bool,
+    folders_first: bool,
+    sort: Vec<SortDescriptorDto>,
+    cancellation: CancellationToken,
+    receiver: broadcast::Receiver<ProviderChange>,
+    panes: Arc<Mutex<HashMap<PaneId, PaneRequest>>>,
+    watches: Arc<WatchHub>,
+    events: EventBus,
+}
+
+fn spawn_pane_watch(mut watch: PaneWatch) {
+    tokio::spawn(async move {
+        loop {
+            let change = tokio::select! {
+                () = watch.cancellation.cancelled() => break,
+                received = watch.receiver.recv() => match received {
+                    Ok(change) => change,
+                    Err(broadcast::error::RecvError::Lagged(_)) => ProviderChange::ResetRequired,
+                    Err(broadcast::error::RecvError::Closed) => break,
+                }
+            };
+            let entries = match list_all(
+                Arc::clone(&watch.provider),
+                &watch.location,
+                watch.cancellation.clone(),
+            )
+            .await
+            {
+                Ok(entries) => entries,
+                Err(VfsError::Cancelled) => break,
+                Err(_) => continue,
+            };
+            publish_changes(&watch, change, entries).await;
+        }
+        watch.watches.release(&watch.location).await;
+    });
+}
+
+async fn list_all(
+    provider: Arc<dyn FileSystemProvider>,
+    location: &fm_domain::Location,
+    cancellation: CancellationToken,
+) -> Result<Vec<fm_domain::EntrySummary>, VfsError> {
+    let mut entries = Vec::new();
+    let mut continuation_token = None;
+    loop {
+        let page = provider
+            .list(
+                location,
+                ListOptions {
+                    page_size: 1_024,
+                    continuation_token,
+                },
+                cancellation.clone(),
+            )
+            .await?;
+        entries.extend(page.entries);
+        if !page.has_more {
+            return Ok(entries);
+        }
+        continuation_token = page.continuation_token;
+    }
+}
+
+async fn publish_changes(
+    watch: &PaneWatch,
+    change: ProviderChange,
+    mut entries: Vec<fm_domain::EntrySummary>,
+) {
+    if !watch.show_hidden {
+        entries.retain(|entry| !entry.hidden);
+    }
+    sort_entries(&mut entries, &watch.sort, watch.folders_first);
+
+    let mut panes = watch.panes.lock().await;
+    let Some(state) = panes.get_mut(&watch.pane_id).filter(|state| {
+        state
+            .snapshot
+            .as_ref()
+            .is_some_and(|snapshot| snapshot.location == watch.location)
+    }) else {
+        return;
+    };
+    let Some(previous) = state.snapshot.clone() else {
+        return;
+    };
+    state.revision += 1;
+    let revision = state.revision;
+    let snapshot = DirectorySnapshot {
+        revision,
+        entries: entries.clone(),
+        total_known_entries: Some(entries.len() as u64),
+        has_more: false,
+        continuation_token: None,
+        ..previous.clone()
+    };
+    let mut deltas = deltas_for_change(change, &previous, snapshot.clone(), entries, revision);
+    let final_revision = deltas.last().map_or(revision, delta_revision);
+    let mut snapshot = snapshot;
+    snapshot.revision = final_revision;
+    if let [
+        DirectoryDeltaPayload::Reset {
+            snapshot: reset_snapshot,
+        },
+    ] = &mut deltas[..]
+    {
+        reset_snapshot.revision = final_revision;
+    }
+    state.revision = final_revision;
+    state.snapshot = Some(snapshot);
+    drop(panes);
+
+    for delta in deltas {
+        watch.events.publish(
+            EventAudience::Workspace(watch.workspace_id),
+            BackendEventPayload::DirectoryDelta {
+                pane_id: watch.pane_id,
+                delta,
+            },
+        );
+    }
+}
+
+fn deltas_for_change(
+    change: ProviderChange,
+    previous: &DirectorySnapshot,
+    snapshot: DirectorySnapshot,
+    entries: Vec<fm_domain::EntrySummary>,
+    revision: u64,
+) -> Vec<DirectoryDeltaPayload> {
+    if change == ProviderChange::ResetRequired {
+        vec![DirectoryDeltaPayload::Reset {
+            snapshot: snapshot.into(),
+        }]
+    } else {
+        diff_entries(&previous.entries, entries, revision)
+    }
+}
+
+fn diff_entries(
+    previous: &[fm_domain::EntrySummary],
+    current: Vec<fm_domain::EntrySummary>,
+    revision: u64,
+) -> Vec<DirectoryDeltaPayload> {
+    let previous_by_id: HashMap<_, _> = previous.iter().map(|entry| (entry.id, entry)).collect();
+    let current_ids: HashSet<_> = current.iter().map(|entry| entry.id).collect();
+    let added: Vec<_> = current
+        .iter()
+        .filter(|entry| !previous_by_id.contains_key(&entry.id))
+        .cloned()
+        .map(EntrySummaryPayload::from)
+        .collect();
+    let updated: Vec<_> = current
+        .iter()
+        .filter(|entry| {
+            previous_by_id
+                .get(&entry.id)
+                .is_some_and(|old| *old != *entry)
+        })
+        .cloned()
+        .map(EntrySummaryPayload::from)
+        .collect();
+    let removed: Vec<_> = previous
+        .iter()
+        .filter(|entry| !current_ids.contains(&entry.id))
+        .map(|entry| entry.id)
+        .collect();
+    let mut deltas = Vec::with_capacity(3);
+    let mut next_revision = revision;
+    if !added.is_empty() {
+        deltas.push(DirectoryDeltaPayload::EntriesAdded {
+            revision: next_revision,
+            entries: added,
+        });
+        next_revision += 1;
+    }
+    if !updated.is_empty() {
+        deltas.push(DirectoryDeltaPayload::EntriesUpdated {
+            revision: next_revision,
+            entries: updated,
+        });
+        next_revision += 1;
+    }
+    if !removed.is_empty() {
+        deltas.push(DirectoryDeltaPayload::EntriesRemoved {
+            revision: next_revision,
+            entry_ids: removed,
+        });
+    }
+    deltas
+}
+
+fn delta_revision(delta: &DirectoryDeltaPayload) -> u64 {
+    match delta {
+        DirectoryDeltaPayload::EntriesAdded { revision, .. }
+        | DirectoryDeltaPayload::EntriesUpdated { revision, .. }
+        | DirectoryDeltaPayload::EntriesRemoved { revision, .. } => *revision,
+        DirectoryDeltaPayload::Reset { snapshot } => snapshot.revision,
     }
 }
 
@@ -311,6 +673,7 @@ mod tests {
 
     fn request(pane_id: PaneId, request_id: Uuid) -> ListDirectoryRequest {
         ListDirectoryRequest {
+            workspace_id: Uuid::new_v4(),
             pane_id: pane_id.into(),
             request_id,
             location: LocationDto {
@@ -352,5 +715,132 @@ mod tests {
         assert_eq!(second.request_id, second_id);
         assert_eq!(second.revision, 1);
         assert_eq!(first, ApplicationError::OperationCancelled);
+    }
+
+    #[tokio::test]
+    async fn repeated_navigation_releases_superseded_watch_registrations() {
+        let root = tempfile::tempdir().expect("temporary directory");
+        let mut providers = ProviderRegistry::new();
+        providers.register(Arc::new(fm_vfs_local::LocalFileSystemProvider));
+        let service = DirectoryService::new(providers);
+        let pane_id = PaneId::new();
+
+        for index in 0..100 {
+            let path = root.path().join(format!("directory-{index}"));
+            std::fs::create_dir(&path).expect("create watched directory");
+            let location = Location::from_native_path(&path).expect("local location");
+            let mut request = request(pane_id, Uuid::new_v4());
+            request.location = LocationDto::from(location);
+            service.list(request).await.expect("navigate and watch");
+        }
+
+        tokio::time::timeout(std::time::Duration::from_secs(3), async {
+            loop {
+                if service.watches.registration_count().await == 1 {
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("superseded watches must be released");
+    }
+
+    #[tokio::test]
+    async fn loading_another_page_keeps_the_directory_watch_registered() {
+        let root = tempfile::tempdir().expect("temporary directory");
+        for index in 0..257 {
+            std::fs::write(root.path().join(format!("entry-{index:03}")), b"")
+                .expect("create paged entry");
+        }
+        let mut providers = ProviderRegistry::new();
+        providers.register(Arc::new(fm_vfs_local::LocalFileSystemProvider));
+        let service = DirectoryService::new(providers);
+        let pane_id = PaneId::new();
+        let workspace_id = Uuid::new_v4();
+        let location =
+            LocationDto::from(Location::from_native_path(root.path()).expect("local location"));
+
+        let mut first_request = request(pane_id, Uuid::new_v4());
+        first_request.workspace_id = workspace_id;
+        first_request.location = location.clone();
+        let first = service.list(first_request).await.expect("first page");
+        assert_eq!(service.watches.registration_count().await, 1);
+
+        let mut second_request = request(pane_id, Uuid::new_v4());
+        second_request.workspace_id = workspace_id;
+        second_request.location = location;
+        second_request.continuation_token = first.continuation_token;
+        service.list(second_request).await.expect("second page");
+
+        assert_eq!(service.watches.registration_count().await, 1);
+    }
+
+    #[test]
+    fn ten_thousand_added_entries_are_one_batched_delta() {
+        let entries = (0..10_000)
+            .map(|index| fm_domain::EntrySummary {
+                id: fm_domain::EntryId::new(),
+                location: Location::new(
+                    ProviderId::new("late"),
+                    format!("late:///directory/{index}"),
+                ),
+                name: format!("entry-{index}"),
+                kind: EntryKind::File,
+                size: Some(0),
+                modified_at: None,
+                created_at: None,
+                hidden: false,
+                read_only: false,
+                extension: None,
+                mime_type: None,
+                icon_key: None,
+                metadata_revision: 0,
+            })
+            .collect();
+
+        let deltas = diff_entries(&[], entries, 2);
+
+        assert_eq!(deltas.len(), 1);
+        assert!(matches!(
+            &deltas[0],
+            DirectoryDeltaPayload::EntriesAdded { revision: 2, entries }
+                if entries.len() == 10_000
+        ));
+    }
+
+    #[test]
+    fn dropped_provider_events_force_a_fresh_snapshot_reset() {
+        let pane_id = PaneId::new();
+        let location = Location::new(ProviderId::new("late"), "late:///directory");
+        let previous = DirectorySnapshot {
+            pane_id,
+            request_id: Uuid::new_v4(),
+            revision: 1,
+            location: location.clone(),
+            entries: Vec::new(),
+            total_known_entries: Some(0),
+            has_more: false,
+            continuation_token: None,
+            loading_state: LoadingState::Loaded,
+        };
+        let fresh = DirectorySnapshot {
+            revision: 2,
+            ..previous.clone()
+        };
+
+        let deltas = deltas_for_change(
+            ProviderChange::ResetRequired,
+            &previous,
+            fresh,
+            Vec::new(),
+            2,
+        );
+
+        assert!(matches!(
+            &deltas[..],
+            [DirectoryDeltaPayload::Reset { snapshot }]
+                if snapshot.pane_id == pane_id && snapshot.revision == 2
+        ));
     }
 }

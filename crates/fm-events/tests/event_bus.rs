@@ -186,6 +186,7 @@ fn identifies_high_frequency_payloads_as_coalescable() {
         },
     };
     let delta = BackendEventPayload::DirectoryDelta {
+        pane_id: fm_domain::PaneId::new(),
         delta: DirectoryDeltaPayload::EntriesRemoved {
             revision: 2,
             entry_ids: Vec::new(),

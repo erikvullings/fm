@@ -3,7 +3,16 @@
 //! Directory entries are inspected without following symbolic links. macOS
 //! Finder aliases are not detected yet and are treated as regular files.
 
-use std::{collections::BTreeMap, io, path::Path};
+use std::{
+    collections::BTreeMap,
+    io,
+    path::Path,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+    time::Duration,
+};
 
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
@@ -11,11 +20,18 @@ use fm_domain::{
     EntryId, EntryKind, EntryMetadata, EntrySummary, Location, PermissionsInfo, ProviderId,
 };
 use fm_vfs::{
-    DirectoryPage, EntryRef, FileSystemProvider, ListOptions, ProviderCapabilities,
+    DirectoryPage, EntryRef, FileSystemProvider, ListOptions, ProviderCapabilities, ProviderChange,
     ProviderChangeStream, ProviderReadStream, ProviderWriteStream, RemoveOptions, VfsError,
     WriteOptions,
 };
+use futures::stream;
+use notify::{Event, RecursiveMode, Watcher};
+use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
+use uuid::Uuid;
+
+const WATCH_DEBOUNCE: Duration = Duration::from_millis(75);
+const WATCH_INPUT_CAPACITY: usize = 64;
 
 /// Provider for the host's local filesystem.
 #[derive(Debug, Default)]
@@ -36,7 +52,7 @@ impl FileSystemProvider for LocalFileSystemProvider {
     }
 
     fn capabilities(&self) -> ProviderCapabilities {
-        ProviderCapabilities::LIST
+        ProviderCapabilities::LIST | ProviderCapabilities::WATCH
     }
 
     async fn list(
@@ -177,10 +193,64 @@ impl FileSystemProvider for LocalFileSystemProvider {
 
     async fn watch(
         &self,
-        _location: &Location,
-        _cancellation: CancellationToken,
+        location: &Location,
+        cancellation: CancellationToken,
     ) -> Result<ProviderChangeStream, VfsError> {
-        unsupported(ProviderCapabilities::WATCH)
+        if cancellation.is_cancelled() {
+            return Err(VfsError::Cancelled);
+        }
+        let path = location
+            .to_native_path()
+            .map_err(|_| invalid_location(location))?;
+        let (input_tx, mut input_rx) = mpsc::channel(WATCH_INPUT_CAPACITY);
+        let (output_tx, output_rx) = mpsc::channel(8);
+        let reset_required = Arc::new(AtomicBool::new(false));
+        let callback_reset = Arc::clone(&reset_required);
+        let handler = move |result: notify::Result<Event>| {
+            let reset = result.as_ref().map_or(true, |event| event.need_rescan());
+            if reset {
+                callback_reset.store(true, Ordering::Release);
+            }
+            if input_tx.try_send(()).is_err() {
+                callback_reset.store(true, Ordering::Release);
+            }
+        };
+        let mut watcher = notify::PollWatcher::new(
+            handler,
+            notify::Config::default().with_poll_interval(Duration::from_millis(100)),
+        )
+        .map_err(|error| watch_error(error, location))?;
+        watcher
+            .watch(&path, RecursiveMode::Recursive)
+            .map_err(|error| watch_error(error, location))?;
+
+        tokio::spawn(async move {
+            loop {
+                tokio::select! {
+                    () = cancellation.cancelled() => break,
+                    signal = input_rx.recv() => {
+                        if signal.is_none() {
+                            break;
+                        }
+                        tokio::time::sleep(WATCH_DEBOUNCE).await;
+                        while input_rx.try_recv().is_ok() {}
+                        let change = if reset_required.swap(false, Ordering::AcqRel) {
+                            ProviderChange::ResetRequired
+                        } else {
+                            ProviderChange::Changed
+                        };
+                        if output_tx.send(Ok(change)).await.is_err() {
+                            break;
+                        }
+                    }
+                }
+            }
+            drop(watcher);
+        });
+
+        Ok(Box::pin(stream::unfold(output_rx, |mut receiver| async {
+            receiver.recv().await.map(|change| (change, receiver))
+        })))
     }
 }
 
@@ -210,7 +280,7 @@ async fn summarize_entry(
         EntryKind::File
     };
     Ok(EntrySummary {
-        id: EntryId::new(),
+        id: stable_entry_id(&metadata, &location),
         location,
         extension: Path::new(&name)
             .extension()
@@ -227,6 +297,33 @@ async fn summarize_entry(
         icon_key: None,
         metadata_revision: 0,
     })
+}
+
+fn stable_entry_id(metadata: &std::fs::Metadata, _location: &Location) -> EntryId {
+    #[cfg(unix)]
+    let identity = {
+        use std::os::unix::fs::MetadataExt;
+        format!("local:{}:{}", metadata.dev(), metadata.ino())
+    };
+    #[cfg(windows)]
+    let identity = {
+        use std::os::windows::fs::MetadataExt;
+        format!(
+            "local:{}:{}",
+            metadata.volume_serial_number().unwrap_or_default(),
+            metadata.file_index().unwrap_or_default()
+        )
+    };
+    #[cfg(not(any(unix, windows)))]
+    let identity = format!("local:{}", _location.uri);
+
+    EntryId::from(Uuid::new_v5(&Uuid::NAMESPACE_URL, identity.as_bytes()))
+}
+
+fn watch_error(error: notify::Error, location: &Location) -> VfsError {
+    VfsError::Io {
+        message: format!("{}: {error}", location.uri),
+    }
 }
 
 #[cfg(windows)]

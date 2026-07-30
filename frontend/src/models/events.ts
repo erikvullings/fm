@@ -92,7 +92,7 @@ export type BackendEventPayload =
       view: DirectoryViewConfiguration;
     }
   | { type: 'directory.snapshot'; snapshot: DirectorySnapshot }
-  | { type: 'directory.delta'; delta: DirectoryDelta }
+  | { type: 'directory.delta'; paneId: string; delta: DirectoryDelta }
   | { type: 'operation.created'; operation: Operation }
   | { type: 'operation.progress'; operationId: OperationId; progress: OperationProgress }
   | { type: 'operation.stateChanged'; operationId: OperationId; state: OperationState }

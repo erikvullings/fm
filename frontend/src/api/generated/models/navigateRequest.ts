@@ -17,4 +17,6 @@ export interface NavigateRequest {
      * late response can be recognised and dropped.
      */
   requestId: string;
+  /** Workspace that owns the pane and receives its events. */
+  workspaceId: string;
 }

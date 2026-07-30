@@ -22,6 +22,7 @@ async fn directory_endpoints_list_refresh_navigate_and_fetch_metadata() {
     std::fs::write(&file, b"contents").expect("must create fixture");
     let server = TestServer::spawn().await;
     let client = reqwest::Client::new();
+    let workspace_id = Uuid::new_v4();
     let pane_id = Uuid::new_v4();
     let location = location_json(root.path());
 
@@ -29,6 +30,7 @@ async fn directory_endpoints_list_refresh_navigate_and_fetch_metadata() {
         let response = client
             .post(format!("{}/api/v1/{endpoint}", server.base_url))
             .json(&json!({
+                "workspaceId": workspace_id,
                 "paneId": pane_id,
                 "requestId": Uuid::new_v4(),
                 "location": location,
@@ -48,6 +50,7 @@ async fn directory_endpoints_list_refresh_navigate_and_fetch_metadata() {
     let response = client
         .post(format!("{}/api/v1/navigation/open", server.base_url))
         .json(&json!({
+            "workspaceId": workspace_id,
             "paneId": pane_id,
             "requestId": Uuid::new_v4(),
             "location": location,
@@ -82,6 +85,7 @@ async fn directory_errors_use_stable_sanitized_application_error_dtos() {
     let response = reqwest::Client::new()
         .post(format!("{}/api/v1/directories/list", server.base_url))
         .json(&json!({
+            "workspaceId": Uuid::new_v4(),
             "paneId": Uuid::new_v4(),
             "requestId": Uuid::new_v4(),
             "location": location_json(&missing),

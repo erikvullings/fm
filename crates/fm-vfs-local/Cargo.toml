@@ -11,8 +11,11 @@ async-trait.workspace = true
 chrono.workspace = true
 fm-domain.workspace = true
 fm-vfs = { path = "../fm-vfs" }
-tokio.workspace = true
+futures.workspace = true
+notify.workspace = true
+tokio = { workspace = true, features = ["sync", "time"] }
 tokio-util.workspace = true
+uuid.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

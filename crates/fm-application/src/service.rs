@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use fm_domain::{DirectorySnapshot, EntryMetadata};
+use fm_events::EventBus;
 use fm_transport_dto::{
     EntryMetadataRequest, ListDirectoryRequest, NavigateRequest, PlatformKindDto,
     RuntimeCapabilitiesDto, RuntimeKindDto, WorkspaceCommandDto, WorkspaceDto, WorkspaceSummaryDto,
@@ -31,6 +32,7 @@ pub struct FileManagerService {
     runtime: RuntimeKindDto,
     workspaces: WorkspaceService<JsonFileWorkspaceRepository>,
     directories: DirectoryService,
+    events: EventBus,
 }
 
 impl FileManagerService {
@@ -39,13 +41,21 @@ impl FileManagerService {
     pub fn new(runtime: RuntimeKindDto, workspace_directory: impl Into<PathBuf>) -> Self {
         let mut providers = ProviderRegistry::new();
         providers.register(Arc::new(LocalFileSystemProvider));
+        let events = EventBus::default();
         Self {
             runtime,
             workspaces: WorkspaceService::new(JsonFileWorkspaceRepository::new(
                 workspace_directory,
             )),
-            directories: DirectoryService::new(providers),
+            directories: DirectoryService::with_event_bus(providers, events.clone()),
+            events,
         }
+    }
+
+    /// Returns the shared backend event bus used by both host adapters.
+    #[must_use]
+    pub fn event_bus(&self) -> EventBus {
+        self.events.clone()
     }
 
     /// Lists one page of a directory.

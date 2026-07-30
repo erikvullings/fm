@@ -1,6 +1,6 @@
 use std::pin::Pin;
 
-use fm_domain::{DirectoryDelta, EntryId, EntrySummary, Location};
+use fm_domain::{EntryId, EntrySummary, Location};
 use futures::Stream;
 use tokio::io::{AsyncRead, AsyncWrite};
 
@@ -70,6 +70,15 @@ pub type ProviderReadStream = Pin<Box<dyn AsyncRead + Send>>;
 /// Streaming writer returned by a provider.
 pub type ProviderWriteStream = Pin<Box<dyn AsyncWrite + Send>>;
 
-/// Stream of changes observed at a provider location.
+/// Provider-neutral indication that a watched location may have changed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProviderChange {
+    /// One or more filesystem changes were coalesced.
+    Changed,
+    /// Events were lost and the consumer must replace its snapshot.
+    ResetRequired,
+}
+
+/// Stream of invalidations observed at a provider location.
 pub type ProviderChangeStream =
-    Pin<Box<dyn Stream<Item = Result<DirectoryDelta, VfsError>> + Send>>;
+    Pin<Box<dyn Stream<Item = Result<ProviderChange, VfsError>> + Send>>;

@@ -3,10 +3,73 @@
 use std::fs;
 
 use fm_domain::{EntryKind, Location, ProviderId};
-use fm_vfs::{EntryRef, FileSystemProvider, ListOptions, ProviderCapabilities, VfsError};
+use fm_vfs::{
+    EntryRef, FileSystemProvider, ListOptions, ProviderCapabilities, ProviderChange, VfsError,
+};
 use fm_vfs_local::LocalFileSystemProvider;
+use futures::StreamExt;
 use tempfile::tempdir;
 use tokio_util::sync::CancellationToken;
+
+#[tokio::test]
+async fn entry_id_survives_a_rename() {
+    let root = tempdir().expect("temporary directory");
+    fs::write(root.path().join("before.txt"), b"same file").expect("create fixture");
+    let location = Location::from_native_path(root.path()).expect("local location");
+    let provider = LocalFileSystemProvider::new();
+    let before = provider
+        .list(&location, ListOptions::default(), CancellationToken::new())
+        .await
+        .expect("initial listing")
+        .entries[0]
+        .id;
+
+    fs::rename(
+        root.path().join("before.txt"),
+        root.path().join("after.txt"),
+    )
+    .expect("rename fixture");
+    let after = provider
+        .list(&location, ListOptions::default(), CancellationToken::new())
+        .await
+        .expect("updated listing")
+        .entries[0]
+        .id;
+
+    assert_eq!(before, after);
+}
+
+#[tokio::test]
+async fn watches_create_rename_and_delete_as_coalesced_invalidations() {
+    let root = tempdir().expect("temporary directory");
+    let location = Location::from_native_path(root.path()).expect("local location");
+    let cancellation = CancellationToken::new();
+    let mut changes = LocalFileSystemProvider::new()
+        .watch(&location, cancellation.clone())
+        .await
+        .expect("start watch");
+    tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+
+    fs::write(root.path().join("before.txt"), b"file").expect("create fixture");
+    fs::rename(
+        root.path().join("before.txt"),
+        root.path().join("after.txt"),
+    )
+    .expect("rename fixture");
+    let change = tokio::time::timeout(std::time::Duration::from_secs(3), changes.next())
+        .await
+        .expect("watch notification timeout")
+        .expect("watch stream open")
+        .expect("watch notification");
+    assert_eq!(change, ProviderChange::Changed);
+    assert!(
+        tokio::time::timeout(std::time::Duration::from_millis(250), changes.next())
+            .await
+            .is_err(),
+        "burst must not produce one notification per filesystem event"
+    );
+    cancellation.cancel();
+}
 
 #[tokio::test]
 async fn lists_files_and_directories_with_lightweight_summaries() {
@@ -188,7 +251,10 @@ async fn metadata_is_separate_and_capabilities_are_truthful() {
     let provider = LocalFileSystemProvider::new();
 
     assert_eq!(provider.id(), ProviderId::new("local"));
-    assert_eq!(provider.capabilities(), ProviderCapabilities::LIST);
+    assert_eq!(
+        provider.capabilities(),
+        ProviderCapabilities::LIST | ProviderCapabilities::WATCH
+    );
     let metadata = provider
         .metadata(&entry, CancellationToken::new())
         .await

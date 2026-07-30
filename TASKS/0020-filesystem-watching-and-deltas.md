@@ -1,6 +1,6 @@
 # 0020 Filesystem watching and directory deltas
 
-Status: open
+Status: done
 Priority: medium
 Owner: unassigned
 Agent: unassigned
@@ -31,4 +31,20 @@ Open directories must reflect external changes without a manual refresh.
   (§13).
 
 ## Agent Notes
-- Not started.
+
+- 2026-07-30 codex: Added provider-neutral `Changed`/`ResetRequired` invalidations, a bounded
+  notify polling watcher with debounce and overflow handling, and filesystem-identity-based stable
+  local `EntryId` values.
+- 2026-07-30 codex: Added workspace-scoped directory requests and pane-addressed
+  `directory.delta` events. `DirectoryService` now shares watches by location with reference
+  counting, relists and diffs authoritative snapshots, advances revisions, batches additions,
+  and emits a fresh-snapshot `Reset` after dropped events.
+- 2026-07-30 codex: Added tests for stable IDs across rename, create/rename/delete event delivery,
+  burst coalescing, 10,000-entry delta batching, pagination watch retention, and cleanup after 100
+  navigations. Platform behavior and the polling/native-watcher tradeoff are documented in
+  `docs/architecture/filesystem-watching.md`.
+- 2026-07-30 codex: Validation passed with `pnpm test`, `cargo fmt --all --check`,
+  `cargo clippy --workspace --all-targets -- -D warnings`, and the frontend production build.
+  `pnpm run lint:frontend` remains blocked only by pre-existing Biome findings in
+  `frontend/vite.config.ts`, `scripts/architecture-docs.test.mjs`, and
+  `scripts/ci-workflow.test.mjs`.

@@ -65,6 +65,7 @@ describe('TauriFileManagerClient', () => {
       invoke.mockResolvedValue(snapshot);
       const client = new TauriFileManagerClient();
       const request = {
+        workspaceId: 'workspace-1',
         paneId: 'left',
         requestId: 'request-1',
         location: { providerId: 'local', uri: 'file:///' },

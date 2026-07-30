@@ -115,6 +115,7 @@ describe('HttpFileManagerClient', () => {
       const client = new HttpFileManagerClient();
       const controller = new AbortController();
       const request = {
+        workspaceId: 'workspace-1',
         paneId: 'pane-1',
         requestId: 'req-1',
         location: { providerId: 'local', uri: 'file:///' },

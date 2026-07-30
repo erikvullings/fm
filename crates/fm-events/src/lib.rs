@@ -13,7 +13,10 @@
 mod bus;
 
 use chrono::{DateTime, Utc};
-use fm_domain::{EntryId, OperationId, PaneId, PluginId, ProviderId, TabId, WorkspaceId};
+use fm_domain::{
+    DirectorySnapshot, EntryId, EntryKind, EntrySummary, LoadingState, Location, OperationId,
+    PaneId, PluginId, ProviderId, TabId, WorkspaceId,
+};
 use serde::{Deserialize, Serialize};
 
 pub use bus::{
@@ -147,6 +150,60 @@ pub struct DirectorySnapshotPayload {
     pub continuation_token: Option<String>,
     /// Current loading state.
     pub loading_state: LoadingStatePayload,
+}
+
+impl From<Location> for LocationPayload {
+    fn from(location: Location) -> Self {
+        Self {
+            provider_id: location.provider_id,
+            uri: location.uri,
+        }
+    }
+}
+
+impl From<EntrySummary> for EntrySummaryPayload {
+    fn from(entry: EntrySummary) -> Self {
+        Self {
+            id: entry.id,
+            location: entry.location.into(),
+            name: entry.name,
+            kind: match entry.kind {
+                EntryKind::File => EntryKindPayload::File,
+                EntryKind::Directory => EntryKindPayload::Directory,
+                EntryKind::Symlink => EntryKindPayload::Symlink,
+            },
+            size: entry.size,
+            modified_at: entry.modified_at,
+            created_at: entry.created_at,
+            hidden: entry.hidden,
+            read_only: entry.read_only,
+            extension: entry.extension,
+            mime_type: entry.mime_type,
+            icon_key: entry.icon_key,
+            metadata_revision: entry.metadata_revision,
+        }
+    }
+}
+
+impl From<DirectorySnapshot> for DirectorySnapshotPayload {
+    fn from(snapshot: DirectorySnapshot) -> Self {
+        Self {
+            pane_id: snapshot.pane_id,
+            request_id: snapshot.request_id.to_string(),
+            revision: snapshot.revision,
+            location: snapshot.location.into(),
+            entries: snapshot.entries.into_iter().map(Into::into).collect(),
+            total_known_entries: snapshot.total_known_entries,
+            has_more: snapshot.has_more,
+            continuation_token: snapshot.continuation_token,
+            loading_state: match snapshot.loading_state {
+                LoadingState::Idle => LoadingStatePayload::Idle,
+                LoadingState::Loading => LoadingStatePayload::Loading,
+                LoadingState::Loaded => LoadingStatePayload::Loaded,
+                LoadingState::Error { message } => LoadingStatePayload::Error { message },
+            },
+        }
+    }
 }
 
 /// Workspace sort direction.
@@ -575,6 +632,8 @@ pub enum BackendEventPayload {
     /// Incremental directory state is available.
     #[serde(rename = "directory.delta")]
     DirectoryDelta {
+        /// Pane whose current snapshot this delta advances.
+        pane_id: PaneId,
         /// Incremental change.
         delta: DirectoryDeltaPayload,
     },
@@ -1013,6 +1072,7 @@ mod tests {
                     snapshot: sample_snapshot(),
                 },
                 Self::DirectoryDelta {
+                    pane_id,
                     delta: DirectoryDeltaPayload::EntriesRemoved {
                         revision: 2,
                         entry_ids: vec![],

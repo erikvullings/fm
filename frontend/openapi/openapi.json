@@ -600,7 +600,8 @@
               "columnId": "core.name",
               "direction": "ascending"
             }
-          ]
+          ],
+          "workspaceId": "7136d9bc-90f1-4c67-8527-9d30683167ec"
         },
         "properties": {
           "continuationToken": {
@@ -638,9 +639,15 @@
               "$ref": "#/components/schemas/SortDescriptorDto"
             },
             "type": "array"
+          },
+          "workspaceId": {
+            "description": "Workspace that owns the pane and receives its events.",
+            "format": "uuid",
+            "type": "string"
           }
         },
         "required": [
+          "workspaceId",
           "paneId",
           "requestId",
           "location"
@@ -777,7 +784,8 @@
             "uri": "file:///Users/erik/Documents"
           },
           "paneId": "5b1b6b1e-9b1b-4b1b-8b1b-1b1b1b1b1b1b",
-          "requestId": "e1ce66cc-64a8-4ae7-9cc1-2882bc80de4e"
+          "requestId": "e1ce66cc-64a8-4ae7-9cc1-2882bc80de4e",
+          "workspaceId": "7136d9bc-90f1-4c67-8527-9d30683167ec"
         },
         "properties": {
           "location": {
@@ -793,9 +801,15 @@
             "description": "Client-generated identifier, echoed back so a superseded request's\nlate response can be recognised and dropped.",
             "format": "uuid",
             "type": "string"
+          },
+          "workspaceId": {
+            "description": "Workspace that owns the pane and receives its events.",
+            "format": "uuid",
+            "type": "string"
           }
         },
         "required": [
+          "workspaceId",
           "paneId",
           "requestId",
           "location"

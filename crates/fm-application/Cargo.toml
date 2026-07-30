@@ -15,10 +15,11 @@ fm-events.workspace = true
 fm-transport-dto.workspace = true
 fm-vfs.workspace = true
 fm-vfs-local.workspace = true
+futures.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
-tokio = { workspace = true, features = ["fs"] }
+tokio = { workspace = true, features = ["fs", "sync", "time"] }
 tokio-util.workspace = true
 uuid.workspace = true
 

@@ -4,6 +4,9 @@ use std::sync::Arc;
 
 use fm_application::DirectoryService;
 use fm_domain::{Location, PaneId};
+use fm_events::{
+    BackendEventPayload, DirectoryDeltaPayload, EventBus, SessionId, SubscriptionEvent,
+};
 use fm_transport_dto::{ListDirectoryRequest, LocationDto, SortDescriptorDto, SortDirectionDto};
 use fm_vfs::ProviderRegistry;
 use fm_vfs_local::LocalFileSystemProvider;
@@ -15,8 +18,94 @@ fn service() -> DirectoryService {
     DirectoryService::new(providers)
 }
 
+#[tokio::test]
+async fn open_directory_publishes_batched_create_rename_delete_deltas() {
+    let root = tempfile::tempdir().expect("must create a temp directory");
+    let location =
+        Location::from_native_path(root.path()).expect("temp path must be representable");
+    let workspace_id = fm_domain::WorkspaceId::new();
+    let pane_id = PaneId::new();
+    let events = EventBus::new(32);
+    let mut providers = ProviderRegistry::new();
+    providers.register(Arc::new(LocalFileSystemProvider));
+    let service = DirectoryService::with_event_bus(providers, events.clone());
+    let mut initial = request(pane_id, &location);
+    initial.workspace_id = workspace_id.into();
+    service.list(initial).await.expect("initial listing");
+    let mut subscription = events.subscribe(SessionId::new("test"), [workspace_id], None);
+    tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+
+    std::fs::write(root.path().join("before.txt"), b"file").expect("create fixture");
+    let added = tokio::time::timeout(std::time::Duration::from_secs(3), subscription.recv())
+        .await
+        .expect("delta timeout")
+        .expect("event bus open");
+    let added_id = match added {
+        SubscriptionEvent::Event(event) => match event.payload {
+            BackendEventPayload::DirectoryDelta {
+                pane_id: event_pane,
+                delta:
+                    DirectoryDeltaPayload::EntriesAdded {
+                        revision: 2,
+                        entries,
+                    },
+            } => {
+                assert_eq!(event_pane, pane_id);
+                entries[0].id
+            }
+            payload => panic!("unexpected payload: {payload:?}"),
+        },
+        event => panic!("unexpected subscription item: {event:?}"),
+    };
+
+    std::fs::rename(
+        root.path().join("before.txt"),
+        root.path().join("after.txt"),
+    )
+    .expect("rename fixture");
+    let renamed = tokio::time::timeout(std::time::Duration::from_secs(3), subscription.recv())
+        .await
+        .expect("delta timeout")
+        .expect("event bus open");
+    match renamed {
+        SubscriptionEvent::Event(event) => match event.payload {
+            BackendEventPayload::DirectoryDelta {
+                delta:
+                    DirectoryDeltaPayload::EntriesUpdated {
+                        revision: 3,
+                        entries,
+                    },
+                ..
+            } => assert_eq!(entries[0].id, added_id),
+            payload => panic!("unexpected payload: {payload:?}"),
+        },
+        event => panic!("unexpected subscription item: {event:?}"),
+    }
+
+    std::fs::remove_file(root.path().join("after.txt")).expect("remove fixture");
+    let removed = tokio::time::timeout(std::time::Duration::from_secs(3), subscription.recv())
+        .await
+        .expect("delta timeout")
+        .expect("event bus open");
+    match removed {
+        SubscriptionEvent::Event(event) => match event.payload {
+            BackendEventPayload::DirectoryDelta {
+                delta:
+                    DirectoryDeltaPayload::EntriesRemoved {
+                        revision: 4,
+                        entry_ids,
+                    },
+                ..
+            } => assert_eq!(entry_ids, [added_id]),
+            payload => panic!("unexpected payload: {payload:?}"),
+        },
+        event => panic!("unexpected subscription item: {event:?}"),
+    }
+}
+
 fn request(pane_id: PaneId, location: &Location) -> ListDirectoryRequest {
     ListDirectoryRequest {
+        workspace_id: Uuid::new_v4(),
         pane_id: pane_id.into(),
         request_id: Uuid::new_v4(),
         location: LocationDto::from(location.clone()),

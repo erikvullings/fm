@@ -12,6 +12,7 @@ use crate::workspace::SortDescriptorDto;
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 #[schema(example = json!({
+    "workspaceId": "7136d9bc-90f1-4c67-8527-9d30683167ec",
     "paneId": "5b1b6b1e-9b1b-4b1b-8b1b-1b1b1b1b1b1b",
     "requestId": "e1ce66cc-64a8-4ae7-9cc1-2882bc80de4e",
     "location": {"providerId": "local", "uri": "file:///Users/erik"},
@@ -21,6 +22,8 @@ use crate::workspace::SortDescriptorDto;
     "foldersFirst": true
 }))]
 pub struct ListDirectoryRequest {
+    /// Workspace that owns the pane and receives its events.
+    pub workspace_id: Uuid,
     /// The pane the resulting snapshot will be shown in.
     pub pane_id: Uuid,
     /// Client-generated identifier, echoed back so a superseded request's
@@ -45,11 +48,14 @@ pub struct ListDirectoryRequest {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 #[schema(example = json!({
+    "workspaceId": "7136d9bc-90f1-4c67-8527-9d30683167ec",
     "paneId": "5b1b6b1e-9b1b-4b1b-8b1b-1b1b1b1b1b1b",
     "requestId": "e1ce66cc-64a8-4ae7-9cc1-2882bc80de4e",
     "location": {"providerId": "local", "uri": "file:///Users/erik/Documents"}
 }))]
 pub struct NavigateRequest {
+    /// Workspace that owns the pane and receives its events.
+    pub workspace_id: Uuid,
     /// The pane to navigate.
     pub pane_id: Uuid,
     /// Client-generated identifier, echoed back so a superseded request's
@@ -89,6 +95,7 @@ mod tests {
     #[test]
     fn list_directory_request_round_trips_and_uses_camel_case_field_names() {
         let request = ListDirectoryRequest {
+            workspace_id: Uuid::new_v4(),
             pane_id: Uuid::new_v4(),
             request_id: Uuid::new_v4(),
             location: sample_location(),
@@ -99,6 +106,7 @@ mod tests {
         };
         let json = serde_json::to_string(&request).expect("serialization must succeed");
         assert!(json.contains("\"paneId\""));
+        assert!(json.contains("\"workspaceId\""));
         assert!(json.contains("\"requestId\""));
         assert!(json.contains("\"continuationToken\""));
         let parsed: ListDirectoryRequest =
@@ -109,12 +117,14 @@ mod tests {
     #[test]
     fn navigate_request_round_trips_and_uses_camel_case_field_names() {
         let request = NavigateRequest {
+            workspace_id: Uuid::new_v4(),
             pane_id: Uuid::new_v4(),
             request_id: Uuid::new_v4(),
             location: sample_location(),
         };
         let json = serde_json::to_string(&request).expect("serialization must succeed");
         assert!(json.contains("\"paneId\""));
+        assert!(json.contains("\"workspaceId\""));
         assert!(json.contains("\"requestId\""));
         let parsed: NavigateRequest =
             serde_json::from_str(&json).expect("deserialization must succeed");

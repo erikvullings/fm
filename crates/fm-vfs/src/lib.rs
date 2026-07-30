@@ -16,6 +16,6 @@ pub use error::VfsError;
 pub use provider::FileSystemProvider;
 pub use registry::ProviderRegistry;
 pub use types::{
-    DirectoryPage, EntryRef, ListOptions, ProviderChangeStream, ProviderReadStream,
+    DirectoryPage, EntryRef, ListOptions, ProviderChange, ProviderChangeStream, ProviderReadStream,
     ProviderWriteStream, RemoveOptions, WriteOptions,
 };

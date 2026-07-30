@@ -8,6 +8,7 @@ import type { ConflictPolicy, OperationKind } from './operation';
  * mirroring `fm_transport_dto::ListDirectoryRequest`.
  */
 export interface ListDirectoryRequest {
+  workspaceId: string;
   paneId: PaneId;
   requestId: string;
   location: Location;
@@ -22,6 +23,7 @@ export interface ListDirectoryRequest {
  * mirroring `fm_transport_dto::NavigateRequest`.
  */
 export interface NavigateRequest {
+  workspaceId: string;
   paneId: PaneId;
   requestId: string;
   location: Location;

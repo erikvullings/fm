@@ -29,4 +29,6 @@ export interface ListDirectoryRequest {
   showHidden?: boolean;
   /** Sort descriptors applied by the backend to the returned page. */
   sort?: SortDescriptorDto[];
+  /** Workspace that owns the pane and receives its events. */
+  workspaceId: string;
 }
