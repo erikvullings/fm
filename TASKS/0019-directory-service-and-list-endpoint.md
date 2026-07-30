@@ -1,9 +1,9 @@
 # 0019 Directory service, snapshots and request cancellation
 
-Status: open
+Status: done
 Priority: high
 Owner: unassigned
-Agent: unassigned
+Agent: codex
 Area: backend
 Depends on: 0018, 0008
 
@@ -34,4 +34,21 @@ Depends on: 0018, 0008
   behaviour (§3 rule 9).
 
 ## Agent Notes
-- Not started.
+
+- 2026-07-30 codex: Added the application-owned `DirectoryService`, including per-pane monotonic
+  revisions, cancellation and late-response rejection, paging, sorting, hidden-file filtering and
+  sanitized VFS error mapping.
+- 2026-07-30 codex: Added thin Axum and Tauri list/refresh/navigation/metadata adapters, registered
+  the required stable REST operation ids, regenerated OpenAPI/Orval output, and connected both
+  frontend clients.
+- 2026-07-30 codex: Added 10 backend task-specific tests (6 directory integration, 1 cancellation
+  unit, 3 REST integration) plus HTTP/Tauri adapter coverage. `cargo fmt --all --check`, workspace
+  Clippy with `-D warnings`, affected Rust suites, frontend typecheck and all 71 frontend tests pass.
+  Sequential OpenAPI export/generation and the generator determinism test pass.
+- 2026-07-30 codex: Full `pnpm test` passes its Rust and frontend phases; its scripts phase was
+  rerun sequentially and passed after an overlapping local invocation caused a transient generated
+  file race. Full `pnpm run lint` remains blocked only by pre-existing Biome findings in
+  `frontend/vite.config.ts`, `scripts/architecture-docs.test.mjs`, and
+  `scripts/ci-workflow.test.mjs`; all task-touched frontend files pass Biome. No `CLAUDE.md` exists
+  in the repository. Unix unreadable-directory behavior was exercised; other platforms were not
+  run locally.

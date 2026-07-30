@@ -18,7 +18,12 @@ import type {
   Workspace,
   WorkspaceId,
 } from '../../models';
-import { getRuntimeCapabilities as requestRuntimeCapabilities } from '../generated/file-manager-api';
+import {
+  listDirectory as requestDirectory,
+  getEntryMetadata as requestEntryMetadata,
+  navigatePane as requestNavigation,
+  getRuntimeCapabilities as requestRuntimeCapabilities,
+} from '../generated/file-manager-api';
 import { type FileManagerClient, NotImplementedError } from './file-manager-client';
 
 /**
@@ -49,16 +54,31 @@ export class HttpFileManagerClient implements FileManagerClient {
     return this.notImplemented('getWorkspace', 'TBD');
   }
 
-  navigatePane(_request: NavigateRequest, _signal?: AbortSignal): Promise<DirectorySnapshot> {
-    return this.notImplemented('navigatePane', '0019');
+  async navigatePane(request: NavigateRequest, signal?: AbortSignal): Promise<DirectorySnapshot> {
+    const response = await requestNavigation(
+      request,
+      signal !== undefined ? { signal } : undefined,
+    );
+    return response.data as DirectorySnapshot;
   }
 
-  listDirectory(_request: ListDirectoryRequest, _signal?: AbortSignal): Promise<DirectorySnapshot> {
-    return this.notImplemented('listDirectory', '0019');
+  async listDirectory(
+    request: ListDirectoryRequest,
+    signal?: AbortSignal,
+  ): Promise<DirectorySnapshot> {
+    const response = await requestDirectory(request, signal !== undefined ? { signal } : undefined);
+    return response.data as DirectorySnapshot;
   }
 
-  getEntryMetadata(_request: EntryMetadataRequest, _signal?: AbortSignal): Promise<EntryMetadata> {
-    return this.notImplemented('getEntryMetadata', '0019');
+  async getEntryMetadata(
+    request: EntryMetadataRequest,
+    signal?: AbortSignal,
+  ): Promise<EntryMetadata> {
+    const response = await requestEntryMetadata(
+      request,
+      signal !== undefined ? { signal } : undefined,
+    );
+    return response.data as EntryMetadata;
   }
 
   startOperation(_request: StartOperationRequest, _signal?: AbortSignal): Promise<Operation> {

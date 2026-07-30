@@ -3,9 +3,15 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '../fetch-mutator';
 
 const getRuntimeCapabilities = vi.fn();
+const listDirectory = vi.fn();
+const navigatePane = vi.fn();
+const getEntryMetadata = vi.fn();
 
 vi.mock('../generated/file-manager-api', () => ({
   getRuntimeCapabilities: (...args: unknown[]) => getRuntimeCapabilities(...args),
+  listDirectory: (...args: unknown[]) => listDirectory(...args),
+  navigatePane: (...args: unknown[]) => navigatePane(...args),
+  getEntryMetadata: (...args: unknown[]) => getEntryMetadata(...args),
 }));
 
 const { HttpFileManagerClient } = await import('./http-file-manager-client');
@@ -29,6 +35,9 @@ function fixtureCapabilities() {
 
 afterEach(() => {
   getRuntimeCapabilities.mockReset();
+  listDirectory.mockReset();
+  navigatePane.mockReset();
+  getEntryMetadata.mockReset();
 });
 
 describe('HttpFileManagerClient', () => {
@@ -91,24 +100,35 @@ describe('HttpFileManagerClient', () => {
     });
   });
 
-  describe('methods with no backend endpoint yet', () => {
-    it('throws NotImplementedError for navigatePane, naming task 0019', () => {
+  describe('directory methods', () => {
+    it('calls the generated list endpoint and forwards cancellation', async () => {
+      const snapshot = {
+        paneId: 'pane-1',
+        requestId: 'req-1',
+        revision: 1,
+        location: { providerId: 'local', uri: 'file:///' },
+        entries: [],
+        hasMore: false,
+        loadingState: { type: 'loaded' },
+      };
+      listDirectory.mockResolvedValue({ status: 200, data: snapshot, headers: new Headers() });
       const client = new HttpFileManagerClient();
+      const controller = new AbortController();
+      const request = {
+        paneId: 'pane-1',
+        requestId: 'req-1',
+        location: { providerId: 'local', uri: 'file:///' },
+      };
 
-      expect(() =>
-        client.navigatePane({
-          paneId: 'pane-1',
-          requestId: 'req-1',
-          location: { providerId: 'file', uri: 'file:///' },
-        }),
-      ).toThrowError(
-        expect.objectContaining({
-          name: 'NotImplementedError',
-          message: expect.stringContaining('0019'),
-        }),
+      await expect(client.listDirectory(request, controller.signal)).resolves.toEqual(snapshot);
+      expect(listDirectory).toHaveBeenCalledWith(
+        request,
+        expect.objectContaining({ signal: controller.signal }),
       );
     });
+  });
 
+  describe('methods with no backend endpoint yet', () => {
     it('throws NotImplementedError for startOperation, naming task 0036', () => {
       const client = new HttpFileManagerClient();
 

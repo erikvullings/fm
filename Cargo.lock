@@ -1056,11 +1056,14 @@ dependencies = [
  "fm-domain",
  "fm-events",
  "fm-transport-dto",
+ "fm-vfs",
+ "fm-vfs-local",
  "serde",
  "serde_json",
  "tempfile",
  "thiserror 2.0.19",
  "tokio",
+ "tokio-util",
  "uuid",
 ]
 
@@ -1148,6 +1151,7 @@ dependencies = [
  "axum",
  "clap",
  "fm-application",
+ "fm-domain",
  "fm-transport-dto",
  "reqwest",
  "serde",

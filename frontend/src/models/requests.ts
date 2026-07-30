@@ -1,3 +1,4 @@
+import type { SortDescriptor } from './events';
 import type { ActionId, EntryId, OperationId, PaneId } from './ids';
 import type { EntryRef, Location } from './location';
 import type { ConflictPolicy, OperationKind } from './operation';
@@ -11,6 +12,9 @@ export interface ListDirectoryRequest {
   requestId: string;
   location: Location;
   continuationToken?: string;
+  sort?: SortDescriptor[];
+  showHidden?: boolean;
+  foldersFirst?: boolean;
 }
 
 /**

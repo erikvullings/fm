@@ -306,6 +306,7 @@ pub struct EntryMetadataDto {
     /// Archive metadata, when the entry is a browsable archive.
     pub archive: Option<ArchiveInfoDto>,
     /// Plugin-provided fields, keyed by a plugin-namespaced field name.
+    #[schema(value_type = Object)]
     pub plugin_fields: BTreeMap<String, serde_json::Value>,
 }
 

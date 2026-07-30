@@ -42,6 +42,10 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::get_runtime_capabilities,
+            commands::list_directory,
+            commands::refresh_directory,
+            commands::navigate_pane,
+            commands::get_entry_metadata,
             commands::list_workspaces,
             commands::create_workspace,
             commands::get_workspace,
@@ -74,6 +78,10 @@ mod tests {
             })
             .invoke_handler(tauri::generate_handler![
                 commands::get_runtime_capabilities,
+                commands::list_directory,
+                commands::refresh_directory,
+                commands::navigate_pane,
+                commands::get_entry_metadata,
                 commands::list_workspaces,
                 commands::create_workspace,
                 commands::get_workspace,

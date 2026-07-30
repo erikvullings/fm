@@ -32,6 +32,11 @@ The local provider lists directories in bounded, cancellable pages and fetches d
 separately. Listings identify dotfiles, Windows hidden attributes, symbolic links and reparse
 points without following links; Finder alias detection remains a later macOS enhancement.
 
+The application layer owns authoritative per-pane directory snapshots, including monotonic
+revisions and cancellation of superseded requests. Thin Axum and Tauri adapters expose the same
+list, refresh, navigation and metadata operations; listing options include server-side hidden-file
+filtering, folder grouping and sorting.
+
 ## CI
 
 `.github/workflows/ci.yml` runs on every push to `main` and every pull request:

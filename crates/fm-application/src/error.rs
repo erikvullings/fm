@@ -1,6 +1,7 @@
 //! Application-level errors shared by every host (specification §7, §8).
 
 use fm_transport_dto::{ApplicationErrorCode, ApplicationErrorDto};
+use fm_vfs::VfsError;
 use uuid::Uuid;
 
 use crate::workspace::WorkspaceError;
@@ -114,6 +115,25 @@ impl From<WorkspaceError> for ApplicationError {
                 Self::InvalidRequest("tab does not exist in this pane".to_owned())
             }
             WorkspaceError::InvalidCommand(message) => Self::InvalidRequest(message),
+        }
+    }
+}
+
+impl From<VfsError> for ApplicationError {
+    fn from(error: VfsError) -> Self {
+        match error {
+            VfsError::NotFound { .. } => Self::NotFound,
+            VfsError::PermissionDenied { .. } => Self::PermissionDenied,
+            VfsError::AlreadyExists { .. } => Self::DestinationAlreadyExists,
+            VfsError::Cancelled => Self::OperationCancelled,
+            VfsError::UnknownProvider { .. } => Self::ProviderUnavailable,
+            VfsError::InvalidLocation { .. }
+            | VfsError::NotADirectory { .. }
+            | VfsError::IsADirectory { .. }
+            | VfsError::UnsupportedCapability { .. } => {
+                Self::InvalidRequest("the requested filesystem operation is not valid".to_owned())
+            }
+            VfsError::Io { .. } => Self::Internal,
         }
     }
 }

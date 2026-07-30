@@ -6,6 +6,7 @@ use utoipa::ToSchema;
 use uuid::Uuid;
 
 use crate::location::LocationDto;
+use crate::workspace::SortDescriptorDto;
 
 /// Requests the entries of a directory (`POST /api/v1/directories/list`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
@@ -14,7 +15,10 @@ use crate::location::LocationDto;
     "paneId": "5b1b6b1e-9b1b-4b1b-8b1b-1b1b1b1b1b1b",
     "requestId": "e1ce66cc-64a8-4ae7-9cc1-2882bc80de4e",
     "location": {"providerId": "local", "uri": "file:///Users/erik"},
-    "continuationToken": null
+    "continuationToken": null,
+    "sort": [{"columnId": "core.name", "direction": "ascending"}],
+    "showHidden": false,
+    "foldersFirst": true
 }))]
 pub struct ListDirectoryRequest {
     /// The pane the resulting snapshot will be shown in.
@@ -26,6 +30,15 @@ pub struct ListDirectoryRequest {
     pub location: LocationDto,
     /// An opaque token requesting the next page of a prior listing.
     pub continuation_token: Option<String>,
+    /// Sort descriptors applied by the backend to the returned page.
+    #[serde(default)]
+    pub sort: Vec<SortDescriptorDto>,
+    /// Whether hidden entries should be included.
+    #[serde(default)]
+    pub show_hidden: bool,
+    /// Whether directories should sort before non-directories.
+    #[serde(default)]
+    pub folders_first: bool,
 }
 
 /// Requests navigation to a new location (`POST /api/v1/navigation/open`).
@@ -80,6 +93,9 @@ mod tests {
             request_id: Uuid::new_v4(),
             location: sample_location(),
             continuation_token: Some("page-2".to_owned()),
+            sort: Vec::new(),
+            show_hidden: false,
+            folders_first: true,
         };
         let json = serde_json::to_string(&request).expect("serialization must succeed");
         assert!(json.contains("\"paneId\""));

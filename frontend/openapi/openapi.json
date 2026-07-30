@@ -54,6 +54,30 @@
         ],
         "type": "object"
       },
+      "ArchiveInfoDto": {
+        "description": "Archive-specific metadata for an entry (for example a `.zip` file).",
+        "properties": {
+          "entryCount": {
+            "description": "Number of entries contained in the archive, when known.",
+            "format": "int64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "uncompressedSize": {
+            "description": "Total uncompressed size in bytes, when known.",
+            "format": "int64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
       "ColumnConfigurationDto": {
         "description": "Persisted width and visibility for a single directory-table column.",
         "properties": {
@@ -93,6 +117,88 @@
             ]
           }
         },
+        "type": "object"
+      },
+      "DirectorySnapshotDto": {
+        "description": "A batch of directory entries for one pane, at a specific revision.",
+        "example": {
+          "continuationToken": null,
+          "entries": [],
+          "hasMore": false,
+          "loadingState": {
+            "type": "loaded"
+          },
+          "location": {
+            "providerId": "local",
+            "uri": "file:///Users/erik"
+          },
+          "paneId": "5b1b6b1e-9b1b-4b1b-8b1b-1b1b1b1b1b1b",
+          "requestId": "e1ce66cc-64a8-4ae7-9cc1-2882bc80de4e",
+          "revision": 1,
+          "totalKnownEntries": 0
+        },
+        "properties": {
+          "continuationToken": {
+            "description": "An opaque token used to request the next page, when `hasMore`.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "entries": {
+            "description": "The entries loaded so far.",
+            "items": {
+              "$ref": "#/components/schemas/EntrySummaryDto"
+            },
+            "type": "array"
+          },
+          "hasMore": {
+            "description": "Whether more entries remain to be paged in.",
+            "type": "boolean"
+          },
+          "loadingState": {
+            "$ref": "#/components/schemas/LoadingStateDto",
+            "description": "The current loading state."
+          },
+          "location": {
+            "$ref": "#/components/schemas/LocationDto",
+            "description": "The location this snapshot lists."
+          },
+          "paneId": {
+            "description": "The pane this snapshot belongs to.",
+            "format": "uuid",
+            "type": "string"
+          },
+          "requestId": {
+            "description": "Correlates this snapshot with the request that produced it.",
+            "format": "uuid",
+            "type": "string"
+          },
+          "revision": {
+            "description": "Monotonic revision, used to reject responses to superseded requests.",
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "totalKnownEntries": {
+            "description": "The total number of entries, when known in advance.",
+            "format": "int64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "paneId",
+          "requestId",
+          "revision",
+          "location",
+          "entries",
+          "hasMore",
+          "loadingState"
+        ],
         "type": "object"
       },
       "DirectoryViewConfigurationDto": {
@@ -191,6 +297,247 @@
         },
         "type": "object"
       },
+      "EntryKindDto": {
+        "description": "The kind of a directory entry.",
+        "enum": [
+          "file",
+          "directory",
+          "symlink"
+        ],
+        "type": "string"
+      },
+      "EntryMetadataDto": {
+        "description": "Detailed, non-eagerly-fetched metadata for a single entry (spec §5.2).",
+        "properties": {
+          "archive": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ArchiveInfoDto",
+                "description": "Archive metadata, when the entry is a browsable archive."
+              }
+            ]
+          },
+          "checksums": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Checksums, keyed by algorithm name (for example `\"sha256\"`).",
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "entryId": {
+            "description": "The entry this metadata describes.",
+            "format": "uuid",
+            "type": "string"
+          },
+          "extendedAttributes": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Extended attributes, keyed by attribute name.",
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "imageDimensions": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ImageDimensionsDto",
+                "description": "Image pixel dimensions, when the entry is an image."
+              }
+            ]
+          },
+          "media": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/MediaMetadataDto",
+                "description": "Audio/video metadata, when the entry is a media file."
+              }
+            ]
+          },
+          "ownership": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/OwnershipInfoDto",
+                "description": "Ownership information, when the provider exposes it."
+              }
+            ]
+          },
+          "permissions": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PermissionsInfoDto",
+                "description": "Filesystem permissions, when the provider exposes them."
+              }
+            ]
+          },
+          "pluginFields": {
+            "description": "Plugin-provided fields, keyed by a plugin-namespaced field name.",
+            "type": "object"
+          }
+        },
+        "required": [
+          "entryId",
+          "extendedAttributes",
+          "checksums",
+          "pluginFields"
+        ],
+        "type": "object"
+      },
+      "EntryMetadataRequest": {
+        "description": "Requests detailed metadata for a single entry\n(`POST /api/v1/entries/metadata`).",
+        "example": {
+          "entryId": "5b1b6b1e-9b1b-4b1b-8b1b-1b1b1b1b1b1b",
+          "location": {
+            "providerId": "local",
+            "uri": "file:///Users/erik/report.pdf"
+          }
+        },
+        "properties": {
+          "entryId": {
+            "description": "The entry to fetch metadata for.",
+            "format": "uuid",
+            "type": "string"
+          },
+          "location": {
+            "$ref": "#/components/schemas/LocationDto",
+            "description": "The entry's location, so the request can be dispatched to the owning\nprovider without a prior lookup."
+          }
+        },
+        "required": [
+          "entryId",
+          "location"
+        ],
+        "type": "object"
+      },
+      "EntrySummaryDto": {
+        "description": "A compact summary of a directory entry, suitable for directory listings.",
+        "example": {
+          "createdAt": null,
+          "extension": "pdf",
+          "hidden": false,
+          "iconKey": "pdf",
+          "id": "5b1b6b1e-9b1b-4b1b-8b1b-1b1b1b1b1b1b",
+          "kind": "file",
+          "location": {
+            "providerId": "local",
+            "uri": "file:///Users/erik/report.pdf"
+          },
+          "metadataRevision": 0,
+          "mimeType": "application/pdf",
+          "modifiedAt": "2026-07-29T12:00:00Z",
+          "name": "report.pdf",
+          "readOnly": false,
+          "size": 1024
+        },
+        "properties": {
+          "createdAt": {
+            "description": "Creation time, when reported by the provider.",
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "extension": {
+            "description": "The file extension, without the leading dot, when applicable.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "hidden": {
+            "description": "Whether the entry is hidden.",
+            "type": "boolean"
+          },
+          "iconKey": {
+            "description": "A key used to look up a display icon, when known.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "description": "Stable identifier for this entry.",
+            "format": "uuid",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/EntryKindDto",
+            "description": "Whether this entry is a file, directory or symlink."
+          },
+          "location": {
+            "$ref": "#/components/schemas/LocationDto",
+            "description": "The entry's location."
+          },
+          "metadataRevision": {
+            "description": "Monotonic revision, incremented whenever this summary is refreshed.",
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "mimeType": {
+            "description": "The detected MIME type, when known.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "modifiedAt": {
+            "description": "Last modification time, when reported by the provider.",
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "description": "The entry's display name (the last path segment).",
+            "type": "string"
+          },
+          "readOnly": {
+            "description": "Whether the entry is read-only.",
+            "type": "boolean"
+          },
+          "size": {
+            "description": "Size in bytes, when known and meaningful.",
+            "format": "int64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "location",
+          "name",
+          "kind",
+          "hidden",
+          "readOnly",
+          "metadataRevision"
+        ],
+        "type": "object"
+      },
       "HealthDto": {
         "description": "Response body for `GET /api/v1/health`.",
         "example": {
@@ -214,6 +561,162 @@
         ],
         "type": "string"
       },
+      "ImageDimensionsDto": {
+        "description": "Pixel dimensions of an image entry.",
+        "properties": {
+          "height": {
+            "description": "Height in pixels.",
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "width": {
+            "description": "Width in pixels.",
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "width",
+          "height"
+        ],
+        "type": "object"
+      },
+      "ListDirectoryRequest": {
+        "description": "Requests the entries of a directory (`POST /api/v1/directories/list`).",
+        "example": {
+          "continuationToken": null,
+          "foldersFirst": true,
+          "location": {
+            "providerId": "local",
+            "uri": "file:///Users/erik"
+          },
+          "paneId": "5b1b6b1e-9b1b-4b1b-8b1b-1b1b1b1b1b1b",
+          "requestId": "e1ce66cc-64a8-4ae7-9cc1-2882bc80de4e",
+          "showHidden": false,
+          "sort": [
+            {
+              "columnId": "core.name",
+              "direction": "ascending"
+            }
+          ]
+        },
+        "properties": {
+          "continuationToken": {
+            "description": "An opaque token requesting the next page of a prior listing.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "foldersFirst": {
+            "description": "Whether directories should sort before non-directories.",
+            "type": "boolean"
+          },
+          "location": {
+            "$ref": "#/components/schemas/LocationDto",
+            "description": "The location to list."
+          },
+          "paneId": {
+            "description": "The pane the resulting snapshot will be shown in.",
+            "format": "uuid",
+            "type": "string"
+          },
+          "requestId": {
+            "description": "Client-generated identifier, echoed back so a superseded request's\nlate response can be recognised and dropped.",
+            "format": "uuid",
+            "type": "string"
+          },
+          "showHidden": {
+            "description": "Whether hidden entries should be included.",
+            "type": "boolean"
+          },
+          "sort": {
+            "description": "Sort descriptors applied by the backend to the returned page.",
+            "items": {
+              "$ref": "#/components/schemas/SortDescriptorDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "paneId",
+          "requestId",
+          "location"
+        ],
+        "type": "object"
+      },
+      "LoadingStateDto": {
+        "description": "The loading state of a pane's directory listing.",
+        "oneOf": [
+          {
+            "description": "Nothing has been requested yet.",
+            "properties": {
+              "type": {
+                "enum": [
+                  "idle"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "type"
+            ],
+            "type": "object"
+          },
+          {
+            "description": "A request is in flight.",
+            "properties": {
+              "type": {
+                "enum": [
+                  "loading"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "type"
+            ],
+            "type": "object"
+          },
+          {
+            "description": "The current page (or all pages) loaded successfully.",
+            "properties": {
+              "type": {
+                "enum": [
+                  "loaded"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "type"
+            ],
+            "type": "object"
+          },
+          {
+            "description": "The request failed; never a raw OS error (spec §8).",
+            "properties": {
+              "message": {
+                "description": "A user-readable error message.",
+                "type": "string"
+              },
+              "type": {
+                "enum": [
+                  "error"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "message",
+              "type"
+            ],
+            "type": "object"
+          }
+        ]
+      },
       "LocationDto": {
         "description": "A provider-neutral pointer to a location, for example a directory.",
         "example": {
@@ -233,6 +736,69 @@
         "required": [
           "providerId",
           "uri"
+        ],
+        "type": "object"
+      },
+      "MediaMetadataDto": {
+        "description": "Media (audio/video) metadata for an entry.",
+        "properties": {
+          "bitrateBps": {
+            "description": "Bitrate in bits per second, when known.",
+            "format": "int64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "codec": {
+            "description": "The media codec, when known.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "durationSeconds": {
+            "description": "Duration in seconds, when known.",
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "NavigateRequest": {
+        "description": "Requests navigation to a new location (`POST /api/v1/navigation/open`).",
+        "example": {
+          "location": {
+            "providerId": "local",
+            "uri": "file:///Users/erik/Documents"
+          },
+          "paneId": "5b1b6b1e-9b1b-4b1b-8b1b-1b1b1b1b1b1b",
+          "requestId": "e1ce66cc-64a8-4ae7-9cc1-2882bc80de4e"
+        },
+        "properties": {
+          "location": {
+            "$ref": "#/components/schemas/LocationDto",
+            "description": "The location to navigate to."
+          },
+          "paneId": {
+            "description": "The pane to navigate.",
+            "format": "uuid",
+            "type": "string"
+          },
+          "requestId": {
+            "description": "Client-generated identifier, echoed back so a superseded request's\nlate response can be recognised and dropped.",
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "paneId",
+          "requestId",
+          "location"
         ],
         "type": "object"
       },
@@ -290,6 +856,26 @@
         ],
         "type": "object"
       },
+      "OwnershipInfoDto": {
+        "description": "Ownership information for an entry.",
+        "properties": {
+          "group": {
+            "description": "The owning group name, when known.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "owner": {
+            "description": "The owning user name, when known.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
       "PaneStateDto": {
         "description": "A single pane, holding one or more tabs.",
         "properties": {
@@ -327,6 +913,38 @@
           "tabs",
           "activeTabId",
           "defaultView"
+        ],
+        "type": "object"
+      },
+      "PermissionsInfoDto": {
+        "description": "Filesystem permission information for an entry.",
+        "properties": {
+          "executable": {
+            "description": "Whether the current user can execute the entry.",
+            "type": "boolean"
+          },
+          "readable": {
+            "description": "Whether the current user can read the entry.",
+            "type": "boolean"
+          },
+          "unixMode": {
+            "description": "The raw Unix permission bits, on platforms that have them.",
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "writable": {
+            "description": "Whether the current user can write the entry.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "readable",
+          "writable",
+          "executable"
         ],
         "type": "object"
       },
@@ -1078,6 +1696,180 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/v1/directories/list": {
+      "post": {
+        "operationId": "listDirectory",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ListDirectoryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DirectorySnapshotDto"
+                }
+              }
+            },
+            "description": "A directory snapshot"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationErrorDto"
+                }
+              }
+            },
+            "description": "The request was invalid"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationErrorDto"
+                }
+              }
+            },
+            "description": "The directory is unreadable"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationErrorDto"
+                }
+              }
+            },
+            "description": "The directory does not exist"
+          }
+        },
+        "summary": "Lists one directory page."
+      }
+    },
+    "/api/v1/directories/refresh": {
+      "post": {
+        "operationId": "refreshDirectory",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ListDirectoryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DirectorySnapshotDto"
+                }
+              }
+            },
+            "description": "A refreshed directory snapshot"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationErrorDto"
+                }
+              }
+            },
+            "description": "The request was invalid"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationErrorDto"
+                }
+              }
+            },
+            "description": "The directory is unreadable"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationErrorDto"
+                }
+              }
+            },
+            "description": "The directory does not exist"
+          }
+        },
+        "summary": "Refreshes one directory page."
+      }
+    },
+    "/api/v1/entries/metadata": {
+      "post": {
+        "operationId": "getEntryMetadata",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EntryMetadataRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EntryMetadataDto"
+                }
+              }
+            },
+            "description": "Detailed entry metadata"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationErrorDto"
+                }
+              }
+            },
+            "description": "The request was invalid"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationErrorDto"
+                }
+              }
+            },
+            "description": "The entry is unreadable"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationErrorDto"
+                }
+              }
+            },
+            "description": "The entry does not exist"
+          }
+        },
+        "summary": "Fetches detailed metadata for one entry."
+      }
+    },
     "/api/v1/health": {
       "get": {
         "operationId": "getHealth",
@@ -1094,6 +1886,64 @@
           }
         },
         "summary": "Reports that the backend process is running and able to serve requests."
+      }
+    },
+    "/api/v1/navigation/open": {
+      "post": {
+        "operationId": "navigatePane",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NavigateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DirectorySnapshotDto"
+                }
+              }
+            },
+            "description": "The destination directory snapshot"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationErrorDto"
+                }
+              }
+            },
+            "description": "The request was invalid"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationErrorDto"
+                }
+              }
+            },
+            "description": "The directory is unreadable"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationErrorDto"
+                }
+              }
+            },
+            "description": "The directory does not exist"
+          }
+        },
+        "summary": "Navigates a pane and returns the destination's first page."
       }
     },
     "/api/v1/runtime": {

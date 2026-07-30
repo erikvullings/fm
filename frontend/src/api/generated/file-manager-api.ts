@@ -6,7 +6,12 @@ import type {
   ApplicationErrorDto,
   CreateWorkspaceRequestDto,
   DeleteWorkspaceParams,
+  DirectorySnapshotDto,
+  EntryMetadataDto,
+  EntryMetadataRequest,
   HealthDto,
+  ListDirectoryRequest,
+  NavigateRequest,
   RuntimeCapabilitiesDto,
   WorkspaceCommandDto,
   WorkspaceDto,
@@ -14,6 +19,165 @@ import type {
 } from './models';
 
 import { fetchMutator } from '../fetch-mutator';
+
+export type listDirectoryResponse200 = {
+  data: DirectorySnapshotDto
+  status: 200
+}
+
+export type listDirectoryResponse400 = {
+  data: ApplicationErrorDto
+  status: 400
+}
+
+export type listDirectoryResponse403 = {
+  data: ApplicationErrorDto
+  status: 403
+}
+
+export type listDirectoryResponse404 = {
+  data: ApplicationErrorDto
+  status: 404
+}
+
+export type listDirectoryResponseSuccess = (listDirectoryResponse200) & {
+  headers: Headers;
+};
+export type listDirectoryResponseError = (listDirectoryResponse400 | listDirectoryResponse403 | listDirectoryResponse404) & {
+  headers: Headers;
+};
+
+export type listDirectoryResponse = (listDirectoryResponseSuccess | listDirectoryResponseError)
+
+export const getListDirectoryUrl = () => {
+
+
+
+
+  return `/api/v1/directories/list`
+}
+
+/**
+ * @summary Lists one directory page.
+ */
+export const listDirectory = async (listDirectoryRequest: ListDirectoryRequest, options?: Parameters<typeof fetchMutator>[1]): Promise<listDirectoryResponse> => {
+
+  return fetchMutator<listDirectoryResponse>(getListDirectoryUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(listDirectoryRequest)
+  }
+);}
+
+
+
+export type refreshDirectoryResponse200 = {
+  data: DirectorySnapshotDto
+  status: 200
+}
+
+export type refreshDirectoryResponse400 = {
+  data: ApplicationErrorDto
+  status: 400
+}
+
+export type refreshDirectoryResponse403 = {
+  data: ApplicationErrorDto
+  status: 403
+}
+
+export type refreshDirectoryResponse404 = {
+  data: ApplicationErrorDto
+  status: 404
+}
+
+export type refreshDirectoryResponseSuccess = (refreshDirectoryResponse200) & {
+  headers: Headers;
+};
+export type refreshDirectoryResponseError = (refreshDirectoryResponse400 | refreshDirectoryResponse403 | refreshDirectoryResponse404) & {
+  headers: Headers;
+};
+
+export type refreshDirectoryResponse = (refreshDirectoryResponseSuccess | refreshDirectoryResponseError)
+
+export const getRefreshDirectoryUrl = () => {
+
+
+
+
+  return `/api/v1/directories/refresh`
+}
+
+/**
+ * @summary Refreshes one directory page.
+ */
+export const refreshDirectory = async (listDirectoryRequest: ListDirectoryRequest, options?: Parameters<typeof fetchMutator>[1]): Promise<refreshDirectoryResponse> => {
+
+  return fetchMutator<refreshDirectoryResponse>(getRefreshDirectoryUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(listDirectoryRequest)
+  }
+);}
+
+
+
+export type getEntryMetadataResponse200 = {
+  data: EntryMetadataDto
+  status: 200
+}
+
+export type getEntryMetadataResponse400 = {
+  data: ApplicationErrorDto
+  status: 400
+}
+
+export type getEntryMetadataResponse403 = {
+  data: ApplicationErrorDto
+  status: 403
+}
+
+export type getEntryMetadataResponse404 = {
+  data: ApplicationErrorDto
+  status: 404
+}
+
+export type getEntryMetadataResponseSuccess = (getEntryMetadataResponse200) & {
+  headers: Headers;
+};
+export type getEntryMetadataResponseError = (getEntryMetadataResponse400 | getEntryMetadataResponse403 | getEntryMetadataResponse404) & {
+  headers: Headers;
+};
+
+export type getEntryMetadataResponse = (getEntryMetadataResponseSuccess | getEntryMetadataResponseError)
+
+export const getGetEntryMetadataUrl = () => {
+
+
+
+
+  return `/api/v1/entries/metadata`
+}
+
+/**
+ * @summary Fetches detailed metadata for one entry.
+ */
+export const getEntryMetadata = async (entryMetadataRequest: EntryMetadataRequest, options?: Parameters<typeof fetchMutator>[1]): Promise<getEntryMetadataResponse> => {
+
+  return fetchMutator<getEntryMetadataResponse>(getGetEntryMetadataUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(entryMetadataRequest)
+  }
+);}
+
+
 
 export type getHealthResponse200 = {
   data: HealthDto
@@ -46,6 +210,59 @@ export const getHealth = async ( options?: Parameters<typeof fetchMutator>[1]): 
     method: 'GET'
 
 
+  }
+);}
+
+
+
+export type navigatePaneResponse200 = {
+  data: DirectorySnapshotDto
+  status: 200
+}
+
+export type navigatePaneResponse400 = {
+  data: ApplicationErrorDto
+  status: 400
+}
+
+export type navigatePaneResponse403 = {
+  data: ApplicationErrorDto
+  status: 403
+}
+
+export type navigatePaneResponse404 = {
+  data: ApplicationErrorDto
+  status: 404
+}
+
+export type navigatePaneResponseSuccess = (navigatePaneResponse200) & {
+  headers: Headers;
+};
+export type navigatePaneResponseError = (navigatePaneResponse400 | navigatePaneResponse403 | navigatePaneResponse404) & {
+  headers: Headers;
+};
+
+export type navigatePaneResponse = (navigatePaneResponseSuccess | navigatePaneResponseError)
+
+export const getNavigatePaneUrl = () => {
+
+
+
+
+  return `/api/v1/navigation/open`
+}
+
+/**
+ * @summary Navigates a pane and returns the destination's first page.
+ */
+export const navigatePane = async (navigateRequest: NavigateRequest, options?: Parameters<typeof fetchMutator>[1]): Promise<navigatePaneResponse> => {
+
+  return fetchMutator<navigatePaneResponse>(getNavigatePaneUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(navigateRequest)
   }
 );}
 

@@ -46,16 +46,16 @@ export class TauriFileManagerClient implements FileManagerClient {
     return this.notImplemented('getWorkspace', 'TBD');
   }
 
-  navigatePane(_request: NavigateRequest, _signal?: AbortSignal): Promise<DirectorySnapshot> {
-    return this.notImplemented('navigatePane', '0019');
+  navigatePane(request: NavigateRequest, _signal?: AbortSignal): Promise<DirectorySnapshot> {
+    return invoke<DirectorySnapshot>('navigate_pane', { request });
   }
 
-  listDirectory(_request: ListDirectoryRequest, _signal?: AbortSignal): Promise<DirectorySnapshot> {
-    return this.notImplemented('listDirectory', '0019');
+  listDirectory(request: ListDirectoryRequest, _signal?: AbortSignal): Promise<DirectorySnapshot> {
+    return invoke<DirectorySnapshot>('list_directory', { request });
   }
 
-  getEntryMetadata(_request: EntryMetadataRequest, _signal?: AbortSignal): Promise<EntryMetadata> {
-    return this.notImplemented('getEntryMetadata', '0019');
+  getEntryMetadata(request: EntryMetadataRequest, _signal?: AbortSignal): Promise<EntryMetadata> {
+    return invoke<EntryMetadata>('get_entry_metadata', { request });
   }
 
   startOperation(_request: StartOperationRequest, _signal?: AbortSignal): Promise<Operation> {

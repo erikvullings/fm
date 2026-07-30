@@ -1,19 +1,13 @@
 //! Tauri commands: thin wrappers over `FileManagerService`, mirroring the
 //! semantic REST API rather than reproducing HTTP concepts (spec §11).
 //!
-//! `navigate_pane` — listed in task 0015's acceptance criteria alongside this
-//! command — is deliberately **not** implemented here yet: `FileManagerService`
-//! has no `navigate` method (directory listing lands in tasks 0018/0019), so
-//! there is nothing to thinly wrap without inventing filesystem logic in this
-//! crate ahead of its owning task. Flagged as a known gap rather than guessed
-//! at; add it once 0019 lands the backing service method.
-
 use tauri::State;
 use uuid::Uuid;
 
 use fm_transport_dto::{
-    ApplicationErrorDto, CreateWorkspaceRequestDto, RuntimeCapabilitiesDto, WorkspaceCommandDto,
-    WorkspaceDto, WorkspaceSummaryDto,
+    ApplicationErrorDto, CreateWorkspaceRequestDto, DirectorySnapshotDto, EntryMetadataDto,
+    EntryMetadataRequest, ListDirectoryRequest, NavigateRequest, RuntimeCapabilitiesDto,
+    WorkspaceCommandDto, WorkspaceDto, WorkspaceSummaryDto,
 };
 
 use crate::AppState;
@@ -23,6 +17,62 @@ use crate::AppState;
 #[tauri::command]
 pub(crate) fn get_runtime_capabilities(state: State<'_, AppState>) -> RuntimeCapabilitiesDto {
     state.service.runtime_capabilities()
+}
+
+/// Lists a directory through the same application service as Axum.
+#[tauri::command]
+pub(crate) async fn list_directory(
+    state: State<'_, AppState>,
+    request: ListDirectoryRequest,
+) -> Result<DirectorySnapshotDto, ApplicationErrorDto> {
+    state
+        .service
+        .list_directory(request)
+        .await
+        .map(Into::into)
+        .map_err(|error| error.into_dto(Uuid::new_v4()))
+}
+
+/// Refreshes a directory through the same application service as Axum.
+#[tauri::command]
+pub(crate) async fn refresh_directory(
+    state: State<'_, AppState>,
+    request: ListDirectoryRequest,
+) -> Result<DirectorySnapshotDto, ApplicationErrorDto> {
+    state
+        .service
+        .refresh_directory(request)
+        .await
+        .map(Into::into)
+        .map_err(|error| error.into_dto(Uuid::new_v4()))
+}
+
+/// Navigates a pane through the same application service as Axum.
+#[tauri::command]
+pub(crate) async fn navigate_pane(
+    state: State<'_, AppState>,
+    request: NavigateRequest,
+) -> Result<DirectorySnapshotDto, ApplicationErrorDto> {
+    state
+        .service
+        .navigate_pane(request)
+        .await
+        .map(Into::into)
+        .map_err(|error| error.into_dto(Uuid::new_v4()))
+}
+
+/// Fetches entry metadata through the same application service as Axum.
+#[tauri::command]
+pub(crate) async fn get_entry_metadata(
+    state: State<'_, AppState>,
+    request: EntryMetadataRequest,
+) -> Result<EntryMetadataDto, ApplicationErrorDto> {
+    state
+        .service
+        .get_entry_metadata(request)
+        .await
+        .map(Into::into)
+        .map_err(|error| error.into_dto(Uuid::new_v4()))
 }
 
 /// Lists every stored workspace as a lightweight summary, identical in shape

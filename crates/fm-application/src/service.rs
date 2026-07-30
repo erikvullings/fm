@@ -1,13 +1,18 @@
 //! The `FileManagerService` facade (specification §7).
 
 use std::path::PathBuf;
+use std::sync::Arc;
 
+use fm_domain::{DirectorySnapshot, EntryMetadata};
 use fm_transport_dto::{
-    PlatformKindDto, RuntimeCapabilitiesDto, RuntimeKindDto, WorkspaceCommandDto, WorkspaceDto,
-    WorkspaceSummaryDto,
+    EntryMetadataRequest, ListDirectoryRequest, NavigateRequest, PlatformKindDto,
+    RuntimeCapabilitiesDto, RuntimeKindDto, WorkspaceCommandDto, WorkspaceDto, WorkspaceSummaryDto,
 };
+use fm_vfs::ProviderRegistry;
+use fm_vfs_local::LocalFileSystemProvider;
 use uuid::Uuid;
 
+use crate::DirectoryService;
 use crate::error::ApplicationError;
 use crate::workspace::{JsonFileWorkspaceRepository, WorkspaceService, WorkspaceSummary};
 
@@ -25,18 +30,54 @@ use crate::workspace::{JsonFileWorkspaceRepository, WorkspaceService, WorkspaceS
 pub struct FileManagerService {
     runtime: RuntimeKindDto,
     workspaces: WorkspaceService<JsonFileWorkspaceRepository>,
+    directories: DirectoryService,
 }
 
 impl FileManagerService {
     /// Builds a service for the given host runtime, persisting workspaces
     /// under `workspace_directory`.
     pub fn new(runtime: RuntimeKindDto, workspace_directory: impl Into<PathBuf>) -> Self {
+        let mut providers = ProviderRegistry::new();
+        providers.register(Arc::new(LocalFileSystemProvider));
         Self {
             runtime,
             workspaces: WorkspaceService::new(JsonFileWorkspaceRepository::new(
                 workspace_directory,
             )),
+            directories: DirectoryService::new(providers),
         }
+    }
+
+    /// Lists one page of a directory.
+    pub async fn list_directory(
+        &self,
+        request: ListDirectoryRequest,
+    ) -> Result<DirectorySnapshot, ApplicationError> {
+        self.directories.list(request).await
+    }
+
+    /// Refreshes a directory using the same options as a listing.
+    pub async fn refresh_directory(
+        &self,
+        request: ListDirectoryRequest,
+    ) -> Result<DirectorySnapshot, ApplicationError> {
+        self.directories.refresh(request).await
+    }
+
+    /// Navigates a pane and lists its first page.
+    pub async fn navigate_pane(
+        &self,
+        request: NavigateRequest,
+    ) -> Result<DirectorySnapshot, ApplicationError> {
+        self.directories.navigate(request).await
+    }
+
+    /// Fetches detailed metadata for one entry.
+    pub async fn get_entry_metadata(
+        &self,
+        request: EntryMetadataRequest,
+    ) -> Result<EntryMetadata, ApplicationError> {
+        self.directories.metadata(request).await
     }
 
     /// Reports which capabilities are available for the current runtime and

@@ -37,6 +37,10 @@ fn api_router() -> OpenApiRouter<AppState> {
         .routes(utoipa_axum::routes!(
             routes::runtime::get_runtime_capabilities
         ))
+        .routes(utoipa_axum::routes!(routes::directory::list_directory))
+        .routes(utoipa_axum::routes!(routes::directory::refresh_directory))
+        .routes(utoipa_axum::routes!(routes::directory::navigate_pane))
+        .routes(utoipa_axum::routes!(routes::directory::get_entry_metadata))
         .routes(utoipa_axum::routes!(routes::workspace::list_workspaces))
         .routes(utoipa_axum::routes!(routes::workspace::create_workspace))
         .routes(utoipa_axum::routes!(routes::workspace::get_workspace))

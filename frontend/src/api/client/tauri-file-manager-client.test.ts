@@ -7,7 +7,6 @@ vi.mock('@tauri-apps/api/core', () => ({
 }));
 
 const { TauriFileManagerClient } = await import('./tauri-file-manager-client');
-const { NotImplementedError } = await import('./file-manager-client');
 
 function fixtureCapabilities() {
   return {
@@ -52,17 +51,33 @@ describe('TauriFileManagerClient', () => {
     });
   });
 
-  describe('methods with no registered Tauri command yet', () => {
-    it('throws NotImplementedError naming the owning task', () => {
+  describe('directory methods', () => {
+    it('invokes navigate_pane with the request wrapper expected by Tauri', async () => {
+      const snapshot = {
+        paneId: 'left',
+        requestId: 'request-1',
+        revision: 1,
+        location: { providerId: 'local', uri: 'file:///' },
+        entries: [],
+        hasMore: false,
+        loadingState: { type: 'loaded' },
+      };
+      invoke.mockResolvedValue(snapshot);
       const client = new TauriFileManagerClient();
+      const request = {
+        paneId: 'left',
+        requestId: 'request-1',
+        location: { providerId: 'local', uri: 'file:///' },
+      };
 
-      expect(() =>
-        client.navigatePane({
-          paneId: 'left',
-          requestId: 'request-1',
-          location: { providerId: 'local', uri: 'file:///' },
-        }),
-      ).toThrow(NotImplementedError);
+      await expect(client.navigatePane(request)).resolves.toEqual(snapshot);
+      expect(invoke).toHaveBeenCalledWith('navigate_pane', { request });
+    });
+  });
+
+  describe('methods with no registered Tauri command yet', () => {
+    it('keeps unrelated unimplemented methods explicit', () => {
+      const client = new TauriFileManagerClient();
       expect(() => client.getWorkspace('workspace-1')).toThrow(/TBD/);
     });
   });

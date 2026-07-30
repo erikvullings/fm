@@ -27,5 +27,6 @@ uuid.workspace = true
 workspace = true
 
 [dev-dependencies]
+fm-domain.workspace = true
 reqwest.workspace = true
 tempfile.workspace = true
