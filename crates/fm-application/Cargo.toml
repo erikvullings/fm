@@ -12,6 +12,7 @@ chrono.workspace = true
 dirs.workspace = true
 fm-domain.workspace = true
 fm-events.workspace = true
+fm-settings.workspace = true
 fm-transport-dto.workspace = true
 fm-vfs.workspace = true
 fm-vfs-local.workspace = true

@@ -14,6 +14,7 @@ import type {
   PluginDescriptor,
   ResolveConflictRequest,
   RuntimeCapabilities,
+  Settings,
   StartOperationRequest,
   Unsubscribe,
   WorkspaceCommand,
@@ -27,6 +28,8 @@ import {
   getEntryMetadata as requestEntryMetadata,
   navigatePane as requestNavigation,
   getRuntimeCapabilities as requestRuntimeCapabilities,
+  getSettings as requestSettings,
+  updateSettings as requestSettingsUpdate,
   getWorkspace as requestWorkspace,
   applyWorkspaceCommand as requestWorkspaceCommand,
   createWorkspace as requestWorkspaceCreation,
@@ -34,6 +37,7 @@ import {
   openWorkspace as requestWorkspaceOpen,
   listWorkspaces as requestWorkspaces,
 } from '../generated/file-manager-api';
+import type { SettingsDto } from '../generated/models/settingsDto';
 import { type FileManagerClient, NotImplementedError } from './file-manager-client';
 
 /**
@@ -56,6 +60,23 @@ export class HttpFileManagerClient implements FileManagerClient {
       signal !== undefined ? { signal } : undefined,
     );
     return response.data;
+  }
+
+  async getSettings(signal?: AbortSignal): Promise<Settings> {
+    return settingsFromDto(
+      (await requestSettings(signal === undefined ? undefined : { signal })).data,
+    );
+  }
+
+  async updateSettings(settings: Settings, signal?: AbortSignal): Promise<Settings> {
+    const response = await requestSettingsUpdate(
+      settingsToDto(settings),
+      signal === undefined ? undefined : { signal },
+    );
+    if (response.status !== 200) {
+      throw new Error(`Unexpected updateSettings response status: ${response.status}`);
+    }
+    return settingsFromDto(response.data);
   }
 
   async listWorkspaces(signal?: AbortSignal): Promise<WorkspaceSummary[]> {
@@ -196,4 +217,22 @@ export class HttpFileManagerClient implements FileManagerClient {
   async subscribe(_listener: (event: BackendEvent) => void): Promise<Unsubscribe> {
     return () => {};
   }
+}
+
+function settingsFromDto(settings: SettingsDto): Settings {
+  return {
+    ...settings,
+    terminalCommand: settings.terminalCommand ?? null,
+  };
+}
+
+function settingsToDto(settings: Settings): SettingsDto {
+  return {
+    ...settings,
+    defaultColumns: [...settings.defaultColumns],
+    defaultStartLocations: [...settings.defaultStartLocations],
+    enabledPlugins: [...settings.enabledPlugins],
+    keybindings: { ...settings.keybindings },
+    pluginSettings: { ...settings.pluginSettings },
+  };
 }

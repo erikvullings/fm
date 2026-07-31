@@ -37,6 +37,8 @@ fn api_router() -> OpenApiRouter<AppState> {
         .routes(utoipa_axum::routes!(
             routes::runtime::get_runtime_capabilities
         ))
+        .routes(utoipa_axum::routes!(routes::settings::get_settings))
+        .routes(utoipa_axum::routes!(routes::settings::update_settings))
         .routes(utoipa_axum::routes!(routes::directory::list_directory))
         .routes(utoipa_axum::routes!(routes::directory::refresh_directory))
         .routes(utoipa_axum::routes!(routes::directory::navigate_pane))
@@ -67,6 +69,7 @@ pub fn build_router(config: &ServerConfig) -> Router {
     let service = Arc::new(FileManagerService::new(
         RuntimeKindDto::BrowserServer,
         config.workspace_directory.clone(),
+        config.settings_directory.clone(),
     ));
     let state = AppState { service };
 
@@ -121,6 +124,12 @@ fn cors_layer(config: &ServerConfig) -> CorsLayer {
 
     CorsLayer::new()
         .allow_origin(origins)
-        .allow_methods([Method::GET, Method::POST, Method::PATCH, Method::DELETE])
+        .allow_methods([
+            Method::GET,
+            Method::POST,
+            Method::PUT,
+            Method::PATCH,
+            Method::DELETE,
+        ])
         .allow_headers([axum::http::header::CONTENT_TYPE])
 }

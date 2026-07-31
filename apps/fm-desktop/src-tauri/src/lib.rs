@@ -38,10 +38,16 @@ pub fn run() {
             service: Arc::new(FileManagerService::new(
                 RuntimeKindDto::Tauri,
                 fm_application::workspace::JsonFileWorkspaceRepository::default_directory(),
+                fm_application::workspace::JsonFileWorkspaceRepository::default_directory()
+                    .parent()
+                    .unwrap_or_else(|| std::path::Path::new(".fm-config/fm"))
+                    .to_path_buf(),
             )),
         })
         .invoke_handler(tauri::generate_handler![
             commands::get_runtime_capabilities,
+            commands::get_settings,
+            commands::update_settings,
             commands::list_directory,
             commands::refresh_directory,
             commands::navigate_pane,
@@ -69,15 +75,20 @@ mod tests {
     fn create_app<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::App<R> {
         let workspace_directory =
             tempfile::tempdir().expect("must create a temp workspace directory");
+        let settings_directory = workspace_directory.path().join("settings");
+        let workspace_directory = workspace_directory.keep();
         builder
             .manage(AppState {
                 service: Arc::new(FileManagerService::new(
                     RuntimeKindDto::Tauri,
-                    workspace_directory.keep(),
+                    workspace_directory,
+                    settings_directory,
                 )),
             })
             .invoke_handler(tauri::generate_handler![
                 commands::get_runtime_capabilities,
+                commands::get_settings,
+                commands::update_settings,
                 commands::list_directory,
                 commands::refresh_directory,
                 commands::navigate_pane,

@@ -19,6 +19,7 @@ license = "MIT OR Apache-2.0"
 fm-application = { path = "crates/fm-application" }
 fm-domain = { path = "crates/fm-domain" }
 fm-events = { path = "crates/fm-events" }
+fm-settings = { path = "crates/fm-settings" }
 fm-transport-dto = { path = "crates/fm-transport-dto" }
 fm-vfs = { path = "crates/fm-vfs" }
 fm-vfs-local = { path = "crates/fm-vfs-local" }

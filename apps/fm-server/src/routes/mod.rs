@@ -4,6 +4,7 @@
 pub(crate) mod directory;
 pub(crate) mod health;
 pub(crate) mod runtime;
+pub(crate) mod settings;
 pub(crate) mod workspace;
 
 use utoipa::OpenApi;

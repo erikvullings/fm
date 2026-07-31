@@ -18,6 +18,7 @@ import type {
   PluginDescriptor,
   ResolveConflictRequest,
   RuntimeCapabilities,
+  Settings,
   StartOperationRequest,
   Unsubscribe,
   WorkspaceCommand,
@@ -46,6 +47,8 @@ const plugins = pluginFixtures as PluginDescriptor[];
 
 export type MockClientMethod =
   | 'getRuntimeCapabilities'
+  | 'getSettings'
+  | 'updateSettings'
   | 'getWorkspace'
   | 'listWorkspaces'
   | 'createWorkspace'
@@ -168,6 +171,25 @@ export class MockFileManagerClient implements FileManagerClient {
   private readonly operations = new Map<OperationId, Operation>();
   private readonly navigationHistory = new Map<string, { back: Location[]; forward: Location[] }>();
   private readonly workspaces = new Map<WorkspaceId, WorkspaceProjection>();
+  private settings: Settings = {
+    schemaVersion: 2,
+    theme: 'auto',
+    fontSize: 14,
+    rowHeight: 28,
+    dateFormat: 'medium',
+    sizeFormat: 'binary',
+    showHiddenFiles: false,
+    confirmPermanentDelete: true,
+    defaultConflictPolicy: 'ask',
+    operationConcurrency: 2,
+    defaultPaneLayout: 'dual',
+    defaultColumns: ['core.name', 'core.size', 'core.modified'],
+    keybindings: {},
+    enabledPlugins: [],
+    pluginSettings: {},
+    terminalCommand: null,
+    defaultStartLocations: [],
+  };
   private operationSequence = 0;
   private tabSequence = 0;
   private workspaceSequence = 0;
@@ -195,6 +217,17 @@ export class MockFileManagerClient implements FileManagerClient {
       serverAdministration: false,
       systemTrash: false,
     }));
+  }
+
+  getSettings(signal?: AbortSignal): Promise<Settings> {
+    return this.perform('getSettings', signal, () => structuredClone(this.settings));
+  }
+
+  updateSettings(settings: Settings, signal?: AbortSignal): Promise<Settings> {
+    return this.perform('updateSettings', signal, () => {
+      this.settings = structuredClone(settings);
+      return structuredClone(this.settings);
+    });
   }
 
   listWorkspaces(signal?: AbortSignal): Promise<WorkspaceSummary[]> {

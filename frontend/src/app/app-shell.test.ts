@@ -3,6 +3,7 @@ import { ThemeManager } from 'mithril-materialized';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createFileManagerClient } from '../api/client/create-client';
+import { MockFileManagerClient } from '../api/client/mock-file-manager-client';
 import { AppShell } from './app-shell';
 
 let root: HTMLElement;
@@ -188,6 +189,26 @@ describe('AppShell', () => {
     // call count, because ThemeSwitcher initializes itself as well.
     expect(setUseLocalStorage).toHaveBeenCalledExactlyOnceWith(false);
     expect(initialize).toHaveBeenCalledWith('auto');
+  });
+
+  it('loads and applies backend theme, dimensions, and entry formats at bootstrap', async () => {
+    const client = new MockFileManagerClient();
+    vi.spyOn(client, 'getSettings').mockResolvedValue({
+      ...(await client.getSettings()),
+      theme: 'dark',
+      fontSize: 17,
+      rowHeight: 39,
+      dateFormat: 'iso',
+      sizeFormat: 'bytes',
+    });
+    const setTheme = vi.spyOn(ThemeManager, 'setTheme');
+
+    m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
+
+    await vi.waitFor(() => expect(setTheme).toHaveBeenCalledWith('dark'));
+    expect(document.documentElement.style.getPropertyValue('--fm-font-size')).toBe('17px');
+    expect(document.documentElement.style.getPropertyValue('--fm-row-height')).toBe('39px');
+    await vi.waitFor(() => expect(root.textContent).toContain('8,192 B'));
   });
 
   it('renders the mithril-materialized theme switcher', () => {

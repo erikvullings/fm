@@ -11,6 +11,7 @@ pub mod health;
 pub mod location;
 pub mod requests;
 pub mod runtime;
+pub mod settings;
 pub mod snapshot;
 pub mod workspace;
 pub mod workspace_command;
@@ -24,6 +25,9 @@ pub use health::{HealthDto, HealthStatusDto};
 pub use location::LocationDto;
 pub use requests::{EntryMetadataRequest, ListDirectoryRequest, NavigateRequest};
 pub use runtime::{PlatformKindDto, RuntimeCapabilitiesDto, RuntimeKindDto};
+pub use settings::{
+    ConflictPolicyDto, DateFormatDto, DefaultPaneLayoutDto, SettingsDto, SizeFormatDto, ThemeDto,
+};
 pub use snapshot::{DirectorySnapshotDto, LoadingStateDto};
 pub use workspace::{
     ColumnConfigurationDto, CreateWorkspaceRequestDto, DirectoryViewConfigurationDto,

@@ -16,6 +16,7 @@ import type {
   PluginDescriptor,
   ResolveConflictRequest,
   RuntimeCapabilities,
+  Settings,
   StartOperationRequest,
   Unsubscribe,
   WorkspaceCommand,
@@ -43,6 +44,14 @@ export class TauriFileManagerClient implements FileManagerClient {
 
   async getRuntimeCapabilities(_signal?: AbortSignal): Promise<RuntimeCapabilities> {
     return invoke<RuntimeCapabilities>('get_runtime_capabilities');
+  }
+
+  getSettings(_signal?: AbortSignal): Promise<Settings> {
+    return invoke<Settings>('get_settings');
+  }
+
+  updateSettings(settings: Settings, _signal?: AbortSignal): Promise<Settings> {
+    return invoke<Settings>('update_settings', { settings });
   }
 
   listWorkspaces(_signal?: AbortSignal): Promise<WorkspaceSummary[]> {

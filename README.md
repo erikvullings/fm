@@ -40,6 +40,11 @@ the recursive pane layout with a draggable, minimum-width splitter. Pane clicks 
 move visible focus through semantic workspace commands; divider changes are sent as debounced
 `UpdateLayout` commands. Compact workspace, operation-centre placeholder, and function-key rows
 complete the initial two-pane shell.
+Application-wide settings are stored as versioned JSON in the platform configuration directory
+and are shared by the Axum `GET`/`PUT /api/v1/settings` endpoints and equivalent Tauri commands.
+Writes are atomic, older schemas migrate forward, and corrupt files are backed up before defaults
+are loaded with a warning. Frontend bootstrap applies the stored theme, font/row dimensions, and
+date/size formats; live pane layouts, tabs, and per-tab views remain workspace-owned state.
 
 Development builds include Mithril Inspector. Open the docked inspector with the `M` toggle at the
 bottom of the page, or press `Alt+Shift+M` to select a rendered element. Use it to trace elements to

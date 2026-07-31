@@ -103,6 +103,16 @@
         ],
         "type": "object"
       },
+      "ConflictPolicyDto": {
+        "description": "Default operation conflict choice.",
+        "enum": [
+          "ask",
+          "overwrite",
+          "keepBoth",
+          "skip"
+        ],
+        "type": "string"
+      },
       "CreateWorkspaceRequestDto": {
         "description": "Requests a new workspace (`POST /api/v1/workspaces`).",
         "example": {
@@ -118,6 +128,23 @@
           }
         },
         "type": "object"
+      },
+      "DateFormatDto": {
+        "description": "Timestamp presentation.",
+        "enum": [
+          "short",
+          "medium",
+          "iso"
+        ],
+        "type": "string"
+      },
+      "DefaultPaneLayoutDto": {
+        "description": "Layout inherited by a new workspace.",
+        "enum": [
+          "dual",
+          "single"
+        ],
+        "type": "string"
       },
       "DirectorySnapshotDto": {
         "description": "A batch of directory entries for one pane, at a specific revision.",
@@ -1116,6 +1143,133 @@
         ],
         "type": "string"
       },
+      "SettingsDto": {
+        "description": "Versioned global settings. Live workspace content is deliberately absent.",
+        "properties": {
+          "confirmPermanentDelete": {
+            "description": "Confirm permanent deletion.",
+            "type": "boolean"
+          },
+          "dateFormat": {
+            "$ref": "#/components/schemas/DateFormatDto",
+            "description": "Timestamp presentation."
+          },
+          "defaultColumns": {
+            "description": "Columns inherited by new tabs.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "defaultConflictPolicy": {
+            "$ref": "#/components/schemas/ConflictPolicyDto",
+            "description": "Default operation conflict policy."
+          },
+          "defaultPaneLayout": {
+            "$ref": "#/components/schemas/DefaultPaneLayoutDto",
+            "description": "Layout inherited by new workspaces."
+          },
+          "defaultStartLocations": {
+            "description": "Locations inherited by new panes.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "enabledPlugins": {
+            "description": "Enabled plugin identifiers.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "fontSize": {
+            "description": "Base font size in CSS pixels.",
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "keybindings": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Action-to-shortcut mappings.",
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "operationConcurrency": {
+            "description": "Maximum concurrent operations.",
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "pluginSettings": {
+            "description": "Non-secret plugin settings keyed by plugin identifier.",
+            "type": "object"
+          },
+          "rowHeight": {
+            "description": "Directory row height in CSS pixels.",
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "schemaVersion": {
+            "description": "On-disk schema version.",
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "showHiddenFiles": {
+            "description": "Show hidden entries by default.",
+            "type": "boolean"
+          },
+          "sizeFormat": {
+            "$ref": "#/components/schemas/SizeFormatDto",
+            "description": "Size presentation."
+          },
+          "terminalCommand": {
+            "description": "Optional terminal command.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "theme": {
+            "$ref": "#/components/schemas/ThemeDto",
+            "description": "Application theme."
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "theme",
+          "fontSize",
+          "rowHeight",
+          "dateFormat",
+          "sizeFormat",
+          "showHiddenFiles",
+          "confirmPermanentDelete",
+          "defaultConflictPolicy",
+          "operationConcurrency",
+          "defaultPaneLayout",
+          "defaultColumns",
+          "keybindings",
+          "enabledPlugins",
+          "pluginSettings",
+          "defaultStartLocations"
+        ],
+        "type": "object"
+      },
+      "SizeFormatDto": {
+        "description": "File-size presentation.",
+        "enum": [
+          "binary",
+          "decimal",
+          "bytes"
+        ],
+        "type": "string"
+      },
       "SortDescriptorDto": {
         "description": "A single sort descriptor: a column and a direction.",
         "properties": {
@@ -1190,6 +1344,15 @@
           "pinned"
         ],
         "type": "object"
+      },
+      "ThemeDto": {
+        "description": "Application colour theme.",
+        "enum": [
+          "auto",
+          "light",
+          "dark"
+        ],
+        "type": "string"
       },
       "WorkspaceCommandDto": {
         "description": "A semantic workspace mutation (spec §5.3.9). Every variant carries the\n`workspaceId` it targets and the `expectedRevision` it was issued\nagainst, so the service can detect a stale-view conflict (spec §5.3.10)\nbefore applying the mutation.",
@@ -1982,6 +2145,60 @@
           }
         },
         "summary": "Reports the capabilities available for the current runtime and platform."
+      }
+    },
+    "/api/v1/settings": {
+      "get": {
+        "operationId": "getSettings",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SettingsDto"
+                }
+              }
+            },
+            "description": "Current settings"
+          }
+        },
+        "summary": "Returns the complete application-wide settings document."
+      },
+      "put": {
+        "operationId": "updateSettings",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SettingsDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SettingsDto"
+                }
+              }
+            },
+            "description": "Persisted settings"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationErrorDto"
+                }
+              }
+            },
+            "description": "Settings could not be persisted"
+          }
+        },
+        "summary": "Atomically replaces the complete application-wide settings document."
       }
     },
     "/api/v1/workspaces": {

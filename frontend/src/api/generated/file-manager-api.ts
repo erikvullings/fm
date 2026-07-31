@@ -13,6 +13,7 @@ import type {
   ListDirectoryRequest,
   NavigateRequest,
   RuntimeCapabilitiesDto,
+  SettingsDto,
   WorkspaceCommandDto,
   WorkspaceDto,
   WorkspaceSummaryDto
@@ -299,6 +300,85 @@ export const getRuntimeCapabilities = async ( options?: Parameters<typeof fetchM
     method: 'GET'
 
 
+  }
+);}
+
+
+
+export type getSettingsResponse200 = {
+  data: SettingsDto
+  status: 200
+}
+
+export type getSettingsResponseSuccess = (getSettingsResponse200) & {
+  headers: Headers;
+};
+;
+
+export type getSettingsResponse = (getSettingsResponseSuccess)
+
+export const getGetSettingsUrl = () => {
+
+
+
+
+  return `/api/v1/settings`
+}
+
+/**
+ * @summary Returns the complete application-wide settings document.
+ */
+export const getSettings = async ( options?: Parameters<typeof fetchMutator>[1]): Promise<getSettingsResponse> => {
+
+  return fetchMutator<getSettingsResponse>(getGetSettingsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+export type updateSettingsResponse200 = {
+  data: SettingsDto
+  status: 200
+}
+
+export type updateSettingsResponse500 = {
+  data: ApplicationErrorDto
+  status: 500
+}
+
+export type updateSettingsResponseSuccess = (updateSettingsResponse200) & {
+  headers: Headers;
+};
+export type updateSettingsResponseError = (updateSettingsResponse500) & {
+  headers: Headers;
+};
+
+export type updateSettingsResponse = (updateSettingsResponseSuccess | updateSettingsResponseError)
+
+export const getUpdateSettingsUrl = () => {
+
+
+
+
+  return `/api/v1/settings`
+}
+
+/**
+ * @summary Atomically replaces the complete application-wide settings document.
+ */
+export const updateSettings = async (settingsDto: SettingsDto, options?: Parameters<typeof fetchMutator>[1]): Promise<updateSettingsResponse> => {
+
+  return fetchMutator<updateSettingsResponse>(getUpdateSettingsUrl(),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(settingsDto)
   }
 );}
 

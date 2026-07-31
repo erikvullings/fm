@@ -41,6 +41,7 @@ import type {
   EntrySummary,
   Location,
   PaneId,
+  Settings,
   SortDescriptor,
   WorkspaceLayout,
   WorkspaceProjection,
@@ -65,6 +66,8 @@ const DEFAULT_THEME: Theme = 'auto';
  */
 export const AppShell: FactoryComponent<AppShellAttrs> = () => {
   let theme: Theme = DEFAULT_THEME;
+  let currentSettings: Settings | undefined;
+  let loadedEntryFormatSettings: EntryFormatSettings = DEFAULT_ENTRY_FORMAT_SETTINGS;
   let workspace: WorkspaceProjection | undefined;
   let workspaceError: string | undefined;
   const directories = new Map<PaneId, PaneDirectoryView>();
@@ -85,6 +88,25 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
   const DEFAULT_SORT: readonly SortDescriptor[] = [
     { columnId: 'core.name', direction: 'ascending' },
   ];
+
+  async function loadSettings(client: FileManagerClient): Promise<void> {
+    try {
+      const settings = await client.getSettings();
+      currentSettings = settings;
+      theme = settings.theme;
+      loadedEntryFormatSettings = {
+        dateFormat: settings.dateFormat,
+        sizeFormat: settings.sizeFormat,
+        locale: navigator.language,
+      };
+      document.documentElement.style.setProperty('--fm-font-size', `${settings.fontSize}px`);
+      document.documentElement.style.setProperty('--fm-row-height', `${settings.rowHeight}px`);
+      ThemeManager.setTheme(theme);
+      m.redraw();
+    } catch {
+      // A transport failure leaves the application usable with defaults.
+    }
+  }
 
   function effectiveSort(sort: readonly SortDescriptor[]): readonly SortDescriptor[] {
     return sort.length === 0 ? DEFAULT_SORT : sort;
@@ -341,6 +363,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       // task 0030 restores the theme from the settings service instead.
       ThemeManager.setUseLocalStorage(false);
       ThemeManager.initialize(theme);
+      void loadSettings(attrs.client);
       void loadWorkspace(attrs.client);
     },
 
@@ -348,6 +371,8 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       workspaceRequest?.abort();
       navigation.dispose();
       for (const loader of metadataLoaders.values()) loader.dispose();
+      document.documentElement.style.removeProperty('--fm-font-size');
+      document.documentElement.style.removeProperty('--fm-row-height');
     },
 
     view: ({ attrs }) =>
@@ -365,6 +390,11 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
             onThemeChange: (next: Theme) => {
               theme = next;
               ThemeManager.setTheme(next);
+              if (currentSettings !== undefined) {
+                const updated = { ...currentSettings, theme: next };
+                currentSettings = updated;
+                void attrs.client.updateSettings(updated);
+              }
             },
           }),
         ]),
@@ -381,7 +411,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
                 paneContent: (paneId) =>
                   paneContent(
                     attrs.client,
-                    attrs.entryFormatSettings ?? DEFAULT_ENTRY_FORMAT_SETTINGS,
+                    attrs.entryFormatSettings ?? loadedEntryFormatSettings,
                     paneId,
                   ),
                 onActivatePane: (paneId) => activatePane(attrs.client, paneId),

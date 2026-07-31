@@ -1,9 +1,9 @@
 # 0030 Settings service
 
-Status: open
+Status: done
 Priority: medium
 Owner: unassigned
-Agent: unassigned
+Agent: Codex
 Area: backend
 Depends on: 0019, 0026
 
@@ -41,4 +41,13 @@ application-wide settings below; it no longer restores workspace content itself.
 - Do not store secrets in settings.
 
 ## Agent Notes
-- Not started.
+- 2026-07-31: Added the versioned `fm-settings` JSON store with platform config-directory
+  resolution, atomic replacement, a v1-to-v2 migration, and corrupt-file backup plus global warning
+  notification.
+- 2026-07-31: Added shared settings DTOs, generated OpenAPI/TypeScript bindings, Axum `GET`/`PUT`
+  endpoints, equivalent Tauri commands, and frontend bootstrap application of theme, font size, row
+  height, date format, and size format.
+- 2026-07-31: Verified six task-specific behaviour tests (three persistence, one recovery
+  notification, one REST round trip, and one frontend bootstrap), frontend typechecking,
+  `pnpm run lint`, and the complete `pnpm test` suite. Runtime platform-path behaviour was exercised
+  on macOS; Windows and Linux were compile/CI-contract tested but not run interactively.

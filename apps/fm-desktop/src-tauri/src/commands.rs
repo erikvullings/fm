@@ -7,7 +7,7 @@ use uuid::Uuid;
 use fm_transport_dto::{
     ApplicationErrorDto, CreateWorkspaceRequestDto, DirectorySnapshotDto, EntryMetadataDto,
     EntryMetadataRequest, ListDirectoryRequest, NavigateRequest, RuntimeCapabilitiesDto,
-    WorkspaceCommandDto, WorkspaceDto, WorkspaceSummaryDto,
+    SettingsDto, WorkspaceCommandDto, WorkspaceDto, WorkspaceSummaryDto,
 };
 
 use crate::AppState;
@@ -17,6 +17,24 @@ use crate::AppState;
 #[tauri::command]
 pub(crate) fn get_runtime_capabilities(state: State<'_, AppState>) -> RuntimeCapabilitiesDto {
     state.service.runtime_capabilities()
+}
+
+/// Returns the same settings document as `GET /api/v1/settings`.
+#[tauri::command]
+pub(crate) fn get_settings(state: State<'_, AppState>) -> SettingsDto {
+    state.service.get_settings()
+}
+
+/// Atomically persists the same settings document as `PUT /api/v1/settings`.
+#[tauri::command]
+pub(crate) fn update_settings(
+    state: State<'_, AppState>,
+    settings: SettingsDto,
+) -> Result<SettingsDto, ApplicationErrorDto> {
+    state
+        .service
+        .update_settings(settings)
+        .map_err(|error| error.into_dto(Uuid::new_v4()))
 }
 
 /// Lists a directory through the same application service as Axum.

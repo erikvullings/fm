@@ -26,6 +26,8 @@ pub struct ServerConfig {
     pub roots: Vec<PathBuf>,
     /// Directory workspaces are persisted under (spec §5.3.8).
     pub workspace_directory: PathBuf,
+    /// Directory containing the application-wide settings file.
+    pub settings_directory: PathBuf,
 }
 
 impl Default for ServerConfig {
@@ -38,6 +40,9 @@ impl Default for ServerConfig {
             roots: Vec::new(),
             workspace_directory:
                 fm_application::workspace::JsonFileWorkspaceRepository::default_directory(),
+            settings_directory: dirs::config_dir()
+                .unwrap_or_else(|| PathBuf::from(".fm-config"))
+                .join("fm"),
         }
     }
 }

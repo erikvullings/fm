@@ -7,5 +7,6 @@ export * from './operation';
 export * from './plugin';
 export * from './requests';
 export * from './runtime-capabilities';
+export * from './settings';
 export * from './snapshot';
 export * from './workspace';

@@ -1,13 +1,19 @@
 //! The `FileManagerService` facade (specification §7).
 
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use fm_domain::{DirectorySnapshot, EntryMetadata};
-use fm_events::EventBus;
+use fm_events::{
+    BackendEventPayload, EventAudience, EventBus, NotificationLevelPayload, NotificationPayload,
+};
+use fm_settings::{
+    ConflictPolicy, DateFormat, DefaultPaneLayout, Settings, SettingsStore, SizeFormat, Theme,
+};
 use fm_transport_dto::{
-    EntryMetadataRequest, ListDirectoryRequest, NavigateRequest, PlatformKindDto,
-    RuntimeCapabilitiesDto, RuntimeKindDto, WorkspaceCommandDto, WorkspaceDto, WorkspaceSummaryDto,
+    ConflictPolicyDto, DateFormatDto, DefaultPaneLayoutDto, EntryMetadataRequest,
+    ListDirectoryRequest, NavigateRequest, PlatformKindDto, RuntimeCapabilitiesDto, RuntimeKindDto,
+    SettingsDto, SizeFormatDto, ThemeDto, WorkspaceCommandDto, WorkspaceDto, WorkspaceSummaryDto,
 };
 use fm_vfs::ProviderRegistry;
 use fm_vfs_local::LocalFileSystemProvider;
@@ -33,15 +39,42 @@ pub struct FileManagerService {
     workspaces: WorkspaceService<JsonFileWorkspaceRepository>,
     directories: DirectoryService,
     events: EventBus,
+    settings_store: SettingsStore,
+    settings: Mutex<Settings>,
 }
 
 impl FileManagerService {
     /// Builds a service for the given host runtime, persisting workspaces
     /// under `workspace_directory`.
-    pub fn new(runtime: RuntimeKindDto, workspace_directory: impl Into<PathBuf>) -> Self {
+    pub fn new(
+        runtime: RuntimeKindDto,
+        workspace_directory: impl Into<PathBuf>,
+        settings_directory: impl Into<PathBuf>,
+    ) -> Self {
         let mut providers = ProviderRegistry::new();
         providers.register(Arc::new(LocalFileSystemProvider));
         let events = EventBus::default();
+        let settings_store = SettingsStore::new(settings_directory);
+        let loaded = settings_store
+            .load()
+            .unwrap_or_else(|_| fm_settings::LoadOutcome {
+                settings: Settings::default(),
+                warning: Some(
+                    "Settings could not be read. Application defaults were loaded.".into(),
+                ),
+            });
+        if let Some(message) = loaded.warning {
+            events.publish(
+                EventAudience::Global,
+                BackendEventPayload::NotificationCreated {
+                    notification: NotificationPayload {
+                        id: Uuid::new_v4().to_string(),
+                        level: NotificationLevelPayload::Warning,
+                        message,
+                    },
+                },
+            );
+        }
         Self {
             runtime,
             workspaces: WorkspaceService::new(JsonFileWorkspaceRepository::new(
@@ -49,7 +82,33 @@ impl FileManagerService {
             )),
             directories: DirectoryService::with_event_bus(providers, events.clone()),
             events,
+            settings_store,
+            settings: Mutex::new(loaded.settings),
         }
+    }
+
+    /// Returns the current application-wide settings.
+    pub fn get_settings(&self) -> SettingsDto {
+        let settings = self
+            .settings
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .clone();
+        settings_to_dto(settings)
+    }
+
+    /// Atomically persists and returns a complete settings replacement.
+    pub fn update_settings(&self, settings: SettingsDto) -> Result<SettingsDto, ApplicationError> {
+        let settings = settings_from_dto(settings);
+        self.settings_store
+            .save(&settings)
+            .map_err(|_| ApplicationError::Internal)?;
+        let mut current = self
+            .settings
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        *current = settings;
+        Ok(settings_to_dto(current.clone()))
     }
 
     /// Returns the shared backend event bus used by both host adapters.
@@ -186,6 +245,91 @@ impl From<WorkspaceSummary> for WorkspaceSummaryDto {
     }
 }
 
+fn settings_to_dto(settings: Settings) -> SettingsDto {
+    SettingsDto {
+        schema_version: settings.schema_version,
+        theme: match settings.theme {
+            Theme::Auto => ThemeDto::Auto,
+            Theme::Light => ThemeDto::Light,
+            Theme::Dark => ThemeDto::Dark,
+        },
+        font_size: settings.font_size,
+        row_height: settings.row_height,
+        date_format: match settings.date_format {
+            DateFormat::Short => DateFormatDto::Short,
+            DateFormat::Medium => DateFormatDto::Medium,
+            DateFormat::Iso => DateFormatDto::Iso,
+        },
+        size_format: match settings.size_format {
+            SizeFormat::Binary => SizeFormatDto::Binary,
+            SizeFormat::Decimal => SizeFormatDto::Decimal,
+            SizeFormat::Bytes => SizeFormatDto::Bytes,
+        },
+        show_hidden_files: settings.show_hidden_files,
+        confirm_permanent_delete: settings.confirm_permanent_delete,
+        default_conflict_policy: match settings.default_conflict_policy {
+            ConflictPolicy::Ask => ConflictPolicyDto::Ask,
+            ConflictPolicy::Overwrite => ConflictPolicyDto::Overwrite,
+            ConflictPolicy::KeepBoth => ConflictPolicyDto::KeepBoth,
+            ConflictPolicy::Skip => ConflictPolicyDto::Skip,
+        },
+        operation_concurrency: settings.operation_concurrency,
+        default_pane_layout: match settings.default_pane_layout {
+            DefaultPaneLayout::Dual => DefaultPaneLayoutDto::Dual,
+            DefaultPaneLayout::Single => DefaultPaneLayoutDto::Single,
+        },
+        default_columns: settings.default_columns,
+        keybindings: settings.keybindings,
+        enabled_plugins: settings.enabled_plugins,
+        plugin_settings: serde_json::to_value(settings.plugin_settings)
+            .unwrap_or_else(|_| serde_json::Value::Object(serde_json::Map::new())),
+        terminal_command: settings.terminal_command,
+        default_start_locations: settings.default_start_locations,
+    }
+}
+
+fn settings_from_dto(settings: SettingsDto) -> Settings {
+    Settings {
+        schema_version: fm_settings::CURRENT_SCHEMA_VERSION,
+        theme: match settings.theme {
+            ThemeDto::Auto => Theme::Auto,
+            ThemeDto::Light => Theme::Light,
+            ThemeDto::Dark => Theme::Dark,
+        },
+        font_size: settings.font_size,
+        row_height: settings.row_height,
+        date_format: match settings.date_format {
+            DateFormatDto::Short => DateFormat::Short,
+            DateFormatDto::Medium => DateFormat::Medium,
+            DateFormatDto::Iso => DateFormat::Iso,
+        },
+        size_format: match settings.size_format {
+            SizeFormatDto::Binary => SizeFormat::Binary,
+            SizeFormatDto::Decimal => SizeFormat::Decimal,
+            SizeFormatDto::Bytes => SizeFormat::Bytes,
+        },
+        show_hidden_files: settings.show_hidden_files,
+        confirm_permanent_delete: settings.confirm_permanent_delete,
+        default_conflict_policy: match settings.default_conflict_policy {
+            ConflictPolicyDto::Ask => ConflictPolicy::Ask,
+            ConflictPolicyDto::Overwrite => ConflictPolicy::Overwrite,
+            ConflictPolicyDto::KeepBoth => ConflictPolicy::KeepBoth,
+            ConflictPolicyDto::Skip => ConflictPolicy::Skip,
+        },
+        operation_concurrency: settings.operation_concurrency,
+        default_pane_layout: match settings.default_pane_layout {
+            DefaultPaneLayoutDto::Dual => DefaultPaneLayout::Dual,
+            DefaultPaneLayoutDto::Single => DefaultPaneLayout::Single,
+        },
+        default_columns: settings.default_columns,
+        keybindings: settings.keybindings,
+        enabled_plugins: settings.enabled_plugins,
+        plugin_settings: serde_json::from_value(settings.plugin_settings).unwrap_or_default(),
+        terminal_command: settings.terminal_command,
+        default_start_locations: settings.default_start_locations,
+    }
+}
+
 /// Detects the host operating system from the compiled target (spec §21).
 fn detect_platform() -> PlatformKindDto {
     match std::env::consts::OS {
@@ -199,10 +343,15 @@ fn detect_platform() -> PlatformKindDto {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use fm_events::{SessionId, SubscriptionEvent};
 
     fn service() -> (tempfile::TempDir, FileManagerService) {
         let dir = tempfile::tempdir().expect("must create a temp dir");
-        let service = FileManagerService::new(RuntimeKindDto::BrowserServer, dir.path());
+        let service = FileManagerService::new(
+            RuntimeKindDto::BrowserServer,
+            dir.path(),
+            dir.path().join("settings"),
+        );
         (dir, service)
     }
 
@@ -215,11 +364,50 @@ mod tests {
         );
 
         let dir = tempfile::tempdir().expect("must create a temp dir");
-        let service = FileManagerService::new(RuntimeKindDto::Tauri, dir.path());
+        let service = FileManagerService::new(
+            RuntimeKindDto::Tauri,
+            dir.path(),
+            dir.path().join("settings"),
+        );
         assert_eq!(
             service.runtime_capabilities().runtime,
             RuntimeKindDto::Tauri
         );
+    }
+
+    #[tokio::test]
+    async fn corrupt_settings_surface_a_global_warning_notification() {
+        let directory = tempfile::tempdir().expect("must create a temp dir");
+        let settings_directory = directory.path().join("settings");
+        std::fs::create_dir_all(&settings_directory).expect("create settings directory");
+        std::fs::write(
+            settings_directory.join(fm_settings::SETTINGS_FILE_NAME),
+            "{broken",
+        )
+        .expect("write corrupt settings");
+        let service = FileManagerService::new(
+            RuntimeKindDto::BrowserServer,
+            directory.path().join("workspaces"),
+            settings_directory,
+        );
+        let mut events = service
+            .event_bus()
+            .subscribe(SessionId::new("test"), [], Some(0));
+
+        let event = events.recv().await.expect("warning event");
+        assert!(matches!(
+            event,
+            SubscriptionEvent::Event(envelope)
+                if matches!(
+                    envelope.payload,
+                    BackendEventPayload::NotificationCreated {
+                        notification: NotificationPayload {
+                            level: NotificationLevelPayload::Warning,
+                            ..
+                        }
+                    }
+                )
+        ));
     }
 
     #[test]

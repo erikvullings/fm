@@ -25,6 +25,7 @@ impl TestServer {
             bind_address: IpAddr::V4(Ipv4Addr::LOCALHOST),
             port: 0,
             workspace_directory: workspace_directory.path().to_path_buf(),
+            settings_directory: workspace_directory.path().join("config"),
             ..ServerConfig::default()
         };
         let router = fm_server::build_router(&config);

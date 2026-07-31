@@ -1055,6 +1055,7 @@ dependencies = [
  "dirs",
  "fm-domain",
  "fm-events",
+ "fm-settings",
  "fm-transport-dto",
  "fm-vfs",
  "fm-vfs-local",
@@ -1152,6 +1153,7 @@ version = "0.1.0"
 dependencies = [
  "axum",
  "clap",
+ "dirs",
  "fm-application",
  "fm-domain",
  "fm-transport-dto",
@@ -1173,6 +1175,13 @@ dependencies = [
 [[package]]
 name = "fm-settings"
 version = "0.1.0"
+dependencies = [
+ "dirs",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.19",
+]
 
 [[package]]
 name = "fm-test-support"

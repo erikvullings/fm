@@ -14,6 +14,7 @@ import type {
   PluginDescriptor,
   ResolveConflictRequest,
   RuntimeCapabilities,
+  Settings,
   StartOperationRequest,
   Unsubscribe,
   WorkspaceCommand,
@@ -42,6 +43,10 @@ export class NotImplementedError extends Error {
  */
 export interface FileManagerClient {
   getRuntimeCapabilities(signal?: AbortSignal): Promise<RuntimeCapabilities>;
+
+  getSettings(signal?: AbortSignal): Promise<Settings>;
+
+  updateSettings(settings: Settings, signal?: AbortSignal): Promise<Settings>;
 
   listWorkspaces(signal?: AbortSignal): Promise<WorkspaceSummary[]>;
 
