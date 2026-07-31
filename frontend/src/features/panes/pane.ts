@@ -26,6 +26,7 @@ export interface PaneAttrs {
   readonly onForward: () => void | Promise<void>;
   readonly onParent: () => void | Promise<void>;
   readonly onOpenEntry: (entry: EntrySummary) => void | Promise<void>;
+  readonly onCursorChange: (index: number) => void;
   readonly onRetry: () => void | Promise<void>;
   readonly onLoadNextPage: () => void | Promise<void>;
 }
@@ -166,6 +167,14 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
             if (event.key.toLowerCase() === 'l' && (event.ctrlKey || event.metaKey)) {
               event.preventDefault();
               beginEditing(attrs.path);
+            } else if (event.key === 'ArrowDown' && attrs.entries.length > 0) {
+              event.preventDefault();
+              attrs.onCursorChange(
+                Math.min((attrs.cursorIndex ?? -1) + 1, attrs.entries.length - 1),
+              );
+            } else if (event.key === 'ArrowUp' && attrs.entries.length > 0) {
+              event.preventDefault();
+              attrs.onCursorChange(Math.max((attrs.cursorIndex ?? 0) - 1, 0));
             } else if (event.key === 'Enter' && attrs.cursorIndex !== undefined) {
               const entry = attrs.entries[attrs.cursorIndex];
               if (entry !== undefined) {
@@ -299,6 +308,7 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
             label: `${attrs.tabTitle} directory`,
             onRetry: () => void attrs.onRetry(),
             onEndReached: () => void attrs.onLoadNextPage(),
+            onCursorChange: attrs.onCursorChange,
             ...(attrs.cursorIndex === undefined ? {} : { cursorIndex: attrs.cursorIndex }),
           }),
           m('.fm-pane-status', { role: 'status' }, [

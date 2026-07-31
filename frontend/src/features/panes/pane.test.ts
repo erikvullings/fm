@@ -44,6 +44,7 @@ function attrs(overrides: Partial<PaneAttrs> = {}): PaneAttrs {
     onForward: vi.fn(),
     onParent: vi.fn(),
     onOpenEntry: vi.fn(),
+    onCursorChange: vi.fn(),
     onRetry: vi.fn(),
     onLoadNextPage: vi.fn(),
     onNavigate: vi.fn(),
@@ -181,6 +182,18 @@ describe('Pane status bar', () => {
 });
 
 describe('Pane navigation input', () => {
+  it('moves the cursor with arrow keys and clamps it to the directory bounds', () => {
+    const onCursorChange = vi.fn();
+    mount(attrs({ cursorIndex: 0, onCursorChange }));
+    const pane = root.querySelector<HTMLElement>('.fm-pane');
+
+    pane?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+    pane?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }));
+
+    expect(onCursorChange).toHaveBeenNthCalledWith(1, 1);
+    expect(onCursorChange).toHaveBeenNthCalledWith(2, 0);
+  });
+
   it('opens the directory under the cursor with Enter and navigates parent with Backspace', () => {
     const onOpenEntry = vi.fn();
     const onParent = vi.fn();

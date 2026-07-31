@@ -34,6 +34,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
   let workspace: WorkspaceProjection | undefined;
   let workspaceError: string | undefined;
   const directories = new Map<PaneId, PaneDirectoryView>();
+  const cursors = new Map<PaneId, number>();
   let workspaceRequest: AbortController | undefined;
 
   function locationForPath(current: Location, path: string): Location {
@@ -114,11 +115,12 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     };
     const pane = workspace?.panesById[paneId];
     const tab = pane?.tabsById[pane.activeTabId];
+    const cursorIndex = cursors.get(paneId);
     return {
       ...directory,
       selectedEntryIds: new Set<EntryId>(),
       sortLabel: 'Name ascending',
-      ...(directory.entries.length === 0 ? {} : { cursorIndex: 0 }),
+      ...(cursorIndex === undefined ? {} : { cursorIndex }),
       onNavigate: async (path) => {
         if (tab !== undefined) {
           await navigation.navigate(paneId, locationForPath(tab.location, path));
@@ -129,6 +131,10 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       onParent: () => navigation.parent(paneId),
       onOpenEntry: (entry) =>
         entry.kind === 'directory' ? navigation.navigate(paneId, entry.location) : undefined,
+      onCursorChange: (index) => {
+        cursors.set(paneId, index);
+        m.redraw();
+      },
       onRetry: () => navigation.retry(paneId),
       onLoadNextPage: () => navigation.loadNextPage(paneId),
     };
@@ -141,7 +147,16 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
         getWorkspace: () => workspace,
         replaceWorkspace: (next) => replaceWorkspace(next),
         updatePane: (paneId, view) => {
+          const previous = directories.get(paneId);
           directories.set(paneId, view);
+          if (view.entries.length === 0) {
+            cursors.delete(paneId);
+          } else if (
+            previous?.location?.uri !== view.location?.uri ||
+            (cursors.get(paneId) ?? 0) >= view.entries.length
+          ) {
+            cursors.set(paneId, 0);
+          }
           m.redraw();
         },
       });

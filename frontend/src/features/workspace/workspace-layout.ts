@@ -25,6 +25,7 @@ export interface WorkspacePaneContent {
   readonly onForward: () => void | Promise<void>;
   readonly onParent: () => void | Promise<void>;
   readonly onOpenEntry: (entry: EntrySummary) => void | Promise<void>;
+  readonly onCursorChange: (index: number) => void;
   readonly onRetry: () => void | Promise<void>;
   readonly onLoadNextPage: () => void | Promise<void>;
 }
@@ -195,6 +196,7 @@ export const WorkspaceLayoutView: FactoryComponent<WorkspaceLayoutViewAttrs> = (
         onForward: content.onForward,
         onParent: content.onParent,
         onOpenEntry: content.onOpenEntry,
+        onCursorChange: content.onCursorChange,
         onRetry: content.onRetry,
         onLoadNextPage: content.onLoadNextPage,
       }),

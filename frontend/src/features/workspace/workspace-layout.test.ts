@@ -80,6 +80,7 @@ function attrs(overrides: Partial<WorkspaceLayoutViewAttrs> = {}): WorkspaceLayo
       onForward: vi.fn(),
       onParent: vi.fn(),
       onOpenEntry: vi.fn(),
+      onCursorChange: vi.fn(),
       onRetry: vi.fn(),
       onLoadNextPage: vi.fn(),
     }),

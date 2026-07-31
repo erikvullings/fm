@@ -56,6 +56,21 @@ describe('AppShell', () => {
     expect(root.querySelector('.fm-pane-status')?.textContent).toContain('entries');
   });
 
+  it('selects a row and opens its directory with Enter', async () => {
+    mountShell('mock');
+
+    await vi.waitFor(() => expect(root.textContent).toContain('Documents'));
+    const documents = [...root.querySelectorAll<HTMLElement>('.fm-directory-row')].find((row) =>
+      row.textContent?.includes('Documents'),
+    );
+    documents?.click();
+    m.redraw.sync();
+    const activePane = documents?.closest<HTMLElement>('.fm-pane');
+    activePane?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+
+    await vi.waitFor(() => expect(activePane?.textContent).toContain('report.pdf'));
+  });
+
   it('composes the complete main-window workspace regions', async () => {
     mountShell('mock');
 

@@ -32,6 +32,7 @@ export interface DirectoryTableAttrs {
   readonly viewportHeight?: number;
   readonly overscan?: number;
   readonly label?: string;
+  readonly onCursorChange?: (index: number) => void;
   readonly onRetry?: () => void;
   readonly onEndReached?: () => void;
 }
@@ -258,6 +259,7 @@ export const DirectoryTable: FactoryComponent<DirectoryTableAttrs> = () => {
                 role: 'row',
                 'aria-rowindex': index + 2,
                 'aria-selected': selected ? 'true' : 'false',
+                onclick: () => attrs.onCursorChange?.(index),
                 class: [
                   entry.hidden ? 'fm-hidden-entry' : '',
                   cursor ? 'fm-cursor-row' : '',

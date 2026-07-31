@@ -67,6 +67,23 @@ describe('DirectoryTable states', () => {
 });
 
 describe('DirectoryTable rows', () => {
+  it('moves the cursor to a clicked row', () => {
+    const onCursorChange = vi.fn();
+    mount({
+      state: { type: 'loaded' },
+      source: entryArraySource([
+        entry({ id: 'entry-1' }),
+        entry({ id: 'entry-2', name: 'second.txt' }),
+      ]),
+      cursorIndex: 0,
+      onCursorChange,
+    });
+
+    root.querySelectorAll<HTMLElement>('.fm-directory-row')[1]?.click();
+
+    expect(onCursorChange).toHaveBeenCalledWith(1);
+  });
+
   it('renders semantic columns and textual hidden and link indicators', () => {
     mount({
       state: { type: 'loaded' },
