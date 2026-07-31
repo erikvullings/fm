@@ -1,5 +1,4 @@
 import m, { type FactoryComponent, type VnodeDOM } from 'mithril';
-
 import type { EntryId, EntrySummary, LoadingState, SortDescriptor } from '../../models';
 import {
   DEFAULT_ENTRY_FORMAT_SETTINGS,
@@ -7,12 +6,13 @@ import {
   formatEntryModifiedAt,
   formatEntrySize,
 } from '../entry-formatting/entry-formatting';
+import { isParentEntry } from '../panes/parent-entry';
 import { calculateVisibleWindow, scrollOffsetForIndex } from './windowing';
 import './directory-table.css';
 
-const DEFAULT_ROW_HEIGHT = 30;
+const DEFAULT_ROW_HEIGHT = 22;
 const DEFAULT_VIEWPORT_HEIGHT = 300;
-const DEFAULT_OVERSCAN = 3;
+const DEFAULT_OVERSCAN = 1;
 
 /** Random-access entry collection; large mock sources need not materialize an array. */
 export interface DirectoryEntrySource {
@@ -139,14 +139,14 @@ const INITIAL_COLUMNS: readonly DirectoryColumn[] = [
     label: 'Size',
     cellClass: 'fm-directory-size',
     render: (entry, _nameMatchPrefix, settings = DEFAULT_ENTRY_FORMAT_SETTINGS) =>
-      formatEntrySize(entry, settings),
+      isParentEntry(entry.id) || entry.kind === 'symlink' ? '' : formatEntrySize(entry, settings),
   },
   {
     id: 'core.modified',
     label: 'Modified',
     cellClass: 'fm-directory-modified',
     render: (entry, _nameMatchPrefix, settings = DEFAULT_ENTRY_FORMAT_SETTINGS) =>
-      formatEntryModifiedAt(entry.modifiedAt, settings),
+      isParentEntry(entry.id) ? '' : formatEntryModifiedAt(entry.modifiedAt, settings),
   },
 ];
 
@@ -346,7 +346,6 @@ export const DirectoryTable: FactoryComponent<DirectoryTableAttrs> = () => {
                   selected ? 'fm-selected-row' : '',
                 ].join(' '),
                 style: {
-                  height: `${rowHeight}px`,
                   transform: `translateY(${window.offsetTop + (index - window.start) * rowHeight}px)`,
                 },
               },

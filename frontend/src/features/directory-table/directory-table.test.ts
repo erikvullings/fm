@@ -42,7 +42,7 @@ describe('DirectoryTable states', () => {
     mount({ state: { type: 'loading' }, viewportHeight: 120 });
 
     expect(root.querySelector('[role="status"]')?.textContent).toContain('Loading directory');
-    expect(root.querySelectorAll('.fm-directory-placeholder')).toHaveLength(4);
+    expect(root.querySelectorAll('.fm-directory-placeholder')).toHaveLength(6);
   });
 
   it('keeps existing rows visible while the next directory loads', () => {
@@ -219,6 +219,21 @@ describe('DirectoryTable rows', () => {
     expect(row?.querySelector('.fm-directory-size')?.textContent).toBe('--');
   });
 
+  it('leaves parent and link metadata columns empty', () => {
+    mount({
+      state: { type: 'loaded' },
+      source: entryArraySource([
+        entry({ id: 'fm:parent:/folder', name: '..', kind: 'directory' }),
+        entry({ id: 'link', name: 'OneDrive', kind: 'symlink', size: Number.NaN }),
+      ]),
+    });
+
+    const rows = root.querySelectorAll('.fm-directory-row');
+    expect(rows[0]?.querySelector('.fm-directory-size')?.textContent).toBe('');
+    expect(rows[0]?.querySelector('.fm-directory-modified')?.textContent).toBe('');
+    expect(rows[1]?.querySelector('.fm-directory-size')?.textContent).toBe('');
+  });
+
   it.each([1_000, 10_000, 100_000])(
     'keeps the mounted row count bounded for %i materialized entries',
     (entryCount) => {
@@ -259,7 +274,7 @@ describe('DirectoryTable rows', () => {
     m.redraw.sync();
 
     expect(root.querySelectorAll('.fm-directory-row').length).toBeLessThanOrEqual(10);
-    expect(root.textContent).toContain('generated-050000');
+    expect(root.textContent).toContain('generated-0681816');
   });
 
   it('keeps a row DOM node when its stable entry id is patched', () => {

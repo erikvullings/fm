@@ -34,13 +34,6 @@ function cursorIndex(state: SelectionState, entryIds: readonly EntryId[]): numbe
   return index < 0 ? 0 : index;
 }
 
-function withCursor(state: SelectionState, entryId: EntryId | undefined): SelectionState {
-  if (entryId === undefined) {
-    return state;
-  }
-  return { ...state, cursorEntryId: entryId };
-}
-
 /** Applies one selection transition using the entries in their current visible order. */
 export function reduceSelection(
   state: SelectionState,
@@ -53,13 +46,17 @@ export function reduceSelection(
         cursorIndex(state, orderedEntryIds) + action.offset,
         orderedEntryIds,
       );
-      return withCursor(state, index === undefined ? undefined : orderedEntryIds[index]);
+      const entryId = index === undefined ? undefined : orderedEntryIds[index];
+      return entryId === undefined
+        ? state
+        : { ...state, selectedEntryIds: [entryId], cursorEntryId: entryId, anchorEntryId: entryId };
     }
-    case 'moveCursorTo':
-      return withCursor(
-        state,
-        action.edge === 'first' ? orderedEntryIds[0] : orderedEntryIds.at(-1),
-      );
+    case 'moveCursorTo': {
+      const entryId = action.edge === 'first' ? orderedEntryIds[0] : orderedEntryIds.at(-1);
+      return entryId === undefined
+        ? state
+        : { ...state, selectedEntryIds: [entryId], cursorEntryId: entryId, anchorEntryId: entryId };
+    }
     case 'setCursor':
       return { ...state, cursorEntryId: action.entryId };
     case 'selectOnly':

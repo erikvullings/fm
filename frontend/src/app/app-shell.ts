@@ -310,7 +310,8 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
         (entry) => selection?.selectedEntryIds.includes(entry.id) === true && entry.kind === 'file',
       );
       const otherPaneId = workspace?.paneOrder.find((paneId) => paneId !== active?.paneId);
-      const destination = otherPaneId === undefined ? undefined : directories.get(otherPaneId)?.location;
+      const destination =
+        otherPaneId === undefined ? undefined : directories.get(otherPaneId)?.location;
       const source = selected?.length === 1 ? selected[0] : undefined;
       if (source !== undefined && destination !== undefined) {
         event.preventDefault();
@@ -628,11 +629,43 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       );
       return m('.fm-app-shell', [
         m('.fm-workspace-toolbar', [
-          m('strong', workspace?.name ?? 'Workspace'),
           m('.fm-navigation-controls', { 'aria-label': 'Active pane navigation' }, [
-            m('button', { type: 'button', disabled: workspace?.panesById[workspace.activePaneId]?.tabsById[workspace.panesById[workspace.activePaneId]?.activeTabId ?? '']?.canNavigateBack !== true, 'aria-label': 'Back', onclick: () => void navigation.back(workspace?.activePaneId ?? '') }, '←'),
-            m('button', { type: 'button', disabled: workspace?.panesById[workspace.activePaneId]?.tabsById[workspace.panesById[workspace.activePaneId]?.activeTabId ?? '']?.canNavigateForward !== true, 'aria-label': 'Forward', onclick: () => void navigation.forward(workspace?.activePaneId ?? '') }, '→'),
-            m('button', { type: 'button', disabled: workspace === undefined, 'aria-label': 'Parent directory', onclick: () => void navigation.parent(workspace?.activePaneId ?? '') }, '↑'),
+            m(
+              'button',
+              {
+                type: 'button',
+                disabled:
+                  workspace?.panesById[workspace.activePaneId]?.tabsById[
+                    workspace.panesById[workspace.activePaneId]?.activeTabId ?? ''
+                  ]?.canNavigateBack !== true,
+                'aria-label': 'Back',
+                onclick: () => void navigation.back(workspace?.activePaneId ?? ''),
+              },
+              '←',
+            ),
+            m(
+              'button',
+              {
+                type: 'button',
+                disabled:
+                  workspace?.panesById[workspace.activePaneId]?.tabsById[
+                    workspace.panesById[workspace.activePaneId]?.activeTabId ?? ''
+                  ]?.canNavigateForward !== true,
+                'aria-label': 'Forward',
+                onclick: () => void navigation.forward(workspace?.activePaneId ?? ''),
+              },
+              '→',
+            ),
+            m(
+              'button',
+              {
+                type: 'button',
+                disabled: workspace === undefined,
+                'aria-label': 'Parent directory',
+                onclick: () => void navigation.parent(workspace?.activePaneId ?? ''),
+              },
+              '↑',
+            ),
           ]),
           m('span', 'Search'),
           m('button', { type: 'button', disabled: true }, 'Command palette'),
@@ -641,9 +674,24 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
             m('.fm-settings-editor', { role: 'dialog', 'aria-label': 'Appearance settings' }, [
               m('.fm-settings-editor-heading', [
                 m('strong', 'Appearance'),
-                m('button', { type: 'button', 'aria-label': 'Close settings', onclick: (event: MouseEvent) => { const disclosure = (event.currentTarget as HTMLElement).closest('details'); if (disclosure instanceof HTMLDetailsElement) disclosure.open = false; } }, '×'),
+                m(
+                  'button',
+                  {
+                    type: 'button',
+                    'aria-label': 'Close settings',
+                    onclick: (event: MouseEvent) => {
+                      const disclosure = (event.currentTarget as HTMLElement).closest('details');
+                      if (disclosure instanceof HTMLDetailsElement) disclosure.open = false;
+                    },
+                  },
+                  '×',
+                ),
               ]),
-              m(ThemeSwitcher, { theme, showLabels: true, onThemeChange: (next: Theme) => setTheme(attrs.client, next) }),
+              m(ThemeSwitcher, {
+                theme,
+                showLabels: true,
+                onThemeChange: (next: Theme) => setTheme(attrs.client, next),
+              }),
             ]),
           ]),
         ]),

@@ -102,11 +102,11 @@ describe('AppShell', () => {
 
     activePane?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
     m.redraw.sync();
-    expect(activePane?.querySelectorAll('.fm-selected-row')).toHaveLength(entryCount);
+    expect(activePane?.querySelectorAll('.fm-selected-row')).toHaveLength(1);
 
     activePane?.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true }));
     m.redraw.sync();
-    expect(activePane?.querySelectorAll('.fm-selected-row')).toHaveLength(entryCount - 1);
+    expect(activePane?.querySelectorAll('.fm-selected-row')).toHaveLength(0);
   });
 
   it('sorts the loaded page from a column header and reports the active direction', async () => {

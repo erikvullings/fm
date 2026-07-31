@@ -422,12 +422,11 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
                     pathError = undefined;
                   },
                   onkeydown: (event: KeyboardEvent) => {
+                    event.stopPropagation();
                     if (event.key === 'Escape') {
-                      event.stopPropagation();
                       cancelEditing();
                     } else if (event.key === 'Enter') {
                       event.preventDefault();
-                      event.stopPropagation();
                       void navigate(draftPath, attrs, true);
                     }
                   },

@@ -6,14 +6,14 @@ import { emptySelection, reduceSelection, type SelectionState } from './selectio
 const ids = (...values: string[]): readonly EntryId[] => values;
 
 describe('selection reducer', () => {
-  it('moves the cursor without changing selection', () => {
+  it('moves the cursor and selects the new row', () => {
     expect(
       reduceSelection(
         { ...emptySelection, selectedEntryIds: ['b'], cursorEntryId: 'b' },
         { type: 'moveCursor', offset: 1 },
         ids('a', 'b', 'c'),
       ),
-    ).toEqual({ selectedEntryIds: ['b'], cursorEntryId: 'c' });
+    ).toEqual({ selectedEntryIds: ['c'], cursorEntryId: 'c', anchorEntryId: 'c' });
   });
 
   it('moves by a page and clamps at the list boundary', () => {
@@ -118,14 +118,14 @@ describe('selection reducer', () => {
       anchorEntryId: 'hidden',
     };
     const filtered = reduceSelection(state, { type: 'moveCursor', offset: 1 }, ids('visible'));
-    expect(filtered.selectedEntryIds).toEqual(['hidden', 'visible', 'removed']);
+    expect(filtered.selectedEntryIds).toEqual(['visible']);
 
     expect(
       reduceSelection(filtered, { type: 'prune', removedEntryIds: ids('removed') }, ids('visible')),
     ).toEqual({
-      selectedEntryIds: ['hidden', 'visible'],
+      selectedEntryIds: ['visible'],
       cursorEntryId: 'visible',
-      anchorEntryId: 'hidden',
+      anchorEntryId: 'visible',
     });
   });
 });
