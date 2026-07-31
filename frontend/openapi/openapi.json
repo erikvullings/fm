@@ -1533,6 +1533,10 @@
             "$ref": "#/components/schemas/OperationConflictPolicyDto",
             "description": "Conflict behavior selected before execution."
           },
+          "createIntermediateDirectories": {
+            "description": "Whether a multi-component create-directory name may create missing parents.",
+            "type": "boolean"
+          },
           "destination": {
             "oneOf": [
               {
@@ -1542,6 +1546,13 @@
                 "$ref": "#/components/schemas/LocationDto",
                 "description": "Optional target directory or entry."
               }
+            ]
+          },
+          "name": {
+            "description": "New child name for `createDirectory`.",
+            "type": [
+              "string",
+              "null"
             ]
           },
           "sources": {

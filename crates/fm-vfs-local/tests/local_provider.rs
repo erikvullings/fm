@@ -12,6 +12,62 @@ use tempfile::tempdir;
 use tokio_util::sync::CancellationToken;
 
 #[tokio::test]
+async fn creates_one_unicode_child_directory_without_creating_parents() {
+    let root = tempdir().expect("temporary directory");
+    let location = Location::from_native_path(root.path()).expect("local location");
+    let provider = LocalFileSystemProvider::new();
+
+    let created = provider
+        .create_directory(&location, "資料", CancellationToken::new())
+        .await
+        .expect("create unicode directory");
+
+    assert!(root.path().join("資料").is_dir());
+    assert_eq!(
+        created.location,
+        location.join("資料").expect("child location")
+    );
+    assert!(matches!(
+        provider
+            .create_directory(&location, "missing/child", CancellationToken::new())
+            .await,
+        Err(VfsError::PathTraversalName)
+    ));
+    assert!(!root.path().join("missing").exists());
+}
+
+#[tokio::test]
+async fn create_directory_rejects_typed_invalid_names_and_collisions() {
+    let root = tempdir().expect("temporary directory");
+    fs::create_dir(root.path().join("existing")).expect("collision fixture");
+    let location = Location::from_native_path(root.path()).expect("local location");
+    let provider = LocalFileSystemProvider::new();
+
+    assert!(matches!(
+        provider
+            .create_directory(&location, "existing", CancellationToken::new())
+            .await,
+        Err(VfsError::AlreadyExists { .. })
+    ));
+    for name in ["", "bad\0name", "../escape", ".", "CON", "com1.txt"] {
+        let error = provider
+            .create_directory(&location, name, CancellationToken::new())
+            .await
+            .expect_err("invalid name must fail");
+        assert!(
+            matches!(
+                (&error, name),
+                (VfsError::EmptyName, "")
+                    | (VfsError::InvalidNameCharacters, "bad\0name")
+                    | (VfsError::PathTraversalName, "../escape" | ".")
+                    | (VfsError::ReservedName, "CON" | "com1.txt")
+            ),
+            "unexpected error for {name:?}: {error}"
+        );
+    }
+}
+
+#[tokio::test]
 async fn entry_id_survives_a_rename() {
     let root = tempdir().expect("temporary directory");
     fs::write(root.path().join("before.txt"), b"same file").expect("create fixture");
@@ -253,7 +309,9 @@ async fn metadata_is_separate_and_capabilities_are_truthful() {
     assert_eq!(provider.id(), ProviderId::new("local"));
     assert_eq!(
         provider.capabilities(),
-        ProviderCapabilities::LIST | ProviderCapabilities::WATCH
+        ProviderCapabilities::LIST
+            | ProviderCapabilities::WATCH
+            | ProviderCapabilities::CREATE_DIRECTORY
     );
     let metadata = provider
         .metadata(&entry, CancellationToken::new())
@@ -265,14 +323,6 @@ async fn metadata_is_separate_and_capabilities_are_truthful() {
     assert!(metadata.image_dimensions.is_none());
     assert!(metadata.media.is_none());
     assert!(metadata.archive.is_none());
-    assert!(matches!(
-        provider
-            .create_directory(&entry.location, "child", CancellationToken::new())
-            .await,
-        Err(VfsError::UnsupportedCapability {
-            capability: ProviderCapabilities::CREATE_DIRECTORY
-        })
-    ));
 }
 
 #[cfg(unix)]

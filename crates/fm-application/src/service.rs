@@ -24,8 +24,7 @@ use fm_transport_dto::{
     RuntimeCapabilitiesDto, RuntimeKindDto, SettingsDto, SizeFormatDto, StartOperationRequestDto,
     ThemeDto, WorkspaceCommandDto, WorkspaceDto, WorkspaceSummaryDto,
 };
-use fm_vfs::EntryRef;
-use fm_vfs::ProviderRegistry;
+use fm_vfs::{EntryRef, FileSystemProvider, ProviderCapabilities, ProviderRegistry};
 use fm_vfs_local::LocalFileSystemProvider;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
@@ -49,6 +48,7 @@ pub struct FileManagerService {
     runtime: RuntimeKindDto,
     workspaces: WorkspaceService<JsonFileWorkspaceRepository>,
     directories: DirectoryService,
+    providers: ProviderRegistry,
     events: EventBus,
     settings_store: SettingsStore,
     settings: Mutex<Settings>,
@@ -108,7 +108,8 @@ impl FileManagerService {
             workspaces: WorkspaceService::new(JsonFileWorkspaceRepository::new(
                 workspace_directory,
             )),
-            directories: DirectoryService::with_event_bus(providers, events.clone()),
+            directories: DirectoryService::with_event_bus(providers.clone(), events.clone()),
+            providers,
             events: events.clone(),
             settings_store,
             settings: Mutex::new(loaded.settings),
@@ -133,6 +134,34 @@ impl FileManagerService {
         {
             return self.get_operation(existing);
         }
+        let destination = request.destination.clone().map(Into::into);
+        let executor: Arc<dyn OperationExecutor> = match request.operation_type {
+            OperationKindDto::CreateDirectory => {
+                let parent = destination.clone().ok_or_else(|| {
+                    ApplicationError::InvalidRequest(
+                        "createDirectory requires a destination directory".into(),
+                    )
+                })?;
+                let name = request.name.clone().ok_or_else(|| {
+                    ApplicationError::InvalidRequest("createDirectory requires a name".into())
+                })?;
+                let provider = self
+                    .providers
+                    .resolve(&parent)
+                    .map_err(ApplicationError::from)?;
+                provider
+                    .capabilities()
+                    .require(ProviderCapabilities::CREATE_DIRECTORY)
+                    .map_err(ApplicationError::from)?;
+                Arc::new(CreateDirectoryExecutor {
+                    provider,
+                    parent,
+                    name,
+                    create_intermediates: request.create_intermediate_directories,
+                })
+            }
+            _ => Arc::new(NoOpExecutor),
+        };
         let sources: Vec<EntryRef> = request
             .sources
             .into_iter()
@@ -144,12 +173,12 @@ impl FileManagerService {
         let operation = Operation::new(
             operation_kind(request.operation_type),
             sources,
-            request.destination.map(Into::into),
+            destination,
             conflict_policy(request.conflict_policy),
         );
         let id = self
             .operations
-            .submit(operation, Arc::new(NoOpExecutor))
+            .submit(operation, executor)
             .map_err(map_scheduler_error)?;
         if let Some(key) = idempotency_key {
             idempotency.insert(key, id);
@@ -363,6 +392,57 @@ impl From<WorkspaceSummary> for WorkspaceSummaryDto {
 }
 
 struct NoOpExecutor;
+
+struct CreateDirectoryExecutor {
+    provider: Arc<dyn FileSystemProvider>,
+    parent: fm_domain::Location,
+    name: String,
+    create_intermediates: bool,
+}
+
+#[async_trait]
+impl OperationExecutor for CreateDirectoryExecutor {
+    async fn plan(
+        &self,
+        _operation: &Operation,
+        _cancellation: &CancellationToken,
+    ) -> Result<OperationPlan, ExecutionError> {
+        Ok(OperationPlan::new(vec![PlanItem::new(
+            EntryRef {
+                id: fm_domain::EntryId::new(),
+                location: self.parent.clone(),
+            },
+            0,
+        )]))
+    }
+
+    async fn execute(
+        &self,
+        _operation: &Operation,
+        _item: &PlanItem,
+        cancellation: &CancellationToken,
+    ) -> Result<(), ExecutionError> {
+        if !self.create_intermediates {
+            self.provider
+                .create_directory(&self.parent, &self.name, cancellation.clone())
+                .await?;
+            return Ok(());
+        }
+        let mut parent = self.parent.clone();
+        for component in self.name.split(['/', '\\']) {
+            let created = self
+                .provider
+                .create_directory(&parent, component, cancellation.clone())
+                .await?;
+            parent = created.location;
+        }
+        Ok(())
+    }
+
+    async fn cleanup_partial(&self, _operation: &Operation) -> Result<(), ExecutionError> {
+        Ok(())
+    }
+}
 
 #[async_trait]
 impl OperationExecutor for NoOpExecutor {

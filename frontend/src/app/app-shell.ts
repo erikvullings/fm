@@ -16,6 +16,7 @@ import {
   type NavigationController,
   type PaneDirectoryView,
 } from '../features/navigation/navigation';
+import { CreateDirectoryDialog } from '../features/operations/create-directory-dialog';
 import { OperationCentre } from '../features/operations/operation-centre';
 import {
   createOperationsState,
@@ -79,6 +80,8 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
   let loadedEntryFormatSettings: EntryFormatSettings = DEFAULT_ENTRY_FORMAT_SETTINGS;
   let workspace: WorkspaceProjection | undefined;
   let workspaceError: string | undefined;
+  let createDirectoryOpen = false;
+  let pendingCreatedLocation: string | undefined;
   const directories = new Map<PaneId, PaneDirectoryView>();
   const selections = new Map<PaneId, SelectionState>();
   const metadataLoaders = new Map<PaneId, EntryMetadataLoader>();
@@ -276,7 +279,33 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       return [next];
     });
     directories.set(paneId, { ...current, revision, entries: [...ordered, ...byId.values()] });
+    if (delta.type === 'entriesAdded' && pendingCreatedLocation !== undefined) {
+      const created = delta.entries.find((entry) => entry.location.uri === pendingCreatedLocation);
+      if (created !== undefined) {
+        selections.set(
+          paneId,
+          reduceSelection(emptySelection, { type: 'selectOnly', entryId: created.id }, [
+            created.id,
+          ]),
+        );
+        pendingCreatedLocation = undefined;
+      }
+    }
     m.redraw();
+  }
+
+  function activeDirectory(): { paneId: PaneId; location: Location } | undefined {
+    const paneId = workspace?.activePaneId;
+    const location = paneId === undefined ? undefined : directories.get(paneId)?.location;
+    return paneId === undefined || location === undefined ? undefined : { paneId, location };
+  }
+
+  function handleGlobalKeydown(event: KeyboardEvent): void {
+    if (event.key === 'F7' && !createDirectoryOpen && activeDirectory() !== undefined) {
+      event.preventDefault();
+      createDirectoryOpen = true;
+      m.redraw();
+    }
   }
 
   function handleBackendEvent(event: BackendEvent): void {
@@ -436,6 +465,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
   return {
     oninit: ({ attrs }) => {
       attrsClient = attrs.client;
+      document.addEventListener('keydown', handleGlobalKeydown);
       appState = applyAppPatches(
         createInitialAppState(attrs.runtime),
         connectionPatch({ status: attrs.client.connection.get() }),
@@ -495,6 +525,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
 
     onremove: () => {
       removed = true;
+      document.removeEventListener('keydown', handleGlobalKeydown);
       if (operationFrame !== undefined) cancelAnimationFrame(operationFrame);
       workspaceRequest?.abort();
       unsubscribeEvents?.();
@@ -569,6 +600,30 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
             void attrs.client.resumeOperation(operationId).catch(() => undefined),
           onDismiss: (operationId) => {
             operations = dismissOperation(operations, operationId);
+          },
+        }),
+        m(CreateDirectoryDialog, {
+          open: createDirectoryOpen,
+          onCancel: () => {
+            createDirectoryOpen = false;
+          },
+          onConfirm: (name: string) => {
+            const active = activeDirectory();
+            if (active === undefined) return;
+            createDirectoryOpen = false;
+            pendingCreatedLocation = `${active.location.uri.replace(/\/$/u, '')}/${encodeURIComponent(name)}`;
+            void attrs.client
+              .startOperation({
+                type: 'createDirectory',
+                sources: [],
+                destination: active.location,
+                conflictPolicy: 'ask',
+                name,
+                createIntermediateDirectories: false,
+              })
+              .catch(() => {
+                pendingCreatedLocation = undefined;
+              });
           },
         }),
         m('.fm-function-key-bar', [

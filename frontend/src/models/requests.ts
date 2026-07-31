@@ -52,6 +52,8 @@ export interface StartOperationRequest {
   sources: readonly Location[];
   destination?: Location;
   conflictPolicy: ConflictPolicy;
+  name?: string;
+  createIntermediateDirectories?: boolean;
 }
 
 /** Submits the user's decision for a queued conflict (spec §17). */

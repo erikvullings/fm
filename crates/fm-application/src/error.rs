@@ -128,6 +128,10 @@ impl From<VfsError> for ApplicationError {
             VfsError::Cancelled => Self::OperationCancelled,
             VfsError::UnknownProvider { .. } => Self::ProviderUnavailable,
             VfsError::InvalidLocation { .. }
+            | VfsError::EmptyName
+            | VfsError::InvalidNameCharacters
+            | VfsError::ReservedName
+            | VfsError::PathTraversalName
             | VfsError::NotADirectory { .. }
             | VfsError::IsADirectory { .. }
             | VfsError::UnsupportedCapability { .. } => {

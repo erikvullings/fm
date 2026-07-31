@@ -12,7 +12,14 @@ import type { OperationKindDto } from './operationKindDto';
 export interface StartOperationRequestDto {
   /** Conflict behavior selected before execution. */
   conflictPolicy: OperationConflictPolicyDto;
+  /** Whether a multi-component create-directory name may create missing parents. */
+  createIntermediateDirectories?: boolean;
   destination?: null | LocationDto;
+  /**
+     * New child name for `createDirectory`.
+     * @nullable
+     */
+  name?: string | null;
   /** Provider-neutral source locations. */
   sources: LocationDto[];
   /** Semantic operation discriminator. `type` is the stable JSON field name. */

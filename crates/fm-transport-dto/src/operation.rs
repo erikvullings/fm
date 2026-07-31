@@ -20,6 +20,12 @@ pub struct StartOperationRequestDto {
     pub destination: Option<LocationDto>,
     /// Conflict behavior selected before execution.
     pub conflict_policy: OperationConflictPolicyDto,
+    /// New child name for `createDirectory`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    /// Whether a multi-component create-directory name may create missing parents.
+    #[serde(default)]
+    pub create_intermediate_directories: bool,
 }
 
 /// Initial semantic operation kinds.

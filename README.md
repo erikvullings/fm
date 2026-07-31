@@ -89,8 +89,11 @@ runs a planning phase before execution, publishes lifecycle and coalesced progre
 the shared event bus, calculates a smoothed transfer rate, and cooperatively cancels at safe points
 with partial-destination cleanup delegated to each operation implementation. Shared preflight
 checks reject same/nested destinations, case-only renames on insensitive filesystems, traversal
-cycles, and file/directory replacement mismatches. Concrete mutation kinds land in tasks
-0037–0044; this task establishes only their engine contract.
+cycles, and file/directory replacement mismatches. Create-directory jobs now execute through the
+provider, validate cross-platform-safe names, and create intermediate directories only when the
+semantic request explicitly opts in. F7 opens the Materialized new-folder dialog; completion is
+reflected through a directory delta that selects and scrolls the new entry into view. Remaining
+mutation kinds land incrementally in tasks 0038–0044.
 The shared application service now exposes semantic operation start/list/get/cancel/pause/resume
 and conflict-resolution methods through matching Axum REST endpoints and Tauri commands. REST
 starts accept `Idempotency-Key` so retries return the original job rather than queueing duplicates;

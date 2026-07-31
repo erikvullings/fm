@@ -1,6 +1,6 @@
 # 0037 Operation: create directory
 
-Status: open
+Status: done
 Priority: high
 Owner: unassigned
 Agent: unassigned
@@ -29,4 +29,12 @@ simplest, to prove the whole path from keypress to event-driven refresh.
   0038–0044 follow; keep it clean.
 
 ## Agent Notes
-- Not started.
+- 2026-07-31 — Implemented the provider-backed create-directory operation end to end. Added typed
+  validation errors, explicit-only intermediate creation, generated transport changes, and the F7
+  `mithril-materialized` dialog with keyboard handling and delta-driven post-create selection.
+- Added 9 task-specific tests: 2 local-provider contract tests, 4 application integration tests,
+  and 3 frontend tests. Filesystem mutation tests use temporary roots; permission denial remains
+  conditional on platforms/users that enforce the test permissions.
+- Verified with `pnpm test` (full Rust workspace, 236 frontend tests, 28 script tests),
+  `pnpm run lint`, and strict frontend `tsc --noEmit`. Both Axum and Tauri targets compile and their
+  automated tests pass; no packaged Tauri GUI smoke test was performed.

@@ -170,6 +170,70 @@ describe('AppShell', () => {
     expect(root.querySelector('.fm-function-key-bar')?.textContent).toContain('F6 Move');
   });
 
+  it('opens F7 validation and selects the delta-added directory after creation', async () => {
+    const client = new MockFileManagerClient();
+    const startOperation = vi.spyOn(client, 'startOperation');
+    m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
+    await vi.waitFor(() => expect(root.textContent).toContain('Documents'));
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'F7', bubbles: true }));
+    m.redraw.sync();
+    const input = document.querySelector<HTMLInputElement>('#create-directory-name');
+    expect(document.activeElement).toBe(input);
+    if (!input) throw new Error('create-directory input missing');
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    expect(startOperation).not.toHaveBeenCalled();
+    input.value = 'New folder';
+    input.dispatchEvent(new InputEvent('input', { bubbles: true }));
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+
+    await vi.waitFor(() => expect(startOperation).toHaveBeenCalledOnce());
+    const request = startOperation.mock.calls[0]?.[0];
+    expect(request).toMatchObject({
+      type: 'createDirectory',
+      name: 'New folder',
+      createIntermediateDirectories: false,
+    });
+    const workspace = await client.getWorkspace((await client.listWorkspaces())[0]?.id ?? '');
+    const paneId = workspace.activePaneId;
+    const snapshot = await client.listDirectory({
+      workspaceId: workspace.id,
+      paneId,
+      requestId: 'selection-test',
+      location: request?.destination ?? { providerId: 'file', uri: 'mock:///' },
+    });
+    client.emit({
+      eventId: 99,
+      timestamp: '2026-07-31T12:00:00Z',
+      payload: {
+        type: 'directory.delta',
+        paneId,
+        delta: {
+          type: 'entriesAdded',
+          revision: snapshot.revision + 1,
+          entries: [
+            {
+              id: 'created-folder',
+              name: 'New folder',
+              kind: 'directory',
+              location: {
+                providerId: request?.destination?.providerId ?? 'file',
+                uri: `${request?.destination?.uri ?? 'mock://'}New%20folder`,
+              },
+              hidden: false,
+              readOnly: false,
+              metadataRevision: 0,
+            },
+          ],
+        },
+      },
+    });
+
+    await vi.waitFor(() =>
+      expect(root.querySelector('.fm-selected-row')?.textContent).toContain('New folder'),
+    );
+  });
+
   it('names the application and the transport it is running against', () => {
     mountShell('mock');
 

@@ -69,6 +69,9 @@ pub enum ExecutionError {
     /// Typed implementation failure.
     #[error("operation execution failed: {0}")]
     Failed(String),
+    /// Provider-neutral filesystem failure.
+    #[error(transparent)]
+    Provider(#[from] fm_vfs::VfsError),
 }
 
 /// Planning/execution boundary implemented by future operation-kind tasks.

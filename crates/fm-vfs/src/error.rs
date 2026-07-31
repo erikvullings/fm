@@ -23,6 +23,18 @@ pub enum VfsError {
         /// Provider-neutral URI that already exists.
         location: String,
     },
+    /// A directory name was empty.
+    #[error("directory name is empty")]
+    EmptyName,
+    /// A directory name contains characters forbidden by the target platform.
+    #[error("directory name contains invalid characters")]
+    InvalidNameCharacters,
+    /// A directory name is reserved by Windows, including device names with extensions.
+    #[error("directory name is reserved")]
+    ReservedName,
+    /// A directory name attempted to address a parent or nested path.
+    #[error("directory name must be one path component")]
+    PathTraversalName,
     /// An operation requiring a directory targeted another entry kind.
     #[error("location is not a directory: {location}")]
     NotADirectory {
@@ -72,6 +84,10 @@ impl VfsError {
             Self::NotFound { .. } => "notFound",
             Self::PermissionDenied { .. } => "permissionDenied",
             Self::AlreadyExists { .. } => "alreadyExists",
+            Self::EmptyName => "emptyName",
+            Self::InvalidNameCharacters => "invalidNameCharacters",
+            Self::ReservedName => "reservedName",
+            Self::PathTraversalName => "pathTraversalName",
             Self::NotADirectory { .. } => "notADirectory",
             Self::IsADirectory { .. } => "isADirectory",
             Self::UnsupportedCapability { .. } => "unsupportedCapability",

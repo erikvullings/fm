@@ -52,7 +52,9 @@ impl FileSystemProvider for LocalFileSystemProvider {
     }
 
     fn capabilities(&self) -> ProviderCapabilities {
-        ProviderCapabilities::LIST | ProviderCapabilities::WATCH
+        ProviderCapabilities::LIST
+            | ProviderCapabilities::WATCH
+            | ProviderCapabilities::CREATE_DIRECTORY
     }
 
     async fn list(
@@ -149,11 +151,31 @@ impl FileSystemProvider for LocalFileSystemProvider {
 
     async fn create_directory(
         &self,
-        _location: &Location,
-        _name: &str,
-        _cancellation: CancellationToken,
+        location: &Location,
+        name: &str,
+        cancellation: CancellationToken,
     ) -> Result<EntryRef, VfsError> {
-        unsupported(ProviderCapabilities::CREATE_DIRECTORY)
+        if cancellation.is_cancelled() {
+            return Err(VfsError::Cancelled);
+        }
+        validate_directory_name(name)?;
+        let parent = location
+            .to_native_path()
+            .map_err(|_| invalid_location(location))?;
+        let path = parent.join(name);
+        tokio::fs::create_dir(&path)
+            .await
+            .map_err(|error| map_io_error(error, &location.uri))?;
+        let child = location
+            .join(name)
+            .map_err(|_| invalid_location(location))?;
+        let metadata = tokio::fs::symlink_metadata(&path)
+            .await
+            .map_err(|error| map_io_error(error, &child.uri))?;
+        Ok(EntryRef {
+            id: stable_entry_id(&metadata, &child),
+            location: child,
+        })
     }
 
     async fn rename(
@@ -402,12 +424,40 @@ fn invalid_location(location: &Location) -> VfsError {
     }
 }
 
+fn validate_directory_name(name: &str) -> Result<(), VfsError> {
+    if name.is_empty() {
+        return Err(VfsError::EmptyName);
+    }
+    if name == "." || name == ".." || name.contains('/') || name.contains('\\') {
+        return Err(VfsError::PathTraversalName);
+    }
+    if name.contains('\0') || cfg!(windows) && name.chars().any(|c| "<>:\"|?*".contains(c)) {
+        return Err(VfsError::InvalidNameCharacters);
+    }
+    let stem = name.split('.').next().unwrap_or_default();
+    let upper = stem.trim_end_matches([' ', '.']).to_ascii_uppercase();
+    let reserved = matches!(upper.as_str(), "CON" | "PRN" | "AUX" | "NUL")
+        || upper
+            .strip_prefix("COM")
+            .or_else(|| upper.strip_prefix("LPT"))
+            .is_some_and(|suffix| {
+                matches!(suffix, "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9")
+            });
+    if reserved {
+        return Err(VfsError::ReservedName);
+    }
+    Ok(())
+}
+
 fn map_io_error(error: io::Error, location: &str) -> VfsError {
     match error.kind() {
         io::ErrorKind::NotFound => VfsError::NotFound {
             location: location.to_owned(),
         },
         io::ErrorKind::PermissionDenied => VfsError::PermissionDenied {
+            location: location.to_owned(),
+        },
+        io::ErrorKind::AlreadyExists => VfsError::AlreadyExists {
             location: location.to_owned(),
         },
         io::ErrorKind::NotADirectory => VfsError::NotADirectory {
