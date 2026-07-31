@@ -23,6 +23,7 @@ import type {
   WorkspaceSummary,
 } from '../../models';
 import { workspaceProjectionFromDto } from '../../models/workspace';
+import { SseEventStream } from '../events/sse-event-stream';
 import {
   listDirectory as requestDirectory,
   getEntryMetadata as requestEntryMetadata,
@@ -51,6 +52,8 @@ import { type FileManagerClient, NotImplementedError } from './file-manager-clie
  * shared module so the Tauri/mock adapters can reuse it.
  */
 export class HttpFileManagerClient implements FileManagerClient {
+  private readonly eventStream = new SseEventStream();
+  readonly connection = this.eventStream.status;
   private notImplemented(methodName: string, taskNumber: string): never {
     throw new NotImplementedError(`HttpFileManagerClient.${methodName}`, taskNumber);
   }
@@ -213,9 +216,18 @@ export class HttpFileManagerClient implements FileManagerClient {
     return this.notImplemented('listPlugins', '0053');
   }
 
-  /** TODO(0033): delegate to the SSE event stream; a no-op unsubscribe until then. */
-  async subscribe(_listener: (event: BackendEvent) => void): Promise<Unsubscribe> {
-    return () => {};
+  async subscribe(listener: (event: BackendEvent) => void): Promise<Unsubscribe> {
+    const unsubscribe = this.eventStream.listeners.subscribe(listener);
+    await this.eventStream.connect();
+    return unsubscribe;
+  }
+
+  onResynchronise(listener: () => void): Unsubscribe {
+    return this.eventStream.resynchronise.subscribe(listener);
+  }
+
+  disconnect(): void {
+    this.eventStream.close();
   }
 }
 

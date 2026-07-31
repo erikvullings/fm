@@ -9,6 +9,27 @@ export interface EventStreamStatusObservable {
   subscribe(listener: (status: EventStreamStatus) => void): Unsubscribe;
 }
 
+/** Minimal mutable observable shared by transport implementations. */
+export class MutableEventStreamStatus implements EventStreamStatusObservable {
+  private current: EventStreamStatus = 'closed';
+  private readonly listeners = new Set<(status: EventStreamStatus) => void>();
+
+  get(): EventStreamStatus {
+    return this.current;
+  }
+
+  subscribe(listener: (status: EventStreamStatus) => void): Unsubscribe {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  }
+
+  set(next: EventStreamStatus): void {
+    if (this.current === next) return;
+    this.current = next;
+    for (const listener of [...this.listeners]) listener(next);
+  }
+}
+
 /** Logs the discriminator of an event unknown to this frontend version. */
 export type UnknownEventLogger = (eventType: string) => void;
 
@@ -38,10 +59,25 @@ export class BackendEventListenerRegistry {
   }
 }
 
+/** Registry for transport control signals such as replay gaps. */
+export class EventStreamSignalRegistry {
+  private readonly listeners = new Set<() => void>();
+
+  subscribe(listener: () => void): Unsubscribe {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  }
+
+  dispatch(): void {
+    for (const listener of [...this.listeners]) listener();
+  }
+}
+
 /** Transport-neutral lifecycle and listener surface implemented by SSE and Tauri streams. */
 export interface EventStream {
   readonly status: EventStreamStatusObservable;
   readonly listeners: BackendEventListenerRegistry;
+  readonly resynchronise: EventStreamSignalRegistry;
   connect(): Promise<void>;
   close(): void;
 }

@@ -37,6 +37,7 @@ import { type FileManagerClient, NotImplementedError } from './file-manager-clie
  */
 export class TauriFileManagerClient implements FileManagerClient {
   private readonly eventStream = new TauriEventStream();
+  readonly connection = this.eventStream.status;
 
   private notImplemented(methodName: string, taskNumber: string): never {
     throw new NotImplementedError(`TauriFileManagerClient.${methodName}`, taskNumber);
@@ -153,5 +154,13 @@ export class TauriFileManagerClient implements FileManagerClient {
     return () => {
       unsubscribeListener();
     };
+  }
+
+  onResynchronise(listener: () => void): Unsubscribe {
+    return this.eventStream.resynchronise.subscribe(listener);
+  }
+
+  disconnect(): void {
+    this.eventStream.close();
   }
 }

@@ -10,9 +10,13 @@ use serde_json::{Value, json};
 use uuid::Uuid;
 
 async fn next_event(response: &mut reqwest::Response) -> String {
+    next_event_with_timeout(response, Duration::from_secs(5)).await
+}
+
+async fn next_event_with_timeout(response: &mut reqwest::Response, timeout: Duration) -> String {
     let mut bytes = Vec::new();
     loop {
-        let chunk = tokio::time::timeout(Duration::from_secs(5), response.chunk())
+        let chunk = tokio::time::timeout(timeout, response.chunk())
             .await
             .expect("SSE event must arrive")
             .expect("stream read must succeed")
@@ -60,6 +64,21 @@ async fn stream_emits_named_runtime_event_with_numeric_id_and_envelope() {
             .parse::<u64>()
             .ok()
     );
+}
+
+#[tokio::test]
+async fn idle_stream_emits_observable_named_keep_alive_event() {
+    let server = TestServer::spawn().await;
+    let mut response = reqwest::Client::new()
+        .get(format!("{}/api/v1/events", server.base_url))
+        .send()
+        .await
+        .unwrap();
+    let _ = next_event(&mut response).await;
+
+    let keep_alive = next_event_with_timeout(&mut response, Duration::from_secs(17)).await;
+
+    assert!(keep_alive.contains("event: keep-alive\n"), "{keep_alive}");
 }
 
 #[tokio::test]
@@ -111,6 +130,38 @@ async fn reconnect_replays_retained_events_and_expired_id_resynchronises() {
         next_event(&mut gap)
             .await
             .contains("event: resynchronise\n")
+    );
+}
+
+#[tokio::test]
+async fn browser_reconnect_query_replays_from_last_event_id() {
+    let server = TestServer::spawn().await;
+    let client = reqwest::Client::new();
+    let mut first = client
+        .get(format!("{}/api/v1/events", server.base_url))
+        .send()
+        .await
+        .unwrap();
+    let ready = next_event(&mut first).await;
+    let ready_id = ready
+        .lines()
+        .find_map(|line| line.strip_prefix("id: "))
+        .unwrap();
+    drop(first);
+
+    let mut replay = client
+        .get(format!(
+            "{}/api/v1/events?lastEventId={ready_id}",
+            server.base_url
+        ))
+        .send()
+        .await
+        .unwrap();
+
+    assert!(
+        next_event(&mut replay)
+            .await
+            .contains("event: runtime.ready\n")
     );
 }
 

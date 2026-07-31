@@ -1,6 +1,6 @@
 # 0033 Frontend SSE stream, reconnection and connection status
 
-Status: open
+Status: done
 Priority: high
 Owner: unassigned
 Agent: unassigned
@@ -31,4 +31,23 @@ Depends on: 0032, 0021
 - Keep the reconnect policy in a pure, testable function.
 
 ## Agent Notes
-- Not started.
+
+- 2026-07-31 codex: Implemented the single browser `SseEventStream` with capped exponential
+  backoff and jitter, browser-safe last-event-ID resume, observable keep-alive stale detection,
+  animation-frame batching for progress/delta events, explicit replay-gap signalling, idempotent
+  connection ownership, and listener/timer cleanup. The Axum endpoint now emits named keep-alive
+  events (SSE comments are not observable through `EventSource`) and accepts `lastEventId` as the
+  browser reconnect equivalent of the `Last-Event-ID` header.
+- 2026-07-31 codex: Wired HTTP subscription and transport-neutral disconnect/resynchronise/status
+  surfaces through `FileManagerClient`; connected lifecycle teardown to Mithril removal and Vite
+  HMR disposal. Connection state uses the required `connecting | open | reconnecting | closed`
+  union in `AppState.connection` and appears as accessible text in the application header.
+  Directory/workspace events ignore old or foreign revisions, apply contiguous deltas, and refetch
+  affected pane snapshots on gaps or discontinuities. There is no logout surface before task 0064;
+  its required cleanup boundary is the public `disconnect()` method already used by shutdown/HMR.
+- 2026-07-31 codex: Added 10 task-specific tests: 6 fake-`EventSource` tests, 2 app-shell tests,
+  and 2 SSE endpoint tests, covering the requested backoff, stale/keep-alive behavior, batching,
+  gap handling, revision filtering, accessible status, browser resume, and observable heartbeat.
+  Verified the exact affected frontend files (40/40), the focused heartbeat endpoint test (1/1),
+  the full frontend package (220/220), strict `tsc --noEmit`, full workspace `pnpm test`, and full
+  `pnpm run lint`. `CLAUDE.md` does not exist, so only README was updated.

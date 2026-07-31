@@ -61,7 +61,7 @@ export interface NotificationsState {
 
 /** Backend event-stream lifecycle. */
 export interface ConnectionState {
-  readonly status: 'disconnected' | 'connecting' | 'connected' | 'reconnecting';
+  readonly status: 'connecting' | 'open' | 'reconnecting' | 'closed';
   readonly lastEventId?: number;
   readonly error?: string;
 }
@@ -86,6 +86,6 @@ export function createInitialAppState(kind: RuntimeKind): AppState {
     operations: { byId: {} },
     plugins: { byId: {} },
     notifications: { items: [] },
-    connection: { status: 'disconnected' },
+    connection: { status: 'closed' },
   };
 }

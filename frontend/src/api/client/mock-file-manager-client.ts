@@ -26,6 +26,7 @@ import type {
   WorkspaceProjection,
   WorkspaceSummary,
 } from '../../models';
+import { EventStreamSignalRegistry, MutableEventStreamStatus } from '../events/event-stream';
 import type { FileManagerClient } from './file-manager-client';
 import {
   createGeneratedDirectory,
@@ -161,6 +162,8 @@ function createMockWorkspace(id: WorkspaceId, name = 'Mock Workspace'): Workspac
 
 /** Strictly typed controls for the deterministic in-memory frontend adapter. */
 export class MockFileManagerClient implements FileManagerClient {
+  readonly connection = new MutableEventStreamStatus();
+  private readonly resynchronise = new EventStreamSignalRegistry();
   private readonly pageSize: number;
   private readonly seed: number;
   private readonly loadingLocations: ReadonlySet<string>;
@@ -537,10 +540,24 @@ export class MockFileManagerClient implements FileManagerClient {
   }
 
   subscribe(listener: (event: BackendEvent) => void): Promise<Unsubscribe> {
+    this.connection.set('open');
     this.listeners.add(listener);
     return Promise.resolve(() => {
       this.listeners.delete(listener);
     });
+  }
+
+  disconnect(): void {
+    this.connection.set('closed');
+  }
+
+  onResynchronise(listener: () => void): Unsubscribe {
+    return this.resynchronise.subscribe(listener);
+  }
+
+  /** Simulates a replay gap requiring affected panes to refetch. */
+  emitResynchronise(): void {
+    this.resynchronise.dispatch();
   }
 
   /** Replaces the pending event script; call {@link emitNextEvent} to advance it. */

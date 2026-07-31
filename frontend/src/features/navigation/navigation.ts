@@ -22,6 +22,7 @@ export interface PaneDirectoryView {
   readonly entries: readonly EntrySummary[];
   readonly location?: Location;
   readonly requestId?: string;
+  readonly revision?: number;
   readonly hasMore: boolean;
   readonly continuationToken?: string;
 }
@@ -135,6 +136,7 @@ export function createNavigationController(
       entries,
       location: snapshot.location,
       requestId: snapshot.requestId,
+      revision: snapshot.revision,
       hasMore: snapshot.hasMore,
       ...(snapshot.continuationToken === undefined
         ? {}

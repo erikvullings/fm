@@ -22,6 +22,7 @@ import type {
   WorkspaceProjection,
   WorkspaceSummary,
 } from '../../models';
+import type { EventStreamStatusObservable } from '../events/event-stream';
 
 /**
  * Raised by an adapter method with no implementation yet for the current
@@ -42,6 +43,7 @@ export class NotImplementedError extends Error {
  * directly (spec §3 rule 1).
  */
 export interface FileManagerClient {
+  readonly connection: EventStreamStatusObservable;
   getRuntimeCapabilities(signal?: AbortSignal): Promise<RuntimeCapabilities>;
 
   getSettings(signal?: AbortSignal): Promise<Settings>;
@@ -96,4 +98,8 @@ export interface FileManagerClient {
   listPlugins(signal?: AbortSignal): Promise<PluginDescriptor[]>;
 
   subscribe(listener: (event: BackendEvent) => void): Promise<Unsubscribe>;
+
+  onResynchronise(listener: () => void): Unsubscribe;
+
+  disconnect(): void;
 }

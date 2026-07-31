@@ -8,6 +8,10 @@ import { AppShell } from './app-shell';
 
 let root: HTMLElement;
 
+class TestEventSource extends EventTarget {
+  close(): void {}
+}
+
 function mountShell(runtime: 'http' | 'tauri' | 'mock' = 'http'): void {
   m.mount(root, { view: () => m(AppShell, { runtime, client: createFileManagerClient(runtime) }) });
 }
@@ -31,11 +35,13 @@ function themeButton(label: string): HTMLButtonElement {
 }
 
 beforeEach(() => {
+  vi.stubGlobal('EventSource', TestEventSource);
   root = document.createElement('div');
   document.body.appendChild(root);
 });
 
 afterEach(() => {
+  vi.unstubAllGlobals();
   m.mount(root, null);
   root.remove();
   document.documentElement.removeAttribute('data-theme');
@@ -169,6 +175,56 @@ describe('AppShell', () => {
 
     expect(root.textContent).toContain('File Manager');
     expect(root.textContent).toContain('mock');
+  });
+
+  it('shows connection state with accessible text and updates it from the client', async () => {
+    const client = new MockFileManagerClient();
+    m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
+
+    await vi.waitFor(() =>
+      expect(root.querySelector('.fm-connection-status')?.textContent).toBe('Connection: open'),
+    );
+    const indicator = root.querySelector('.fm-connection-status');
+    expect(indicator?.getAttribute('role')).toBe('status');
+    expect(indicator?.getAttribute('aria-label')).toBe('Backend connection open');
+  });
+
+  it('ignores old directory revisions and refetches pane snapshots after a replay gap', async () => {
+    const client = new MockFileManagerClient();
+    const listDirectory = vi.spyOn(client, 'listDirectory');
+    m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
+    await vi.waitFor(() => expect(root.textContent).toContain('Documents'));
+    const summary = (await client.listWorkspaces())[0];
+    if (summary === undefined) throw new Error('mock workspace fixture missing');
+    const projection = await client.openWorkspace(summary.id);
+    const paneId = projection.paneOrder[0];
+    if (paneId === undefined) throw new Error('mock workspace pane missing');
+    const initialCalls = listDirectory.mock.calls.length;
+    const getWorkspace = vi.spyOn(client, 'getWorkspace');
+
+    client.emit({
+      eventId: 9,
+      timestamp: '2026-07-31T12:00:00Z',
+      workspaceId: projection.id,
+      payload: { type: 'workspace.renamed', revision: projection.revision, name: 'Old name' },
+    });
+    await Promise.resolve();
+    expect(getWorkspace).not.toHaveBeenCalled();
+
+    client.emit({
+      eventId: 10,
+      timestamp: '2026-07-31T12:00:00Z',
+      payload: {
+        type: 'directory.delta',
+        paneId,
+        delta: { type: 'entriesRemoved', revision: 0, entryIds: [] },
+      },
+    });
+    await Promise.resolve();
+    expect(listDirectory).toHaveBeenCalledTimes(initialCalls);
+
+    client.emitResynchronise();
+    await vi.waitFor(() => expect(listDirectory.mock.calls.length).toBeGreaterThan(initialCalls));
   });
 
   it('reports the runtime it was given rather than a hard-coded default', () => {

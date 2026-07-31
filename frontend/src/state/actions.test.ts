@@ -27,7 +27,7 @@ describe('AppActions', () => {
       createdAt: '2026-07-30T00:00:00Z',
     };
 
-    actions.setConnection({ status: 'connected' });
+    actions.setConnection({ status: 'open' });
     actions.upsertOperation(operation);
     actions.updateOperationProgress('operation-1', {
       completedItems: 4,
@@ -36,7 +36,7 @@ describe('AppActions', () => {
 
     expect(frames).toHaveLength(1);
     frames[0]?.(0);
-    expect(store.getState().connection.status).toBe('connected');
+    expect(store.getState().connection.status).toBe('open');
     expect(store.getState().operations.byId['operation-1']?.progress.completedItems).toBe(4);
     expect(redraw).toHaveBeenCalledTimes(1);
   });

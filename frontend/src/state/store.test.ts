@@ -16,11 +16,11 @@ describe('AppStore', () => {
     });
     const before = store.getState();
 
-    store.update({ connection: { status: 'connected' } });
+    store.update({ connection: { status: 'open' } });
     frames[0]?.(0);
 
-    expect(store.getState().connection.status).toBe('connected');
-    expect(before.connection.status).toBe('disconnected');
+    expect(store.getState().connection.status).toBe('open');
+    expect(before.connection.status).toBe('closed');
     expect(store.getState()).not.toBe(before);
     expect(store.getState().runtime).toBe(before.runtime);
   });
@@ -39,14 +39,14 @@ describe('AppStore', () => {
     store.subscribe((state) => state.connection, listener);
 
     store.update({ connection: { status: 'connecting' } });
-    store.update({ connection: { status: 'connected' } });
+    store.update({ connection: { status: 'open' } });
     store.update({ connection: { lastEventId: 42 } });
 
     expect(frames).toHaveLength(1);
     expect(redraw).not.toHaveBeenCalled();
     frames[0]?.(0);
     expect(listener).toHaveBeenCalledTimes(1);
-    expect(store.getState().connection).toEqual({ status: 'connected', lastEventId: 42 });
+    expect(store.getState().connection).toEqual({ status: 'open', lastEventId: 42 });
     expect(redraw).toHaveBeenCalledTimes(1);
   });
 
@@ -71,7 +71,7 @@ describe('AppStore', () => {
     expect(listener).toHaveBeenCalledTimes(1);
 
     unsubscribe();
-    store.update({ connection: { status: 'connected' } });
+    store.update({ connection: { status: 'open' } });
     frames.shift()?.(2);
     expect(listener).toHaveBeenCalledTimes(1);
   });

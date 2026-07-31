@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ApiError } from '../fetch-mutator';
 
@@ -28,6 +28,14 @@ vi.mock('../generated/file-manager-api', () => ({
 
 const { HttpFileManagerClient } = await import('./http-file-manager-client');
 
+class TestEventSource extends EventTarget {
+  close(): void {}
+}
+
+beforeEach(() => {
+  vi.stubGlobal('EventSource', TestEventSource);
+});
+
 function fixtureCapabilities() {
   return {
     clipboard: true,
@@ -46,6 +54,7 @@ function fixtureCapabilities() {
 }
 
 afterEach(() => {
+  vi.unstubAllGlobals();
   getRuntimeCapabilities.mockReset();
   listDirectory.mockReset();
   navigatePane.mockReset();
@@ -109,12 +118,15 @@ describe('HttpFileManagerClient', () => {
   });
 
   describe('subscribe', () => {
-    it('returns a no-op unsubscribe rather than throwing, pending the 0033 event stream', async () => {
+    it('connects the shared SSE stream and returns its listener unsubscribe', async () => {
       const client = new HttpFileManagerClient();
 
       const unsubscribe = await client.subscribe(() => {});
 
       expect(() => unsubscribe()).not.toThrow();
+      expect(client.connection.get()).toBe('connecting');
+      client.disconnect();
+      expect(client.connection.get()).toBe('closed');
     });
   });
 

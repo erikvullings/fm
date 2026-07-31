@@ -37,6 +37,8 @@ import {
   type WorkspacePaneContent,
 } from '../features/workspace/workspace-layout';
 import type {
+  BackendEvent,
+  DirectoryDelta,
   EntryId,
   EntrySummary,
   Location,
@@ -46,6 +48,7 @@ import type {
   WorkspaceLayout,
   WorkspaceProjection,
 } from '../models';
+import { type AppState, applyAppPatches, connectionPatch, createInitialAppState } from '../state';
 import type { RuntimeKind } from '../utilities/runtime';
 
 /** Attributes of the application shell. */
@@ -85,6 +88,11 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
   const sortRequests = new Map<PaneId, object>();
   let platform: SelectionPlatform = 'unknown';
   let workspaceRequest: AbortController | undefined;
+  let unsubscribeEvents: (() => void) | undefined;
+  let unsubscribeConnection: (() => void) | undefined;
+  let unsubscribeResynchronise: (() => void) | undefined;
+  let appState: AppState | undefined;
+  let removed = false;
   const DEFAULT_SORT: readonly SortDescriptor[] = [
     { columnId: 'core.name', direction: 'ascending' },
   ];
@@ -211,6 +219,78 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     m.redraw();
   }
 
+  function refetchAffectedPanes(paneId?: PaneId): void {
+    if (workspace === undefined) return;
+    for (const candidate of workspace.paneOrder) {
+      if (paneId === undefined || candidate === paneId) void navigation.load(candidate);
+    }
+  }
+
+  function applyDelta(paneId: PaneId, delta: DirectoryDelta): void {
+    const current = directories.get(paneId);
+    const revision = delta.type === 'reset' ? delta.snapshot.revision : delta.revision;
+    if (current === undefined || current.revision === undefined) {
+      refetchAffectedPanes(paneId);
+      return;
+    }
+    if (revision <= current.revision) return;
+    if (revision !== current.revision + 1 && delta.type !== 'reset') {
+      refetchAffectedPanes(paneId);
+      return;
+    }
+    if (delta.type === 'reset') {
+      directories.set(paneId, {
+        state: delta.snapshot.loadingState,
+        entries: delta.snapshot.entries,
+        location: delta.snapshot.location,
+        requestId: delta.snapshot.requestId,
+        revision,
+        hasMore: delta.snapshot.hasMore,
+        ...(delta.snapshot.continuationToken === undefined
+          ? {}
+          : { continuationToken: delta.snapshot.continuationToken }),
+      });
+      m.redraw();
+      return;
+    }
+    const entries = [...current.entries];
+    const byId = new Map(entries.map((entry) => [entry.id, entry]));
+    if (delta.type === 'entriesRemoved') {
+      for (const id of delta.entryIds) byId.delete(id);
+    } else {
+      for (const entry of delta.entries) byId.set(entry.id, entry);
+    }
+    const ordered = entries.flatMap((entry) => {
+      const next = byId.get(entry.id);
+      if (next === undefined) return [];
+      byId.delete(entry.id);
+      return [next];
+    });
+    directories.set(paneId, { ...current, revision, entries: [...ordered, ...byId.values()] });
+    m.redraw();
+  }
+
+  function handleBackendEvent(event: BackendEvent): void {
+    if (event.workspaceId !== undefined && event.workspaceId !== workspace?.id) return;
+    const payload = event.payload;
+    if (payload.type === 'directory.snapshot') {
+      const current = directories.get(payload.snapshot.paneId);
+      if (current?.revision !== undefined && payload.snapshot.revision <= current.revision) return;
+      applyDelta(payload.snapshot.paneId, { type: 'reset', snapshot: payload.snapshot });
+      return;
+    }
+    if (payload.type === 'directory.delta') {
+      applyDelta(payload.paneId, payload.delta);
+      return;
+    }
+    if ('revision' in payload && workspace !== undefined) {
+      if (payload.revision <= workspace.revision) return;
+      void attrsClient.getWorkspace(workspace.id).then(replaceWorkspace);
+    }
+  }
+
+  let attrsClient: FileManagerClient;
+
   function replaceWorkspace(next: WorkspaceProjection): void {
     workspace = next;
     m.redraw();
@@ -334,6 +414,11 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
 
   return {
     oninit: ({ attrs }) => {
+      attrsClient = attrs.client;
+      appState = applyAppPatches(
+        createInitialAppState(attrs.runtime),
+        connectionPatch({ status: attrs.client.connection.get() }),
+      );
       navigation = createNavigationController({
         client: attrs.client,
         getWorkspace: () => workspace,
@@ -365,10 +450,26 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       ThemeManager.initialize(theme);
       void loadSettings(attrs.client);
       void loadWorkspace(attrs.client);
+      unsubscribeConnection = attrs.client.connection.subscribe((status) => {
+        if (appState !== undefined) {
+          appState = applyAppPatches(appState, connectionPatch({ status }));
+        }
+        m.redraw();
+      });
+      unsubscribeResynchronise = attrs.client.onResynchronise(() => refetchAffectedPanes());
+      void attrs.client.subscribe(handleBackendEvent).then((unsubscribe) => {
+        if (removed) unsubscribe();
+        else unsubscribeEvents = unsubscribe;
+      });
     },
 
     onremove: () => {
+      removed = true;
       workspaceRequest?.abort();
+      unsubscribeEvents?.();
+      unsubscribeConnection?.();
+      unsubscribeResynchronise?.();
+      attrsClient.disconnect();
       navigation.dispose();
       for (const loader of metadataLoaders.values()) loader.dispose();
       document.documentElement.style.removeProperty('--fm-font-size');
@@ -383,6 +484,15 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
             'span.fm-runtime-badge',
             { title: 'Active transport, from VITE_RUNTIME' },
             attrs.runtime,
+          ),
+          m(
+            'span.fm-connection-status',
+            {
+              role: 'status',
+              title: `Backend connection: ${appState?.connection.status ?? 'closed'}`,
+              'aria-label': `Backend connection ${appState?.connection.status ?? 'closed'}`,
+            },
+            `Connection: ${appState?.connection.status ?? 'closed'}`,
           ),
           m(ThemeSwitcher, {
             theme,

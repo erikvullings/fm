@@ -121,6 +121,12 @@ body {
   color: var(--fm-text-muted);
 }
 
+.fm-connection-status {
+  font-size: 0.75rem;
+  color: var(--fm-text-muted);
+  white-space: nowrap;
+}
+
 .fm-workspace-toolbar,
 .fm-function-key-bar,
 .fm-operation-centre {

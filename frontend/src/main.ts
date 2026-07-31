@@ -16,3 +16,10 @@ if (root === null) {
 }
 
 m.mount(root, { view: () => m(AppShell, { runtime, client }) });
+
+if (import.meta.hot !== undefined) {
+  import.meta.hot.dispose(() => {
+    m.mount(root, null);
+    client.disconnect();
+  });
+}

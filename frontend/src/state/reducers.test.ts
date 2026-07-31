@@ -165,7 +165,7 @@ describe('state slice reducers', () => {
       operationProgressPatch('operation-1', { completedItems: 2, completedBytes: 128 }),
       pluginPatch(plugin),
       notificationPatch({ id: 'notice-1', level: 'info', message: 'Done' }),
-      connectionPatch({ status: 'connected', lastEventId: 7 }),
+      connectionPatch({ status: 'open', lastEventId: 7 }),
     ] as const;
     const state = applyAppPatches(createInitialAppState('mock'), ...patches);
 
@@ -173,6 +173,6 @@ describe('state slice reducers', () => {
     expect(state.operations.byId['operation-1']?.progress.completedItems).toBe(2);
     expect(state.plugins.byId['plugin-1']).toEqual(plugin);
     expect(state.notifications.items).toHaveLength(1);
-    expect(state.connection).toEqual({ status: 'connected', lastEventId: 7 });
+    expect(state.connection).toEqual({ status: 'open', lastEventId: 7 });
   });
 });
