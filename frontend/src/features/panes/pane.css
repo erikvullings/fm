@@ -142,9 +142,18 @@
 }
 
 .fm-typeahead-status {
+  align-self: stretch;
+  display: inline-flex;
+  align-items: center;
   margin-inline-start: auto;
+  padding-inline-start: 0.65rem;
+  border-inline-start: 1px solid var(--fm-border);
   color: var(--fm-text);
   font-weight: 600;
+}
+
+.fm-typeahead-status-error {
+  color: var(--fm-error);
 }
 
 .fm-pane nav,

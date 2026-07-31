@@ -48,3 +48,8 @@ keyboard navigation are named frontend test targets). Selection is independent o
   match, and Arrow/Page/Home/End navigation constrained to matching entries. Non-root panes now
   prepend a non-selectable synthetic `..` row whose Enter action uses the existing parent
   navigation path; POSIX, drive-letter, URI-derived drive, and UNC roots omit it.
+- 2026-07-31 codex: Typeahead prefixes now persist behind a full-height footer divider until
+  explicitly edited or cleared. Backspace removes one prefix character before falling back to
+  parent navigation, Escape clears both typeahead and selection, and an unmatched extension flashes
+  red for 400 ms before the typeahead disappears. Four focused pane behavior cases, frontend
+  typecheck/build, repository lint, and the full Rust/frontend/script test suite pass.

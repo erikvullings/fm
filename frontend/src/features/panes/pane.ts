@@ -5,7 +5,6 @@ import {
   interpretSelectionKey,
   reduceTypeahead,
   type SelectionPlatform,
-  TYPEAHEAD_TIMEOUT_MS,
   type TypeaheadState,
 } from '../selection/keybindings';
 import type { SelectionAction } from '../selection/selection';
@@ -129,16 +128,24 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
   let inputElement: HTMLInputElement | undefined;
   let typeahead: TypeaheadState | undefined;
   let typeaheadTimer: ReturnType<typeof setTimeout> | undefined;
+  let typeaheadError = false;
 
-  function resetTypeaheadAfterTimeout(): void {
+  function clearTypeaheadTimer(): void {
     if (typeaheadTimer !== undefined) {
       clearTimeout(typeaheadTimer);
+      typeaheadTimer = undefined;
     }
+  }
+
+  function flashRejectedTypeahead(): void {
+    clearTypeaheadTimer();
+    typeaheadError = true;
     typeaheadTimer = setTimeout(() => {
       typeahead = undefined;
+      typeaheadError = false;
       typeaheadTimer = undefined;
       m.redraw();
-    }, TYPEAHEAD_TIMEOUT_MS);
+    }, 400);
   }
 
   function moveWithinMatches(
@@ -224,9 +231,7 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
       }
     },
     onremove: () => {
-      if (typeaheadTimer !== undefined) {
-        clearTimeout(typeaheadTimer);
-      }
+      clearTypeaheadTimer();
     },
     view: ({ attrs }) => {
       const ordinaryEntries = attrs.entries.filter((entry) => !isParentEntry(entry.id));
@@ -238,6 +243,25 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
           'data-active': String(attrs.active),
           tabindex: -1,
           onkeydown: (event: KeyboardEvent) => {
+            if (event.key === 'Escape') {
+              event.preventDefault();
+              clearTypeaheadTimer();
+              typeahead = undefined;
+              typeaheadError = false;
+              attrs.onSelectionAction({ type: 'clear' });
+              m.redraw();
+              return;
+            }
+            if (event.key === 'Backspace' && typeahead !== undefined) {
+              event.preventDefault();
+              clearTypeaheadTimer();
+              const prefix = typeahead.prefix.slice(0, -1);
+              typeahead =
+                prefix.length === 0 ? undefined : { prefix, lastInputAt: typeahead.lastInputAt };
+              typeaheadError = false;
+              m.redraw();
+              return;
+            }
             if (event.key.toLowerCase() === 'l' && (event.ctrlKey || event.metaKey)) {
               event.preventDefault();
               beginEditing(attrs.path);
@@ -299,14 +323,23 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
               !event.metaKey &&
               !event.altKey
             ) {
-              const result = reduceTypeahead(typeahead, event.key, attrs.entries, Date.now());
+              const result = reduceTypeahead(
+                typeahead,
+                event.key,
+                attrs.entries,
+                Date.now(),
+                Number.POSITIVE_INFINITY,
+              );
               typeahead = result.state;
-              resetTypeaheadAfterTimeout();
-              m.redraw();
               if (result.matchedEntryId !== undefined) {
+                clearTypeaheadTimer();
+                typeaheadError = false;
                 event.preventDefault();
                 attrs.onSelectionAction({ type: 'setCursor', entryId: result.matchedEntryId });
+              } else {
+                flashRejectedTypeahead();
               }
+              m.redraw();
             }
           },
           onauxclick: (event: MouseEvent) => {
@@ -448,7 +481,10 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
             m('span', `Sort: ${attrs.sortLabel}`),
             typeahead === undefined
               ? undefined
-              : m('span.fm-typeahead-status', `| ${typeahead.prefix}`),
+              : m(
+                  `span.fm-typeahead-status${typeaheadError ? '.fm-typeahead-status-error' : ''}`,
+                  typeahead.prefix,
+                ),
           ]),
         ],
       );

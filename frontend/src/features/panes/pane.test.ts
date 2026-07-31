@@ -242,7 +242,7 @@ describe('Pane navigation input', () => {
     vi.useRealTimers();
   });
 
-  it('shows and highlights the active typeahead prefix, then clears it on timeout', () => {
+  it('keeps and highlights a matching typeahead prefix until explicitly cleared', () => {
     vi.useFakeTimers();
     vi.setSystemTime(1_000);
     mount(
@@ -264,14 +264,77 @@ describe('Pane navigation input', () => {
     }
     m.redraw.sync();
 
-    expect(root.querySelector('.fm-typeahead-status')?.textContent).toBe('| docu');
+    expect(root.querySelector('.fm-typeahead-status')?.textContent).toBe('docu');
     expect(root.querySelector('.fm-typeahead-match')?.textContent).toBe('docu');
 
-    vi.advanceTimersByTime(700);
+    vi.advanceTimersByTime(5_000);
+    m.redraw.sync();
+    expect(root.querySelector('.fm-typeahead-status')?.textContent).toBe('docu');
+    expect(root.querySelector('.fm-typeahead-match')?.textContent).toBe('docu');
+    vi.useRealTimers();
+  });
+
+  it('flashes an unmatched prefix as an error, then clears it', () => {
+    vi.useFakeTimers();
+    mount(
+      attrs({
+        entries: [{ ...(entries[0] as EntrySummary), id: 'document', name: 'document.txt' }],
+      }),
+    );
+    const pane = root.querySelector<HTMLElement>('.fm-pane');
+
+    for (const typed of 'dox') {
+      pane?.dispatchEvent(new KeyboardEvent('keydown', { key: typed, bubbles: true }));
+    }
+    m.redraw.sync();
+
+    expect(root.querySelector('.fm-typeahead-status')?.textContent).toBe('dox');
+    expect(root.querySelector('.fm-typeahead-status')?.classList).toContain(
+      'fm-typeahead-status-error',
+    );
+
+    vi.runAllTimers();
     m.redraw.sync();
     expect(root.querySelector('.fm-typeahead-status')).toBeNull();
-    expect(root.querySelector('.fm-typeahead-match')).toBeNull();
     vi.useRealTimers();
+  });
+
+  it('uses Backspace to edit typeahead before navigating to the parent', () => {
+    const onParent = vi.fn();
+    mount(
+      attrs({
+        onParent,
+        entries: [{ ...(entries[0] as EntrySummary), id: 'document', name: 'document.txt' }],
+      }),
+    );
+    const pane = root.querySelector<HTMLElement>('.fm-pane');
+
+    for (const typed of 'doc') {
+      pane?.dispatchEvent(new KeyboardEvent('keydown', { key: typed, bubbles: true }));
+    }
+    pane?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Backspace', bubbles: true }));
+    m.redraw.sync();
+
+    expect(root.querySelector('.fm-typeahead-status')?.textContent).toBe('do');
+    expect(onParent).not.toHaveBeenCalled();
+  });
+
+  it('clears typeahead and the file selection with Escape', () => {
+    const onSelectionAction = vi.fn();
+    mount(
+      attrs({
+        selectedEntryIds: new Set(['one']),
+        onSelectionAction,
+      }),
+    );
+    const pane = root.querySelector<HTMLElement>('.fm-pane');
+
+    pane?.dispatchEvent(new KeyboardEvent('keydown', { key: 'o', bubbles: true }));
+    pane?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    m.redraw.sync();
+
+    expect(root.querySelector('.fm-typeahead-status')).toBeNull();
+    expect(onSelectionAction).toHaveBeenLastCalledWith({ type: 'clear' });
   });
 
   it('limits cursor navigation to entries matching the active prefix', () => {
