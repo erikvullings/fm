@@ -459,6 +459,17 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
           replaceWorkspace,
         ).catch(() => undefined);
       },
+      onRename: (entry, name) => {
+        const active = activeDirectory();
+        if (active === undefined || active.paneId !== paneId) return;
+        const destinationUri = `${active.location.uri.replace(/\/$/u, '')}/${encodeURIComponent(name)}`;
+        void client.startOperation({
+          type: 'rename',
+          sources: [entry.location],
+          destination: { ...entry.location, uri: destinationUri },
+          conflictPolicy: 'ask',
+        });
+      },
     };
   }
 
@@ -627,6 +638,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
           },
         }),
         m('.fm-function-key-bar', [
+          m('span', 'F2 Rename'),
           m('span', 'F5 Copy'),
           m('span', 'F6 Move'),
           m('span', 'F7 New folder'),

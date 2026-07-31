@@ -93,7 +93,11 @@ cycles, and file/directory replacement mismatches. Create-directory jobs now exe
 provider, validate cross-platform-safe names, and create intermediate directories only when the
 semantic request explicitly opts in. F7 opens the Materialized new-folder dialog; completion is
 reflected through a directory delta that selects and scrolls the new entry into view. Remaining
-mutation kinds land incrementally in tasks 0038–0044.
+mutation kinds land incrementally in tasks 0039–0044. Rename jobs use the provider's metadata
+operation without copy/delete fallback, reject occupied destinations, and safely handle case-only
+changes on insensitive filesystems. F2 opens an inline table editor with basename selection,
+client-side validation, Esc cancellation, and Enter commit; stable entry IDs retain cursor and
+selection when the directory delta arrives.
 The shared application service now exposes semantic operation start/list/get/cancel/pause/resume
 and conflict-resolution methods through matching Axum REST endpoints and Tauri commands. REST
 starts accept `Idempotency-Key` so retries return the original job rather than queueing duplicates;

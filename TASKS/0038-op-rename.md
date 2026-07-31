@@ -1,6 +1,6 @@
 # 0038 Operation: rename
 
-Status: open
+Status: done
 Priority: high
 Owner: unassigned
 Agent: unassigned
@@ -31,4 +31,15 @@ renames are a named integration test).
   (§35).
 
 ## Agent Notes
-- Not started.
+- 2026-07-31 codex: Implemented provider-backed rename jobs without copy/delete fallback, including
+  collision-safe behavior, stable entry identity, Unicode and non-empty-directory renames, and a
+  two-step temporary-name path for case-only renames on macOS/Windows. Native permission failures
+  map to the existing typed denial; permission enforcement remains platform/user conditional.
+- 2026-07-31 codex: Added inline F2 rename in the virtualized directory table with basename-only
+  initial selection, pre-request name validation and inline feedback, Esc cancellation, and Enter
+  commit through the semantic operation client. Stable entry IDs preserve cursor and selection
+  through delta replacement.
+- 2026-07-31 codex: Added 3 provider tests, 2 application integration tests, and 1 frontend rename
+  test. Verified these directly plus the full affected package suites, strict frontend typecheck,
+  full `pnpm test`, `pnpm run lint`, API freshness, workspace formatting, and Clippy. Axum and Tauri
+  share the existing operation transport path; no packaged Tauri GUI smoke test was performed.

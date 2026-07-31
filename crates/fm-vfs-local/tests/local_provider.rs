@@ -68,6 +68,122 @@ async fn create_directory_rejects_typed_invalid_names_and_collisions() {
 }
 
 #[tokio::test]
+async fn rename_preserves_identity_and_never_overwrites() {
+    let root = tempdir().expect("temporary directory");
+    fs::write(root.path().join("before.txt"), b"source").expect("source fixture");
+    fs::write(root.path().join("occupied.txt"), b"destination").expect("collision fixture");
+    let parent = Location::from_native_path(root.path()).expect("local location");
+    let provider = LocalFileSystemProvider::new();
+    let source = provider
+        .list(&parent, ListOptions::default(), CancellationToken::new())
+        .await
+        .expect("list")
+        .entries
+        .into_iter()
+        .find(|entry| entry.name == "before.txt")
+        .map(|entry| EntryRef {
+            id: entry.id,
+            location: entry.location,
+        })
+        .expect("source entry");
+
+    let collision = parent.join("occupied.txt").expect("collision location");
+    assert!(matches!(
+        provider
+            .rename(&source, &collision, CancellationToken::new())
+            .await,
+        Err(VfsError::AlreadyExists { .. })
+    ));
+    assert_eq!(
+        fs::read(root.path().join("occupied.txt")).expect("destination intact"),
+        b"destination"
+    );
+
+    let destination = parent.join("資料.txt").expect("unicode destination");
+    let renamed = provider
+        .rename(&source, &destination, CancellationToken::new())
+        .await
+        .expect("rename");
+    assert_eq!(renamed.id, source.id);
+    assert_eq!(renamed.location, destination);
+    assert!(!root.path().join("before.txt").exists());
+    assert_eq!(
+        fs::read(root.path().join("資料.txt")).expect("renamed contents"),
+        b"source"
+    );
+}
+
+#[tokio::test]
+async fn rename_directory_keeps_its_children() {
+    let root = tempdir().expect("temporary directory");
+    fs::create_dir(root.path().join("before")).expect("directory fixture");
+    fs::write(root.path().join("before/child.txt"), b"child").expect("child fixture");
+    let parent = Location::from_native_path(root.path()).expect("local location");
+    let provider = LocalFileSystemProvider::new();
+    let entry = provider
+        .list(&parent, ListOptions::default(), CancellationToken::new())
+        .await
+        .expect("list")
+        .entries
+        .into_iter()
+        .next()
+        .expect("entry");
+    let source = EntryRef {
+        id: entry.id,
+        location: entry.location,
+    };
+
+    provider
+        .rename(
+            &source,
+            &parent.join("after").expect("destination"),
+            CancellationToken::new(),
+        )
+        .await
+        .expect("rename directory");
+
+    assert_eq!(
+        fs::read(root.path().join("after/child.txt")).expect("open child"),
+        b"child"
+    );
+}
+
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+#[tokio::test]
+async fn case_only_rename_uses_a_safe_intermediate_name() {
+    let root = tempdir().expect("temporary directory");
+    fs::write(root.path().join("Report.txt"), b"contents").expect("fixture");
+    let parent = Location::from_native_path(root.path()).expect("local location");
+    let provider = LocalFileSystemProvider::new();
+    let entry = provider
+        .list(&parent, ListOptions::default(), CancellationToken::new())
+        .await
+        .expect("list")
+        .entries
+        .into_iter()
+        .next()
+        .expect("entry");
+    let source = EntryRef {
+        id: entry.id,
+        location: entry.location,
+    };
+
+    provider
+        .rename(
+            &source,
+            &parent.join("report.txt").expect("destination"),
+            CancellationToken::new(),
+        )
+        .await
+        .expect("case-only rename");
+
+    assert_eq!(
+        fs::read(root.path().join("report.txt")).expect("renamed file"),
+        b"contents"
+    );
+}
+
+#[tokio::test]
 async fn entry_id_survives_a_rename() {
     let root = tempdir().expect("temporary directory");
     fs::write(root.path().join("before.txt"), b"same file").expect("create fixture");
@@ -312,6 +428,7 @@ async fn metadata_is_separate_and_capabilities_are_truthful() {
         ProviderCapabilities::LIST
             | ProviderCapabilities::WATCH
             | ProviderCapabilities::CREATE_DIRECTORY
+            | ProviderCapabilities::RENAME
     );
     let metadata = provider
         .metadata(&entry, CancellationToken::new())

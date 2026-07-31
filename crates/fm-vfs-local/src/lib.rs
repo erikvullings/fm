@@ -55,6 +55,7 @@ impl FileSystemProvider for LocalFileSystemProvider {
         ProviderCapabilities::LIST
             | ProviderCapabilities::WATCH
             | ProviderCapabilities::CREATE_DIRECTORY
+            | ProviderCapabilities::RENAME
     }
 
     async fn list(
@@ -180,11 +181,54 @@ impl FileSystemProvider for LocalFileSystemProvider {
 
     async fn rename(
         &self,
-        _source: &EntryRef,
-        _destination: &Location,
-        _cancellation: CancellationToken,
+        source: &EntryRef,
+        destination: &Location,
+        cancellation: CancellationToken,
     ) -> Result<EntryRef, VfsError> {
-        unsupported(ProviderCapabilities::RENAME)
+        if cancellation.is_cancelled() {
+            return Err(VfsError::Cancelled);
+        }
+        let destination_name = destination
+            .name()
+            .map_err(|_| invalid_location(destination))?;
+        validate_directory_name(&destination_name)?;
+        let source_path = source
+            .location
+            .to_native_path()
+            .map_err(|_| invalid_location(&source.location))?;
+        let destination_path = destination
+            .to_native_path()
+            .map_err(|_| invalid_location(destination))?;
+        let case_only = source_path != destination_path
+            && source_path
+                .to_string_lossy()
+                .eq_ignore_ascii_case(&destination_path.to_string_lossy());
+        if destination_path.exists() && !case_only {
+            return Err(VfsError::AlreadyExists {
+                location: destination.uri.clone(),
+            });
+        }
+        if case_only {
+            let parent = source_path
+                .parent()
+                .ok_or_else(|| invalid_location(&source.location))?;
+            let temporary = parent.join(format!(".fm-rename-{}", Uuid::new_v4()));
+            tokio::fs::rename(&source_path, &temporary)
+                .await
+                .map_err(|error| map_io_error(error, &source.location.uri))?;
+            if let Err(error) = tokio::fs::rename(&temporary, &destination_path).await {
+                let _ = tokio::fs::rename(&temporary, &source_path).await;
+                return Err(map_io_error(error, &destination.uri));
+            }
+        } else {
+            tokio::fs::rename(&source_path, &destination_path)
+                .await
+                .map_err(|error| map_io_error(error, &destination.uri))?;
+        }
+        Ok(EntryRef {
+            id: source.id,
+            location: destination.clone(),
+        })
     }
 
     async fn remove(

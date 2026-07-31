@@ -52,9 +52,46 @@ function attrs(overrides: Partial<PaneAttrs> = {}): PaneAttrs {
     onLoadNextPage: vi.fn(),
     onSortChange: vi.fn(),
     onNavigate: vi.fn(),
+    onRename: vi.fn(),
     ...overrides,
   };
 }
+
+describe('Pane inline rename', () => {
+  it('starts with F2, preselects the basename, validates, cancels, and commits with Enter', () => {
+    const onRename = vi.fn();
+    mount(attrs({ cursorIndex: 0, selectedEntryIds: new Set(['one' as EntryId]), onRename }));
+    const pane = root.querySelector<HTMLElement>('.fm-pane');
+
+    pane?.dispatchEvent(new KeyboardEvent('keydown', { key: 'F2', bubbles: true }));
+    m.redraw.sync();
+    let input = root.querySelector<HTMLInputElement>('.fm-inline-rename-input');
+    expect(input?.value).toBe('one.txt');
+    expect(input?.selectionStart).toBe(0);
+    expect(input?.selectionEnd).toBe(3);
+
+    if (input === null) throw new Error('rename input missing');
+    input.value = '../bad';
+    input.dispatchEvent(new InputEvent('input', { bubbles: true }));
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    m.redraw.sync();
+    expect(root.querySelector('[role="alert"]')?.textContent).toContain('single');
+    expect(onRename).not.toHaveBeenCalled();
+
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    m.redraw.sync();
+    expect(root.querySelector('.fm-inline-rename-input')).toBeNull();
+
+    pane?.dispatchEvent(new KeyboardEvent('keydown', { key: 'F2', bubbles: true }));
+    m.redraw.sync();
+    input = root.querySelector<HTMLInputElement>('.fm-inline-rename-input');
+    if (input === null) throw new Error('rename input missing');
+    input.value = 'renamed.txt';
+    input.dispatchEvent(new InputEvent('input', { bubbles: true }));
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    expect(onRename).toHaveBeenCalledWith(entries[0], 'renamed.txt');
+  });
+});
 
 function mount(paneAttrs: PaneAttrs): void {
   m.mount(root, { view: () => m(Pane, paneAttrs) });

@@ -8,6 +8,7 @@ import {
   formatEntrySize,
 } from '../entry-formatting/entry-formatting';
 import type { EntryMetadataView } from '../entry-metadata/entry-metadata-loader';
+import { validateDirectoryName } from '../operations/create-directory-dialog';
 import {
   interpretSelectionKey,
   reduceTypeahead,
@@ -49,6 +50,7 @@ export interface PaneAttrs {
   readonly onRetry: () => void | Promise<void>;
   readonly onLoadNextPage: () => void | Promise<void>;
   readonly onSortChange: (sort: readonly SortDescriptor[]) => void;
+  readonly onRename: (entry: EntrySummary, name: string) => void | Promise<void>;
 }
 
 function posixSegments(path: string): readonly BreadcrumbSegment[] {
@@ -140,6 +142,35 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
   let typeahead: TypeaheadState | undefined;
   let typeaheadTimer: ReturnType<typeof setTimeout> | undefined;
   let typeaheadError = false;
+  let renamingEntry: EntrySummary | undefined;
+  let renameValue = '';
+  let renameError: string | undefined;
+
+  function beginRename(attrs: PaneAttrs): void {
+    const entry = attrs.cursorIndex === undefined ? undefined : attrs.entries[attrs.cursorIndex];
+    if (entry === undefined || isParentEntry(entry.id)) return;
+    renamingEntry = entry;
+    renameValue = entry.name;
+    renameError = undefined;
+    m.redraw();
+  }
+
+  function cancelRename(): void {
+    renamingEntry = undefined;
+    renameError = undefined;
+    m.redraw();
+  }
+
+  function commitRename(attrs: PaneAttrs): void {
+    renameError = validateDirectoryName(renameValue);
+    if (renameError !== undefined || renamingEntry === undefined) {
+      m.redraw();
+      return;
+    }
+    const entry = renamingEntry;
+    renamingEntry = undefined;
+    void attrs.onRename(entry, renameValue);
+  }
 
   function clearTypeaheadTimer(): void {
     if (typeaheadTimer !== undefined) {
@@ -253,6 +284,11 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
           'data-active': String(attrs.active),
           tabindex: -1,
           onkeydown: (event: KeyboardEvent) => {
+            if (event.key === 'F2') {
+              event.preventDefault();
+              beginRename(attrs);
+              return;
+            }
             if (event.key === 'Escape') {
               event.preventDefault();
               clearTypeaheadTimer();
@@ -468,6 +504,15 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
             sort: attrs.sort,
             ...(attrs.formatSettings === undefined ? {} : { formatSettings: attrs.formatSettings }),
             label: `${attrs.tabTitle} directory`,
+            ...(renamingEntry === undefined ? {} : { renamingEntryId: renamingEntry.id }),
+            renameValue,
+            ...(renameError === undefined ? {} : { renameError }),
+            onRenameInput: (value) => {
+              renameValue = value;
+              renameError = validateDirectoryName(value);
+            },
+            onRenameCancel: cancelRename,
+            onRenameCommit: () => commitRename(attrs),
             ...(typeahead === undefined ? {} : { nameMatchPrefix: typeahead.prefix }),
             onRetry: () => void attrs.onRetry(),
             onEndReached: () => void attrs.onLoadNextPage(),

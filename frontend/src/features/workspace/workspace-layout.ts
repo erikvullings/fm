@@ -38,6 +38,7 @@ export interface WorkspacePaneContent {
   readonly onRetry: () => void | Promise<void>;
   readonly onLoadNextPage: () => void | Promise<void>;
   readonly onSortChange: (sort: readonly SortDescriptor[]) => void;
+  readonly onRename: (entry: EntrySummary, name: string) => void | Promise<void>;
 }
 
 /** Inputs for the recursive workspace layout renderer. */
@@ -216,6 +217,7 @@ export const WorkspaceLayoutView: FactoryComponent<WorkspaceLayoutViewAttrs> = (
         onRetry: content.onRetry,
         onLoadNextPage: content.onLoadNextPage,
         onSortChange: content.onSortChange,
+        onRename: content.onRename,
       }),
     );
   }

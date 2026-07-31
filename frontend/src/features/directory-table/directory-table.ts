@@ -45,6 +45,12 @@ export interface DirectoryTableAttrs {
   readonly onCursorChange?: (index: number) => void;
   readonly onRetry?: () => void;
   readonly onEndReached?: () => void;
+  readonly renamingEntryId?: EntryId;
+  readonly renameValue?: string;
+  readonly renameError?: string;
+  readonly onRenameInput?: (value: string) => void;
+  readonly onRenameCancel?: () => void;
+  readonly onRenameCommit?: () => void;
 }
 
 function readRowHeight(element: HTMLElement): number {
@@ -339,7 +345,37 @@ export const DirectoryTable: FactoryComponent<DirectoryTableAttrs> = () => {
                 m(
                   `.fm-directory-cell.${column.cellClass}`,
                   { key: column.id, role: 'gridcell' },
-                  column.render(entry, attrs.nameMatchPrefix, attrs.formatSettings),
+                  column.id === 'core.name' && attrs.renamingEntryId === entry.id
+                    ? [
+                        m('input.fm-inline-rename-input', {
+                          value: attrs.renameValue ?? entry.name,
+                          'aria-label': `Rename ${entry.name}`,
+                          'aria-invalid': attrs.renameError === undefined ? undefined : 'true',
+                          oncreate: ({ dom }: VnodeDOM) => {
+                            const input = dom as HTMLInputElement;
+                            input.focus();
+                            const dot = entry.kind === 'file' ? entry.name.lastIndexOf('.') : -1;
+                            input.setSelectionRange(0, dot > 0 ? dot : entry.name.length);
+                          },
+                          oninput: (event: InputEvent) =>
+                            attrs.onRenameInput?.((event.currentTarget as HTMLInputElement).value),
+                          onkeydown: (event: KeyboardEvent) => {
+                            if (event.key === 'Escape') {
+                              event.preventDefault();
+                              event.stopPropagation();
+                              attrs.onRenameCancel?.();
+                            } else if (event.key === 'Enter') {
+                              event.preventDefault();
+                              event.stopPropagation();
+                              attrs.onRenameCommit?.();
+                            }
+                          },
+                        }),
+                        attrs.renameError === undefined
+                          ? undefined
+                          : m('.fm-inline-rename-error', { role: 'alert' }, attrs.renameError),
+                      ]
+                    : column.render(entry, attrs.nameMatchPrefix, attrs.formatSettings),
                 ),
               ),
             ),

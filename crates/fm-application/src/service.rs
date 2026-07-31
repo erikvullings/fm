@@ -160,6 +160,35 @@ impl FileManagerService {
                     create_intermediates: request.create_intermediate_directories,
                 })
             }
+            OperationKindDto::Rename => {
+                if request.sources.len() != 1 {
+                    return Err(ApplicationError::InvalidRequest(
+                        "rename requires exactly one source".into(),
+                    ));
+                }
+                let destination = destination.clone().ok_or_else(|| {
+                    ApplicationError::InvalidRequest("rename requires a destination".into())
+                })?;
+                let source: fm_domain::Location = request.sources[0].clone().into();
+                let provider = self
+                    .providers
+                    .resolve(&source)
+                    .map_err(ApplicationError::from)?;
+                if source.provider_id != destination.provider_id {
+                    return Err(ApplicationError::InvalidRequest(
+                        "rename cannot cross providers".into(),
+                    ));
+                }
+                provider
+                    .capabilities()
+                    .require(ProviderCapabilities::RENAME)
+                    .map_err(ApplicationError::from)?;
+                Arc::new(RenameExecutor {
+                    provider,
+                    source,
+                    destination,
+                })
+            }
             _ => Arc::new(NoOpExecutor),
         };
         let sources: Vec<EntryRef> = request
@@ -398,6 +427,48 @@ struct CreateDirectoryExecutor {
     parent: fm_domain::Location,
     name: String,
     create_intermediates: bool,
+}
+
+struct RenameExecutor {
+    provider: Arc<dyn FileSystemProvider>,
+    source: fm_domain::Location,
+    destination: fm_domain::Location,
+}
+
+#[async_trait]
+impl OperationExecutor for RenameExecutor {
+    async fn plan(
+        &self,
+        operation: &Operation,
+        _cancellation: &CancellationToken,
+    ) -> Result<OperationPlan, ExecutionError> {
+        let entry = operation
+            .sources
+            .first()
+            .cloned()
+            .ok_or_else(|| ExecutionError::Failed("rename source is missing".into()))?;
+        Ok(OperationPlan::new(vec![PlanItem::new(entry, 0)]))
+    }
+
+    async fn execute(
+        &self,
+        _operation: &Operation,
+        item: &PlanItem,
+        cancellation: &CancellationToken,
+    ) -> Result<(), ExecutionError> {
+        let source = EntryRef {
+            id: item.entry.id,
+            location: self.source.clone(),
+        };
+        self.provider
+            .rename(&source, &self.destination, cancellation.clone())
+            .await?;
+        Ok(())
+    }
+
+    async fn cleanup_partial(&self, _operation: &Operation) -> Result<(), ExecutionError> {
+        Ok(())
+    }
 }
 
 #[async_trait]
