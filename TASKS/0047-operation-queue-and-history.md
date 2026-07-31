@@ -1,6 +1,6 @@
 # 0047 Operation queue and history
 
-Status: open
+Status: done
 Priority: medium
 Owner: unassigned
 Agent: unassigned
@@ -31,4 +31,13 @@ states, refresh affected directories) and §27 ("restoring operation history").
   restrictions in §30.
 
 ## Agent Notes
-- Not started.
+- 2026-07-31 Codex: Added FIFO queue positions, a paged `GET /api/v1/operations` projection,
+  terminal result summaries, and a bounded persisted history (100 records, 30 days) written with
+  a synced temporary sibling and atomic rename beside settings. In-flight records recovered at
+  startup become `interrupted` and retain their last known progress; they are never resumed.
+  Regenerated OpenAPI/Orval client, and verified application restart recovery, application and
+  operation suites, strict Clippy, TypeScript type-checking, and REST operation routes.
+- 2026-07-31 Codex: Finished the completion hook: every terminal operation now explicitly resets
+  every open affected directory pane (sources/destinations and their parents), independent of
+  provider watch support. The integration test opens two panes and requires both to receive the
+  finished-operation delta. Full workspace lint and test suites pass; API generation is current.

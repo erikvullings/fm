@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 /// A backend-owned mutating filesystem job (specification §17).
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Operation {
     /// Stable job identifier.
     pub id: OperationId,
@@ -76,7 +76,7 @@ impl Operation {
 }
 
 /// One non-fatal per-entry operation failure.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OperationEntryError {
     /// Entry that could not be processed.
     pub entry: EntryRef,
@@ -108,6 +108,8 @@ pub enum OperationState {
     CompletedWithWarnings,
     /// Finished unsuccessfully.
     Failed,
+    /// Recovered after the backend stopped before a terminal transition.
+    Interrupted,
 }
 
 impl OperationState {
@@ -145,7 +147,11 @@ impl OperationState {
     pub const fn is_terminal(self) -> bool {
         matches!(
             self,
-            Self::Cancelled | Self::Completed | Self::CompletedWithWarnings | Self::Failed
+            Self::Cancelled
+                | Self::Completed
+                | Self::CompletedWithWarnings
+                | Self::Failed
+                | Self::Interrupted
         )
     }
 }
@@ -171,7 +177,7 @@ pub enum OperationKind {
 }
 
 /// Observable progress for one operation.
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct OperationProgress {
     /// Completed plan items.
     pub completed_items: u64,

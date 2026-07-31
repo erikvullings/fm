@@ -20,6 +20,12 @@ use crate::{
     PauseToken, ProgressPublisher, TransitionError,
 };
 
+/// Receives durable snapshots whenever an operation changes.
+pub trait OperationSnapshotObserver: Send + Sync + 'static {
+    /// Records the latest snapshot. Implementations must not panic.
+    fn observe(&self, operation: &Operation);
+}
+
 /// One persistable unit in an operation plan.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PlanItem {
@@ -178,6 +184,7 @@ pub struct Scheduler {
     jobs: Arc<Mutex<HashMap<OperationId, Arc<Job>>>>,
     permits: Arc<Semaphore>,
     events: EventBus,
+    observer: Option<Arc<dyn OperationSnapshotObserver>>,
 }
 
 impl Scheduler {
@@ -188,7 +195,15 @@ impl Scheduler {
             jobs: Arc::new(Mutex::new(HashMap::new())),
             permits: Arc::new(Semaphore::new(usize::from(operation_concurrency.max(1)))),
             events,
+            observer: None,
         }
+    }
+
+    /// Adds a synchronous snapshot observer used by durable history stores.
+    #[must_use]
+    pub fn with_observer(mut self, observer: Arc<dyn OperationSnapshotObserver>) -> Self {
+        self.observer = Some(observer);
+        self
     }
 
     /// Queues an operation and immediately returns its stable identifier.
@@ -204,6 +219,7 @@ impl Scheduler {
                 operation: operation_payload(&operation),
             },
         );
+        self.observe(&operation);
         let job = Arc::new(Job {
             operation: Mutex::new(operation),
             cancellation: CancellationToken::new(),
@@ -722,6 +738,13 @@ impl Scheduler {
                 message: message.into(),
             },
         );
+        self.observe(&operation);
+    }
+
+    fn observe(&self, operation: &Operation) {
+        if let Some(observer) = &self.observer {
+            observer.observe(operation);
+        }
     }
 }
 
@@ -768,6 +791,7 @@ const fn state_payload(state: OperationState) -> OperationStatePayload {
         OperationState::Completed => OperationStatePayload::Completed,
         OperationState::CompletedWithWarnings => OperationStatePayload::CompletedWithWarnings,
         OperationState::Failed => OperationStatePayload::Failed,
+        OperationState::Interrupted => OperationStatePayload::Interrupted,
     }
 }
 

@@ -54,7 +54,7 @@ async fn start_retry_uses_stable_id_and_copy_emits_full_lifecycle() {
         .unwrap();
     assert_eq!(first["id"], retry["id"]);
 
-    let listed: Vec<serde_json::Value> = client
+    let listed: serde_json::Value = client
         .get(format!("{}/api/v1/operations", server.base_url))
         .send()
         .await
@@ -64,7 +64,8 @@ async fn start_retry_uses_stable_id_and_copy_emits_full_lifecycle() {
         .json()
         .await
         .unwrap();
-    assert_eq!(listed.len(), 1);
+    assert_eq!(listed["total"], 1);
+    assert_eq!(listed["operations"].as_array().map(Vec::len), Some(1));
     let id = first["id"].as_str().unwrap();
     let fetched: serde_json::Value = client
         .get(format!("{}/api/v1/operations/{id}", server.base_url))

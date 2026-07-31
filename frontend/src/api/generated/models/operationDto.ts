@@ -30,6 +30,17 @@ export interface OperationDto {
   id: string;
   /** Latest progress. */
   progress: OperationProgressDto;
+  /**
+     * One-based FIFO position while waiting for a scheduler permit.
+     * @minimum 0
+     * @nullable
+     */
+  queuePosition?: number | null;
+  /**
+     * Concise terminal outcome retained with the operation history.
+     * @nullable
+     */
+  resultSummary?: string | null;
   /** Stable source references. */
   sources: EntryRefDto[];
   /**

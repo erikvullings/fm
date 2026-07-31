@@ -358,6 +358,8 @@ pub enum OperationStatePayload {
     CompletedWithWarnings,
     /// Failed.
     Failed,
+    /// Recovered after the backend stopped before a terminal transition.
+    Interrupted,
 }
 
 /// Conflict policies from specification §17.

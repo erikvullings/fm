@@ -985,6 +985,22 @@
             "$ref": "#/components/schemas/OperationProgressDto",
             "description": "Latest progress."
           },
+          "queuePosition": {
+            "description": "One-based FIFO position while waiting for a scheduler permit.",
+            "format": "int64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "resultSummary": {
+            "description": "Concise terminal outcome retained with the operation history.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "sources": {
             "description": "Stable source references.",
             "items": {
@@ -1051,6 +1067,43 @@
           "delete"
         ],
         "type": "string"
+      },
+      "OperationPageDto": {
+        "description": "A bounded page of active and historical operation snapshots.",
+        "properties": {
+          "limit": {
+            "description": "Requested page size after server-side clamping.",
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "offset": {
+            "description": "Requested zero-based offset.",
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "operations": {
+            "description": "Snapshots in descending creation order.",
+            "items": {
+              "$ref": "#/components/schemas/OperationDto"
+            },
+            "type": "array"
+          },
+          "total": {
+            "description": "Number of active and retained history entries before paging.",
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "offset",
+          "limit",
+          "total",
+          "operations"
+        ],
+        "type": "object"
       },
       "OperationProgressDto": {
         "description": "Progress counters for an operation snapshot.",
@@ -1124,7 +1177,8 @@
           "cancelled",
           "completed",
           "completedWithWarnings",
-          "failed"
+          "failed",
+          "interrupted"
         ],
         "type": "string"
       },
@@ -2460,15 +2514,36 @@
     "/api/v1/operations": {
       "get": {
         "operationId": "listOperations",
+        "parameters": [
+          {
+            "description": "Zero-based entry offset.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "format": "int64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Page size, clamped to 1 through 100.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "minimum": 0,
+              "type": "integer"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/OperationDto"
-                  },
-                  "type": "array"
+                  "$ref": "#/components/schemas/OperationPageDto"
                 }
               }
             },

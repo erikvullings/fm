@@ -11,6 +11,7 @@ async-trait.workspace = true
 bitflags.workspace = true
 fm-domain.workspace = true
 futures.workspace = true
+serde.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = ["io-util"] }
 tokio-util.workspace = true

@@ -11,8 +11,10 @@ import type {
   EntryMetadataRequest,
   HealthDto,
   ListDirectoryRequest,
+  ListOperationsParams,
   NavigateRequest,
   OperationDto,
+  OperationPageDto,
   ResolveOperationConflictRequestDto,
   RuntimeCapabilitiesDto,
   SettingsDto,
@@ -309,7 +311,7 @@ export const navigatePane = async (navigateRequest: NavigateRequest, options?: P
 
 
 export type listOperationsResponse200 = {
-  data: OperationDto[]
+  data: OperationPageDto
   status: 200
 }
 
@@ -320,17 +322,24 @@ export type listOperationsResponseSuccess = (listOperationsResponse200) & {
 
 export type listOperationsResponse = (listOperationsResponseSuccess)
 
-export const getListOperationsUrl = () => {
+export const getListOperationsUrl = (params?: ListOperationsParams,) => {
+  const normalizedParams = new URLSearchParams();
 
+  Object.entries(params || {}).forEach(([key, value]) => {
 
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
 
+  const stringifiedParams = normalizedParams.toString();
 
-  return `/api/v1/operations`
+  return stringifiedParams.length > 0 ? `/api/v1/operations?${stringifiedParams}` : `/api/v1/operations`
 }
 
-export const listOperations = async ( options?: Parameters<typeof fetchMutator>[1]): Promise<listOperationsResponse> => {
+export const listOperations = async (params?: ListOperationsParams, options?: Parameters<typeof fetchMutator>[1]): Promise<listOperationsResponse> => {
 
-  return fetchMutator<listOperationsResponse>(getListOperationsUrl(),
+  return fetchMutator<listOperationsResponse>(getListOperationsUrl(params),
   {
     ...options,
     method: 'GET'

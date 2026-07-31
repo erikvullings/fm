@@ -88,6 +88,8 @@ pub enum OperationStateDto {
     Completed,
     CompletedWithWarnings,
     Failed,
+    /// Recovered after the backend stopped before a terminal transition.
+    Interrupted,
 }
 
 /// Progress counters for an operation snapshot.
@@ -135,6 +137,26 @@ pub struct OperationDto {
     pub completed_at: Option<DateTime<Utc>>,
     /// Entry-scoped failures that did not abort the operation.
     pub errors: Vec<OperationEntryErrorDto>,
+    /// One-based FIFO position while waiting for a scheduler permit.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub queue_position: Option<u64>,
+    /// Concise terminal outcome retained with the operation history.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub result_summary: Option<String>,
+}
+
+/// A bounded page of active and historical operation snapshots.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct OperationPageDto {
+    /// Requested zero-based offset.
+    pub offset: u64,
+    /// Requested page size after server-side clamping.
+    pub limit: u16,
+    /// Number of active and retained history entries before paging.
+    pub total: u64,
+    /// Snapshots in descending creation order.
+    pub operations: Vec<OperationDto>,
 }
 
 /// One non-fatal failure associated with a planned entry.

@@ -22,7 +22,8 @@ export type OperationState =
   | 'cancelled'
   | 'completed'
   | 'completedWithWarnings'
-  | 'failed';
+  | 'failed'
+  | 'interrupted';
 
 /** Conflict policies (spec §17). Only ask/skip/overwrite/renameNew are reliably implemented initially. */
 export type ConflictPolicy = 'ask' | 'skip' | 'overwrite' | 'renameNew' | 'keepNewer';
@@ -53,6 +54,8 @@ export interface Operation {
   createdAt: string;
   startedAt?: string;
   completedAt?: string;
+  /** One-based scheduler position while the operation is queued. */
+  queuePosition?: number;
   /** Backend-provided completion summary retained in the operation centre. */
   result?: OperationResult;
 }

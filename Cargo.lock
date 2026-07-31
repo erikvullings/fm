@@ -1229,6 +1229,7 @@ dependencies = [
  "bitflags 2.13.1",
  "fm-domain",
  "futures",
+ "serde",
  "thiserror 2.0.19",
  "tokio",
  "tokio-util",

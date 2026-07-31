@@ -211,8 +211,11 @@ export class HttpFileManagerClient implements FileManagerClient {
   }
 
   async listOperations(signal?: AbortSignal): Promise<Operation[]> {
-    const response = await requestOperations(signal === undefined ? undefined : { signal });
-    return response.data.map(operationFromDto);
+    const response = await requestOperations(
+      undefined,
+      signal === undefined ? undefined : { signal },
+    );
+    return response.data.operations.map(operationFromDto);
   }
 
   async cancelOperation(operationId: OperationId, signal?: AbortSignal): Promise<void> {
@@ -300,6 +303,8 @@ function operationFromDto(dto: OperationDto): Operation {
     createdAt: dto.createdAt,
     ...(dto.startedAt == null ? {} : { startedAt: dto.startedAt }),
     ...(dto.completedAt == null ? {} : { completedAt: dto.completedAt }),
+    ...(dto.queuePosition == null ? {} : { queuePosition: dto.queuePosition }),
+    ...(dto.resultSummary == null ? {} : { result: { message: dto.resultSummary } }),
   };
 }
 

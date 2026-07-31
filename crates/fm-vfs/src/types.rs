@@ -2,12 +2,13 @@ use std::pin::Pin;
 
 use fm_domain::{EntryId, EntrySummary, Location};
 use futures::Stream;
+use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncRead, AsyncWrite};
 
 use crate::VfsError;
 
 /// Lightweight reference to an entry owned by a provider.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct EntryRef {
     /// Stable identifier for the entry.
     pub id: EntryId,

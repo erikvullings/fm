@@ -26,8 +26,9 @@ pub use health::{HealthDto, HealthStatusDto};
 pub use location::LocationDto;
 pub use operation::{
     ConflictResolutionDto, EntryRefDto, OperationConflictPolicyDto, OperationDto,
-    OperationEntryErrorDto, OperationKindDto, OperationProgressDto, OperationStateDto,
-    ResolveOperationConflictRequestDto, StartOperationRequestDto, SymlinkPolicyDto,
+    OperationEntryErrorDto, OperationKindDto, OperationPageDto, OperationProgressDto,
+    OperationStateDto, ResolveOperationConflictRequestDto, StartOperationRequestDto,
+    SymlinkPolicyDto,
 };
 pub use requests::{EntryMetadataRequest, ListDirectoryRequest, NavigateRequest};
 pub use runtime::{PlatformKindDto, RuntimeCapabilitiesDto, RuntimeKindDto};

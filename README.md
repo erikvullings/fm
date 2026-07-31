@@ -91,6 +91,9 @@ with partial-destination cleanup delegated to each operation implementation. Run
 paused without losing its planned totals or held scheduler locks, then resumed at the next item or
 streaming chunk boundary. Cancellation is surfaced immediately as `Cancelling`, also interrupts
 planning and conflict waits, and finishes as `Cancelled` with an explicit partial-progress summary.
+Queued jobs expose their FIFO position in the operation centre. Terminal snapshots are retained in
+an atomic JSON history beside settings (up to 100 entries and 30 days); an operation found in
+flight after restart is retained as `interrupted` with its last known progress and is never resumed.
 Shared preflight
 checks reject same/nested destinations, case-only renames on insensitive filesystems, traversal
 cycles, and file/directory replacement mismatches. Create-directory jobs now execute through the

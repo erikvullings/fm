@@ -6,13 +6,15 @@ use crate::{
 };
 use axum::{
     Json,
-    extract::{Extension, Path, State},
+    extract::{Extension, Path, Query, State},
     http::{HeaderMap, StatusCode},
 };
 use fm_domain::OperationId;
 use fm_transport_dto::{
-    ApplicationErrorDto, OperationDto, ResolveOperationConflictRequestDto, StartOperationRequestDto,
+    ApplicationErrorDto, OperationDto, OperationPageDto, ResolveOperationConflictRequestDto,
+    StartOperationRequestDto,
 };
+use serde::Deserialize;
 use tower_http::request_id::RequestId;
 use uuid::Uuid;
 
@@ -20,10 +22,28 @@ use uuid::Uuid;
     get,
     path = "/api/v1/operations",
     operation_id = "listOperations",
-    responses((status = 200, body = Vec<OperationDto>))
+    params(OperationPageQuery),
+    responses((status = 200, body = OperationPageDto))
 )]
-pub(crate) async fn list_operations(State(state): State<AppState>) -> Json<Vec<OperationDto>> {
-    Json(state.service.list_operations())
+pub(crate) async fn list_operations(
+    State(state): State<AppState>,
+    Query(query): Query<OperationPageQuery>,
+) -> Json<OperationPageDto> {
+    Json(
+        state
+            .service
+            .list_operation_page(query.offset.unwrap_or(0), query.limit.unwrap_or(50)),
+    )
+}
+
+#[derive(Debug, Deserialize, utoipa::IntoParams)]
+#[into_params(parameter_in = Query)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct OperationPageQuery {
+    /// Zero-based entry offset.
+    offset: Option<u64>,
+    /// Page size, clamped to 1 through 100.
+    limit: Option<u16>,
 }
 
 #[utoipa::path(

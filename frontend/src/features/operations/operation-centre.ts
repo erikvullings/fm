@@ -56,10 +56,14 @@ export const OperationCentre: Component<OperationCentreAttrs> = {
           operation.state === 'completed' ||
           operation.state === 'completedWithWarnings' ||
           operation.state === 'failed' ||
-          operation.state === 'cancelled';
+          operation.state === 'cancelled' ||
+          operation.state === 'interrupted';
         return m('article.fm-operation', { 'data-operation-id': operation.id }, [
           m('.fm-operation-summary', [
             m('strong', `${operation.kind} · ${operation.state}`),
+            operation.queuePosition === undefined
+              ? undefined
+              : m('span', `Queue position ${operation.queuePosition}`),
             currentEntryName(operation) === undefined
               ? undefined
               : m('span', currentEntryName(operation)),

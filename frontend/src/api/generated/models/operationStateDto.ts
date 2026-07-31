@@ -20,4 +20,5 @@ export const OperationStateDto = {
   completed: 'completed',
   completedWithWarnings: 'completedWithWarnings',
   failed: 'failed',
+  interrupted: 'interrupted',
 } as const;

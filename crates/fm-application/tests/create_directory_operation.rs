@@ -1,5 +1,6 @@
 //! End-to-end application operation tests confined to temporary roots.
 
+use std::collections::HashSet;
 use std::time::Duration;
 
 use fm_application::FileManagerService;
@@ -146,6 +147,20 @@ async fn creation_refreshes_an_open_directory_through_an_added_delta() {
         })
         .await
         .expect("open directory");
+    let second_pane_id = fm_domain::PaneId::new();
+    service
+        .list_directory(ListDirectoryRequest {
+            workspace_id: workspace_id.into(),
+            pane_id: second_pane_id.into(),
+            request_id: Uuid::new_v4(),
+            location: location.clone().into(),
+            continuation_token: None,
+            sort: Vec::new(),
+            show_hidden: false,
+            folders_first: true,
+        })
+        .await
+        .expect("open second directory pane");
     let mut subscription = events.subscribe(SessionId::new("create-test"), [workspace_id], None);
     tokio::time::sleep(Duration::from_millis(250)).await;
 
@@ -155,7 +170,9 @@ async fn creation_refreshes_an_open_directory_through_an_added_delta() {
             .state,
         OperationStateDto::Completed
     );
-    loop {
+    let expected_panes = HashSet::from([pane_id, second_pane_id]);
+    let mut refreshed_panes = HashSet::new();
+    while refreshed_panes != expected_panes {
         let event = tokio::time::timeout(Duration::from_secs(3), subscription.recv())
             .await
             .expect("delta timeout")
@@ -163,12 +180,27 @@ async fn creation_refreshes_an_open_directory_through_an_added_delta() {
         if let SubscriptionEvent::Event(event) = event
             && let BackendEventPayload::DirectoryDelta {
                 pane_id: event_pane,
-                delta: DirectoryDeltaPayload::EntriesAdded { entries, .. },
+                delta,
             } = event.payload
         {
-            assert_eq!(event_pane, pane_id);
-            assert_eq!(entries[0].name, "from-operation");
-            break;
+            assert!(expected_panes.contains(&event_pane));
+            match delta {
+                DirectoryDeltaPayload::EntriesAdded { entries, .. } => {
+                    if !entries.iter().any(|entry| entry.name == "from-operation") {
+                        continue;
+                    }
+                }
+                DirectoryDeltaPayload::Reset { snapshot } => {
+                    assert!(
+                        snapshot
+                            .entries
+                            .iter()
+                            .any(|entry| entry.name == "from-operation")
+                    );
+                }
+                _ => continue,
+            }
+            refreshed_panes.insert(event_pane);
         }
     }
 }

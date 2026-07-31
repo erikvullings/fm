@@ -1,6 +1,8 @@
 //! The `FileManagerService` facade (specification §7).
 
 use std::collections::{HashMap, HashSet};
+use std::fs;
+use std::io::Write;
 use std::path::PathBuf;
 use std::sync::atomic::AtomicU64;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -14,7 +16,7 @@ use fm_events::{
 };
 use fm_operations::{
     ConflictResolution, ExecutionError, ExecutionOutcome, Operation, OperationExecutor,
-    OperationPlan, PauseToken, PlanItem, Scheduler, SchedulerError,
+    OperationPlan, OperationSnapshotObserver, PauseToken, PlanItem, Scheduler, SchedulerError,
 };
 use fm_settings::{
     ConflictPolicy, DateFormat, DefaultPaneLayout, Settings, SettingsStore, SizeFormat, Theme,
@@ -57,9 +59,177 @@ pub struct FileManagerService {
     settings_store: SettingsStore,
     settings: Mutex<Settings>,
     operations: Scheduler,
+    operation_history: Arc<OperationHistory>,
     operation_idempotency: Mutex<HashMap<String, OperationId>>,
     force_cross_volume_moves: AtomicBool,
     audit_log_path: PathBuf,
+}
+
+const OPERATION_HISTORY_FILE_NAME: &str = "operation-history.json";
+const OPERATION_HISTORY_MAX_ENTRIES: usize = 100;
+const OPERATION_HISTORY_MAX_AGE_DAYS: i64 = 30;
+
+/// Crash-safe operation snapshots stored beside settings.
+struct OperationHistory {
+    path: PathBuf,
+    operations: Mutex<Vec<Operation>>,
+}
+
+struct ApplicationOperationObserver {
+    history: Arc<OperationHistory>,
+    directories: DirectoryService,
+}
+
+impl OperationHistory {
+    fn load(directory: &std::path::Path) -> Self {
+        let path = directory.join(OPERATION_HISTORY_FILE_NAME);
+        let mut operations = fs::read(&path)
+            .ok()
+            .and_then(|bytes| serde_json::from_slice::<Vec<Operation>>(&bytes).ok())
+            .unwrap_or_default();
+        let now = chrono::Utc::now();
+        for operation in &mut operations {
+            if !operation.state.is_terminal() {
+                operation.state = fm_operations::OperationState::Interrupted;
+                operation.completed_at = Some(now);
+            }
+        }
+        let history = Self {
+            path,
+            operations: Mutex::new(operations),
+        };
+        history.prune_and_save();
+        history
+    }
+
+    fn list(&self) -> Vec<OperationDto> {
+        self.operations
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .iter()
+            .filter(|operation| operation.state.is_terminal())
+            .cloned()
+            .map(|operation| operation_dto(operation, None))
+            .collect()
+    }
+
+    fn get(&self, id: OperationId) -> Option<OperationDto> {
+        self.operations
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .iter()
+            .find(|operation| operation.id == id && operation.state.is_terminal())
+            .cloned()
+            .map(|operation| operation_dto(operation, None))
+    }
+
+    fn prune_and_save(&self) {
+        let mut operations = self
+            .operations
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        let cutoff = chrono::Utc::now() - chrono::Duration::days(OPERATION_HISTORY_MAX_AGE_DAYS);
+        operations.retain(|operation| {
+            !operation.state.is_terminal()
+                || operation
+                    .completed_at
+                    .is_none_or(|completed_at| completed_at >= cutoff)
+        });
+        let mut terminal = operations
+            .iter()
+            .enumerate()
+            .filter(|(_, operation)| operation.state.is_terminal())
+            .map(|(index, operation)| (index, operation.completed_at))
+            .collect::<Vec<_>>();
+        terminal.sort_by_key(|(_, completed_at)| *completed_at);
+        let excess = terminal.len().saturating_sub(OPERATION_HISTORY_MAX_ENTRIES);
+        let remove = terminal
+            .into_iter()
+            .take(excess)
+            .map(|(index, _)| index)
+            .collect::<HashSet<_>>();
+        if !remove.is_empty() {
+            *operations = operations
+                .iter()
+                .enumerate()
+                .filter(|(index, _)| !remove.contains(index))
+                .map(|(_, operation)| operation.clone())
+                .collect();
+        }
+        let Ok(bytes) = serde_json::to_vec_pretty(&*operations) else {
+            return;
+        };
+        let Some(directory) = self.path.parent() else {
+            return;
+        };
+        if fs::create_dir_all(directory).is_err() {
+            return;
+        }
+        let temporary = directory.join(format!(
+            ".{OPERATION_HISTORY_FILE_NAME}.{}.tmp",
+            std::process::id()
+        ));
+        if fs::File::create(&temporary)
+            .and_then(|mut file| {
+                file.write_all(&bytes)?;
+                file.sync_all()
+            })
+            .is_ok()
+        {
+            let _ = fs::rename(temporary, &self.path);
+        }
+    }
+}
+
+impl OperationSnapshotObserver for OperationHistory {
+    fn observe(&self, operation: &Operation) {
+        {
+            let mut operations = self
+                .operations
+                .lock()
+                .unwrap_or_else(|error| error.into_inner());
+            if let Some(previous) = operations
+                .iter_mut()
+                .find(|previous| previous.id == operation.id)
+            {
+                *previous = operation.clone();
+            } else {
+                operations.push(operation.clone());
+            }
+        }
+        self.prune_and_save();
+    }
+}
+
+impl OperationSnapshotObserver for ApplicationOperationObserver {
+    fn observe(&self, operation: &Operation) {
+        self.history.observe(operation);
+        if !operation.state.is_terminal() {
+            return;
+        }
+        let mut affected = HashSet::new();
+        for source in &operation.sources {
+            affected.insert(source.location.clone());
+            if let Ok(Some(parent)) = source.location.parent() {
+                affected.insert(parent);
+            }
+        }
+        if let Some(destination) = &operation.destination {
+            affected.insert(destination.clone());
+            if let Ok(Some(parent)) = destination.parent() {
+                affected.insert(parent);
+            }
+        }
+        if affected.is_empty() {
+            return;
+        }
+        let directories = self.directories.clone();
+        if let Ok(runtime) = tokio::runtime::Handle::try_current() {
+            runtime.spawn(async move {
+                directories.refresh_affected(&affected).await;
+            });
+        }
+    }
 }
 
 impl FileManagerService {
@@ -110,17 +280,25 @@ impl FileManagerService {
             );
         }
         let operation_concurrency = loaded.settings.operation_concurrency;
+        let operation_history = Arc::new(OperationHistory::load(&settings_directory));
+        let directories = DirectoryService::with_event_bus(providers.clone(), events.clone());
+        let operation_observer = Arc::new(ApplicationOperationObserver {
+            history: operation_history.clone(),
+            directories: directories.clone(),
+        });
         Self {
             runtime,
             workspaces: WorkspaceService::new(JsonFileWorkspaceRepository::new(
                 workspace_directory,
             )),
-            directories: DirectoryService::with_event_bus(providers.clone(), events.clone()),
+            directories,
             providers,
             events: events.clone(),
             settings_store,
             settings: Mutex::new(loaded.settings),
-            operations: Scheduler::new(operation_concurrency, events),
+            operations: Scheduler::new(operation_concurrency, events)
+                .with_observer(operation_observer),
+            operation_history,
             operation_idempotency: Mutex::new(HashMap::new()),
             force_cross_volume_moves: AtomicBool::new(false),
             audit_log_path: settings_directory.join("audit.jsonl"),
@@ -385,22 +563,63 @@ impl FileManagerService {
         self.get_operation(id)
     }
 
-    /// Lists all operation snapshots.
+    /// Lists active and retained historical operation snapshots.
     #[must_use]
     pub fn list_operations(&self) -> Vec<OperationDto> {
-        self.operations
-            .list()
+        let mut active = self.operations.list();
+        active.retain(|operation| !operation.state.is_terminal());
+        let mut queued = active
+            .iter()
+            .filter(|operation| operation.state == fm_operations::OperationState::Queued)
+            .map(|operation| (operation.id, operation.created_at))
+            .collect::<Vec<_>>();
+        queued.sort_by_key(|(_, created_at)| *created_at);
+        let mut result = active
             .into_iter()
-            .map(operation_dto)
-            .collect()
+            .map(|operation| {
+                let queue_position = queued
+                    .iter()
+                    .position(|(id, _)| *id == operation.id)
+                    .and_then(|position| u64::try_from(position + 1).ok());
+                operation_dto(operation, queue_position)
+            })
+            .chain(self.operation_history.list())
+            .collect::<Vec<_>>();
+        result.sort_by_key(|operation| std::cmp::Reverse(operation.created_at));
+        result
+    }
+
+    /// Returns a bounded page of active and retained historical operations.
+    #[must_use]
+    pub fn list_operation_page(
+        &self,
+        offset: u64,
+        limit: u16,
+    ) -> fm_transport_dto::OperationPageDto {
+        let limit = limit.clamp(1, 100);
+        let operations = self.list_operations();
+        let total = u64::try_from(operations.len()).unwrap_or(u64::MAX);
+        let start = usize::try_from(offset)
+            .unwrap_or(usize::MAX)
+            .min(operations.len());
+        let end = start
+            .saturating_add(usize::from(limit))
+            .min(operations.len());
+        fm_transport_dto::OperationPageDto {
+            offset,
+            limit,
+            total,
+            operations: operations[start..end].to_vec(),
+        }
     }
 
     /// Gets one operation snapshot.
     pub fn get_operation(&self, id: OperationId) -> Result<OperationDto, ApplicationError> {
         self.operations
             .get(id)
-            .map(operation_dto)
+            .map(|operation| operation_dto(operation, None))
             .map_err(map_scheduler_error)
+            .or_else(|error| self.operation_history.get(id).ok_or(error))
     }
 
     /// Requests cancellation of an operation.
@@ -1805,7 +2024,8 @@ const fn conflict_policy(
     }
 }
 
-fn operation_dto(operation: Operation) -> OperationDto {
+fn operation_dto(operation: Operation, queue_position: Option<u64>) -> OperationDto {
+    let result_summary = operation_result_summary(&operation);
     OperationDto {
         id: operation.id.into(),
         operation_type: match operation.kind {
@@ -1832,6 +2052,7 @@ fn operation_dto(operation: Operation) -> OperationDto {
                 OperationStateDto::CompletedWithWarnings
             }
             fm_operations::OperationState::Failed => OperationStateDto::Failed,
+            fm_operations::OperationState::Interrupted => OperationStateDto::Interrupted,
         },
         sources: operation
             .sources
@@ -1884,6 +2105,31 @@ fn operation_dto(operation: Operation) -> OperationDto {
                 message: error.message,
             })
             .collect(),
+        queue_position,
+        result_summary,
+    }
+}
+
+fn operation_result_summary(operation: &Operation) -> Option<String> {
+    match operation.state {
+        fm_operations::OperationState::Completed => Some(format!(
+            "Completed {} items.",
+            operation.progress.completed_items
+        )),
+        fm_operations::OperationState::CompletedWithWarnings => Some(format!(
+            "Completed with {} warnings.",
+            operation.errors.len()
+        )),
+        fm_operations::OperationState::Cancelled => Some(format!(
+            "Cancelled after {} items.",
+            operation.progress.completed_items
+        )),
+        fm_operations::OperationState::Failed => Some("Operation failed.".into()),
+        fm_operations::OperationState::Interrupted => Some(format!(
+            "Interrupted after {} items; it was not resumed.",
+            operation.progress.completed_items
+        )),
+        _ => None,
     }
 }
 
@@ -1995,6 +2241,41 @@ mod tests {
             dir.path().join("settings"),
         );
         (dir, service)
+    }
+
+    #[test]
+    fn restarted_service_restores_inflight_history_as_interrupted() {
+        let directory = tempfile::tempdir().expect("must create a temp dir");
+        let settings_directory = directory.path().join("settings");
+        fs::create_dir_all(&settings_directory).expect("must create settings directory");
+        let mut operation = Operation::new(
+            fm_operations::OperationKind::Copy,
+            vec![],
+            None,
+            fm_operations::ConflictPolicy::Ask,
+        );
+        operation
+            .transition(fm_operations::OperationState::Planning)
+            .expect("queued operation starts planning");
+        fs::write(
+            settings_directory.join(OPERATION_HISTORY_FILE_NAME),
+            serde_json::to_vec(&vec![operation]).expect("history serializes"),
+        )
+        .expect("must write persisted history");
+
+        let service = FileManagerService::new(
+            RuntimeKindDto::BrowserServer,
+            directory.path(),
+            &settings_directory,
+        );
+        let page = service.list_operation_page(0, 50);
+
+        assert_eq!(page.total, 1);
+        assert_eq!(page.operations[0].state, OperationStateDto::Interrupted);
+        assert_eq!(
+            page.operations[0].result_summary.as_deref(),
+            Some("Interrupted after 0 items; it was not resumed.")
+        );
     }
 
     #[test]

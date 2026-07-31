@@ -24,9 +24,13 @@ use crate::ApplicationError;
 
 struct PaneRequest {
     request_id: Uuid,
+    workspace_id: fm_domain::WorkspaceId,
     cancellation: CancellationToken,
     watch_cancellation: CancellationToken,
     revision: u64,
+    show_hidden: bool,
+    folders_first: bool,
+    sort: Vec<SortDescriptorDto>,
     snapshot: Option<DirectorySnapshot>,
 }
 
@@ -42,6 +46,7 @@ struct WatchHub {
 }
 
 /// Lists directories and owns per-pane cancellation and revision state.
+#[derive(Clone)]
 pub struct DirectoryService {
     providers: ProviderRegistry,
     panes: Arc<Mutex<HashMap<PaneId, PaneRequest>>>,
@@ -98,9 +103,13 @@ impl DirectoryService {
                 pane_id,
                 PaneRequest {
                     request_id: request.request_id,
+                    workspace_id: request.workspace_id.into(),
                     cancellation: cancellation.clone(),
                     watch_cancellation,
                     revision,
+                    show_hidden: request.show_hidden,
+                    folders_first: request.folders_first,
+                    sort: request.sort.clone(),
                     snapshot,
                 },
             );
@@ -220,6 +229,53 @@ impl DirectoryService {
         request: ListDirectoryRequest,
     ) -> Result<DirectorySnapshot, ApplicationError> {
         self.list(request).await
+    }
+
+    /// Re-lists every open pane whose directory was affected by an operation.
+    ///
+    /// Operation engines do not depend on provider watch support, so this emits
+    /// a reset delta explicitly after each terminal operation as well as the
+    /// normal provider-originated deltas.
+    pub async fn refresh_affected(&self, locations: &HashSet<fm_domain::Location>) {
+        let refreshes = {
+            let panes = self.panes.lock().await;
+            panes
+                .iter()
+                .filter_map(|(pane_id, state)| {
+                    let snapshot = state.snapshot.as_ref()?;
+                    if !locations.contains(&snapshot.location) {
+                        return None;
+                    }
+                    Some(PaneWatch {
+                        provider: self.providers.resolve(&snapshot.location).ok()?,
+                        location: snapshot.location.clone(),
+                        workspace_id: state.workspace_id,
+                        pane_id: *pane_id,
+                        show_hidden: state.show_hidden,
+                        folders_first: state.folders_first,
+                        sort: state.sort.clone(),
+                        cancellation: state.cancellation.clone(),
+                        receiver: broadcast::channel(1).1,
+                        panes: Arc::clone(&self.panes),
+                        watches: Arc::clone(&self.watches),
+                        events: self.events.clone(),
+                    })
+                })
+                .collect::<Vec<_>>()
+        };
+        for refresh in refreshes {
+            let entries = match list_all(
+                Arc::clone(&refresh.provider),
+                &refresh.location,
+                refresh.cancellation.clone(),
+            )
+            .await
+            {
+                Ok(entries) => entries,
+                Err(_) => continue,
+            };
+            publish_changes(&refresh, ProviderChange::ResetRequired, entries).await;
+        }
     }
 
     /// Fetches detailed metadata from the provider that owns the entry.
