@@ -13,18 +13,19 @@ use fm_events::{
     BackendEventPayload, EventAudience, EventBus, NotificationLevelPayload, NotificationPayload,
 };
 use fm_operations::{
-    ExecutionError, Operation, OperationExecutor, OperationPlan, PlanItem, Scheduler,
-    SchedulerError,
+    ConflictResolution, ExecutionError, ExecutionOutcome, Operation, OperationExecutor,
+    OperationPlan, PlanItem, Scheduler, SchedulerError,
 };
 use fm_settings::{
     ConflictPolicy, DateFormat, DefaultPaneLayout, Settings, SettingsStore, SizeFormat, Theme,
 };
 use fm_transport_dto::{
     ConflictPolicyDto, ConflictResolutionDto, DateFormatDto, DefaultPaneLayoutDto,
-    EntryMetadataRequest, ListDirectoryRequest, NavigateRequest, OperationDto, OperationKindDto,
-    OperationProgressDto, OperationStateDto, PlatformKindDto, ResolveOperationConflictRequestDto,
-    RuntimeCapabilitiesDto, RuntimeKindDto, SettingsDto, SizeFormatDto, StartOperationRequestDto,
-    ThemeDto, WorkspaceCommandDto, WorkspaceDto, WorkspaceSummaryDto,
+    EntryMetadataRequest, ListDirectoryRequest, NavigateRequest, OperationConflictPolicyDto,
+    OperationDto, OperationKindDto, OperationProgressDto, OperationStateDto, PlatformKindDto,
+    ResolveOperationConflictRequestDto, RuntimeCapabilitiesDto, RuntimeKindDto, SettingsDto,
+    SizeFormatDto, StartOperationRequestDto, ThemeDto, WorkspaceCommandDto, WorkspaceDto,
+    WorkspaceSummaryDto,
 };
 use fm_vfs::{EntryRef, FileSystemProvider, ProviderCapabilities, ProviderRegistry};
 use fm_vfs_local::LocalFileSystemProvider;
@@ -132,6 +133,11 @@ impl FileManagerService {
         request: StartOperationRequestDto,
         idempotency_key: Option<String>,
     ) -> Result<OperationDto, ApplicationError> {
+        if request.conflict_policy == OperationConflictPolicyDto::KeepNewer {
+            return Err(ApplicationError::InvalidRequest(
+                "keepNewer conflict policy is not supported yet; choose ask, skip, overwrite, or renameNew".into(),
+            ));
+        }
         let mut idempotency = self
             .operation_idempotency
             .lock()
@@ -234,6 +240,7 @@ impl FileManagerService {
                     root_name: Mutex::new(None),
                     source_override: None,
                     continue_on_error: true,
+                    completed_root_destination: Mutex::new(None),
                 })
             }
             OperationKindDto::Move => {
@@ -267,6 +274,7 @@ impl FileManagerService {
                         root_name: Mutex::new(None),
                         source_override: Some(source.clone()),
                         continue_on_error: false,
+                        completed_root_destination: Mutex::new(None),
                     };
                     moves.push(MoveExecutor {
                         source,
@@ -312,6 +320,7 @@ impl FileManagerService {
                         root_name: Mutex::new(None),
                         source_override: Some(source),
                         continue_on_error: true,
+                        completed_root_destination: Mutex::new(None),
                     });
                 }
                 Arc::new(DuplicateExecutor { copies })
@@ -425,8 +434,16 @@ impl FileManagerService {
         if request.resolution == ConflictResolutionDto::CancelOperation {
             return self.cancel_operation(id);
         }
+        let resolution = match request.resolution {
+            ConflictResolutionDto::Skip => ConflictResolution::Skip,
+            ConflictResolutionDto::Overwrite | ConflictResolutionDto::Confirm => {
+                ConflictResolution::Overwrite
+            }
+            ConflictResolutionDto::RenameNew => ConflictResolution::RenameNew,
+            ConflictResolutionDto::CancelOperation => unreachable!("handled above"),
+        };
         self.operations
-            .resolve_conflict(id)
+            .resolve_conflict(id, resolution, request.apply_to_all_similar)
             .map_err(map_scheduler_error)
     }
 
@@ -458,6 +475,11 @@ impl FileManagerService {
     #[must_use]
     pub fn event_bus(&self) -> EventBus {
         self.events.clone()
+    }
+
+    /// Re-publishes unresolved conflicts when a transport reconnects.
+    pub fn republish_pending_operation_conflicts(&self) {
+        self.operations.republish_pending_conflicts();
     }
 
     /// Lists one page of a directory.
@@ -622,6 +644,7 @@ struct CopyExecutor {
     root_name: Mutex<Option<String>>,
     source_override: Option<Location>,
     continue_on_error: bool,
+    completed_root_destination: Mutex<Option<Location>>,
 }
 
 struct DuplicateExecutor {
@@ -734,8 +757,9 @@ impl OperationExecutor for DeleteExecutor {
         &self,
         _operation: &Operation,
         item: &PlanItem,
+        _resolution: Option<fm_operations::ConflictResolution>,
         cancellation: &CancellationToken,
-    ) -> Result<(), ExecutionError> {
+    ) -> Result<fm_operations::ExecutionOutcome, ExecutionError> {
         let provider = self
             .providers
             .get(&item.entry.location.provider_id)
@@ -753,7 +777,7 @@ impl OperationExecutor for DeleteExecutor {
         {
             Ok(()) => {
                 self.deleted.fetch_add(1, Ordering::Relaxed);
-                Ok(())
+                Ok(ExecutionOutcome::Completed)
             }
             Err(error) => Err(ExecutionError::Warning {
                 entry: item.entry.clone(),
@@ -807,8 +831,9 @@ impl OperationExecutor for MoveGroupExecutor {
         &self,
         operation: &Operation,
         item: &PlanItem,
+        resolution: Option<fm_operations::ConflictResolution>,
         cancellation: &CancellationToken,
-    ) -> Result<(), ExecutionError> {
+    ) -> Result<fm_operations::ExecutionOutcome, ExecutionError> {
         for executor in &self.moves {
             if item.entry.location == executor.source
                 || executor
@@ -818,7 +843,9 @@ impl OperationExecutor for MoveGroupExecutor {
                     .unwrap_or_else(|e| e.into_inner())
                     .contains_key(&item.entry.location.uri)
             {
-                return executor.execute(operation, item, cancellation).await;
+                return executor
+                    .execute(operation, item, resolution, cancellation)
+                    .await;
             }
         }
         Err(ExecutionError::Failed("move plan entry is missing".into()))
@@ -892,8 +919,9 @@ impl OperationExecutor for DuplicateExecutor {
         &self,
         operation: &Operation,
         item: &PlanItem,
+        resolution: Option<fm_operations::ConflictResolution>,
         cancellation: &CancellationToken,
-    ) -> Result<(), ExecutionError> {
+    ) -> Result<fm_operations::ExecutionOutcome, ExecutionError> {
         for copy in &self.copies {
             if copy
                 .planned
@@ -901,7 +929,9 @@ impl OperationExecutor for DuplicateExecutor {
                 .unwrap_or_else(|e| e.into_inner())
                 .contains_key(&item.entry.location.uri)
             {
-                return copy.execute(operation, item, cancellation).await;
+                return copy
+                    .execute(operation, item, resolution, cancellation)
+                    .await;
             }
         }
         Err(ExecutionError::Failed(
@@ -968,24 +998,69 @@ impl OperationExecutor for MoveExecutor {
         &self,
         operation: &Operation,
         item: &PlanItem,
+        resolution: Option<fm_operations::ConflictResolution>,
         cancellation: &CancellationToken,
-    ) -> Result<(), ExecutionError> {
+    ) -> Result<fm_operations::ExecutionOutcome, ExecutionError> {
         if *self.fallback.lock().unwrap_or_else(|e| e.into_inner()) {
-            return self.copy.execute(operation, item, cancellation).await;
+            return self
+                .copy
+                .execute(operation, item, resolution, cancellation)
+                .await;
         }
         let name = item
             .entry
             .location
             .name()
             .map_err(|error| ExecutionError::Failed(error.to_string()))?;
-        let destination = self
+        let mut destination = self
             .destination_directory
             .join(&name)
             .map_err(|error| ExecutionError::Failed(error.to_string()))?;
+        let destination_entry = EntryRef {
+            id: fm_domain::EntryId::new(),
+            location: destination.clone(),
+        };
+        if let Ok(existing) = self
+            .destination_provider
+            .inspect(&destination_entry, cancellation.clone())
+            .await
+        {
+            let source = self
+                .source_provider
+                .inspect(&item.entry, cancellation.clone())
+                .await?;
+            if source.kind != existing.kind {
+                return Err(ExecutionError::Failed(
+                    "a file and directory cannot replace one another".into(),
+                ));
+            }
+            match effective_resolution(operation.conflict_policy, resolution) {
+                None => return Err(conflict_error(&source, &existing)),
+                Some(ConflictResolution::Skip) => return Ok(ExecutionOutcome::Skipped),
+                Some(ConflictResolution::Overwrite) => {
+                    self.destination_provider
+                        .remove(
+                            &destination_entry,
+                            fm_vfs::RemoveOptions {
+                                recursive: existing.kind == EntryKind::Directory,
+                                use_trash: false,
+                            },
+                            cancellation.clone(),
+                        )
+                        .await?;
+                }
+                Some(ConflictResolution::RenameNew) => {
+                    destination = self
+                        .copy
+                        .next_copy_destination(&destination, cancellation)
+                        .await?;
+                }
+            }
+        }
         self.source_provider
             .rename(&item.entry, &destination, cancellation.clone())
             .await?;
-        Ok(())
+        Ok(ExecutionOutcome::Completed)
     }
 
     async fn cleanup_partial(&self, operation: &Operation) -> Result<(), ExecutionError> {
@@ -1008,14 +1083,15 @@ impl OperationExecutor for MoveExecutor {
             id: fm_domain::EntryId::new(),
             location: self.source.clone(),
         };
-        let name = source
-            .location
-            .name()
-            .map_err(|error| ExecutionError::Failed(error.to_string()))?;
-        let destination = self
-            .destination_directory
-            .join(&name)
-            .map_err(|error| ExecutionError::Failed(error.to_string()))?;
+        let Some(destination) = self
+            .copy
+            .completed_root_destination
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
+        else {
+            return Ok(());
+        };
         self.destination_provider
             .inspect(
                 &EntryRef {
@@ -1166,16 +1242,69 @@ impl OperationExecutor for CopyExecutor {
         &self,
         operation: &Operation,
         item: &PlanItem,
+        resolution: Option<fm_operations::ConflictResolution>,
         cancellation: &CancellationToken,
-    ) -> Result<(), ExecutionError> {
-        let planned = self
+    ) -> Result<fm_operations::ExecutionOutcome, ExecutionError> {
+        let mut planned = self
             .planned
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .get(&item.entry.location.uri)
             .cloned()
             .ok_or_else(|| ExecutionError::Failed("copy plan entry is missing".into()))?;
-        let result = if planned.kind == EntryKind::Directory {
+        let destination_entry = EntryRef {
+            id: fm_domain::EntryId::new(),
+            location: planned.destination.clone(),
+        };
+        let mut reuse_destination_directory = false;
+        if let Ok(destination) = self
+            .destination_provider
+            .inspect(&destination_entry, cancellation.clone())
+            .await
+        {
+            let source = self
+                .source_provider
+                .inspect(&planned.source, cancellation.clone())
+                .await?;
+            if source.kind != destination.kind {
+                return Err(ExecutionError::Failed(
+                    "a file and directory cannot replace one another".into(),
+                ));
+            }
+            match effective_resolution(operation.conflict_policy, resolution) {
+                None => return Err(conflict_error(&source, &destination)),
+                Some(ConflictResolution::Skip) => return Ok(ExecutionOutcome::Skipped),
+                Some(ConflictResolution::Overwrite) => {
+                    if planned.kind == EntryKind::Directory {
+                        reuse_destination_directory = true;
+                    }
+                    if planned.kind != EntryKind::File && !reuse_destination_directory {
+                        self.destination_provider
+                            .remove(
+                                &destination_entry,
+                                fm_vfs::RemoveOptions {
+                                    recursive: planned.kind == EntryKind::Directory,
+                                    use_trash: false,
+                                },
+                                cancellation.clone(),
+                            )
+                            .await?;
+                    }
+                }
+                Some(ConflictResolution::RenameNew) => {
+                    let renamed = self
+                        .next_copy_destination(&planned.destination, cancellation)
+                        .await?;
+                    if planned.is_root && planned.kind == EntryKind::Directory {
+                        self.rebase_planned_destinations(&planned.destination, &renamed);
+                    }
+                    planned.destination = renamed;
+                }
+            }
+        }
+        let result = if reuse_destination_directory {
+            Ok(ExecutionOutcome::Completed)
+        } else if planned.kind == EntryKind::Directory {
             let parent = planned
                 .destination
                 .parent()
@@ -1188,20 +1317,26 @@ impl OperationExecutor for CopyExecutor {
             self.destination_provider
                 .create_directory(&parent, &name, cancellation.clone())
                 .await
-                .map(|_| ())
+                .map(|_| ExecutionOutcome::Completed)
                 .map_err(ExecutionError::from)
         } else if planned.kind == EntryKind::Symlink {
             self.destination_provider
                 .copy_symlink(&item.entry, &planned.destination, cancellation.clone())
                 .await
-                .map(|_| ())
+                .map(|_| ExecutionOutcome::Completed)
                 .map_err(ExecutionError::from)
         } else {
             let source_item = PlanItem::new(planned.source.clone(), item.bytes);
-            self.copy_file(operation, &source_item, &planned.destination, cancellation)
-                .await
+            self.copy_file(
+                operation,
+                &source_item,
+                &planned.destination,
+                resolution,
+                cancellation,
+            )
+            .await
         };
-        match result {
+        let outcome = match result {
             Err(error) if self.continue_on_error && !planned.is_root => {
                 Err(ExecutionError::Warning {
                     entry: item.entry.clone(),
@@ -1209,7 +1344,14 @@ impl OperationExecutor for CopyExecutor {
                 })
             }
             other => other,
+        };
+        if outcome.is_ok() && planned.is_root {
+            *self
+                .completed_root_destination
+                .lock()
+                .unwrap_or_else(|e| e.into_inner()) = Some(planned.destination);
         }
+        outcome
     }
 
     async fn cleanup_partial(&self, _operation: &Operation) -> Result<(), ExecutionError> {
@@ -1247,13 +1389,78 @@ impl OperationExecutor for CopyExecutor {
 }
 
 impl CopyExecutor {
+    fn rebase_planned_destinations(&self, old_root: &Location, new_root: &Location) {
+        let rebase = |location: &Location| {
+            location.uri.strip_prefix(&old_root.uri).map(|suffix| {
+                Location::new(
+                    location.provider_id.clone(),
+                    format!("{}{suffix}", new_root.uri),
+                )
+            })
+        };
+        for planned in self
+            .planned
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .values_mut()
+        {
+            if let Some(destination) = rebase(&planned.destination) {
+                planned.destination = destination;
+            }
+        }
+        for (_, destination) in self
+            .directories
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .iter_mut()
+        {
+            if let Some(location) = rebase(&destination.location) {
+                destination.location = location;
+            }
+        }
+    }
+
+    async fn next_copy_destination(
+        &self,
+        original: &Location,
+        cancellation: &CancellationToken,
+    ) -> Result<Location, ExecutionError> {
+        let parent = original
+            .parent()
+            .map_err(|error| ExecutionError::Failed(error.to_string()))?
+            .ok_or_else(|| ExecutionError::Failed("copy destination has no parent".into()))?;
+        let name = original
+            .name()
+            .map_err(|error| ExecutionError::Failed(error.to_string()))?;
+        for suffix in 1_u32.. {
+            let candidate = parent
+                .join(&copy_name(&name, suffix))
+                .map_err(|error| ExecutionError::Failed(error.to_string()))?;
+            let probe = EntryRef {
+                id: fm_domain::EntryId::new(),
+                location: candidate.clone(),
+            };
+            match self
+                .destination_provider
+                .inspect(&probe, cancellation.clone())
+                .await
+            {
+                Err(fm_vfs::VfsError::NotFound { .. }) => return Ok(candidate),
+                Ok(_) => {}
+                Err(error) => return Err(error.into()),
+            }
+        }
+        unreachable!("u32 suffix iterator is non-empty")
+    }
+
     async fn copy_file(
         &self,
         operation: &Operation,
         item: &PlanItem,
         final_destination: &Location,
+        resolution: Option<ConflictResolution>,
         cancellation: &CancellationToken,
-    ) -> Result<(), ExecutionError> {
+    ) -> Result<ExecutionOutcome, ExecutionError> {
         let destination_directory = final_destination
             .parent()
             .map_err(|error| ExecutionError::Failed(error.to_string()))?
@@ -1309,7 +1516,8 @@ impl CopyExecutor {
             return Err(fm_vfs::VfsError::Cancelled.into());
         }
 
-        let overwrite = operation.conflict_policy == fm_operations::ConflictPolicy::Overwrite;
+        let effective = effective_resolution(operation.conflict_policy, resolution);
+        let overwrite = effective == Some(ConflictResolution::Overwrite);
         let mut destination = final_destination.clone();
         let mut suffix = 1_u32;
         loop {
@@ -1329,7 +1537,7 @@ impl CopyExecutor {
             {
                 Ok(_) => break,
                 Err(fm_vfs::VfsError::AlreadyExists { .. })
-                    if operation.conflict_policy == fm_operations::ConflictPolicy::RenameNew =>
+                    if effective == Some(ConflictResolution::RenameNew) =>
                 {
                     let name = final_destination
                         .name()
@@ -1339,11 +1547,46 @@ impl CopyExecutor {
                         .map_err(|error| ExecutionError::Failed(error.to_string()))?;
                     suffix = suffix.saturating_add(1);
                 }
+                Err(fm_vfs::VfsError::AlreadyExists { .. }) if effective.is_none() => {
+                    self.destination_provider
+                        .discard_copy(&temporary, CancellationToken::new())
+                        .await?;
+                    *self.temporary.lock().unwrap_or_else(|e| e.into_inner()) = None;
+                    let source = self
+                        .source_provider
+                        .inspect(&item.entry, cancellation.clone())
+                        .await?;
+                    let destination_summary = self
+                        .destination_provider
+                        .inspect(
+                            &EntryRef {
+                                id: fm_domain::EntryId::new(),
+                                location: destination,
+                            },
+                            cancellation.clone(),
+                        )
+                        .await?;
+                    if source.kind != destination_summary.kind {
+                        return Err(ExecutionError::Failed(
+                            "a file and directory cannot replace one another".into(),
+                        ));
+                    }
+                    return Err(conflict_error(&source, &destination_summary));
+                }
+                Err(fm_vfs::VfsError::AlreadyExists { .. })
+                    if effective == Some(ConflictResolution::Skip) =>
+                {
+                    self.destination_provider
+                        .discard_copy(&temporary, CancellationToken::new())
+                        .await?;
+                    *self.temporary.lock().unwrap_or_else(|e| e.into_inner()) = None;
+                    return Ok(ExecutionOutcome::Skipped);
+                }
                 Err(error) => return Err(error.into()),
             }
         }
         *self.temporary.lock().unwrap_or_else(|e| e.into_inner()) = None;
-        Ok(())
+        Ok(ExecutionOutcome::Completed)
     }
 }
 
@@ -1356,6 +1599,39 @@ fn copy_name(name: &str, suffix: u32) -> String {
     match path.extension().and_then(|value| value.to_str()) {
         Some(extension) => format!("{stem} (copy {suffix}).{extension}"),
         None => format!("{stem} (copy {suffix})"),
+    }
+}
+
+fn effective_resolution(
+    policy: fm_operations::ConflictPolicy,
+    resolution: Option<ConflictResolution>,
+) -> Option<ConflictResolution> {
+    resolution.or(match policy {
+        fm_operations::ConflictPolicy::Ask => None,
+        fm_operations::ConflictPolicy::Skip => Some(ConflictResolution::Skip),
+        fm_operations::ConflictPolicy::Overwrite => Some(ConflictResolution::Overwrite),
+        fm_operations::ConflictPolicy::RenameNew => Some(ConflictResolution::RenameNew),
+        fm_operations::ConflictPolicy::KeepNewer => None,
+    })
+}
+
+fn conflict_error(
+    source: &fm_domain::EntrySummary,
+    destination: &fm_domain::EntrySummary,
+) -> ExecutionError {
+    ExecutionError::Conflict(fm_operations::OperationConflict {
+        id: Uuid::new_v4().to_string(),
+        source: conflict_entry(source),
+        destination: conflict_entry(destination),
+    })
+}
+
+fn conflict_entry(entry: &fm_domain::EntrySummary) -> fm_operations::ConflictEntry {
+    fm_operations::ConflictEntry {
+        name: entry.name.clone(),
+        kind: entry.kind,
+        size: entry.size,
+        modified_at: entry.modified_at,
     }
 }
 
@@ -1385,8 +1661,9 @@ impl OperationExecutor for RenameExecutor {
         &self,
         _operation: &Operation,
         item: &PlanItem,
+        _resolution: Option<fm_operations::ConflictResolution>,
         cancellation: &CancellationToken,
-    ) -> Result<(), ExecutionError> {
+    ) -> Result<fm_operations::ExecutionOutcome, ExecutionError> {
         let source = EntryRef {
             id: item.entry.id,
             location: self.source.clone(),
@@ -1394,7 +1671,7 @@ impl OperationExecutor for RenameExecutor {
         self.provider
             .rename(&source, &self.destination, cancellation.clone())
             .await?;
-        Ok(())
+        Ok(ExecutionOutcome::Completed)
     }
 
     async fn cleanup_partial(&self, _operation: &Operation) -> Result<(), ExecutionError> {
@@ -1422,13 +1699,14 @@ impl OperationExecutor for CreateDirectoryExecutor {
         &self,
         _operation: &Operation,
         _item: &PlanItem,
+        _resolution: Option<fm_operations::ConflictResolution>,
         cancellation: &CancellationToken,
-    ) -> Result<(), ExecutionError> {
+    ) -> Result<fm_operations::ExecutionOutcome, ExecutionError> {
         if !self.create_intermediates {
             self.provider
                 .create_directory(&self.parent, &self.name, cancellation.clone())
                 .await?;
-            return Ok(());
+            return Ok(ExecutionOutcome::Completed);
         }
         let mut parent = self.parent.clone();
         for component in self.name.split(['/', '\\']) {
@@ -1438,7 +1716,7 @@ impl OperationExecutor for CreateDirectoryExecutor {
                 .await?;
             parent = created.location;
         }
-        Ok(())
+        Ok(ExecutionOutcome::Completed)
     }
 
     async fn cleanup_partial(&self, _operation: &Operation) -> Result<(), ExecutionError> {
@@ -1466,9 +1744,10 @@ impl OperationExecutor for NoOpExecutor {
         &self,
         _operation: &Operation,
         _item: &PlanItem,
+        _resolution: Option<fm_operations::ConflictResolution>,
         _cancellation: &CancellationToken,
-    ) -> Result<(), ExecutionError> {
-        Ok(())
+    ) -> Result<fm_operations::ExecutionOutcome, ExecutionError> {
+        Ok(ExecutionOutcome::Completed)
     }
     async fn cleanup_partial(&self, _operation: &Operation) -> Result<(), ExecutionError> {
         Ok(())

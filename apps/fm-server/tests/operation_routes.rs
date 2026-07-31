@@ -4,6 +4,7 @@ mod common;
 
 use fm_events::{BackendEventPayload, OperationStatePayload, SessionId, SubscriptionEvent};
 use serde_json::json;
+use std::time::Duration;
 
 #[tokio::test]
 async fn start_retry_uses_stable_id_and_copy_emits_full_lifecycle() {
@@ -134,4 +135,81 @@ fn openapi_reserves_all_stable_operation_ids() {
     ] {
         assert!(text.contains(operation_id), "missing {operation_id}");
     }
+}
+
+#[tokio::test]
+async fn resolve_conflict_route_applies_the_requested_decision() {
+    let server = common::TestServer::spawn().await;
+    let root = tempfile::tempdir().unwrap();
+    let source = root.path().join("same.txt");
+    let destination = root.path().join("destination");
+    tokio::fs::create_dir(&destination).await.unwrap();
+    tokio::fs::write(&source, b"source").await.unwrap();
+    tokio::fs::write(destination.join("same.txt"), b"existing")
+        .await
+        .unwrap();
+    let client = reqwest::Client::new();
+    let operation: serde_json::Value = client
+        .post(format!("{}/api/v1/operations", server.base_url))
+        .json(&json!({
+            "type": "copy",
+            "sources": [{"providerId":"local","uri": format!("file://{}", source.display())}],
+            "destination": {"providerId":"local","uri": format!("file://{}", destination.display())},
+            "conflictPolicy": "ask"
+        }))
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let id = operation["id"].as_str().unwrap();
+    for _ in 0..200 {
+        let current: serde_json::Value = client
+            .get(format!("{}/api/v1/operations/{id}", server.base_url))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        if current["state"] == "waitingForConflictResolution" {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+
+    client
+        .post(format!(
+            "{}/api/v1/operations/{id}/resolve-conflict",
+            server.base_url
+        ))
+        .json(&json!({"resolution":"skip", "applyToAllSimilar":false}))
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap();
+    for _ in 0..200 {
+        let current: serde_json::Value = client
+            .get(format!("{}/api/v1/operations/{id}", server.base_url))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        if current["state"] == "completed" {
+            assert_eq!(current["progress"]["completedBytes"], 0);
+            assert_eq!(
+                tokio::fs::read(destination.join("same.txt")).await.unwrap(),
+                b"existing"
+            );
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    panic!("operation did not complete after REST conflict resolution")
 }

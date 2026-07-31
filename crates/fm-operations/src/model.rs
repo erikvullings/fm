@@ -1,5 +1,5 @@
 use chrono::{DateTime, Utc};
-use fm_domain::{Location, OperationId};
+use fm_domain::{EntryKind, Location, OperationId};
 use fm_vfs::EntryRef;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -202,6 +202,41 @@ pub enum ConflictPolicy {
     RenameNew,
     /// Keep whichever entry is newer.
     KeepNewer,
+}
+
+/// Metadata shown to a user before choosing how to resolve a collision.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConflictEntry {
+    /// Display name of the entry.
+    pub name: String,
+    /// Entry kind used to reject unsafe cross-kind replacement.
+    pub kind: EntryKind,
+    /// Logical size in bytes, when the provider reports it.
+    pub size: Option<u64>,
+    /// Last modification time, when the provider reports it.
+    pub modified_at: Option<DateTime<Utc>>,
+}
+
+/// One item-scoped collision awaiting an engine-owned decision.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OperationConflict {
+    /// Stable identifier retained while the item is pending.
+    pub id: String,
+    /// Source metadata.
+    pub source: ConflictEntry,
+    /// Existing destination metadata.
+    pub destination: ConflictEntry,
+}
+
+/// A user-selectable resolution passed back to the conflicting executor item.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConflictResolution {
+    /// Skip this source item.
+    Skip,
+    /// Replace the same-kind destination.
+    Overwrite,
+    /// Choose a duplicate-style destination name.
+    RenameNew,
 }
 
 /// A rejected operation lifecycle transition.

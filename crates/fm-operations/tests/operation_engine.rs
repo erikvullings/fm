@@ -4,12 +4,13 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
-use fm_domain::{EntryId, Location, ProviderId};
+use fm_domain::{EntryId, EntryKind, Location, ProviderId};
 use fm_events::{EventBus, SessionId, SubscriptionEvent};
 use fm_operations::{
-    ConflictPolicy, CycleDetector, EntryType, ExecutionError, Operation, OperationExecutor,
-    OperationKind, OperationPlan, OperationState, PlanItem, ProgressPublisher, SafetyError,
-    Scheduler, validate_paths, validate_replacement,
+    ConflictEntry, ConflictPolicy, ConflictResolution, CycleDetector, EntryType, ExecutionError,
+    ExecutionOutcome, Operation, OperationConflict, OperationExecutor, OperationKind,
+    OperationPlan, OperationState, PlanItem, ProgressPublisher, SafetyError, Scheduler,
+    validate_paths, validate_replacement,
 };
 use fm_vfs::EntryRef;
 use tokio_util::sync::CancellationToken;
@@ -235,8 +236,9 @@ impl OperationExecutor for BlockingExecutor {
         &self,
         _operation: &Operation,
         _item: &PlanItem,
+        _resolution: Option<fm_operations::ConflictResolution>,
         _cancellation: &CancellationToken,
-    ) -> Result<(), ExecutionError> {
+    ) -> Result<fm_operations::ExecutionOutcome, ExecutionError> {
         if self
             .executions
             .fetch_add(1, std::sync::atomic::Ordering::SeqCst)
@@ -245,7 +247,7 @@ impl OperationExecutor for BlockingExecutor {
             self.first_started.notify_one();
             self.release_first.notified().await;
         }
-        Ok(())
+        Ok(fm_operations::ExecutionOutcome::Completed)
     }
 
     async fn cleanup_partial(&self, _operation: &Operation) -> Result<(), ExecutionError> {
@@ -253,4 +255,96 @@ impl OperationExecutor for BlockingExecutor {
             .store(true, std::sync::atomic::Ordering::SeqCst);
         Ok(())
     }
+}
+
+struct ItemConflictExecutor {
+    later_item_completed: std::sync::atomic::AtomicBool,
+}
+
+#[async_trait]
+impl OperationExecutor for ItemConflictExecutor {
+    async fn plan(
+        &self,
+        operation: &Operation,
+        _cancellation: &CancellationToken,
+    ) -> Result<OperationPlan, ExecutionError> {
+        Ok(OperationPlan::new(
+            operation
+                .sources
+                .iter()
+                .cloned()
+                .map(|entry| PlanItem::new(entry, 1))
+                .collect(),
+        ))
+    }
+
+    async fn execute(
+        &self,
+        operation: &Operation,
+        item: &PlanItem,
+        resolution: Option<ConflictResolution>,
+        _cancellation: &CancellationToken,
+    ) -> Result<ExecutionOutcome, ExecutionError> {
+        if item.entry == operation.sources[0] && resolution.is_none() {
+            return Err(ExecutionError::Conflict(OperationConflict {
+                id: "conflict-1".into(),
+                source: ConflictEntry {
+                    name: "blocked.txt".into(),
+                    kind: EntryKind::File,
+                    size: Some(1),
+                    modified_at: None,
+                },
+                destination: ConflictEntry {
+                    name: "blocked.txt".into(),
+                    kind: EntryKind::File,
+                    size: Some(2),
+                    modified_at: None,
+                },
+            }));
+        }
+        if item.entry == operation.sources[1] {
+            self.later_item_completed
+                .store(true, std::sync::atomic::Ordering::SeqCst);
+        }
+        Ok(ExecutionOutcome::Completed)
+    }
+
+    async fn cleanup_partial(&self, _operation: &Operation) -> Result<(), ExecutionError> {
+        Ok(())
+    }
+}
+
+#[tokio::test]
+async fn a_conflict_blocks_only_its_item_and_uses_the_requested_resolution() {
+    let executor = Arc::new(ItemConflictExecutor {
+        later_item_completed: std::sync::atomic::AtomicBool::new(false),
+    });
+    let scheduler = Scheduler::new(1, EventBus::new(16));
+    let operation = Operation::new(
+        OperationKind::Copy,
+        vec![entry("file:///blocked.txt"), entry("file:///safe.txt")],
+        None,
+        ConflictPolicy::Ask,
+    );
+    let id = scheduler.submit(operation, executor.clone()).unwrap();
+    for _ in 0..200 {
+        if scheduler.get(id).unwrap().state == OperationState::WaitingForConflictResolution
+            && executor
+                .later_item_completed
+                .load(std::sync::atomic::Ordering::SeqCst)
+        {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    assert!(
+        executor
+            .later_item_completed
+            .load(std::sync::atomic::Ordering::SeqCst)
+    );
+    scheduler
+        .resolve_conflict(id, ConflictResolution::RenameNew, false)
+        .unwrap();
+    scheduler.wait(id).await.unwrap();
+    assert_eq!(scheduler.get(id).unwrap().state, OperationState::Completed);
 }

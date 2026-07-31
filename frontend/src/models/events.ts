@@ -18,6 +18,15 @@ export interface OperationConflict {
   operationId: OperationId;
   conflictId: string;
   message: string;
+  source: ConflictEntryMetadata;
+  destination: ConflictEntryMetadata;
+}
+
+export interface ConflictEntryMetadata {
+  name: string;
+  size?: number;
+  modifiedAt?: string;
+  kind: 'file' | 'directory' | 'symlink';
 }
 
 /** User-visible notification delivered by the backend. */

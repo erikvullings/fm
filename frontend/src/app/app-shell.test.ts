@@ -303,6 +303,42 @@ describe('AppShell', () => {
     expect(listOperations).toHaveBeenCalledTimes(1);
   });
 
+  it('presents operation conflicts and submits the selected apply-to-all decision', async () => {
+    const client = new MockFileManagerClient();
+    const resolveConflict = vi.spyOn(client, 'resolveConflict').mockResolvedValue();
+    m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
+    await vi.waitFor(() => expect(root.textContent).toContain('Documents'));
+
+    client.emit({
+      eventId: 12,
+      timestamp: '2026-07-31T12:00:00Z',
+      payload: {
+        type: 'operation.conflict',
+        operationId: 'operation-1',
+        conflictId: 'conflict-1',
+        message: 'report.pdf already exists',
+        source: { name: 'report.pdf', kind: 'file', size: 6 },
+        destination: { name: 'report.pdf', kind: 'file', size: 8 },
+      },
+    });
+
+    await vi.waitFor(() => expect(root.textContent).toContain('Resolve conflict'));
+    root.querySelector<HTMLInputElement>('.fm-conflict-dialog input')?.click();
+    const rename = [...root.querySelectorAll<HTMLButtonElement>('.fm-conflict-dialog button')].find(
+      (button) => button.textContent === 'Rename new',
+    );
+    rename?.click();
+
+    await vi.waitFor(() =>
+      expect(resolveConflict).toHaveBeenCalledWith({
+        operationId: 'operation-1',
+        resolution: 'renameNew',
+        applyToAllSimilar: true,
+      }),
+    );
+    await vi.waitFor(() => expect(root.textContent).not.toContain('Resolve conflict'));
+  });
+
   it('ignores old directory revisions and refetches pane snapshots after a replay gap', async () => {
     const client = new MockFileManagerClient();
     const listDirectory = vi.spyOn(client, 'listDirectory');

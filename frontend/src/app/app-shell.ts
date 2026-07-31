@@ -16,6 +16,7 @@ import {
   type NavigationController,
   type PaneDirectoryView,
 } from '../features/navigation/navigation';
+import { ConflictDialog } from '../features/operations/conflict-dialog';
 import { CreateDirectoryDialog } from '../features/operations/create-directory-dialog';
 import { OperationCentre } from '../features/operations/operation-centre';
 import {
@@ -50,6 +51,7 @@ import type {
   EntryId,
   EntrySummary,
   Location,
+  OperationConflict,
   PaneId,
   Settings,
   SortDescriptor,
@@ -103,6 +105,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
   let unsubscribeResynchronise: (() => void) | undefined;
   let appState: AppState | undefined;
   let operations = createOperationsState();
+  let pendingConflict: OperationConflict | undefined;
   let pendingOperationEvents: BackendEvent[] = [];
   let operationFrame: number | undefined;
   let removed = false;
@@ -374,6 +377,10 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
   function handleBackendEvent(event: BackendEvent): void {
     if (event.workspaceId !== undefined && event.workspaceId !== workspace?.id) return;
     const payload = event.payload;
+    if (payload.type === 'operation.conflict') {
+      pendingConflict = payload;
+      m.redraw();
+    }
     if (payload.type.startsWith('operation.')) {
       pendingOperationEvents.push(event);
       if (operationFrame === undefined) {
@@ -761,6 +768,25 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
                 applyToAllSimilar: false,
               });
             }
+          },
+        }),
+        m(ConflictDialog, {
+          conflict: pendingConflict,
+          onResolve: (resolution, applyToAllSimilar) => {
+            const conflict = pendingConflict;
+            if (conflict === undefined) return;
+            void attrs.client
+              .resolveConflict({
+                operationId: conflict.operationId,
+                resolution,
+                applyToAllSimilar,
+              })
+              .then(() => {
+                if (pendingConflict?.conflictId === conflict.conflictId) {
+                  pendingConflict = undefined;
+                  m.redraw();
+                }
+              });
           },
         }),
         m('.fm-function-key-bar', [

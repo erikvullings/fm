@@ -479,6 +479,26 @@ pub struct OperationConflictPayload {
     pub conflict_id: String,
     /// Human-readable conflict summary.
     pub message: String,
+    /// Source entry that would be applied.
+    pub source: OperationConflictEntryPayload,
+    /// Existing destination entry.
+    pub destination: OperationConflictEntryPayload,
+}
+
+/// Compact entry metadata carried by a conflict event.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OperationConflictEntryPayload {
+    /// Display name.
+    pub name: String,
+    /// Entry kind.
+    pub kind: EntryKindPayload,
+    /// Logical size, when known.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub size: Option<u64>,
+    /// Last modification time, when known.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub modified_at: Option<DateTime<Utc>>,
 }
 
 /// Plugin state delivered when discovery or enablement changes.
@@ -758,11 +778,11 @@ mod tests {
     use super::{
         BackendEventPayload, ColumnConfigurationPayload, ConflictPolicyPayload,
         DirectoryDeltaPayload, DirectorySnapshotPayload, DirectoryViewConfigurationPayload,
-        EventEnvelope, LoadingStatePayload, LocationPayload, NotificationLevelPayload,
-        NotificationPayload, OperationConflictPayload, OperationKindPayload, OperationPayload,
-        OperationProgressDetails, OperationProgressPayload, OperationStatePayload,
-        PersistedFilterPayload, PluginPayload, SortDescriptorPayload, SortDirectionPayload,
-        WorkspaceLayoutPayload,
+        EntryKindPayload, EventEnvelope, LoadingStatePayload, LocationPayload,
+        NotificationLevelPayload, NotificationPayload, OperationConflictEntryPayload,
+        OperationConflictPayload, OperationKindPayload, OperationPayload, OperationProgressDetails,
+        OperationProgressPayload, OperationStatePayload, PersistedFilterPayload, PluginPayload,
+        SortDescriptorPayload, SortDirectionPayload, WorkspaceLayoutPayload,
     };
 
     const WORKSPACE_ID: &str = "11111111-1111-4111-8111-111111111111";
@@ -1131,6 +1151,18 @@ mod tests {
                         operation_id,
                         conflict_id: "conflict-1".to_owned(),
                         message: "Destination exists".to_owned(),
+                        source: OperationConflictEntryPayload {
+                            name: "source.txt".to_owned(),
+                            kind: EntryKindPayload::File,
+                            size: Some(6),
+                            modified_at: None,
+                        },
+                        destination: OperationConflictEntryPayload {
+                            name: "source.txt".to_owned(),
+                            kind: EntryKindPayload::File,
+                            size: Some(8),
+                            modified_at: None,
+                        },
                     },
                 },
                 Self::OperationCompleted {

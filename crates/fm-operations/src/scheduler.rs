@@ -5,16 +5,20 @@ use std::time::{Duration, Instant};
 use async_trait::async_trait;
 use fm_domain::OperationId;
 use fm_events::{
-    BackendEventPayload, ConflictPolicyPayload, EntryRefPayload, EventAudience, EventBus,
-    LocationPayload, OperationKindPayload, OperationPayload, OperationProgressDetails,
-    OperationProgressPayload, OperationStatePayload,
+    BackendEventPayload, ConflictPolicyPayload, EntryKindPayload, EntryRefPayload, EventAudience,
+    EventBus, LocationPayload, OperationConflictEntryPayload, OperationConflictPayload,
+    OperationKindPayload, OperationPayload, OperationProgressDetails, OperationProgressPayload,
+    OperationStatePayload,
 };
 use fm_vfs::EntryRef;
 use thiserror::Error;
 use tokio::sync::{Notify, Semaphore};
 use tokio_util::sync::CancellationToken;
 
-use crate::{Operation, OperationProgress, OperationState, ProgressPublisher, TransitionError};
+use crate::{
+    ConflictResolution, Operation, OperationConflict, OperationProgress, OperationState,
+    ProgressPublisher, TransitionError,
+};
 
 /// One persistable unit in an operation plan.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -80,6 +84,18 @@ pub enum ExecutionError {
         /// Sanitized failure text.
         message: String,
     },
+    /// This item needs an explicit user decision before it can be retried.
+    #[error("operation item has a destination conflict")]
+    Conflict(OperationConflict),
+}
+
+/// Result of executing one plan item.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExecutionOutcome {
+    /// The item was applied and contributes its planned bytes.
+    Completed,
+    /// The item was deliberately skipped and contributes no bytes.
+    Skipped,
 }
 
 /// Planning/execution boundary implemented by future operation-kind tasks.
@@ -97,8 +113,9 @@ pub trait OperationExecutor: Send + Sync + 'static {
         &self,
         operation: &Operation,
         item: &PlanItem,
+        resolution: Option<ConflictResolution>,
         cancellation: &CancellationToken,
-    ) -> Result<(), ExecutionError>;
+    ) -> Result<ExecutionOutcome, ExecutionError>;
 
     /// Removes any private/temporary destination after cancellation or failure.
     async fn cleanup_partial(&self, operation: &Operation) -> Result<(), ExecutionError>;
@@ -129,7 +146,13 @@ pub enum SchedulerError {
     Transition(#[from] TransitionError),
     /// The operation implementation failed.
     #[error(transparent)]
-    Execution(#[from] ExecutionError),
+    Execution(Box<ExecutionError>),
+}
+
+impl From<ExecutionError> for SchedulerError {
+    fn from(error: ExecutionError) -> Self {
+        Self::Execution(Box::new(error))
+    }
 }
 
 struct Job {
@@ -137,6 +160,14 @@ struct Job {
     cancellation: CancellationToken,
     completed: Notify,
     resumed: Notify,
+    pending_conflict: Mutex<Option<PendingConflict>>,
+    apply_to_all: Mutex<Option<ConflictResolution>>,
+}
+
+#[derive(Debug, Clone)]
+struct PendingConflict {
+    conflict: OperationConflict,
+    decision: Option<ConflictResolution>,
 }
 
 /// Runs operation jobs with bounded concurrency and publishes their lifecycle.
@@ -176,6 +207,8 @@ impl Scheduler {
             cancellation: CancellationToken::new(),
             completed: Notify::new(),
             resumed: Notify::new(),
+            pending_conflict: Mutex::new(None),
+            apply_to_all: Mutex::new(None),
         });
         self.jobs
             .lock()
@@ -239,8 +272,48 @@ impl Scheduler {
     }
 
     /// Continues an operation waiting for a conflict decision.
-    pub fn resolve_conflict(&self, id: OperationId) -> Result<(), SchedulerError> {
-        self.transition_by_id(id, OperationState::Running)
+    pub fn resolve_conflict(
+        &self,
+        id: OperationId,
+        resolution: ConflictResolution,
+        apply_to_all: bool,
+    ) -> Result<(), SchedulerError> {
+        let jobs = self.jobs.lock().unwrap_or_else(|e| e.into_inner());
+        let job = jobs.get(&id).ok_or(SchedulerError::UnknownOperation(id))?;
+        let mut pending = job
+            .pending_conflict
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let conflict = pending.as_mut().ok_or_else(|| {
+            SchedulerError::Execution(Box::new(ExecutionError::Failed(
+                "operation has no pending conflict".into(),
+            )))
+        })?;
+        conflict.decision = Some(resolution);
+        if apply_to_all {
+            *job.apply_to_all.lock().unwrap_or_else(|e| e.into_inner()) = Some(resolution);
+        }
+        drop(pending);
+        job.resumed.notify_waiters();
+        Ok(())
+    }
+
+    /// Re-publishes all unresolved conflicts for a newly connected transport.
+    pub fn republish_pending_conflicts(&self) {
+        let jobs = self.jobs.lock().unwrap_or_else(|e| e.into_inner());
+        for job in jobs.values() {
+            if let Some(pending) = job
+                .pending_conflict
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .as_ref()
+            {
+                self.publish_conflict(
+                    job.operation.lock().unwrap_or_else(|e| e.into_inner()).id,
+                    &pending.conflict,
+                );
+            }
+        }
     }
 
     /// Requests cooperative cancellation at the next safe point.
@@ -340,6 +413,7 @@ impl Scheduler {
             }
         }
         let mut progress = ProgressPublisher::new(Duration::from_millis(100), 0.25);
+        let mut deferred = Vec::new();
         for item in &plan.items {
             self.wait_while_blocked(&job).await;
             if job.cancellation.is_cancelled() {
@@ -351,14 +425,19 @@ impl Scheduler {
                 .lock()
                 .unwrap_or_else(|e| e.into_inner())
                 .clone();
-            let execution = executor.execute(&snapshot, item, &job.cancellation).await;
+            let resolution = *job.apply_to_all.lock().unwrap_or_else(|e| e.into_inner());
+            let execution = executor
+                .execute(&snapshot, item, resolution, &job.cancellation)
+                .await;
             if job.cancellation.is_cancelled() && execution.is_err() {
                 self.finish_cancelled(&job, executor.as_ref()).await?;
                 return Ok(());
             }
             let mut completed_bytes = item.bytes;
-            if let Err(error) = execution {
-                match error {
+            match execution {
+                Ok(ExecutionOutcome::Completed) => {}
+                Ok(ExecutionOutcome::Skipped) => completed_bytes = 0,
+                Err(error) => match error {
                     ExecutionError::Warning { entry, message } => {
                         job.operation
                             .lock()
@@ -367,8 +446,20 @@ impl Scheduler {
                             .push(crate::OperationEntryError { entry, message });
                         completed_bytes = 0;
                     }
+                    ExecutionError::Conflict(conflict) => {
+                        if job
+                            .pending_conflict
+                            .lock()
+                            .unwrap_or_else(|e| e.into_inner())
+                            .is_none()
+                        {
+                            self.register_conflict(&job, conflict.clone())?;
+                        }
+                        deferred.push((item.clone(), conflict));
+                        continue;
+                    }
                     other => return Err(other.into()),
-                }
+                },
             }
             {
                 let mut operation = job.operation.lock().unwrap_or_else(|e| e.into_inner());
@@ -388,6 +479,57 @@ impl Scheduler {
                 self.finish_cancelled(&job, executor.as_ref()).await?;
                 return Ok(());
             }
+        }
+        for (item, known_conflict) in deferred {
+            let outcome = loop {
+                let resolution = if let Some(resolution) =
+                    *job.apply_to_all.lock().unwrap_or_else(|e| e.into_inner())
+                {
+                    resolution
+                } else {
+                    if job
+                        .pending_conflict
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .is_none()
+                    {
+                        self.register_conflict(&job, known_conflict.clone())?;
+                    }
+                    self.wait_for_conflict_decision(&job).await?
+                };
+                if job.cancellation.is_cancelled() {
+                    self.finish_cancelled(&job, executor.as_ref()).await?;
+                    return Ok(());
+                }
+                let snapshot = job
+                    .operation
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .clone();
+                match executor
+                    .execute(&snapshot, &item, Some(resolution), &job.cancellation)
+                    .await
+                {
+                    Ok(outcome) => break outcome,
+                    Err(ExecutionError::Conflict(conflict)) => {
+                        self.register_conflict(&job, conflict)?;
+                    }
+                    Err(error) => return Err(error.into()),
+                }
+            };
+            let completed_bytes = if outcome == ExecutionOutcome::Completed {
+                item.bytes
+            } else {
+                0
+            };
+            let mut operation = job.operation.lock().unwrap_or_else(|e| e.into_inner());
+            operation.progress.completed_items =
+                operation.progress.completed_items.saturating_add(1);
+            operation.progress.completed_bytes = operation
+                .progress
+                .completed_bytes
+                .saturating_add(completed_bytes);
+            operation.progress.current_entry = Some(item.entry);
         }
         self.wait_while_blocked(&job).await;
         if job.cancellation.is_cancelled() {
@@ -424,13 +566,76 @@ impl Scheduler {
                 .lock()
                 .unwrap_or_else(|e| e.into_inner())
                 .state;
+            let has_item_conflict = job
+                .pending_conflict
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .is_some();
             if state != OperationState::Paused
-                && state != OperationState::WaitingForConflictResolution
+                && (state != OperationState::WaitingForConflictResolution || has_item_conflict)
             {
                 return;
             }
             resumed.await;
         }
+    }
+
+    fn register_conflict(
+        &self,
+        job: &Job,
+        conflict: OperationConflict,
+    ) -> Result<(), SchedulerError> {
+        *job.pending_conflict
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = Some(PendingConflict {
+            conflict: conflict.clone(),
+            decision: None,
+        });
+        let mut operation = job.operation.lock().unwrap_or_else(|e| e.into_inner());
+        self.transition_and_publish(&mut operation, OperationState::WaitingForConflictResolution)?;
+        self.publish_conflict(operation.id, &conflict);
+        Ok(())
+    }
+
+    async fn wait_for_conflict_decision(
+        &self,
+        job: &Job,
+    ) -> Result<ConflictResolution, SchedulerError> {
+        loop {
+            let notified = job.resumed.notified();
+            let decision = job
+                .pending_conflict
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .as_ref()
+                .and_then(|pending| pending.decision);
+            if let Some(decision) = decision {
+                *job.pending_conflict
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner()) = None;
+                self.transition_job(job, OperationState::Running)?;
+                return Ok(decision);
+            }
+            if job.cancellation.is_cancelled() {
+                return Ok(ConflictResolution::Skip);
+            }
+            notified.await;
+        }
+    }
+
+    fn publish_conflict(&self, operation_id: OperationId, conflict: &OperationConflict) {
+        self.events.publish(
+            EventAudience::Global,
+            BackendEventPayload::OperationConflict {
+                conflict: OperationConflictPayload {
+                    operation_id,
+                    conflict_id: conflict.id.clone(),
+                    message: format!("{} already exists", conflict.destination.name),
+                    source: conflict_entry_payload(&conflict.source),
+                    destination: conflict_entry_payload(&conflict.destination),
+                },
+            },
+        );
     }
 
     async fn finish_cancelled(
@@ -568,6 +773,19 @@ fn entry_payload(entry: &EntryRef) -> EntryRefPayload {
     EntryRefPayload {
         id: entry.id,
         location: location_payload(&entry.location),
+    }
+}
+
+fn conflict_entry_payload(entry: &crate::ConflictEntry) -> OperationConflictEntryPayload {
+    OperationConflictEntryPayload {
+        name: entry.name.clone(),
+        kind: match entry.kind {
+            fm_domain::EntryKind::File => EntryKindPayload::File,
+            fm_domain::EntryKind::Directory => EntryKindPayload::Directory,
+            fm_domain::EntryKind::Symlink => EntryKindPayload::Symlink,
+        },
+        size: entry.size,
+        modified_at: entry.modified_at,
     }
 }
 

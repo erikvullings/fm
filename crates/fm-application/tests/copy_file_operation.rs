@@ -45,7 +45,9 @@ async fn copy(
             .expect("operation");
         if matches!(
             current.state,
-            OperationStateDto::Completed | OperationStateDto::Failed
+            OperationStateDto::Completed
+                | OperationStateDto::Failed
+                | OperationStateDto::WaitingForConflictResolution
         ) {
             return current;
         }
@@ -81,7 +83,7 @@ async fn copies_zero_and_large_files_with_byte_and_item_totals() {
 }
 
 #[tokio::test]
-async fn destination_collision_is_reported_without_overwriting_or_leaving_a_temporary_file() {
+async fn ask_collision_waits_without_overwriting_the_destination() {
     let root = tempfile::tempdir().expect("temporary root");
     let destination = root.path().join("destination");
     fs::create_dir(&destination).unwrap();
@@ -97,15 +99,12 @@ async fn destination_collision_is_reported_without_overwriting_or_leaving_a_temp
     )
     .await;
 
-    assert_eq!(operation.state, OperationStateDto::Failed);
+    assert_eq!(
+        operation.state,
+        OperationStateDto::WaitingForConflictResolution
+    );
     assert_eq!(fs::read(destination.join("same.txt")).unwrap(), b"existing");
-    assert!(fs::read_dir(&destination).unwrap().all(|entry| {
-        !entry
-            .unwrap()
-            .file_name()
-            .to_string_lossy()
-            .starts_with(".fm-copy-")
-    }));
+    service.cancel_operation(operation.id.into()).unwrap();
 }
 
 #[tokio::test]

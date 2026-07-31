@@ -11,12 +11,13 @@ mod safety;
 mod scheduler;
 
 pub use model::{
-    ConflictPolicy, Operation, OperationEntryError, OperationKind, OperationProgress,
-    OperationState, TransitionError,
+    ConflictEntry, ConflictPolicy, ConflictResolution, Operation, OperationConflict,
+    OperationEntryError, OperationKind, OperationProgress, OperationState, TransitionError,
 };
 pub use naming::duplicate_name;
 pub use progress::ProgressPublisher;
 pub use safety::{CycleDetector, EntryType, SafetyError, validate_paths, validate_replacement};
 pub use scheduler::{
-    ExecutionError, OperationExecutor, OperationPlan, PlanItem, Scheduler, SchedulerError,
+    ExecutionError, ExecutionOutcome, OperationExecutor, OperationPlan, PlanItem, Scheduler,
+    SchedulerError,
 };

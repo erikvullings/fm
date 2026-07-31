@@ -40,9 +40,22 @@ async fn failed_cross_volume_fallback_never_deletes_the_source() {
     service.force_cross_volume_moves_for_tests(true);
 
     let started = start_move(&service, &source, &destination);
+    for _ in 0..500 {
+        if service.get_operation(started.id.into()).unwrap().state
+            == OperationStateDto::WaitingForConflictResolution
+        {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    assert_eq!(
+        service.get_operation(started.id.into()).unwrap().state,
+        OperationStateDto::WaitingForConflictResolution
+    );
+    service.cancel_operation(started.id.into()).unwrap();
     let result = wait(&service, started.id).await;
 
-    assert_eq!(result.state, OperationStateDto::Failed);
+    assert_eq!(result.state, OperationStateDto::Cancelled);
     assert_eq!(fs::read(&source).unwrap(), b"source");
     assert_eq!(
         fs::read(destination.join("source.txt")).unwrap(),

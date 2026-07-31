@@ -46,6 +46,7 @@ pub(crate) async fn get_events(
     let bus = state.service.event_bus();
     let session_id = SessionId::new(DEVELOPMENT_SESSION_ID);
     let subscription = bus.subscribe_all_workspaces(session_id.clone(), last_event_id);
+    state.service.republish_pending_operation_conflicts();
     let session_end = state.session_end;
     bus.publish(
         EventAudience::Session(session_id),

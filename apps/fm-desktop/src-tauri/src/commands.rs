@@ -23,11 +23,13 @@ pub(crate) fn subscribe_events<R: Runtime>(
     window: Window<R>,
     on_event: Channel<String>,
 ) -> Uuid {
-    subscriptions.subscribe(
+    let id = subscriptions.subscribe(
         state.service.event_bus(),
         window.label().to_owned(),
         on_event,
-    )
+    );
+    state.service.republish_pending_operation_conflicts();
+    id
 }
 
 /// Releases a desktop event subscription created by [`subscribe_events`].
