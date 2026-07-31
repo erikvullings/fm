@@ -30,6 +30,7 @@
 .fm-pane-tab {
   border-right: 1px solid var(--fm-border);
   padding: 0 0.75rem;
+  color: var(--fm-text-muted);
   font-weight: 600;
 }
 
@@ -63,7 +64,7 @@
 }
 
 .fm-breadcrumb-segment:last-child {
-  color: var(--fm-text);
+  color: var(--fm-text-muted);
   font-weight: 600;
 }
 
@@ -78,15 +79,20 @@
   color: var(--fm-text-muted);
 }
 
-.fm-path-input {
+.fm-path-editor > input.fm-path-input {
   box-sizing: border-box;
   flex: 1;
   min-width: 0;
-  border: 1px solid var(--fm-accent);
   padding: 0 0.5rem;
-  background: var(--fm-background);
-  color: var(--fm-text);
-  font: inherit;
+  color: var(--fm-text-muted, #fff);
+  font-family: var(--fm-font-family) !important;
+  font-size: var(--fm-font-size) !important;
+  font-weight: normal !important;
+  line-height: inherit !important;
+  margin: 0;
+  border-bottom: 0 !important;
+  box-shadow: none !important;
+  height: 22px;
 }
 
 .fm-path-error {
