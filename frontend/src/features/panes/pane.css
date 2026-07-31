@@ -74,9 +74,15 @@
 }
 
 .fm-breadcrumb-edit-target {
+  display: flex;
+  align-items: center;
   margin-left: auto;
   padding: 0 0.65rem;
   color: var(--fm-text-muted);
+}
+
+.fm-breadcrumb-edit-target .fm-icon {
+  display: block;
 }
 
 .fm-path-editor > input.fm-path-input {

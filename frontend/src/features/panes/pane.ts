@@ -1,4 +1,5 @@
 import m, { type FactoryComponent, type VnodeDOM } from 'mithril';
+import { editIcon } from '../../components/icons';
 import type { EntryId, EntrySummary, LoadingState, SortDescriptor } from '../../models';
 import { DirectoryTable, entryArraySource } from '../directory-table/directory-table';
 import {
@@ -458,7 +459,7 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
                     title: 'Edit path (Ctrl/Cmd+L)',
                     onclick: () => beginEditing(attrs.path),
                   },
-                  '✎',
+                  editIcon(),
                 ),
                 pathError === undefined
                   ? undefined
