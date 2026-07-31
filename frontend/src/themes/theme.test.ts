@@ -133,4 +133,8 @@ describe('theme stylesheet', () => {
   it('does not highlight directory rows on mouse hover', () => {
     expect(directoryTableCss).not.toMatch(/\.fm-directory-row:hover/);
   });
+
+  it('keeps the arrow cursor over directory rows', () => {
+    expect(directoryTableCss).toMatch(/\.fm-directory-row\s*\{[^}]*cursor:\s*default/s);
+  });
 });

@@ -126,6 +126,27 @@ describe('DirectoryTable rows', () => {
     expect(onCursorChange).toHaveBeenCalledWith(1);
   });
 
+  it('activates a double-clicked row', () => {
+    const onActivate = vi.fn();
+    mount({
+      state: { type: 'loaded' },
+      source: entryArraySource([entry()]),
+      onActivate,
+    });
+
+    root
+      .querySelector<HTMLElement>('.fm-directory-row')
+      ?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+
+    expect(onActivate).toHaveBeenCalledWith(0);
+  });
+
+  it('fills its container when no explicit viewport height is supplied', () => {
+    mount({ state: { type: 'loaded' }, source: entryArraySource([entry()]) });
+
+    expect(root.querySelector<HTMLElement>('.fm-directory-table')?.style.height).toBe('100%');
+  });
+
   it('renders semantic columns and textual hidden and link indicators', () => {
     mount({
       state: { type: 'loaded' },

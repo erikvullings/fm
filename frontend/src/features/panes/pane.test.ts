@@ -307,6 +307,17 @@ describe('Pane navigation input', () => {
     vi.useRealTimers();
   });
 
+  it('opens a double-clicked row', () => {
+    const onOpenEntry = vi.fn();
+    mount(attrs({ onOpenEntry }));
+
+    root
+      .querySelector<HTMLElement>('.fm-directory-row')
+      ?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+
+    expect(onOpenEntry).toHaveBeenCalledWith(entries[0]);
+  });
+
   it('keeps and highlights a matching typeahead prefix until explicitly cleared', () => {
     vi.useFakeTimers();
     vi.setSystemTime(1_000);

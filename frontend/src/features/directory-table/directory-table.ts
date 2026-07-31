@@ -43,6 +43,7 @@ export interface DirectoryTableAttrs {
   readonly onSortChange?: (sort: readonly SortDescriptor[]) => void;
   readonly formatSettings?: EntryFormatSettings;
   readonly onCursorChange?: (index: number) => void;
+  readonly onActivate?: (index: number) => void;
   readonly onRetry?: () => void;
   readonly onEndReached?: () => void;
   readonly renamingEntryId?: EntryId;
@@ -300,7 +301,8 @@ export const DirectoryTable: FactoryComponent<DirectoryTableAttrs> = () => {
       const cursorEntry =
         attrs.cursorIndex === undefined ? undefined : source?.entryAt(attrs.cursorIndex);
       const bodyScrollTop = Math.max(0, scrollTop - rowHeight);
-      const viewportHeight = attrs.viewportHeight ?? DEFAULT_VIEWPORT_HEIGHT;
+      const viewportHeight =
+        attrs.viewportHeight ?? element?.clientHeight ?? DEFAULT_VIEWPORT_HEIGHT;
       const window =
         source === undefined
           ? undefined
@@ -331,6 +333,7 @@ export const DirectoryTable: FactoryComponent<DirectoryTableAttrs> = () => {
                 'aria-selected': selected ? 'true' : 'false',
                 'data-row-stripe': index % 2 === 1 ? 'alternate' : undefined,
                 onclick: () => attrs.onCursorChange?.(index),
+                ondblclick: () => attrs.onActivate?.(index),
                 class: [
                   entry.hidden ? 'fm-hidden-entry' : '',
                   cursor ? 'fm-cursor-row' : '',
@@ -393,7 +396,7 @@ export const DirectoryTable: FactoryComponent<DirectoryTableAttrs> = () => {
           'aria-colcount': INITIAL_COLUMNS.length,
           'aria-activedescendant': cursorEntry === undefined ? undefined : rowId(cursorEntry.id),
           'data-active': attrs.active ? 'true' : 'false',
-          style: { height: `${viewportHeight}px` },
+          style: { height: attrs.viewportHeight === undefined ? '100%' : `${viewportHeight}px` },
           onscroll: (event: Event) => {
             const target = event.currentTarget as HTMLElement;
             scrollTop = target.scrollTop;

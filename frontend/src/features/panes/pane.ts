@@ -526,6 +526,12 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
                 );
               }
             },
+            onActivate: (index) => {
+              const entry = attrs.entries[index];
+              if (entry !== undefined) {
+                void attrs.onOpenEntry(entry);
+              }
+            },
             onSortChange: attrs.onSortChange,
             ...(attrs.cursorIndex === undefined ? {} : { cursorIndex: attrs.cursorIndex }),
           }),
