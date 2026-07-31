@@ -23,6 +23,7 @@ import {
   createOperationsState,
   dismissOperation,
   reduceOperationEvents,
+  transitionOperationState,
 } from '../features/operations/operation-state';
 import { PermanentDeleteDialog } from '../features/operations/permanent-delete-dialog';
 import { isParentEntry, withParentEntry } from '../features/panes/parent-entry';
@@ -719,12 +720,18 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
         ]),
         m(OperationCentre, {
           state: operations,
-          onCancel: (operationId) =>
-            void attrs.client.cancelOperation(operationId).catch(() => undefined),
-          onPause: (operationId) =>
-            void attrs.client.pauseOperation(operationId).catch(() => undefined),
-          onResume: (operationId) =>
-            void attrs.client.resumeOperation(operationId).catch(() => undefined),
+          onCancel: (operationId) => {
+            operations = transitionOperationState(operations, operationId, 'cancelling');
+            void attrs.client.cancelOperation(operationId).catch(() => undefined);
+          },
+          onPause: (operationId) => {
+            operations = transitionOperationState(operations, operationId, 'paused');
+            void attrs.client.pauseOperation(operationId).catch(() => undefined);
+          },
+          onResume: (operationId) => {
+            operations = transitionOperationState(operations, operationId, 'running');
+            void attrs.client.resumeOperation(operationId).catch(() => undefined);
+          },
           onDismiss: (operationId) => {
             operations = dismissOperation(operations, operationId);
           },

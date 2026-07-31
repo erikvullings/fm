@@ -1,6 +1,6 @@
 # 0046 Operation cancellation, pause and resume
 
-Status: open
+Status: done
 Priority: high
 Owner: unassigned
 Agent: unassigned
@@ -31,4 +31,16 @@ Depends on: 0045
   operation centre.
 
 ## Agent Notes
-- Not started.
+- 2026-07-31 Codex: Added a cooperative `PauseToken` to the operation executor contract and
+  scheduler, including chunk-boundary checkpoints for streamed copies. Cancel now wakes paused and
+  conflict-waiting jobs, interrupts planning through the provider cancellation token, publishes
+  `Cancelling` immediately, cleans private partial destinations, and terminates as `Cancelled`.
+  The operation centre applies cancel/pause/resume state optimistically, retains partial progress
+  totals, and displays an explicit cancelled-progress result.
+- 2026-07-31 Codex: Added five backend integration/engine tests covering planning cancellation,
+  active-file and between-item pause/resume, large-copy totals, and large-tree planning, plus four
+  frontend tests for immediate controls, progress merging, and the cancelled summary. Formatting,
+  strict Clippy, frontend type-checking, and the complete `fm-operations` and `fm-application` test
+  suites pass. The repository-wide test command remains red in the unrelated `fm-vfs-local`
+  `metadata_is_separate_and_capabilities_are_truthful` assertion because the provider advertises
+  `MOVE` while that pre-existing expected capability set omits it.

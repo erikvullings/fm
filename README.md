@@ -87,7 +87,11 @@ resolved from provider-neutral locations through a typed registry.
 Mutating filesystem work is represented by typed jobs in `fm-operations`. Its bounded scheduler
 runs a planning phase before execution, publishes lifecycle and coalesced progress events through
 the shared event bus, calculates a smoothed transfer rate, and cooperatively cancels at safe points
-with partial-destination cleanup delegated to each operation implementation. Shared preflight
+with partial-destination cleanup delegated to each operation implementation. Running work can be
+paused without losing its planned totals or held scheduler locks, then resumed at the next item or
+streaming chunk boundary. Cancellation is surfaced immediately as `Cancelling`, also interrupts
+planning and conflict waits, and finishes as `Cancelled` with an explicit partial-progress summary.
+Shared preflight
 checks reject same/nested destinations, case-only renames on insensitive filesystems, traversal
 cycles, and file/directory replacement mismatches. Create-directory jobs now execute through the
 provider, validate cross-platform-safe names, and create intermediate directories only when the

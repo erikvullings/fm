@@ -6,6 +6,13 @@ continues past individual child failures for copy and permanent delete, recordin
 and completing with warnings; move's copy/delete fallback stays strict so a partial destination can
 never authorize source deletion.
 
+Pause and cancellation are cooperative scheduler signals. Executors retain their operation locks
+and planned progress while paused, checking the pause token between plan items and at streaming
+chunk boundaries. Cancellation wakes paused and conflict-waiting jobs, propagates the same
+`CancellationToken` into provider calls, and is also observed during tree planning. Streaming copies
+write to private temporary destinations and publish the final name only after a successful close;
+cancellation removes the temporary entry and terminates as `Cancelled`, never `Failed`.
+
 Move uses provider rename only when the provider reports the source and destination directory are
 on the same filesystem. Otherwise it reuses recursive copy, verifies that the destination root is
 present, and only then deletes the source. The forced-fallback integration path covers this logic;

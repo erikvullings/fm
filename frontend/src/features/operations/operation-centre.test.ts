@@ -3,7 +3,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { BackendEvent, Operation } from '../../models';
 import { OperationCentre } from './operation-centre';
-import { createOperationsState, reduceOperationEvents } from './operation-state';
+import {
+  createOperationsState,
+  reduceOperationEvents,
+  transitionOperationState,
+} from './operation-state';
 
 const operation = (state: Operation['state'], id: string = state): Operation => ({
   id,
@@ -78,6 +82,42 @@ describe('operation progress reducer', () => {
       details: { reason: 'Permission denied' },
     });
   });
+
+  it('preserves planned totals across incremental progress and pause/resume transitions', () => {
+    const initial = createOperationsState([operation('running', 'copy')]);
+    const paused = reduceOperationEvents(initial, [
+      event(1, {
+        type: 'operation.progress',
+        operationId: 'copy',
+        progress: { completedItems: 3, completedBytes: 1_536 },
+      }),
+      event(2, { type: 'operation.stateChanged', operationId: 'copy', state: 'paused' }),
+    ]);
+    const resumed = reduceOperationEvents(paused, [
+      event(3, { type: 'operation.stateChanged', operationId: 'copy', state: 'running' }),
+    ]);
+
+    expect(resumed.byId.copy).toMatchObject({
+      state: 'running',
+      progress: {
+        completedItems: 3,
+        totalItems: 4,
+        completedBytes: 1_536,
+        totalBytes: 2_048,
+      },
+    });
+  });
+
+  it('applies an immediate local state transition without changing progress', () => {
+    const initial = createOperationsState([operation('running', 'copy')]);
+
+    const cancelling = transitionOperationState(initial, 'copy', 'cancelling');
+
+    expect(cancelling.byId.copy).toMatchObject({
+      state: 'cancelling',
+      progress: initial.byId.copy?.progress,
+    });
+  });
 });
 
 describe('OperationCentre states', () => {
@@ -147,5 +187,21 @@ describe('OperationCentre states', () => {
     expect(
       root.querySelector('[data-operation-id="failed"] [data-action="dismiss"]'),
     ).not.toBeNull();
+  });
+
+  it('makes partial results explicit for a cancelled operation', () => {
+    m.mount(root, {
+      view: () =>
+        m(OperationCentre, {
+          state: createOperationsState([operation('cancelled')]),
+          onCancel: vi.fn(),
+          onPause: vi.fn(),
+          onResume: vi.fn(),
+          onDismiss: vi.fn(),
+        }),
+    });
+
+    const result = root.querySelector('[data-operation-id="cancelled"] .fm-operation-result');
+    expect(result?.textContent).toBe('Cancelled after 2 / 4 items (1 KiB / 2 KiB).');
   });
 });

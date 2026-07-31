@@ -17,7 +17,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::{
     ConflictResolution, Operation, OperationConflict, OperationProgress, OperationState,
-    ProgressPublisher, TransitionError,
+    PauseToken, ProgressPublisher, TransitionError,
 };
 
 /// One persistable unit in an operation plan.
@@ -114,6 +114,7 @@ pub trait OperationExecutor: Send + Sync + 'static {
         operation: &Operation,
         item: &PlanItem,
         resolution: Option<ConflictResolution>,
+        pause: &PauseToken,
         cancellation: &CancellationToken,
     ) -> Result<ExecutionOutcome, ExecutionError>;
 
@@ -160,6 +161,7 @@ struct Job {
     cancellation: CancellationToken,
     completed: Notify,
     resumed: Notify,
+    pause: PauseToken,
     pending_conflict: Mutex<Option<PendingConflict>>,
     apply_to_all: Mutex<Option<ConflictResolution>>,
 }
@@ -207,6 +209,7 @@ impl Scheduler {
             cancellation: CancellationToken::new(),
             completed: Notify::new(),
             resumed: Notify::new(),
+            pause: PauseToken::default(),
             pending_conflict: Mutex::new(None),
             apply_to_all: Mutex::new(None),
         });
@@ -220,13 +223,21 @@ impl Scheduler {
                 .run_job(Arc::clone(&job), Arc::clone(&executor))
                 .await;
             if let Err(error) = result {
-                let snapshot = job
-                    .operation
-                    .lock()
-                    .unwrap_or_else(|e| e.into_inner())
-                    .clone();
-                let _ = executor.cleanup_partial(&snapshot).await;
-                scheduler.fail_job(&job, &error.to_string());
+                if job.cancellation.is_cancelled() {
+                    if let Err(cleanup_error) =
+                        scheduler.finish_cancelled(&job, executor.as_ref()).await
+                    {
+                        scheduler.fail_job(&job, &cleanup_error.to_string());
+                    }
+                } else {
+                    let snapshot = job
+                        .operation
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .clone();
+                    let _ = executor.cleanup_partial(&snapshot).await;
+                    scheduler.fail_job(&job, &error.to_string());
+                }
             }
             job.completed.notify_waiters();
         });
@@ -263,12 +274,21 @@ impl Scheduler {
 
     /// Marks a running operation as paused.
     pub fn pause(&self, id: OperationId) -> Result<(), SchedulerError> {
-        self.transition_by_id(id, OperationState::Paused)
+        let jobs = self.jobs.lock().unwrap_or_else(|e| e.into_inner());
+        let job = jobs.get(&id).ok_or(SchedulerError::UnknownOperation(id))?;
+        self.transition_job(job, OperationState::Paused)?;
+        job.pause.pause();
+        Ok(())
     }
 
     /// Resumes a paused operation.
     pub fn resume(&self, id: OperationId) -> Result<(), SchedulerError> {
-        self.transition_by_id(id, OperationState::Running)
+        let jobs = self.jobs.lock().unwrap_or_else(|e| e.into_inner());
+        let job = jobs.get(&id).ok_or(SchedulerError::UnknownOperation(id))?;
+        self.transition_job(job, OperationState::Running)?;
+        job.pause.resume();
+        job.resumed.notify_waiters();
+        Ok(())
     }
 
     /// Continues an operation waiting for a conflict decision.
@@ -321,6 +341,7 @@ impl Scheduler {
         let jobs = self.jobs.lock().unwrap_or_else(|e| e.into_inner());
         let job = jobs.get(&id).ok_or(SchedulerError::UnknownOperation(id))?;
         job.cancellation.cancel();
+        job.pause.resume();
         let mut operation = job.operation.lock().unwrap_or_else(|e| e.into_inner());
         if !operation.state.is_terminal() && operation.state != OperationState::Cancelling {
             self.transition_and_publish(&mut operation, OperationState::Cancelling)?;
@@ -351,20 +372,6 @@ impl Scheduler {
             }
             notified.await;
         }
-    }
-
-    fn transition_by_id(
-        &self,
-        id: OperationId,
-        state: OperationState,
-    ) -> Result<(), SchedulerError> {
-        let jobs = self.jobs.lock().unwrap_or_else(|e| e.into_inner());
-        let job = jobs.get(&id).ok_or(SchedulerError::UnknownOperation(id))?;
-        self.transition_job(job, state)?;
-        if state == OperationState::Running {
-            job.resumed.notify_waiters();
-        }
-        Ok(())
     }
 
     #[tracing::instrument(skip_all, fields(operation_id = %job.operation.lock().unwrap_or_else(|e| e.into_inner()).id))]
@@ -427,7 +434,7 @@ impl Scheduler {
                 .clone();
             let resolution = *job.apply_to_all.lock().unwrap_or_else(|e| e.into_inner());
             let execution = executor
-                .execute(&snapshot, item, resolution, &job.cancellation)
+                .execute(&snapshot, item, resolution, &job.pause, &job.cancellation)
                 .await;
             if job.cancellation.is_cancelled() && execution.is_err() {
                 self.finish_cancelled(&job, executor.as_ref()).await?;
@@ -507,7 +514,13 @@ impl Scheduler {
                     .unwrap_or_else(|e| e.into_inner())
                     .clone();
                 match executor
-                    .execute(&snapshot, &item, Some(resolution), &job.cancellation)
+                    .execute(
+                        &snapshot,
+                        &item,
+                        Some(resolution),
+                        &job.pause,
+                        &job.cancellation,
+                    )
                     .await
                 {
                     Ok(outcome) => break outcome,

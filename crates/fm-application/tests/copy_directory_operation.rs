@@ -161,6 +161,69 @@ async fn plans_and_copies_ten_thousand_small_files() {
 }
 
 #[tokio::test]
+async fn cancellation_during_large_tree_planning_stops_before_writes() {
+    let root = tempfile::tempdir().unwrap();
+    let source = root.path().join("source");
+    let destination = root.path().join("destination");
+    fs::create_dir(&source).unwrap();
+    fs::create_dir(&destination).unwrap();
+    for index in 0..10_000 {
+        fs::write(source.join(format!("f{index:05}")), b"x").unwrap();
+    }
+    let service = service(&root);
+    let operation = service
+        .start_operation(
+            StartOperationRequestDto {
+                operation_type: OperationKindDto::Copy,
+                sources: vec![Location::from_native_path(&source).unwrap().into()],
+                destination: Some(Location::from_native_path(&destination).unwrap().into()),
+                conflict_policy: OperationConflictPolicyDto::Ask,
+                name: None,
+                create_intermediate_directories: false,
+                symlink_policy: SymlinkPolicyDto::CopyLink,
+                permanent_delete_confirmed: false,
+                override_read_only: false,
+            },
+            None,
+        )
+        .unwrap();
+    loop {
+        let current = service.get_operation(operation.id.into()).unwrap();
+        if current.state == OperationStateDto::Planning {
+            service.cancel_operation(operation.id.into()).unwrap();
+            break;
+        }
+        assert!(
+            !matches!(
+                current.state,
+                OperationStateDto::Cancelled
+                    | OperationStateDto::Completed
+                    | OperationStateDto::CompletedWithWarnings
+                    | OperationStateDto::Failed
+            ),
+            "planning completed before cancellation could be requested"
+        );
+        tokio::task::yield_now().await;
+    }
+    loop {
+        let current = service.get_operation(operation.id.into()).unwrap();
+        if matches!(
+            current.state,
+            OperationStateDto::Cancelled
+                | OperationStateDto::Completed
+                | OperationStateDto::CompletedWithWarnings
+                | OperationStateDto::Failed
+        ) {
+            assert_eq!(current.state, OperationStateDto::Cancelled);
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(2)).await;
+    }
+
+    assert_eq!(fs::read_dir(&destination).unwrap().count(), 0);
+}
+
+#[tokio::test]
 async fn copies_a_nested_unicode_tree_and_empty_directories() {
     let root = tempfile::tempdir().unwrap();
     let source = root.path().join("source");

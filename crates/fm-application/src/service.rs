@@ -14,7 +14,7 @@ use fm_events::{
 };
 use fm_operations::{
     ConflictResolution, ExecutionError, ExecutionOutcome, Operation, OperationExecutor,
-    OperationPlan, PlanItem, Scheduler, SchedulerError,
+    OperationPlan, PauseToken, PlanItem, Scheduler, SchedulerError,
 };
 use fm_settings::{
     ConflictPolicy, DateFormat, DefaultPaneLayout, Settings, SettingsStore, SizeFormat, Theme,
@@ -758,6 +758,7 @@ impl OperationExecutor for DeleteExecutor {
         _operation: &Operation,
         item: &PlanItem,
         _resolution: Option<fm_operations::ConflictResolution>,
+        _pause: &PauseToken,
         cancellation: &CancellationToken,
     ) -> Result<fm_operations::ExecutionOutcome, ExecutionError> {
         let provider = self
@@ -832,6 +833,7 @@ impl OperationExecutor for MoveGroupExecutor {
         operation: &Operation,
         item: &PlanItem,
         resolution: Option<fm_operations::ConflictResolution>,
+        pause: &PauseToken,
         cancellation: &CancellationToken,
     ) -> Result<fm_operations::ExecutionOutcome, ExecutionError> {
         for executor in &self.moves {
@@ -844,7 +846,7 @@ impl OperationExecutor for MoveGroupExecutor {
                     .contains_key(&item.entry.location.uri)
             {
                 return executor
-                    .execute(operation, item, resolution, cancellation)
+                    .execute(operation, item, resolution, pause, cancellation)
                     .await;
             }
         }
@@ -920,6 +922,7 @@ impl OperationExecutor for DuplicateExecutor {
         operation: &Operation,
         item: &PlanItem,
         resolution: Option<fm_operations::ConflictResolution>,
+        pause: &PauseToken,
         cancellation: &CancellationToken,
     ) -> Result<fm_operations::ExecutionOutcome, ExecutionError> {
         for copy in &self.copies {
@@ -930,7 +933,7 @@ impl OperationExecutor for DuplicateExecutor {
                 .contains_key(&item.entry.location.uri)
             {
                 return copy
-                    .execute(operation, item, resolution, cancellation)
+                    .execute(operation, item, resolution, pause, cancellation)
                     .await;
             }
         }
@@ -999,12 +1002,13 @@ impl OperationExecutor for MoveExecutor {
         operation: &Operation,
         item: &PlanItem,
         resolution: Option<fm_operations::ConflictResolution>,
+        pause: &PauseToken,
         cancellation: &CancellationToken,
     ) -> Result<fm_operations::ExecutionOutcome, ExecutionError> {
         if *self.fallback.lock().unwrap_or_else(|e| e.into_inner()) {
             return self
                 .copy
-                .execute(operation, item, resolution, cancellation)
+                .execute(operation, item, resolution, pause, cancellation)
                 .await;
         }
         let name = item
@@ -1243,6 +1247,7 @@ impl OperationExecutor for CopyExecutor {
         operation: &Operation,
         item: &PlanItem,
         resolution: Option<fm_operations::ConflictResolution>,
+        pause: &PauseToken,
         cancellation: &CancellationToken,
     ) -> Result<fm_operations::ExecutionOutcome, ExecutionError> {
         let mut planned = self
@@ -1332,6 +1337,7 @@ impl OperationExecutor for CopyExecutor {
                 &source_item,
                 &planned.destination,
                 resolution,
+                pause,
                 cancellation,
             )
             .await
@@ -1459,6 +1465,7 @@ impl CopyExecutor {
         item: &PlanItem,
         final_destination: &Location,
         resolution: Option<ConflictResolution>,
+        pause: &PauseToken,
         cancellation: &CancellationToken,
     ) -> Result<ExecutionOutcome, ExecutionError> {
         let destination_directory = final_destination
@@ -1479,6 +1486,7 @@ impl CopyExecutor {
                 .source_provider
                 .server_side_copy(&item.entry, &temporary, cancellation.clone())
                 .await?;
+        pause.checkpoint().await;
         if !cloned {
             let mut reader = self
                 .source_provider
@@ -1494,6 +1502,7 @@ impl CopyExecutor {
                 .await?;
             let mut buffer = vec![0_u8; 128 * 1024];
             loop {
+                pause.checkpoint().await;
                 if cancellation.is_cancelled() {
                     return Err(fm_vfs::VfsError::Cancelled.into());
                 }
@@ -1512,6 +1521,7 @@ impl CopyExecutor {
             writer.shutdown().await.map_err(copy_stream_error)?;
             drop(writer);
         }
+        pause.checkpoint().await;
         if cancellation.is_cancelled() {
             return Err(fm_vfs::VfsError::Cancelled.into());
         }
@@ -1662,6 +1672,7 @@ impl OperationExecutor for RenameExecutor {
         _operation: &Operation,
         item: &PlanItem,
         _resolution: Option<fm_operations::ConflictResolution>,
+        _pause: &PauseToken,
         cancellation: &CancellationToken,
     ) -> Result<fm_operations::ExecutionOutcome, ExecutionError> {
         let source = EntryRef {
@@ -1700,6 +1711,7 @@ impl OperationExecutor for CreateDirectoryExecutor {
         _operation: &Operation,
         _item: &PlanItem,
         _resolution: Option<fm_operations::ConflictResolution>,
+        _pause: &PauseToken,
         cancellation: &CancellationToken,
     ) -> Result<fm_operations::ExecutionOutcome, ExecutionError> {
         if !self.create_intermediates {
@@ -1745,6 +1757,7 @@ impl OperationExecutor for NoOpExecutor {
         _operation: &Operation,
         _item: &PlanItem,
         _resolution: Option<fm_operations::ConflictResolution>,
+        _pause: &PauseToken,
         _cancellation: &CancellationToken,
     ) -> Result<fm_operations::ExecutionOutcome, ExecutionError> {
         Ok(ExecutionOutcome::Completed)

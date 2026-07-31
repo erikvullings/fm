@@ -24,6 +24,15 @@ function currentEntryName(operation: Operation): string | undefined {
   return segment === undefined ? uri : decodeURIComponent(segment);
 }
 
+function cancelledResult(operation: Operation): string {
+  const { completedItems, totalItems, completedBytes, totalBytes } = operation.progress;
+  const items = `${completedItems}${totalItems === undefined ? '' : ` / ${totalItems}`}`;
+  const bytes = `${formatBytes(completedBytes)}${
+    totalBytes === undefined ? '' : ` / ${formatBytes(totalBytes)}`
+  }`;
+  return operation.result?.message ?? `Cancelled after ${items} items (${bytes}).`;
+}
+
 function button(label: string, action: string, onclick: () => void) {
   return m('button', { type: 'button', 'data-action': action, onclick }, label);
 }
@@ -74,7 +83,9 @@ export const OperationCentre: Component<OperationCentreAttrs> = {
                 'aria-label': `${operation.kind} progress`,
               }),
           operation.state !== 'completed' && operation.state !== 'completedWithWarnings'
-            ? undefined
+            ? operation.state === 'cancelled'
+              ? m('.fm-operation-result', cancelledResult(operation))
+              : undefined
             : m(
                 '.fm-operation-result',
                 operation.result?.message ??

@@ -255,3 +255,76 @@ async fn cancellation_removes_the_private_partial_destination() {
     assert!(!destination.join("large-sparse.bin").exists());
     assert_eq!(fs::read_dir(destination).unwrap().count(), 0);
 }
+
+#[tokio::test]
+async fn pause_and_resume_large_copy_retains_planned_totals() {
+    let root = tempfile::tempdir().expect("temporary root");
+    let destination = root.path().join("destination");
+    fs::create_dir(&destination).unwrap();
+    let source_path = root.path().join("large-pause.bin");
+    fs::File::create(&source_path)
+        .unwrap()
+        .set_len(128 * 1024 * 1024)
+        .unwrap();
+    let service = service(&root);
+    let operation = service
+        .start_operation(
+            StartOperationRequestDto {
+                operation_type: OperationKindDto::Copy,
+                sources: vec![Location::from_native_path(&source_path).unwrap().into()],
+                destination: Some(Location::from_native_path(&destination).unwrap().into()),
+                conflict_policy: OperationConflictPolicyDto::Ask,
+                name: None,
+                create_intermediate_directories: false,
+                symlink_policy: Default::default(),
+                permanent_delete_confirmed: false,
+                override_read_only: false,
+            },
+            None,
+        )
+        .unwrap();
+    loop {
+        let current = service.get_operation(operation.id.into()).unwrap();
+        if current.state == OperationStateDto::Running {
+            service.pause_operation(operation.id.into()).unwrap();
+            break;
+        }
+        assert!(
+            !matches!(
+                current.state,
+                OperationStateDto::Cancelled
+                    | OperationStateDto::Completed
+                    | OperationStateDto::CompletedWithWarnings
+                    | OperationStateDto::Failed
+            ),
+            "copy completed before it could pause"
+        );
+        tokio::task::yield_now().await;
+    }
+
+    let paused = service.get_operation(operation.id.into()).unwrap();
+    assert_eq!(paused.state, OperationStateDto::Paused);
+    assert_eq!(paused.progress.total_items, Some(1));
+    assert_eq!(paused.progress.total_bytes, Some(128 * 1024 * 1024));
+    assert!(!destination.join("large-pause.bin").exists());
+
+    service.resume_operation(operation.id.into()).unwrap();
+    loop {
+        let current = service.get_operation(operation.id.into()).unwrap();
+        if matches!(
+            current.state,
+            OperationStateDto::Cancelled
+                | OperationStateDto::Completed
+                | OperationStateDto::CompletedWithWarnings
+                | OperationStateDto::Failed
+        ) {
+            assert_eq!(current.state, OperationStateDto::Completed);
+            assert_eq!(current.progress.completed_items, 1);
+            assert_eq!(current.progress.total_items, Some(1));
+            assert_eq!(current.progress.completed_bytes, 128 * 1024 * 1024);
+            assert_eq!(current.progress.total_bytes, Some(128 * 1024 * 1024));
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(2)).await;
+    }
+}

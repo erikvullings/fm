@@ -9,7 +9,7 @@ use fm_events::{EventBus, SessionId, SubscriptionEvent};
 use fm_operations::{
     ConflictEntry, ConflictPolicy, ConflictResolution, CycleDetector, EntryType, ExecutionError,
     ExecutionOutcome, Operation, OperationConflict, OperationExecutor, OperationKind,
-    OperationPlan, OperationState, PlanItem, ProgressPublisher, SafetyError, Scheduler,
+    OperationPlan, OperationState, PauseToken, PlanItem, ProgressPublisher, SafetyError, Scheduler,
     validate_paths, validate_replacement,
 };
 use fm_vfs::EntryRef;
@@ -191,6 +191,61 @@ async fn cancellation_at_safe_point_cleans_partial_destination() {
     );
 }
 
+#[derive(Default)]
+struct CancellablePlanningExecutor {
+    planning_started: tokio::sync::Notify,
+    cleanup_called: std::sync::atomic::AtomicBool,
+}
+
+#[async_trait]
+impl OperationExecutor for CancellablePlanningExecutor {
+    async fn plan(
+        &self,
+        _operation: &Operation,
+        cancellation: &CancellationToken,
+    ) -> Result<OperationPlan, ExecutionError> {
+        self.planning_started.notify_one();
+        cancellation.cancelled().await;
+        Err(fm_vfs::VfsError::Cancelled.into())
+    }
+
+    async fn execute(
+        &self,
+        _operation: &Operation,
+        _item: &PlanItem,
+        _resolution: Option<ConflictResolution>,
+        _pause: &PauseToken,
+        _cancellation: &CancellationToken,
+    ) -> Result<ExecutionOutcome, ExecutionError> {
+        unreachable!("cancelled planning must not execute plan items")
+    }
+
+    async fn cleanup_partial(&self, _operation: &Operation) -> Result<(), ExecutionError> {
+        self.cleanup_called
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        Ok(())
+    }
+}
+
+#[tokio::test]
+async fn cancelling_during_planning_is_cancelled_not_failed() {
+    let scheduler = Scheduler::new(1, EventBus::new(16));
+    let executor = Arc::new(CancellablePlanningExecutor::default());
+    let id = scheduler.submit(operation(), executor.clone()).unwrap();
+    executor.planning_started.notified().await;
+
+    scheduler.cancel(id).unwrap();
+    assert_eq!(scheduler.get(id).unwrap().state, OperationState::Cancelling);
+    scheduler.wait(id).await.unwrap();
+
+    assert_eq!(scheduler.get(id).unwrap().state, OperationState::Cancelled);
+    assert!(
+        executor
+            .cleanup_called
+            .load(std::sync::atomic::Ordering::SeqCst)
+    );
+}
+
 fn operation() -> Operation {
     Operation::new(
         OperationKind::Copy,
@@ -226,10 +281,14 @@ impl OperationExecutor for BlockingExecutor {
         operation: &Operation,
         _cancellation: &CancellationToken,
     ) -> Result<OperationPlan, ExecutionError> {
-        Ok(OperationPlan::new(vec![PlanItem::new(
-            operation.sources[0].clone(),
-            100,
-        )]))
+        Ok(OperationPlan::new(
+            operation
+                .sources
+                .iter()
+                .cloned()
+                .map(|source| PlanItem::new(source, 100))
+                .collect(),
+        ))
     }
 
     async fn execute(
@@ -237,6 +296,7 @@ impl OperationExecutor for BlockingExecutor {
         _operation: &Operation,
         _item: &PlanItem,
         _resolution: Option<fm_operations::ConflictResolution>,
+        _pause: &PauseToken,
         _cancellation: &CancellationToken,
     ) -> Result<fm_operations::ExecutionOutcome, ExecutionError> {
         if self
@@ -257,8 +317,112 @@ impl OperationExecutor for BlockingExecutor {
     }
 }
 
+#[tokio::test]
+async fn pause_between_items_retains_totals_and_resume_continues_progress() {
+    let scheduler = Scheduler::new(1, EventBus::new(32));
+    let executor = Arc::new(BlockingExecutor::default());
+    let operation = Operation::new(
+        OperationKind::Copy,
+        vec![entry("file:///first"), entry("file:///second")],
+        Some(location("file:///destination")),
+        ConflictPolicy::Ask,
+    );
+    let id = scheduler.submit(operation, executor.clone()).unwrap();
+    executor.first_started.notified().await;
+
+    scheduler.pause(id).unwrap();
+    executor.release_first.notify_one();
+    tokio::time::sleep(Duration::from_millis(20)).await;
+
+    let paused = scheduler.get(id).unwrap();
+    assert_eq!(paused.state, OperationState::Paused);
+    assert_eq!(paused.progress.completed_items, 1);
+    assert_eq!(paused.progress.total_items, Some(2));
+    assert_eq!(paused.progress.completed_bytes, 100);
+    assert_eq!(paused.progress.total_bytes, Some(200));
+
+    scheduler.resume(id).unwrap();
+    scheduler.wait(id).await.unwrap();
+    let completed = scheduler.get(id).unwrap();
+    assert_eq!(completed.state, OperationState::Completed);
+    assert_eq!(completed.progress.completed_items, 2);
+    assert_eq!(completed.progress.total_items, Some(2));
+    assert_eq!(completed.progress.completed_bytes, 200);
+    assert_eq!(completed.progress.total_bytes, Some(200));
+}
+
 struct ItemConflictExecutor {
     later_item_completed: std::sync::atomic::AtomicBool,
+}
+
+#[derive(Default)]
+struct ChunkedExecutor {
+    first_chunk_completed: tokio::sync::Notify,
+    release_first_chunk: tokio::sync::Notify,
+    chunks_completed: std::sync::atomic::AtomicUsize,
+}
+
+#[async_trait]
+impl OperationExecutor for ChunkedExecutor {
+    async fn plan(
+        &self,
+        operation: &Operation,
+        _cancellation: &CancellationToken,
+    ) -> Result<OperationPlan, ExecutionError> {
+        Ok(OperationPlan::new(vec![PlanItem::new(
+            operation.sources[0].clone(),
+            200,
+        )]))
+    }
+
+    async fn execute(
+        &self,
+        _operation: &Operation,
+        _item: &PlanItem,
+        _resolution: Option<ConflictResolution>,
+        pause: &PauseToken,
+        _cancellation: &CancellationToken,
+    ) -> Result<ExecutionOutcome, ExecutionError> {
+        self.chunks_completed
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        self.first_chunk_completed.notify_one();
+        self.release_first_chunk.notified().await;
+        pause.checkpoint().await;
+        self.chunks_completed
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        Ok(ExecutionOutcome::Completed)
+    }
+
+    async fn cleanup_partial(&self, _operation: &Operation) -> Result<(), ExecutionError> {
+        Ok(())
+    }
+}
+
+#[tokio::test]
+async fn pause_suspends_an_active_file_at_its_next_chunk_boundary() {
+    let scheduler = Scheduler::new(1, EventBus::new(16));
+    let executor = Arc::new(ChunkedExecutor::default());
+    let id = scheduler.submit(operation(), executor.clone()).unwrap();
+    executor.first_chunk_completed.notified().await;
+
+    scheduler.pause(id).unwrap();
+    executor.release_first_chunk.notify_one();
+    tokio::time::sleep(Duration::from_millis(20)).await;
+    assert_eq!(
+        executor
+            .chunks_completed
+            .load(std::sync::atomic::Ordering::SeqCst),
+        1
+    );
+
+    scheduler.resume(id).unwrap();
+    scheduler.wait(id).await.unwrap();
+    assert_eq!(
+        executor
+            .chunks_completed
+            .load(std::sync::atomic::Ordering::SeqCst),
+        2
+    );
 }
 
 #[async_trait]
@@ -283,6 +447,7 @@ impl OperationExecutor for ItemConflictExecutor {
         operation: &Operation,
         item: &PlanItem,
         resolution: Option<ConflictResolution>,
+        _pause: &PauseToken,
         _cancellation: &CancellationToken,
     ) -> Result<ExecutionOutcome, ExecutionError> {
         if item.entry == operation.sources[0] && resolution.is_none() {

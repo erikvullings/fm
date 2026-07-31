@@ -303,6 +303,37 @@ describe('AppShell', () => {
     expect(listOperations).toHaveBeenCalledTimes(1);
   });
 
+  it('acknowledges cancel immediately while the backend request is still pending', async () => {
+    const client = new MockFileManagerClient();
+    const operation = await client.startOperation({
+      type: 'copy',
+      sources: [{ providerId: 'file', uri: 'mock:///Documents/report.pdf' }],
+      destination: { providerId: 'file', uri: 'mock:///Empty' },
+      conflictPolicy: 'ask',
+    });
+    let acknowledgeCancel: (() => void) | undefined;
+    const pendingCancel = new Promise<void>((resolve) => {
+      acknowledgeCancel = resolve;
+    });
+    const cancelOperation = vi.spyOn(client, 'cancelOperation').mockReturnValue(pendingCancel);
+    m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
+    await vi.waitFor(() => expect(root.textContent).toContain('copy · running'));
+
+    root
+      .querySelector<HTMLButtonElement>(
+        `[data-operation-id="${operation.id}"] [data-action="cancel"]`,
+      )
+      ?.click();
+    m.redraw.sync();
+
+    expect(cancelOperation).toHaveBeenCalledWith(operation.id);
+    expect(root.textContent).toContain('copy · cancelling');
+    expect(
+      root.querySelector(`[data-operation-id="${operation.id}"] [data-action="cancel"]`),
+    ).toBeNull();
+    acknowledgeCancel?.();
+  });
+
   it('presents operation conflicts and submits the selected apply-to-all decision', async () => {
     const client = new MockFileManagerClient();
     const resolveConflict = vi.spyOn(client, 'resolveConflict').mockResolvedValue();

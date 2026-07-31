@@ -6,6 +6,7 @@
 
 mod model;
 mod naming;
+mod pause;
 mod progress;
 mod safety;
 mod scheduler;
@@ -15,6 +16,7 @@ pub use model::{
     OperationEntryError, OperationKind, OperationProgress, OperationState, TransitionError,
 };
 pub use naming::duplicate_name;
+pub use pause::PauseToken;
 pub use progress::ProgressPublisher;
 pub use safety::{CycleDetector, EntryType, SafetyError, validate_paths, validate_replacement};
 pub use scheduler::{

@@ -1,4 +1,10 @@
-import type { BackendEvent, Operation, OperationFailure, OperationId } from '../../models';
+import type {
+  BackendEvent,
+  Operation,
+  OperationFailure,
+  OperationId,
+  OperationState,
+} from '../../models';
 
 export interface OperationCentreState {
   readonly byId: Readonly<Partial<Record<OperationId, Operation>>>;
@@ -28,7 +34,10 @@ export function reduceOperationEvents(
       case 'operation.progress': {
         const current = byId[payload.operationId];
         if (current !== undefined) {
-          byId[payload.operationId] = { ...current, progress: payload.progress };
+          byId[payload.operationId] = {
+            ...current,
+            progress: { ...current.progress, ...payload.progress },
+          };
         }
         break;
       }
@@ -56,6 +65,23 @@ export function reduceOperationEvents(
     }
   }
   return { byId, failuresById };
+}
+
+/** Applies an acknowledged UI transition while the backend command is in flight. */
+export function transitionOperationState(
+  state: OperationCentreState,
+  operationId: OperationId,
+  operationState: OperationState,
+): OperationCentreState {
+  const operation = state.byId[operationId];
+  if (operation === undefined) return state;
+  return {
+    ...state,
+    byId: {
+      ...state.byId,
+      [operationId]: { ...operation, state: operationState },
+    },
+  };
 }
 
 export function dismissOperation(
