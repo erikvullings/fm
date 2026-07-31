@@ -11,6 +11,7 @@
   gap: 0.125rem;
   border-bottom: 1px solid var(--fm-border);
   padding: 0.125rem 0.25rem;
+  background: var(--fm-pane-command-background, var(--fm-surface));
 }
 
 .fm-navigation-controls button {
@@ -63,6 +64,7 @@
   display: flex;
   min-height: var(--fm-row-height);
   border-bottom: 1px solid var(--fm-border);
+  background: var(--fm-pane-breadcrumb-background, var(--fm-surface));
 }
 
 .fm-breadcrumb-segments {

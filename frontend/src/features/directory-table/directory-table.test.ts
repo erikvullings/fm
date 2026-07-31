@@ -80,7 +80,11 @@ describe('DirectoryTable rows', () => {
     const sizeHeader = root.querySelector<HTMLButtonElement>('[data-column-id="core.size"]');
 
     expect(nameHeader?.getAttribute('aria-sort')).toBe('ascending');
-    expect(nameHeader?.textContent).toContain('↑');
+    const indicator = nameHeader?.querySelector<SVGElement>('svg.fm-sort-indicator');
+    expect(indicator?.getAttribute('viewBox')).toBe('0 0 16 16');
+    expect(indicator?.getAttribute('width')).toBe('12');
+    expect(indicator?.getAttribute('height')).toBe('12');
+    expect(indicator?.querySelector('path')?.getAttribute('d')).toBe('M4 9 8 5l4 4');
     nameHeader?.click();
     sizeHeader?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
 

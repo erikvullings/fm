@@ -159,19 +159,13 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
-.fm-selected-row {
-  background: var(--fm-selection-inactive);
-  box-shadow: inset 3px 0 var(--fm-border);
-}
-
 .fm-pane[data-active="true"] .fm-selected-row {
   background: var(--fm-selection);
   box-shadow: inset 3px 0 var(--fm-accent);
 }
 
-.fm-cursor-row {
-  outline: 2px dashed var(--fm-accent);
-  outline-offset: -2px;
+.fm-pane[data-active="true"] .fm-cursor-row {
+  background-color: color-mix(in srgb, var(--fm-accent) 25%, transparent);
 }
 
 @media (prefers-reduced-motion: reduce) {

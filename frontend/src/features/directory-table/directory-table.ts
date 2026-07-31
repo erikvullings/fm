@@ -218,9 +218,23 @@ function headerView(attrs: DirectoryTableAttrs): m.Children {
         [
           column.label,
           attrs.sort?.[0]?.columnId === column.id
-            ? attrs.sort[0].direction === 'ascending'
-              ? ' ↑'
-              : ' ↓'
+            ? m(
+                'svg.fm-sort-indicator',
+                {
+                  'aria-hidden': 'true',
+                  viewBox: '0 0 16 16',
+                  width: 12,
+                  height: 12,
+                },
+                m('path', {
+                  d: attrs.sort[0].direction === 'ascending' ? 'M4 9 8 5l4 4' : 'M4 7l4 4 4-4',
+                  fill: 'none',
+                  stroke: 'currentColor',
+                  'stroke-width': 1.5,
+                  'stroke-linecap': 'round',
+                  'stroke-linejoin': 'round',
+                }),
+              )
             : undefined,
         ],
       ),
@@ -309,6 +323,7 @@ export const DirectoryTable: FactoryComponent<DirectoryTableAttrs> = () => {
                 role: 'row',
                 'aria-rowindex': index + 2,
                 'aria-selected': selected ? 'true' : 'false',
+                'data-row-stripe': index % 2 === 1 ? 'alternate' : undefined,
                 onclick: () => attrs.onCursorChange?.(index),
                 class: [
                   entry.hidden ? 'fm-hidden-entry' : '',

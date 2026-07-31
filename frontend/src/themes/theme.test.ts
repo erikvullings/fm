@@ -3,6 +3,10 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const themeCss = readFileSync(join(process.cwd(), 'src/themes/theme.css'), 'utf8');
+const directoryTableCss = readFileSync(
+  join(process.cwd(), 'src/features/directory-table/directory-table.css'),
+  'utf8',
+);
 
 const REQUIRED_TOKENS = [
   '--fm-background',
@@ -115,8 +119,18 @@ describe('theme stylesheet', () => {
     }
   });
 
-  it('distinguishes selection and keyboard cursor with different non-colour markers', () => {
-    expect(themeCss).toMatch(/\.fm-selected-row\s*\{[^}]*box-shadow:\s*inset/s);
-    expect(themeCss).toMatch(/\.fm-cursor-row\s*\{[^}]*outline:/s);
+  it('only paints selection in the active pane and keeps cursor styling distinct', () => {
+    expect(themeCss).not.toMatch(/(?:^|\n)\.fm-selected-row\s*\{/);
+    expect(themeCss).not.toMatch(/(?:^|\n)\.fm-cursor-row\s*\{/);
+    expect(themeCss).toMatch(
+      /\.fm-pane\[data-active="true"\]\s+\.fm-selected-row\s*\{[^}]*box-shadow:\s*inset/s,
+    );
+    expect(themeCss).toMatch(
+      /\.fm-pane\[data-active="true"\]\s+\.fm-cursor-row\s*\{[^}]*background-color:/s,
+    );
+  });
+
+  it('does not highlight directory rows on mouse hover', () => {
+    expect(directoryTableCss).not.toMatch(/\.fm-directory-row:hover/);
   });
 });
