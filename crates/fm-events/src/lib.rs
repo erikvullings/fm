@@ -696,6 +696,36 @@ pub enum BackendEventPayload {
 }
 
 impl BackendEventPayload {
+    /// Stable transport event name used by SSE and Tauri adapters.
+    #[must_use]
+    pub const fn event_name(&self) -> &'static str {
+        match self {
+            Self::RuntimeReady => "runtime.ready",
+            Self::WorkspaceCreated { .. } => "workspace.created",
+            Self::WorkspaceRenamed { .. } => "workspace.renamed",
+            Self::WorkspaceOpened { .. } => "workspace.opened",
+            Self::WorkspaceClosed { .. } => "workspace.closed",
+            Self::WorkspaceDeleted { .. } => "workspace.deleted",
+            Self::WorkspaceLayoutChanged { .. } => "workspace.layoutChanged",
+            Self::WorkspaceActivePaneChanged { .. } => "workspace.activePaneChanged",
+            Self::WorkspaceTabAdded { .. } => "workspace.tabAdded",
+            Self::WorkspaceTabClosed { .. } => "workspace.tabClosed",
+            Self::WorkspaceTabActivated { .. } => "workspace.tabActivated",
+            Self::WorkspaceTabNavigated { .. } => "workspace.tabNavigated",
+            Self::WorkspaceTabViewChanged { .. } => "workspace.tabViewChanged",
+            Self::DirectorySnapshot { .. } => "directory.snapshot",
+            Self::DirectoryDelta { .. } => "directory.delta",
+            Self::OperationCreated { .. } => "operation.created",
+            Self::OperationProgress { .. } => "operation.progress",
+            Self::OperationStateChanged { .. } => "operation.stateChanged",
+            Self::OperationConflict { .. } => "operation.conflict",
+            Self::OperationCompleted { .. } => "operation.completed",
+            Self::OperationFailed { .. } => "operation.failed",
+            Self::PluginChanged { .. } => "plugin.changed",
+            Self::NotificationCreated { .. } => "notification.created",
+        }
+    }
+
     /// Indicates payloads that transports may replace with a newer value
     /// while preserving the latest observable state.
     #[must_use]

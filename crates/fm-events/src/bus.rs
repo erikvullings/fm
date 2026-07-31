@@ -1,5 +1,6 @@
 use std::collections::{HashSet, VecDeque};
 use std::fmt;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use fm_domain::WorkspaceId;
@@ -76,6 +77,7 @@ struct EventBusInner {
     capacity: usize,
     state: Mutex<BusState>,
     sender: broadcast::Sender<PublishedEvent>,
+    subscriber_count: AtomicUsize,
 }
 
 /// Bounded, transport-neutral publisher for backend events.
@@ -100,6 +102,7 @@ impl EventBus {
                     replay: VecDeque::with_capacity(capacity),
                 }),
                 sender,
+                subscriber_count: AtomicUsize::new(0),
             }),
         }
     }
@@ -152,6 +155,28 @@ impl EventBus {
         last_event_id: Option<u64>,
     ) -> EventSubscription {
         let workspace_ids = workspace_ids.into_iter().collect::<HashSet<_>>();
+        self.subscribe_inner(session_id, workspace_ids, false, last_event_id)
+    }
+
+    /// Creates a subscriber that can see every workspace.
+    ///
+    /// This is reserved for a host-owned local development session. Authenticated
+    /// multi-user hosts must use [`Self::subscribe`] with an explicit allow-list.
+    pub fn subscribe_all_workspaces(
+        &self,
+        session_id: SessionId,
+        last_event_id: Option<u64>,
+    ) -> EventSubscription {
+        self.subscribe_inner(session_id, HashSet::new(), true, last_event_id)
+    }
+
+    fn subscribe_inner(
+        &self,
+        session_id: SessionId,
+        workspace_ids: HashSet<WorkspaceId>,
+        all_workspaces: bool,
+        last_event_id: Option<u64>,
+    ) -> EventSubscription {
         let state = self
             .inner
             .state
@@ -183,22 +208,35 @@ impl EventBus {
                     .iter()
                     .filter(|published| {
                         published.envelope.event_id > last_event_id
-                            && can_receive(&session_id, &workspace_ids, &published.audience)
+                            && can_receive(
+                                &session_id,
+                                &workspace_ids,
+                                all_workspaces,
+                                &published.audience,
+                            )
                     })
                     .cloned()
                     .collect()
             })
         };
         drop(state);
+        self.inner.subscriber_count.fetch_add(1, Ordering::Relaxed);
         EventSubscription {
             bus: Arc::clone(&self.inner),
             session_id,
             workspace_ids,
+            all_workspaces,
             last_event_id: last_event_id.unwrap_or(0),
             gap,
             replay,
             receiver,
         }
+    }
+
+    /// Returns the number of currently live transport subscriptions.
+    #[must_use]
+    pub fn subscriber_count(&self) -> usize {
+        self.inner.subscriber_count.load(Ordering::Relaxed)
     }
 }
 
@@ -213,10 +251,17 @@ pub struct EventSubscription {
     bus: Arc<EventBusInner>,
     session_id: SessionId,
     workspace_ids: HashSet<WorkspaceId>,
+    all_workspaces: bool,
     last_event_id: u64,
     gap: Option<SubscriptionEvent>,
     replay: VecDeque<PublishedEvent>,
     receiver: broadcast::Receiver<PublishedEvent>,
+}
+
+impl Drop for EventSubscription {
+    fn drop(&mut self) {
+        self.bus.subscriber_count.fetch_sub(1, Ordering::Relaxed);
+    }
 }
 
 impl EventSubscription {
@@ -243,7 +288,12 @@ impl EventSubscription {
     }
 
     fn can_receive(&self, audience: &EventAudience) -> bool {
-        can_receive(&self.session_id, &self.workspace_ids, audience)
+        can_receive(
+            &self.session_id,
+            &self.workspace_ids,
+            self.all_workspaces,
+            audience,
+        )
     }
 
     fn live_gap(&mut self) -> SubscriptionEvent {
@@ -274,11 +324,14 @@ impl EventSubscription {
 fn can_receive(
     session_id: &SessionId,
     workspace_ids: &HashSet<WorkspaceId>,
+    all_workspaces: bool,
     audience: &EventAudience,
 ) -> bool {
     match audience {
         EventAudience::Global => true,
         EventAudience::Session(target) => target == session_id,
-        EventAudience::Workspace(workspace_id) => workspace_ids.contains(workspace_id),
+        EventAudience::Workspace(workspace_id) => {
+            all_workspaces || workspace_ids.contains(workspace_id)
+        }
     }
 }

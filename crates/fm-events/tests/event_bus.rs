@@ -7,6 +7,32 @@ use fm_events::{
 };
 
 #[tokio::test]
+async fn all_workspace_subscription_receives_interleaved_workspace_events() {
+    let bus = EventBus::new(8);
+    let workspace_a = WorkspaceId::new();
+    let workspace_b = WorkspaceId::new();
+    let mut subscription = bus.subscribe_all_workspaces(SessionId::new("local-development"), None);
+
+    let first = bus.publish(
+        EventAudience::Workspace(workspace_b),
+        BackendEventPayload::RuntimeReady,
+    );
+    let second = bus.publish(
+        EventAudience::Workspace(workspace_a),
+        BackendEventPayload::RuntimeReady,
+    );
+
+    let received_first = subscription.recv().await.expect("first event");
+    let received_second = subscription.recv().await.expect("second event");
+    assert!(
+        matches!(received_first, SubscriptionEvent::Event(event) if event.event_id == first.event_id && event.workspace_id == Some(workspace_b))
+    );
+    assert!(
+        matches!(received_second, SubscriptionEvent::Event(event) if event.event_id == second.event_id && event.workspace_id == Some(workspace_a))
+    );
+}
+
+#[tokio::test]
 async fn publishes_events_in_monotonic_order() {
     let bus = EventBus::new(8);
     let workspace_id = WorkspaceId::new();

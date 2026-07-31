@@ -4,7 +4,11 @@
 
 use std::net::{IpAddr, Ipv4Addr};
 
+use fm_application::FileManagerService;
+use fm_events::EventBus;
 use fm_server::config::ServerConfig;
+use fm_transport_dto::RuntimeKindDto;
+use std::sync::Arc;
 
 /// A spawned test server plus the `TempDir` its workspace storage lives in.
 ///
@@ -14,6 +18,10 @@ use fm_server::config::ServerConfig;
 pub(crate) struct TestServer {
     pub(crate) base_url: String,
     pub(crate) handle: tokio::task::JoinHandle<()>,
+    #[allow(dead_code)]
+    pub(crate) event_bus: EventBus,
+    #[allow(dead_code)]
+    pub(crate) session: fm_server::DevelopmentSession,
     _workspace_directory: tempfile::TempDir,
 }
 
@@ -28,7 +36,16 @@ impl TestServer {
             settings_directory: workspace_directory.path().join("config"),
             ..ServerConfig::default()
         };
-        let router = fm_server::build_router(&config);
+        let event_bus = EventBus::new(8);
+        let service = Arc::new(FileManagerService::with_event_bus(
+            RuntimeKindDto::BrowserServer,
+            config.workspace_directory.clone(),
+            config.settings_directory.clone(),
+            event_bus.clone(),
+        ));
+        let session = fm_server::DevelopmentSession::new();
+        let router =
+            fm_server::build_router_with_service_and_session(&config, service, session.clone());
 
         let listener = tokio::net::TcpListener::bind((config.bind_address, config.port))
             .await
@@ -46,6 +63,8 @@ impl TestServer {
         Self {
             base_url: format!("http://{addr}"),
             handle,
+            event_bus,
+            session,
             _workspace_directory: workspace_directory,
         }
     }

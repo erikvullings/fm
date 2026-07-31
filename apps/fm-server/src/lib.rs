@@ -15,6 +15,7 @@ use axum::Router;
 use axum::http::{HeaderValue, Method};
 use fm_application::FileManagerService;
 use fm_transport_dto::RuntimeKindDto;
+use tokio_util::sync::CancellationToken;
 use tower::ServiceBuilder;
 use tower_http::ServiceBuilderExt;
 use tower_http::cors::CorsLayer;
@@ -34,6 +35,7 @@ use state::AppState;
 fn api_router() -> OpenApiRouter<AppState> {
     OpenApiRouter::with_openapi(routes::api_doc())
         .routes(utoipa_axum::routes!(routes::health::get_health))
+        .routes(utoipa_axum::routes!(routes::events::get_events))
         .routes(utoipa_axum::routes!(
             routes::runtime::get_runtime_capabilities
         ))
@@ -71,7 +73,58 @@ pub fn build_router(config: &ServerConfig) -> Router {
         config.workspace_directory.clone(),
         config.settings_directory.clone(),
     ));
-    let state = AppState { service };
+    build_router_with_service(config, service)
+}
+
+/// Builds the Axum router around an existing application service.
+///
+/// Hosts and integration tests can use this to share one event bus with
+/// non-HTTP adapters while keeping all application logic in `fm-application`.
+pub fn build_router_with_service(
+    config: &ServerConfig,
+    service: Arc<FileManagerService>,
+) -> Router {
+    build_router_with_service_and_session(config, service, DevelopmentSession::new())
+}
+
+/// Handle for ending the explicit local development session.
+#[derive(Clone)]
+pub struct DevelopmentSession {
+    cancellation: CancellationToken,
+}
+
+impl DevelopmentSession {
+    /// Creates a live development session.
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            cancellation: CancellationToken::new(),
+        }
+    }
+
+    /// Ends the session and closes every attached event stream.
+    pub fn end(&self) {
+        self.cancellation.cancel();
+    }
+}
+
+impl Default for DevelopmentSession {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Builds a router with a controllable local development session.
+pub fn build_router_with_service_and_session(
+    config: &ServerConfig,
+    service: Arc<FileManagerService>,
+    session: DevelopmentSession,
+) -> Router {
+    let state = AppState {
+        service,
+        cors_allowed_origins: Arc::from(config.cors_allowed_origins.clone()),
+        session_end: session.cancellation,
+    };
 
     let (router, api) = api_router().split_for_parts();
     let router = router.with_state(state);

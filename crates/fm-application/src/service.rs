@@ -51,9 +51,23 @@ impl FileManagerService {
         workspace_directory: impl Into<PathBuf>,
         settings_directory: impl Into<PathBuf>,
     ) -> Self {
+        Self::with_event_bus(
+            runtime,
+            workspace_directory,
+            settings_directory,
+            EventBus::default(),
+        )
+    }
+
+    /// Builds a service using a caller-provided event bus.
+    pub fn with_event_bus(
+        runtime: RuntimeKindDto,
+        workspace_directory: impl Into<PathBuf>,
+        settings_directory: impl Into<PathBuf>,
+        events: EventBus,
+    ) -> Self {
         let mut providers = ProviderRegistry::new();
         providers.register(Arc::new(LocalFileSystemProvider));
-        let events = EventBus::default();
         let settings_store = SettingsStore::new(settings_directory);
         let loaded = settings_store
             .load()

@@ -64,6 +64,12 @@ reloaded and only safely idempotent commands retried.
 The Rust event bus assigns monotonic event IDs, filters each subscription by session and workspace,
 retains bounded replay history for reconnects, and reports explicit gaps when a client must
 resynchronise.
+Browser mode exposes that bus as one multiplexed `GET /api/v1/events` SSE connection. Named events
+carry the shared typed envelope and numeric replay ID, idle streams receive keep-alive comments,
+and expired `Last-Event-ID` values produce a `resynchronise` event. The Vite `/api` development
+proxy forwards the stream without compression or buffering. Until task 0064 introduces production
+sessions, REST and SSE share one explicit loopback-only development session; this is not a
+production authentication mechanism.
 
 Filesystem access is isolated behind the `fm-vfs` provider contract. Providers advertise explicit
 capabilities, expose cancellable asynchronous operations and streaming reads/writes, and are

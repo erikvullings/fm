@@ -1,6 +1,6 @@
 # 0032 SSE endpoint
 
-Status: open
+Status: done
 Priority: high
 Owner: unassigned
 Agent: unassigned
@@ -32,4 +32,18 @@ single multiplexed Server-Sent Events stream.
   REST-decision-out (§10, task 0045).
 
 ## Agent Notes
-- Not started.
+
+- 2026-07-31 codex: Added the multiplexed `GET /api/v1/events` Axum SSE adapter with stable named
+  events and numeric IDs, typed envelope JSON, 15-second keep-alive comments, bounded
+  `Last-Event-ID` replay, explicit `resynchronise` gaps, strict endpoint origin rejection, and
+  cancellation on client disconnect or development-session end. REST and SSE intentionally share
+  one explicit loopback development session until task 0064 adds production authentication.
+- 2026-07-31 codex: Added 6 task-specific server integration tests covering the wire format,
+  replay/expired gaps, origin denial, disconnect/session cleanup, and the end-to-end
+  `runtime.ready` -> filesystem change -> `directory.delta` flow, plus 1 event-bus test for
+  interleaved all-workspace delivery. Verified those exact test files, all affected Rust package
+  tests, `cargo check`, workspace Clippy with warnings denied, frontend `tsc --noEmit`, full
+  `pnpm test`, and full `pnpm run lint`.
+- 2026-07-31 codex: Regenerated the checked-in OpenAPI document and Orval client. Verified the Vite
+  proxy's no-buffer SSE behavior with all 3 focused proxy tests and documented it in README.
+  `CLAUDE.md` does not exist in this repository, so there was no corresponding document to update.

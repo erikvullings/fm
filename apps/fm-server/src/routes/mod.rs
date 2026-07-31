@@ -2,6 +2,7 @@
 //! (spec §3 rule 2).
 
 pub(crate) mod directory;
+pub(crate) mod events;
 pub(crate) mod health;
 pub(crate) mod runtime;
 pub(crate) mod settings;

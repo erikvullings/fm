@@ -2053,6 +2053,17 @@
         "summary": "Fetches detailed metadata for one entry."
       }
     },
+    "/api/v1/events": {
+      "get": {
+        "operationId": "subscribeEvents",
+        "responses": {
+          "200": {
+            "description": "Multiplexed Server-Sent Events stream"
+          }
+        },
+        "summary": "Streams every event visible to the explicit local development session."
+      }
+    },
     "/api/v1/health": {
       "get": {
         "operationId": "getHealth",

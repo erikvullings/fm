@@ -180,6 +180,42 @@ export const getEntryMetadata = async (entryMetadataRequest: EntryMetadataReques
 
 
 
+export type subscribeEventsResponse200 = {
+  data: void
+  status: 200
+}
+
+export type subscribeEventsResponseSuccess = (subscribeEventsResponse200) & {
+  headers: Headers;
+};
+;
+
+export type subscribeEventsResponse = (subscribeEventsResponseSuccess)
+
+export const getSubscribeEventsUrl = () => {
+
+
+
+
+  return `/api/v1/events`
+}
+
+/**
+ * @summary Streams every event visible to the explicit local development session.
+ */
+export const subscribeEvents = async ( options?: Parameters<typeof fetchMutator>[1]): Promise<subscribeEventsResponse> => {
+
+  return fetchMutator<subscribeEventsResponse>(getSubscribeEventsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
 export type getHealthResponse200 = {
   data: HealthDto
   status: 200
