@@ -242,6 +242,70 @@ describe('Pane navigation input', () => {
     vi.useRealTimers();
   });
 
+  it('shows and highlights the active typeahead prefix, then clears it on timeout', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1_000);
+    mount(
+      attrs({
+        entries: [
+          ...entries,
+          {
+            ...(entries[0] as EntrySummary),
+            id: 'document',
+            name: 'document.txt',
+          },
+        ],
+      }),
+    );
+    const pane = root.querySelector<HTMLElement>('.fm-pane');
+
+    for (const typed of 'docu') {
+      pane?.dispatchEvent(new KeyboardEvent('keydown', { key: typed, bubbles: true }));
+    }
+    m.redraw.sync();
+
+    expect(root.querySelector('.fm-typeahead-status')?.textContent).toBe('| docu');
+    expect(root.querySelector('.fm-typeahead-match')?.textContent).toBe('docu');
+
+    vi.advanceTimersByTime(700);
+    m.redraw.sync();
+    expect(root.querySelector('.fm-typeahead-status')).toBeNull();
+    expect(root.querySelector('.fm-typeahead-match')).toBeNull();
+    vi.useRealTimers();
+  });
+
+  it('limits cursor navigation to entries matching the active prefix', () => {
+    const onSelectionAction = vi.fn();
+    mount(
+      attrs({
+        cursorIndex: 0,
+        onSelectionAction,
+        entries: [
+          { ...(entries[0] as EntrySummary), id: 'document', name: 'document.txt' },
+          { ...(entries[0] as EntrySummary), id: 'other', name: 'other.txt' },
+          { ...(entries[0] as EntrySummary), id: 'downloads', name: 'downloads.txt' },
+        ],
+      }),
+    );
+    const pane = root.querySelector<HTMLElement>('.fm-pane');
+
+    for (const typed of 'do') {
+      pane?.dispatchEvent(new KeyboardEvent('keydown', { key: typed, bubbles: true }));
+    }
+    onSelectionAction.mockClear();
+    pane?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+    pane?.dispatchEvent(new KeyboardEvent('keydown', { key: 'End', bubbles: true }));
+    pane?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Home', bubbles: true }));
+    pane?.dispatchEvent(new KeyboardEvent('keydown', { key: 'PageDown', bubbles: true }));
+
+    expect(onSelectionAction.mock.calls.map(([action]) => action)).toEqual([
+      { type: 'setCursor', entryId: 'downloads' },
+      { type: 'setCursor', entryId: 'downloads' },
+      { type: 'setCursor', entryId: 'document' },
+      { type: 'setCursor', entryId: 'downloads' },
+    ]);
+  });
+
   it('opens the directory under the cursor with Enter and navigates parent with Backspace', () => {
     const onOpenEntry = vi.fn();
     const onParent = vi.fn();

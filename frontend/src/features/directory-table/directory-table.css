@@ -81,6 +81,11 @@
   font-style: normal;
 }
 
+.fm-typeahead-match {
+  color: var(--fm-error);
+  font-weight: 700;
+}
+
 .fm-directory-state {
   display: grid;
   place-content: center;

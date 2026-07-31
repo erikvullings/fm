@@ -24,7 +24,10 @@ filesystem breadcrumbs, Ctrl/Cmd+L path editing, inline navigation errors, and e
 size, and sort status counters.
 Per-pane selection is keyed by stable entry IDs and remains independent of the keyboard cursor.
 Arrow, page, edge, range, toggle, select-all, pane-switching, open and parent bindings are handled
-through typed semantic commands, with host-platform modifiers and timed type-to-select.
+through typed semantic commands, with host-platform modifiers and timed type-to-select. While a
+prefix is active it appears at the right of the pane footer, highlights matching name prefixes,
+and constrains keyboard cursor movement to matches. Non-root directories prepend a synthetic `..`
+row that navigates to the parent without entering the selectable file set.
 The main window loads its authoritative workspace projection through the shared client and renders
 the recursive pane layout with a draggable, minimum-width splitter. Pane clicks and Tab traversal
 move visible focus through semantic workspace commands; divider changes are sent as debounced

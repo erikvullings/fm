@@ -44,3 +44,7 @@ keyboard navigation are named frontend test targets). Selection is independent o
   repository-wide formatting/clippy/Biome lint, and the full Rust/frontend/script `pnpm test`
   suite pass. No `CLAUDE.md` exists to update; README documents the added keyboard and selection
   surface.
+- 2026-07-31 codex: Follow-up adds a timed footer prefix, red prefix highlights on every visible
+  match, and Arrow/Page/Home/End navigation constrained to matching entries. Non-root panes now
+  prepend a non-selectable synthetic `..` row whose Enter action uses the existing parent
+  navigation path; POSIX, drive-letter, URI-derived drive, and UNC roots omit it.

@@ -54,7 +54,7 @@ export function constrainSplitRatio(
   return Math.min(1 - minimumRatio, Math.max(minimumRatio, pointerOffset / containerWidth));
 }
 
-function pathFromUri(uri: string): string {
+export function pathFromUri(uri: string): string {
   if (uri.startsWith('file://')) {
     return decodeURIComponent(uri.slice('file://'.length)) || '/';
   }

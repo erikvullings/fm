@@ -5,9 +5,11 @@ import {
   interpretSelectionKey,
   reduceTypeahead,
   type SelectionPlatform,
+  TYPEAHEAD_TIMEOUT_MS,
   type TypeaheadState,
 } from '../selection/keybindings';
 import type { SelectionAction } from '../selection/selection';
+import { isParentEntry } from './parent-entry';
 import './pane.css';
 
 /** A cumulative, clickable part of a filesystem path. */
@@ -126,6 +128,63 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
   let pathError: string | undefined;
   let inputElement: HTMLInputElement | undefined;
   let typeahead: TypeaheadState | undefined;
+  let typeaheadTimer: ReturnType<typeof setTimeout> | undefined;
+
+  function resetTypeaheadAfterTimeout(): void {
+    if (typeaheadTimer !== undefined) {
+      clearTimeout(typeaheadTimer);
+    }
+    typeaheadTimer = setTimeout(() => {
+      typeahead = undefined;
+      typeaheadTimer = undefined;
+      m.redraw();
+    }, TYPEAHEAD_TIMEOUT_MS);
+  }
+
+  function moveWithinMatches(
+    attrs: PaneAttrs,
+    offset: number,
+    edge?: 'first' | 'last',
+    extend = false,
+  ): boolean {
+    if (typeahead === undefined) {
+      return false;
+    }
+    const matches = attrs.entries.filter((entry) =>
+      entry.name.toLocaleLowerCase().startsWith(typeahead?.prefix ?? ''),
+    );
+    if (matches.length === 0) {
+      return true;
+    }
+    const cursorEntry =
+      attrs.cursorIndex === undefined ? undefined : attrs.entries[attrs.cursorIndex];
+    const currentMatchIndex = matches.findIndex((entry) => entry.id === cursorEntry?.id);
+    const targetIndex =
+      edge === 'first'
+        ? 0
+        : edge === 'last'
+          ? matches.length - 1
+          : Math.max(
+              0,
+              Math.min(
+                (currentMatchIndex < 0 ? (offset < 0 ? matches.length : -1) : currentMatchIndex) +
+                  offset,
+                matches.length - 1,
+              ),
+            );
+    const target = matches[targetIndex];
+    if (target === undefined) {
+      return true;
+    }
+    if (extend && cursorEntry !== undefined) {
+      const cursorIndex = attrs.entries.indexOf(cursorEntry);
+      const targetEntryIndex = attrs.entries.indexOf(target);
+      attrs.onSelectionAction({ type: 'extendRange', offset: targetEntryIndex - cursorIndex });
+    } else {
+      attrs.onSelectionAction({ type: 'setCursor', entryId: target.id });
+    }
+    return true;
+  }
 
   function beginEditing(path: string): void {
     editing = true;
@@ -164,9 +223,15 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
         inputElement.select();
       }
     },
+    onremove: () => {
+      if (typeaheadTimer !== undefined) {
+        clearTimeout(typeaheadTimer);
+      }
+    },
     view: ({ attrs }) => {
+      const ordinaryEntries = attrs.entries.filter((entry) => !isParentEntry(entry.id));
       const selectedCount = attrs.selectedEntryIds.size;
-      const totalSelectedSize = selectedSize(attrs.entries, attrs.selectedEntryIds);
+      const totalSelectedSize = selectedSize(ordinaryEntries, attrs.selectedEntryIds);
       return m(
         'section.fm-pane',
         {
@@ -193,20 +258,29 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
               void attrs.onParent();
             } else if (command?.type === 'moveCursor') {
               event.preventDefault();
-              attrs.onSelectionAction(command);
+              if (!moveWithinMatches(attrs, command.offset)) {
+                attrs.onSelectionAction(command);
+              }
             } else if (command?.type === 'moveCursorByPage') {
               event.preventDefault();
-              attrs.onSelectionAction({ type: 'moveCursor', offset: command.pages * 10 });
+              const offset = command.pages * 10;
+              if (!moveWithinMatches(attrs, offset)) {
+                attrs.onSelectionAction({ type: 'moveCursor', offset });
+              }
             } else if (command?.type === 'moveCursorTo') {
               event.preventDefault();
-              attrs.onSelectionAction(command);
+              if (!moveWithinMatches(attrs, 0, command.edge)) {
+                attrs.onSelectionAction(command);
+              }
             } else if (command?.type === 'extendRange') {
               event.preventDefault();
-              attrs.onSelectionAction(command);
+              if (!moveWithinMatches(attrs, command.offset, undefined, true)) {
+                attrs.onSelectionAction(command);
+              }
             } else if (command?.type === 'toggleCursorSelection') {
               const entry =
                 attrs.cursorIndex === undefined ? undefined : attrs.entries[attrs.cursorIndex];
-              if (entry !== undefined) {
+              if (entry !== undefined && !isParentEntry(entry.id)) {
                 event.preventDefault();
                 attrs.onSelectionAction({ type: 'toggle', entryId: entry.id });
               }
@@ -227,6 +301,8 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
             ) {
               const result = reduceTypeahead(typeahead, event.key, attrs.entries, Date.now());
               typeahead = result.state;
+              resetTypeaheadAfterTimeout();
+              m.redraw();
               if (result.matchedEntryId !== undefined) {
                 event.preventDefault();
                 attrs.onSelectionAction({ type: 'setCursor', entryId: result.matchedEntryId });
@@ -347,12 +423,17 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
             selectedEntryIds: attrs.selectedEntryIds,
             active: attrs.active,
             label: `${attrs.tabTitle} directory`,
+            ...(typeahead === undefined ? {} : { nameMatchPrefix: typeahead.prefix }),
             onRetry: () => void attrs.onRetry(),
             onEndReached: () => void attrs.onLoadNextPage(),
             onCursorChange: (index) => {
               const entry = attrs.entries[index];
               if (entry !== undefined) {
-                attrs.onSelectionAction({ type: 'selectOnly', entryId: entry.id });
+                attrs.onSelectionAction(
+                  isParentEntry(entry.id)
+                    ? { type: 'setCursor', entryId: entry.id }
+                    : { type: 'selectOnly', entryId: entry.id },
+                );
               }
             },
             ...(attrs.cursorIndex === undefined ? {} : { cursorIndex: attrs.cursorIndex }),
@@ -360,11 +441,14 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
           m('.fm-pane-status', { role: 'status' }, [
             m(
               'span',
-              `${attrs.entries.length} ${attrs.entries.length === 1 ? 'entry' : 'entries'}`,
+              `${ordinaryEntries.length} ${ordinaryEntries.length === 1 ? 'entry' : 'entries'}`,
             ),
             m('span', `${selectedCount} selected`),
             m('span', `${sizeLabel(totalSelectedSize)} selected`),
             m('span', `Sort: ${attrs.sortLabel}`),
+            typeahead === undefined
+              ? undefined
+              : m('span.fm-typeahead-status', `| ${typeahead.prefix}`),
           ]),
         ],
       );

@@ -7,6 +7,7 @@ import {
   type NavigationController,
   type PaneDirectoryView,
 } from '../features/navigation/navigation';
+import { isParentEntry, withParentEntry } from '../features/panes/parent-entry';
 import type { SelectionPlatform } from '../features/selection/keybindings';
 import {
   emptySelection,
@@ -16,6 +17,7 @@ import {
 } from '../features/selection/selection';
 import { dispatchWorkspaceCommand } from '../features/workspace/dispatch-workspace-command';
 import {
+  pathFromUri,
   WorkspaceLayoutView,
   type WorkspacePaneContent,
 } from '../features/workspace/workspace-layout';
@@ -126,11 +128,16 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     const pane = workspace?.panesById[paneId];
     const tab = pane?.tabsById[pane.activeTabId];
     const selection = selections.get(paneId) ?? emptySelection;
-    const entryIds = directory.entries.map((entry) => entry.id);
+    const entries =
+      tab === undefined
+        ? directory.entries
+        : withParentEntry(pathFromUri(tab.location.uri), directory.entries);
+    const entryIds = entries.map((entry) => entry.id);
     const cursorIndex =
       selection.cursorEntryId === undefined ? undefined : entryIds.indexOf(selection.cursorEntryId);
     return {
       ...directory,
+      entries,
       selectedEntryIds: new Set<EntryId>(selection.selectedEntryIds),
       sortLabel: 'Name ascending',
       platform,
@@ -144,9 +151,17 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       onForward: () => navigation.forward(paneId),
       onParent: () => navigation.parent(paneId),
       onOpenEntry: (entry) =>
-        entry.kind === 'directory' ? navigation.navigate(paneId, entry.location) : undefined,
+        isParentEntry(entry.id)
+          ? navigation.parent(paneId)
+          : entry.kind === 'directory'
+            ? navigation.navigate(paneId, entry.location)
+            : undefined,
       onSelectionAction: (action: SelectionAction) => {
-        selections.set(paneId, reduceSelection(selection, action, entryIds));
+        const orderedEntryIds =
+          action.type === 'selectAll' || action.type === 'invert'
+            ? directory.entries.map((entry) => entry.id)
+            : entryIds;
+        selections.set(paneId, reduceSelection(selection, action, orderedEntryIds));
         m.redraw();
       },
       onRetry: () => navigation.retry(paneId),

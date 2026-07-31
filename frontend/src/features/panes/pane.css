@@ -141,6 +141,12 @@
   font-variant-numeric: tabular-nums;
 }
 
+.fm-typeahead-status {
+  margin-inline-start: auto;
+  color: var(--fm-text);
+  font-weight: 600;
+}
+
 .fm-pane nav,
 .fm-pane nav .nav-wrapper i,
 .fm-pane nav a.sidenav-trigger,

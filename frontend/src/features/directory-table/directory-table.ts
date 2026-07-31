@@ -32,6 +32,7 @@ export interface DirectoryTableAttrs {
   readonly viewportHeight?: number;
   readonly overscan?: number;
   readonly label?: string;
+  readonly nameMatchPrefix?: string;
   readonly onCursorChange?: (index: number) => void;
   readonly onRetry?: () => void;
   readonly onEndReached?: () => void;
@@ -84,7 +85,7 @@ interface DirectoryColumn {
   readonly id: 'name' | 'type' | 'size' | 'modified';
   readonly label: string;
   readonly cellClass: string;
-  render(entry: EntrySummary): m.Children;
+  render(entry: EntrySummary, nameMatchPrefix?: string): m.Children;
 }
 
 const INITIAL_COLUMNS: readonly DirectoryColumn[] = [
@@ -92,13 +93,25 @@ const INITIAL_COLUMNS: readonly DirectoryColumn[] = [
     id: 'name',
     label: 'Name',
     cellClass: 'fm-directory-name',
-    render: (entry) => {
+    render: (entry, nameMatchPrefix) => {
       const statuses = [
         entry.hidden ? 'Hidden' : undefined,
         entry.kind === 'symlink' ? 'Link' : undefined,
       ].filter((status): status is string => status !== undefined);
+      const prefixLength =
+        nameMatchPrefix !== undefined &&
+        entry.name.toLocaleLowerCase().startsWith(nameMatchPrefix.toLocaleLowerCase())
+          ? nameMatchPrefix.length
+          : 0;
       return [
-        m('span.fm-entry-name', entry.name),
+        m('span.fm-entry-name', [
+          prefixLength === 0
+            ? entry.name
+            : [
+                m('span.fm-typeahead-match', entry.name.slice(0, prefixLength)),
+                entry.name.slice(prefixLength),
+              ],
+        ]),
         statuses.map((status) =>
           m(
             'span.fm-entry-status',
@@ -274,7 +287,7 @@ export const DirectoryTable: FactoryComponent<DirectoryTableAttrs> = () => {
                 m(
                   `.fm-directory-cell.${column.cellClass}`,
                   { key: column.id, role: 'gridcell' },
-                  column.render(entry),
+                  column.render(entry, attrs.nameMatchPrefix),
                 ),
               ),
             ),

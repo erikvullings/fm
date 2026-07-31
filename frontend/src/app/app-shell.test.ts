@@ -97,6 +97,30 @@ describe('AppShell', () => {
     expect(activePane?.querySelectorAll('.fm-selected-row')).toHaveLength(entryCount - 1);
   });
 
+  it('shows a parent row outside the root and opens it with Enter', async () => {
+    mountShell('mock');
+
+    await vi.waitFor(() => expect(root.textContent).toContain('Documents'));
+    const documents = [...root.querySelectorAll<HTMLElement>('.fm-directory-row')].find((row) =>
+      row.textContent?.includes('Documents'),
+    );
+    documents?.click();
+    m.redraw.sync();
+    const activePane = documents?.closest<HTMLElement>('.fm-pane');
+    activePane?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+
+    await vi.waitFor(() =>
+      expect(activePane?.querySelector('.fm-directory-row')?.textContent).toContain('..'),
+    );
+    activePane?.querySelector<HTMLElement>('.fm-directory-row')?.click();
+    m.redraw.sync();
+    activePane?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+
+    await vi.waitFor(() => expect(activePane?.textContent).not.toContain('report.pdf'));
+    expect(activePane?.textContent).toContain('Documents');
+    expect(activePane?.querySelector('.fm-directory-row')?.textContent).not.toContain('..');
+  });
+
   it('composes the complete main-window workspace regions', async () => {
     mountShell('mock');
 
