@@ -67,6 +67,29 @@ describe('DirectoryTable states', () => {
 });
 
 describe('DirectoryTable rows', () => {
+  it('activates sortable headers by click and keyboard and indicates the active direction', () => {
+    const onSortChange = vi.fn();
+    mount({
+      state: { type: 'loaded' },
+      source: entryArraySource([entry()]),
+      sort: [{ columnId: 'core.name', direction: 'ascending' }],
+      onSortChange,
+    });
+
+    const nameHeader = root.querySelector<HTMLButtonElement>('[data-column-id="core.name"]');
+    const sizeHeader = root.querySelector<HTMLButtonElement>('[data-column-id="core.size"]');
+
+    expect(nameHeader?.getAttribute('aria-sort')).toBe('ascending');
+    expect(nameHeader?.textContent).toContain('↑');
+    nameHeader?.click();
+    sizeHeader?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+
+    expect(onSortChange.mock.calls.map(([sort]) => sort)).toEqual([
+      [{ columnId: 'core.name', direction: 'descending' }],
+      [{ columnId: 'core.size', direction: 'ascending' }],
+    ]);
+  });
+
   it('highlights only the first in-word occurrence in every matching name', () => {
     mount({
       state: { type: 'loaded' },

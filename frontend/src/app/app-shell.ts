@@ -3,6 +3,15 @@ import { type Theme, ThemeManager, ThemeSwitcher } from 'mithril-materialized';
 
 import type { FileManagerClient } from '../api/client/file-manager-client';
 import {
+  DEFAULT_ENTRY_FORMAT_SETTINGS,
+  type EntryFormatSettings,
+} from '../features/entry-formatting/entry-formatting';
+import {
+  createEntryMetadataLoader,
+  type EntryMetadataLoader,
+  type EntryMetadataView,
+} from '../features/entry-metadata/entry-metadata-loader';
+import {
   createNavigationController,
   type NavigationController,
   type PaneDirectoryView,
@@ -15,13 +24,27 @@ import {
   type SelectionAction,
   type SelectionState,
 } from '../features/selection/selection';
+import {
+  type SortColumn,
+  type SortModel,
+  sortEntries,
+  sortEntriesResponsive,
+} from '../features/sorting/sorting';
 import { dispatchWorkspaceCommand } from '../features/workspace/dispatch-workspace-command';
 import {
   pathFromUri,
   WorkspaceLayoutView,
   type WorkspacePaneContent,
 } from '../features/workspace/workspace-layout';
-import type { EntryId, Location, PaneId, WorkspaceLayout, WorkspaceProjection } from '../models';
+import type {
+  EntryId,
+  EntrySummary,
+  Location,
+  PaneId,
+  SortDescriptor,
+  WorkspaceLayout,
+  WorkspaceProjection,
+} from '../models';
 import type { RuntimeKind } from '../utilities/runtime';
 
 /** Attributes of the application shell. */
@@ -30,6 +53,8 @@ export interface AppShellAttrs {
   runtime: RuntimeKind;
   /** Transport-neutral client selected once by the application bootstrap. */
   client: FileManagerClient;
+  /** Settings-owned presentation formats; task 0030 supplies these at bootstrap. */
+  entryFormatSettings?: EntryFormatSettings;
 }
 
 const DEFAULT_THEME: Theme = 'auto';
@@ -44,8 +69,94 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
   let workspaceError: string | undefined;
   const directories = new Map<PaneId, PaneDirectoryView>();
   const selections = new Map<PaneId, SelectionState>();
+  const metadataLoaders = new Map<PaneId, EntryMetadataLoader>();
+  const metadataViews = new Map<PaneId, EntryMetadataView>();
+  const sortedEntries = new Map<
+    PaneId,
+    {
+      readonly input: readonly EntrySummary[];
+      readonly key: string;
+      readonly entries: readonly EntrySummary[];
+    }
+  >();
+  const sortRequests = new Map<PaneId, object>();
   let platform: SelectionPlatform = 'unknown';
   let workspaceRequest: AbortController | undefined;
+  const DEFAULT_SORT: readonly SortDescriptor[] = [
+    { columnId: 'core.name', direction: 'ascending' },
+  ];
+
+  function effectiveSort(sort: readonly SortDescriptor[]): readonly SortDescriptor[] {
+    return sort.length === 0 ? DEFAULT_SORT : sort;
+  }
+
+  function frontendSort(sort: readonly SortDescriptor[]): SortModel {
+    const descriptor = sort[0];
+    if (descriptor === undefined) return [];
+    const columns: Readonly<Record<string, SortColumn>> = {
+      'core.name': 'name',
+      'core.extension': 'extension',
+      'core.size': 'size',
+      'core.modified': 'modified',
+    };
+    const column = columns[descriptor.columnId];
+    return column === undefined ? [] : [{ column, direction: descriptor.direction }];
+  }
+
+  function sortLabel(sort: readonly SortDescriptor[]): string {
+    const descriptor = sort[0];
+    if (descriptor === undefined) return 'Unsorted';
+    const labels: Readonly<Record<string, string>> = {
+      'core.name': 'Name',
+      'core.extension': 'Extension',
+      'core.size': 'Size',
+      'core.modified': 'Modified',
+    };
+    return `${labels[descriptor.columnId] ?? descriptor.columnId} ${descriptor.direction}`;
+  }
+
+  function entriesSortedFor(
+    paneId: PaneId,
+    entries: readonly EntrySummary[],
+    sort: readonly SortDescriptor[],
+    foldersFirst: boolean,
+  ): readonly EntrySummary[] {
+    const key = JSON.stringify([sort, foldersFirst]);
+    const cached = sortedEntries.get(paneId);
+    if (cached?.input === entries && cached.key === key) {
+      return cached.entries;
+    }
+    const model = frontendSort(sort);
+    if (entries.length < 10_000) {
+      const sorted = sortEntries(entries, model, foldersFirst);
+      sortedEntries.set(paneId, { input: entries, key, entries: sorted });
+      return sorted;
+    }
+    const request = {};
+    sortRequests.set(paneId, request);
+    void sortEntriesResponsive(entries, model, foldersFirst).then((sorted) => {
+      if (sortRequests.get(paneId) === request) {
+        sortedEntries.set(paneId, { input: entries, key, entries: sorted });
+        sortRequests.delete(paneId);
+        m.redraw();
+      }
+    });
+    return cached?.entries ?? entries;
+  }
+
+  function metadataLoader(client: FileManagerClient, paneId: PaneId): EntryMetadataLoader {
+    const existing = metadataLoaders.get(paneId);
+    if (existing !== undefined) return existing;
+    const loader = createEntryMetadataLoader({
+      client,
+      update: (view) => {
+        metadataViews.set(paneId, view);
+        m.redraw();
+      },
+    });
+    metadataLoaders.set(paneId, loader);
+    return loader;
+  }
 
   function locationForPath(current: Location, path: string): Location {
     const url = new URL(current.uri);
@@ -116,8 +227,8 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
   }
 
   function paneContent(
-    _client: FileManagerClient,
-    _runtime: RuntimeKind,
+    client: FileManagerClient,
+    entryFormatSettings: EntryFormatSettings,
     paneId: PaneId,
   ): WorkspacePaneContent {
     const directory = directories.get(paneId) ?? {
@@ -128,10 +239,17 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     const pane = workspace?.panesById[paneId];
     const tab = pane?.tabsById[pane.activeTabId];
     const selection = selections.get(paneId) ?? emptySelection;
-    const entries =
+    const sorted =
       tab === undefined
         ? directory.entries
-        : withParentEntry(pathFromUri(tab.location.uri), directory.entries);
+        : entriesSortedFor(
+            paneId,
+            directory.entries,
+            effectiveSort(tab.view.sort),
+            tab.view.foldersFirst,
+          );
+    const entries =
+      tab === undefined ? sorted : withParentEntry(pathFromUri(tab.location.uri), sorted);
     const entryIds = entries.map((entry) => entry.id);
     const cursorIndex =
       selection.cursorEntryId === undefined ? undefined : entryIds.indexOf(selection.cursorEntryId);
@@ -139,7 +257,10 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       ...directory,
       entries,
       selectedEntryIds: new Set<EntryId>(selection.selectedEntryIds),
-      sortLabel: 'Name ascending',
+      sortLabel: sortLabel(effectiveSort(tab?.view.sort ?? [])),
+      sort: effectiveSort(tab?.view.sort ?? []),
+      formatSettings: entryFormatSettings,
+      metadata: metadataViews.get(paneId) ?? { state: 'idle' },
       platform,
       ...(cursorIndex === undefined || cursorIndex < 0 ? {} : { cursorIndex }),
       onNavigate: async (path) => {
@@ -161,11 +282,31 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
           action.type === 'selectAll' || action.type === 'invert'
             ? directory.entries.map((entry) => entry.id)
             : entryIds;
-        selections.set(paneId, reduceSelection(selection, action, orderedEntryIds));
+        const next = reduceSelection(selection, action, orderedEntryIds);
+        selections.set(paneId, next);
+        const cursorEntry = entries.find((entry) => entry.id === next.cursorEntryId);
+        void metadataLoader(client, paneId).select(
+          cursorEntry === undefined || isParentEntry(cursorEntry.id) ? undefined : cursorEntry,
+        );
         m.redraw();
       },
       onRetry: () => navigation.retry(paneId),
       onLoadNextPage: () => navigation.loadNextPage(paneId),
+      onSortChange: (sort) => {
+        if (workspace === undefined || tab === undefined) return;
+        void dispatchWorkspaceCommand(
+          client,
+          {
+            type: 'updateView',
+            workspaceId: workspace.id,
+            paneId,
+            tabId: tab.id,
+            patch: { sort: [...sort] },
+            expectedRevision: workspace.revision,
+          },
+          replaceWorkspace,
+        ).catch(() => undefined);
+      },
     };
   }
 
@@ -180,6 +321,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
           directories.set(paneId, view);
           if (view.entries.length === 0) {
             selections.set(paneId, emptySelection);
+            void metadataLoader(attrs.client, paneId).select(undefined);
           } else if (
             selections.get(paneId)?.cursorEntryId === undefined ||
             previous?.location?.uri !== view.location?.uri
@@ -189,6 +331,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
               selectedEntryIds: [],
               ...(firstEntry === undefined ? {} : { cursorEntryId: firstEntry.id }),
             });
+            void metadataLoader(attrs.client, paneId).select(firstEntry);
           }
           m.redraw();
         },
@@ -204,6 +347,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     onremove: () => {
       workspaceRequest?.abort();
       navigation.dispose();
+      for (const loader of metadataLoaders.values()) loader.dispose();
     },
 
     view: ({ attrs }) =>
@@ -234,7 +378,12 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
             ? m('.fm-workspace-loading', workspaceError ?? 'Loading workspace…')
             : m(WorkspaceLayoutView, {
                 workspace,
-                paneContent: (paneId) => paneContent(attrs.client, attrs.runtime, paneId),
+                paneContent: (paneId) =>
+                  paneContent(
+                    attrs.client,
+                    attrs.entryFormatSettings ?? DEFAULT_ENTRY_FORMAT_SETTINGS,
+                    paneId,
+                  ),
                 onActivatePane: (paneId) => activatePane(attrs.client, paneId),
                 onUpdateLayout: (layout) => updateLayout(attrs.client, layout),
               }),

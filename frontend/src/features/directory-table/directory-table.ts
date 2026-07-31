@@ -1,6 +1,12 @@
 import m, { type FactoryComponent, type VnodeDOM } from 'mithril';
 
-import type { EntryId, EntrySummary, LoadingState } from '../../models';
+import type { EntryId, EntrySummary, LoadingState, SortDescriptor } from '../../models';
+import {
+  DEFAULT_ENTRY_FORMAT_SETTINGS,
+  type EntryFormatSettings,
+  formatEntryModifiedAt,
+  formatEntrySize,
+} from '../entry-formatting/entry-formatting';
 import { calculateVisibleWindow, scrollOffsetForIndex } from './windowing';
 import './directory-table.css';
 
@@ -33,6 +39,9 @@ export interface DirectoryTableAttrs {
   readonly overscan?: number;
   readonly label?: string;
   readonly nameMatchPrefix?: string;
+  readonly sort?: readonly SortDescriptor[];
+  readonly onSortChange?: (sort: readonly SortDescriptor[]) => void;
+  readonly formatSettings?: EntryFormatSettings;
   readonly onCursorChange?: (index: number) => void;
   readonly onRetry?: () => void;
   readonly onEndReached?: () => void;
@@ -55,23 +64,6 @@ function typeLabel(entry: EntrySummary): string {
   return entry.extension ?? entry.mimeType ?? 'File';
 }
 
-function sizeLabel(entry: EntrySummary): string {
-  if (entry.size === undefined) {
-    return '—';
-  }
-  return new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 }).format(entry.size);
-}
-
-function modifiedLabel(entry: EntrySummary): string {
-  if (entry.modifiedAt === undefined) {
-    return '—';
-  }
-  return new Intl.DateTimeFormat(undefined, {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  }).format(new Date(entry.modifiedAt));
-}
-
 function rowId(entryId: EntryId): string {
   let hash = 2_166_136_261;
   for (const character of entryId) {
@@ -82,15 +74,19 @@ function rowId(entryId: EntryId): string {
 }
 
 interface DirectoryColumn {
-  readonly id: 'name' | 'type' | 'size' | 'modified';
+  readonly id: 'core.name' | 'core.extension' | 'core.size' | 'core.modified';
   readonly label: string;
   readonly cellClass: string;
-  render(entry: EntrySummary, nameMatchPrefix?: string): m.Children;
+  render(
+    entry: EntrySummary,
+    nameMatchPrefix?: string,
+    formatSettings?: EntryFormatSettings,
+  ): m.Children;
 }
 
 const INITIAL_COLUMNS: readonly DirectoryColumn[] = [
   {
-    id: 'name',
+    id: 'core.name',
     label: 'Name',
     cellClass: 'fm-directory-name',
     render: (entry, nameMatchPrefix) => {
@@ -126,22 +122,24 @@ const INITIAL_COLUMNS: readonly DirectoryColumn[] = [
     },
   },
   {
-    id: 'type',
-    label: 'Type',
+    id: 'core.extension',
+    label: 'Extension',
     cellClass: 'fm-directory-type',
     render: typeLabel,
   },
   {
-    id: 'size',
+    id: 'core.size',
     label: 'Size',
     cellClass: 'fm-directory-size',
-    render: sizeLabel,
+    render: (entry, _nameMatchPrefix, settings = DEFAULT_ENTRY_FORMAT_SETTINGS) =>
+      formatEntrySize(entry, settings),
   },
   {
-    id: 'modified',
+    id: 'core.modified',
     label: 'Modified',
     cellClass: 'fm-directory-modified',
-    render: modifiedLabel,
+    render: (entry, _nameMatchPrefix, settings = DEFAULT_ENTRY_FORMAT_SETTINGS) =>
+      formatEntryModifiedAt(entry.modifiedAt, settings),
   },
 ];
 
@@ -180,15 +178,51 @@ function stateView(attrs: DirectoryTableAttrs, rowHeight: number): m.Children | 
   return undefined;
 }
 
-function headerView(): m.Children {
+function nextSort(
+  columnId: DirectoryColumn['id'],
+  sort: readonly SortDescriptor[] | undefined,
+): readonly SortDescriptor[] {
+  const active = sort?.[0];
+  return [
+    {
+      columnId,
+      direction:
+        active?.columnId === columnId && active.direction === 'ascending'
+          ? 'descending'
+          : 'ascending',
+    },
+  ];
+}
+
+function headerView(attrs: DirectoryTableAttrs): m.Children {
   return m(
     '.fm-directory-header',
     { role: 'row' },
     INITIAL_COLUMNS.map((column) =>
       m(
-        `.fm-directory-cell.${column.cellClass}`,
-        { key: column.id, role: 'columnheader' },
-        column.label,
+        `button.fm-directory-cell.${column.cellClass}`,
+        {
+          key: column.id,
+          type: 'button',
+          role: 'columnheader',
+          'data-column-id': column.id,
+          'aria-sort': attrs.sort?.[0]?.columnId === column.id ? attrs.sort[0].direction : 'none',
+          onclick: () => attrs.onSortChange?.(nextSort(column.id, attrs.sort)),
+          onkeydown: (event: KeyboardEvent) => {
+            if (event.key === 'Enter' || event.key === ' ') {
+              event.preventDefault();
+              attrs.onSortChange?.(nextSort(column.id, attrs.sort));
+            }
+          },
+        },
+        [
+          column.label,
+          attrs.sort?.[0]?.columnId === column.id
+            ? attrs.sort[0].direction === 'ascending'
+              ? ' ↑'
+              : ' ↓'
+            : undefined,
+        ],
       ),
     ),
   );
@@ -290,7 +324,7 @@ export const DirectoryTable: FactoryComponent<DirectoryTableAttrs> = () => {
                 m(
                   `.fm-directory-cell.${column.cellClass}`,
                   { key: column.id, role: 'gridcell' },
-                  column.render(entry, attrs.nameMatchPrefix),
+                  column.render(entry, attrs.nameMatchPrefix, attrs.formatSettings),
                 ),
               ),
             ),
@@ -318,7 +352,7 @@ export const DirectoryTable: FactoryComponent<DirectoryTableAttrs> = () => {
           },
         },
         [
-          headerView(),
+          headerView(attrs),
           state ??
             m(
               '.fm-directory-body',

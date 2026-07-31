@@ -5,9 +5,12 @@ import type {
   EntrySummary,
   LoadingState,
   PaneId,
+  SortDescriptor,
   WorkspaceLayout,
   WorkspaceProjection,
 } from '../../models';
+import type { EntryFormatSettings } from '../entry-formatting/entry-formatting';
+import type { EntryMetadataView } from '../entry-metadata/entry-metadata-loader';
 import { Pane } from '../panes/pane';
 import type { SelectionPlatform } from '../selection/keybindings';
 import type { SelectionAction } from '../selection/selection';
@@ -21,6 +24,9 @@ export interface WorkspacePaneContent {
   readonly entries: readonly EntrySummary[];
   readonly selectedEntryIds: ReadonlySet<EntryId>;
   readonly sortLabel: string;
+  readonly sort: readonly SortDescriptor[];
+  readonly formatSettings?: EntryFormatSettings;
+  readonly metadata: EntryMetadataView;
   readonly cursorIndex?: number;
   readonly platform: SelectionPlatform;
   readonly onNavigate: (path: string) => void | Promise<void>;
@@ -31,6 +37,7 @@ export interface WorkspacePaneContent {
   readonly onSelectionAction: (action: SelectionAction) => void;
   readonly onRetry: () => void | Promise<void>;
   readonly onLoadNextPage: () => void | Promise<void>;
+  readonly onSortChange: (sort: readonly SortDescriptor[]) => void;
 }
 
 /** Inputs for the recursive workspace layout renderer. */
@@ -192,6 +199,9 @@ export const WorkspaceLayoutView: FactoryComponent<WorkspaceLayoutViewAttrs> = (
         entries: content.entries,
         selectedEntryIds: content.selectedEntryIds,
         sortLabel: content.sortLabel,
+        sort: content.sort,
+        ...(content.formatSettings === undefined ? {} : { formatSettings: content.formatSettings }),
+        metadata: content.metadata,
         active,
         platform: content.platform,
         canNavigateBack: tab.canNavigateBack,
@@ -205,6 +215,7 @@ export const WorkspaceLayoutView: FactoryComponent<WorkspaceLayoutViewAttrs> = (
         onSelectionAction: content.onSelectionAction,
         onRetry: content.onRetry,
         onLoadNextPage: content.onLoadNextPage,
+        onSortChange: content.onSortChange,
       }),
     );
   }

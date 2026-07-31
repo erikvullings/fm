@@ -1,7 +1,10 @@
-import type { SortDescriptorDto as SortDescriptor } from '../api/generated/models/sortDescriptorDto';
+import type { SortDescriptorDto } from '../api/generated/models/sortDescriptorDto';
 import type { ActionId, EntryId, OperationId, PaneId } from './ids';
 import type { EntryRef, Location } from './location';
 import type { ConflictPolicy, OperationKind } from './operation';
+
+/** Open column sort descriptor shared by workspace views and directory requests. */
+export type SortDescriptor = SortDescriptorDto;
 
 /**
  * Requests the entries of a directory (`POST /api/v1/directories/list`),

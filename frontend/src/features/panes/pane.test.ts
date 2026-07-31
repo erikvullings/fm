@@ -36,6 +36,8 @@ function attrs(overrides: Partial<PaneAttrs> = {}): PaneAttrs {
     state: { type: 'loaded' },
     entries,
     sortLabel: 'Name ascending',
+    sort: [{ columnId: 'core.name', direction: 'ascending' }],
+    metadata: { state: 'idle' },
     selectedEntryIds: new Set<EntryId>(),
     active: true,
     platform: 'linux',
@@ -48,6 +50,7 @@ function attrs(overrides: Partial<PaneAttrs> = {}): PaneAttrs {
     onSelectionAction: vi.fn(),
     onRetry: vi.fn(),
     onLoadNextPage: vi.fn(),
+    onSortChange: vi.fn(),
     onNavigate: vi.fn(),
     ...overrides,
   };
@@ -179,6 +182,31 @@ describe('Pane status bar', () => {
 
     expect(root.querySelector('.fm-pane')?.getAttribute('data-active')).toBe('false');
     expect(root.querySelector('.fm-selected-row')).not.toBeNull();
+  });
+
+  it('shows lazily loaded details for the cursor entry in the metadata area', () => {
+    mount(
+      attrs({
+        metadata: {
+          state: 'loaded',
+          entry: entries[0] as EntrySummary,
+          metadata: {
+            entryId: 'one' as EntryId,
+            ownership: { owner: 'erik' },
+            permissions: { readable: true, writable: true, executable: false },
+            extendedAttributes: {},
+            checksums: {},
+            pluginFields: {},
+          },
+        },
+      }),
+    );
+
+    const summary = root.querySelector('.fm-entry-metadata')?.textContent;
+    expect(summary).toContain('one.txt');
+    expect(summary).toContain('1 KiB');
+    expect(summary).toContain('Owner: erik');
+    expect(summary).toContain('Permissions: read, write');
   });
 });
 

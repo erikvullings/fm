@@ -1,6 +1,6 @@
 # 0029 Sorting and file metadata summary
 
-Status: open
+Status: done
 Priority: medium
 Owner: unassigned
 Agent: unassigned
@@ -34,4 +34,18 @@ Depends on: 0028
   frontend for responsiveness and let the server sort when paging.
 
 ## Agent Notes
-- Not started.
+- 2026-07-31 codex: Added typed one-key frontend sorting for name, extension, raw size and raw
+  modified time, with stable natural/numeric Unicode-aware name ordering, deterministic case ties,
+  persisted per-tab folder grouping, clickable/keyboard-accessible sort headers, and active sort
+  indicators in both the header and status bar. A cooperative stable merge sort yields within an
+  8 ms work budget; its 100,000-entry measurement remains below one 16.7 ms frame per slice.
+- 2026-07-31 codex: Added settings-driven binary/decimal/byte size and medium/short/ISO date
+  formatting seams for task 0030, plus a cursor-driven metadata summary backed by
+  `getEntryMetadata`. Cursor moves, clearing, and disposal abort in-flight requests, and late
+  responses cannot replace the current entry.
+- 2026-07-31 codex: Verified 21 dedicated cases in the three new sorting/formatting/metadata test
+  files and 4 task-specific table/pane/AppShell integration cases. Frontend typecheck and production
+  build, repository formatting/Clippy/Biome lint, the other 201 frontend tests, and the 3 proxy
+  socket tests pass. The full suite remains red only because an unrelated concurrent
+  `frontend/src/themes/theme.css` edit removes the cursor outline required by its existing test; it
+  was preserved and excluded from this task's commit. No `CLAUDE.md` exists to update.

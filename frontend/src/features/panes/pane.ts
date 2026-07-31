@@ -1,6 +1,13 @@
 import m, { type FactoryComponent, type VnodeDOM } from 'mithril';
-import type { EntryId, EntrySummary, LoadingState } from '../../models';
+import type { EntryId, EntrySummary, LoadingState, SortDescriptor } from '../../models';
 import { DirectoryTable, entryArraySource } from '../directory-table/directory-table';
+import {
+  DEFAULT_ENTRY_FORMAT_SETTINGS,
+  type EntryFormatSettings,
+  formatEntryModifiedAt,
+  formatEntrySize,
+} from '../entry-formatting/entry-formatting';
+import type { EntryMetadataView } from '../entry-metadata/entry-metadata-loader';
 import {
   interpretSelectionKey,
   reduceTypeahead,
@@ -24,6 +31,9 @@ export interface PaneAttrs {
   readonly state: LoadingState;
   readonly entries: readonly EntrySummary[];
   readonly sortLabel: string;
+  readonly sort: readonly SortDescriptor[];
+  readonly formatSettings?: EntryFormatSettings;
+  readonly metadata: EntryMetadataView;
   readonly selectedEntryIds: ReadonlySet<EntryId>;
   readonly active: boolean;
   readonly cursorIndex?: number;
@@ -38,6 +48,7 @@ export interface PaneAttrs {
   readonly onSelectionAction: (action: SelectionAction) => void;
   readonly onRetry: () => void | Promise<void>;
   readonly onLoadNextPage: () => void | Promise<void>;
+  readonly onSortChange: (sort: readonly SortDescriptor[]) => void;
 }
 
 function posixSegments(path: string): readonly BreadcrumbSegment[] {
@@ -454,6 +465,8 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
             source: entryArraySource(attrs.entries),
             selectedEntryIds: attrs.selectedEntryIds,
             active: attrs.active,
+            sort: attrs.sort,
+            ...(attrs.formatSettings === undefined ? {} : { formatSettings: attrs.formatSettings }),
             label: `${attrs.tabTitle} directory`,
             ...(typeahead === undefined ? {} : { nameMatchPrefix: typeahead.prefix }),
             onRetry: () => void attrs.onRetry(),
@@ -468,8 +481,53 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
                 );
               }
             },
+            onSortChange: attrs.onSortChange,
             ...(attrs.cursorIndex === undefined ? {} : { cursorIndex: attrs.cursorIndex }),
           }),
+          attrs.metadata.state === 'idle'
+            ? undefined
+            : m('.fm-entry-metadata', { 'aria-label': 'Cursor entry metadata' }, [
+                m('strong', attrs.metadata.entry.name),
+                m(
+                  'span',
+                  formatEntrySize(
+                    attrs.metadata.entry,
+                    attrs.formatSettings ?? DEFAULT_ENTRY_FORMAT_SETTINGS,
+                  ),
+                ),
+                m(
+                  'span',
+                  formatEntryModifiedAt(
+                    attrs.metadata.entry.modifiedAt,
+                    attrs.formatSettings ?? DEFAULT_ENTRY_FORMAT_SETTINGS,
+                  ),
+                ),
+                attrs.metadata.state === 'loading'
+                  ? m('span', 'Loading metadata…')
+                  : attrs.metadata.state === 'error'
+                    ? m('span', attrs.metadata.message)
+                    : [
+                        attrs.metadata.metadata.ownership?.owner === undefined
+                          ? undefined
+                          : m('span', `Owner: ${attrs.metadata.metadata.ownership.owner}`),
+                        attrs.metadata.metadata.permissions === undefined
+                          ? undefined
+                          : m(
+                              'span',
+                              `Permissions: ${[
+                                attrs.metadata.metadata.permissions.readable ? 'read' : undefined,
+                                attrs.metadata.metadata.permissions.writable ? 'write' : undefined,
+                                attrs.metadata.metadata.permissions.executable
+                                  ? 'execute'
+                                  : undefined,
+                              ]
+                                .filter(
+                                  (permission): permission is string => permission !== undefined,
+                                )
+                                .join(', ')}`,
+                            ),
+                      ],
+              ]),
           m('.fm-pane-status', { role: 'status' }, [
             m(
               'span',

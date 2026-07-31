@@ -97,6 +97,37 @@ describe('AppShell', () => {
     expect(activePane?.querySelectorAll('.fm-selected-row')).toHaveLength(entryCount - 1);
   });
 
+  it('sorts the loaded page from a column header and reports the active direction', async () => {
+    mountShell('mock');
+
+    await vi.waitFor(() => expect(root.textContent).toContain('Documents'));
+    const activePane = root.querySelector<HTMLElement>('[data-active="true"] > .fm-pane');
+    const nameHeader = activePane?.querySelector<HTMLButtonElement>('[data-column-id="core.name"]');
+    expect(nameHeader?.getAttribute('aria-sort')).toBe('ascending');
+
+    nameHeader?.click();
+
+    await vi.waitFor(() =>
+      expect(activePane?.querySelector('.fm-pane-status')?.textContent).toContain(
+        'Name descending',
+      ),
+    );
+    expect(nameHeader?.getAttribute('aria-sort')).toBe('descending');
+  });
+
+  it('lazily shows metadata for the cursor entry after a directory loads', async () => {
+    mountShell('mock');
+
+    await vi.waitFor(() =>
+      expect(root.querySelector('[data-active="true"] .fm-entry-metadata')?.textContent).toContain(
+        'Documents',
+      ),
+    );
+    expect(
+      root.querySelector('[data-active="true"] .fm-entry-metadata')?.textContent,
+    ).not.toContain('Loading metadata');
+  });
+
   it('shows a parent row outside the root and opens it with Enter', async () => {
     mountShell('mock');
 

@@ -22,6 +22,11 @@ reproducible million-entry rendering check via `pnpm --dir frontend benchmark:di
 The presentation-only pane composes that table with a compact single-tab strip, clickable
 filesystem breadcrumbs, Ctrl/Cmd+L path editing, inline navigation errors, and entry, selection,
 size, and sort status counters.
+Name, extension, size, and modified headers sort the loaded page in either direction, using stable
+natural name ordering and raw metadata values; large sorts yield cooperatively to keep the UI
+responsive. Folder grouping comes from the persisted tab view rather than the table component.
+The cursor also drives a cancellable lazy metadata summary, while typed size/date presentation
+settings keep table and summary formatting consistent.
 Per-pane selection is keyed by stable entry IDs and remains independent of the keyboard cursor.
 Arrow, page, edge, range, toggle, select-all, pane-switching, open and parent bindings are handled
 through typed semantic commands, with host-platform modifiers and type-to-select. While a prefix is

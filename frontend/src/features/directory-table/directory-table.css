@@ -36,6 +36,21 @@
   font-weight: 600;
 }
 
+.fm-directory-header > button {
+  align-self: stretch;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+}
+
+.fm-directory-header > button:hover,
+.fm-directory-header > button:focus-visible {
+  background: var(--fm-hover);
+  color: var(--fm-text);
+}
+
 .fm-directory-body {
   position: relative;
 }

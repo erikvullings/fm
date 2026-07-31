@@ -1,6 +1,6 @@
 .fm-pane {
   display: grid;
-  grid-template-rows: auto auto auto minmax(0, 1fr) auto;
+  grid-template-rows: auto auto auto minmax(0, 1fr) auto auto;
   min-width: 0;
   border: 1px solid var(--fm-border);
   background: var(--fm-surface);
@@ -139,6 +139,19 @@
   color: var(--fm-text-muted);
   font-size: 0.9em;
   font-variant-numeric: tabular-nums;
+}
+
+.fm-entry-metadata {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1rem;
+  min-height: var(--fm-row-height);
+  align-items: center;
+  border-top: 1px solid var(--fm-border);
+  padding: 0 0.5rem;
+  background: var(--fm-surface-elevated);
+  color: var(--fm-text-muted);
+  font-size: 0.9em;
 }
 
 .fm-typeahead-status {
