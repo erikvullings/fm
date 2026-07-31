@@ -115,6 +115,7 @@ describe('WorkspaceLayoutView pane focus', () => {
       ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
 
     expect(onActivatePane).toHaveBeenCalledExactlyOnceWith('right');
+    expect(document.activeElement).toBe(root.querySelector('[data-pane-id="right"] > .fm-pane'));
   });
 });
 
@@ -128,7 +129,7 @@ describe('WorkspaceLayoutView keyboard navigation', () => {
     left?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }));
 
     expect(onActivatePane).toHaveBeenCalledExactlyOnceWith('right');
-    expect(document.activeElement).toBe(root.querySelector('[data-pane-id="right"]'));
+    expect(document.activeElement).toBe(root.querySelector('[data-pane-id="right"] > .fm-pane'));
   });
 
   it('renders and traverses a future three-pane tree in layout order', () => {

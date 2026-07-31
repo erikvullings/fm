@@ -69,6 +69,10 @@ describe('AppShell', () => {
     activePane?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
 
     await vi.waitFor(() => expect(activePane?.textContent).toContain('report.pdf'));
+    expect(activePane?.querySelector('.fm-cursor-row')?.textContent).toContain('Projects');
+    activePane?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+    m.redraw.sync();
+    expect(activePane?.querySelector('.fm-cursor-row')?.textContent).toContain('report.pdf');
   });
 
   it('composes the complete main-window workspace regions', async () => {

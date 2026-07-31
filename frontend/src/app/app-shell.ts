@@ -152,6 +152,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
           if (view.entries.length === 0) {
             cursors.delete(paneId);
           } else if (
+            cursors.get(paneId) === undefined ||
             previous?.location?.uri !== view.location?.uri ||
             (cursors.get(paneId) ?? 0) >= view.entries.length
           ) {

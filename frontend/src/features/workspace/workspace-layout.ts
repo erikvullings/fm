@@ -139,7 +139,9 @@ export const WorkspaceLayoutView: FactoryComponent<WorkspaceLayoutViewAttrs> = (
 
   function focusAndActivate(attrs: WorkspaceLayoutViewAttrs, paneId: PaneId): void {
     attrs.onActivatePane(paneId);
-    paneElements.get(paneId)?.focus();
+    const workspacePane = paneElements.get(paneId);
+    const keyboardTarget = workspacePane?.querySelector<HTMLElement>('.fm-pane');
+    (keyboardTarget ?? workspacePane)?.focus();
   }
 
   function renderPane(
