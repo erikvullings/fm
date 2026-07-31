@@ -275,7 +275,7 @@ export const DirectoryTable: FactoryComponent<DirectoryTableAttrs> = () => {
       entryCount: attrs.source.length,
       rowHeight,
       scrollTop: bodyScrollTop,
-      viewportHeight: attrs.viewportHeight ?? element.clientHeight ?? DEFAULT_VIEWPORT_HEIGHT,
+      viewportHeight: attrs.viewportHeight ?? (element.clientHeight || DEFAULT_VIEWPORT_HEIGHT),
     });
     if (nextBodyScrollTop === bodyScrollTop) {
       return;
@@ -305,7 +305,7 @@ export const DirectoryTable: FactoryComponent<DirectoryTableAttrs> = () => {
         attrs.cursorIndex === undefined ? undefined : source?.entryAt(attrs.cursorIndex);
       const bodyScrollTop = Math.max(0, scrollTop - rowHeight);
       const viewportHeight =
-        attrs.viewportHeight ?? element?.clientHeight ?? DEFAULT_VIEWPORT_HEIGHT;
+        attrs.viewportHeight ?? (element?.clientHeight || DEFAULT_VIEWPORT_HEIGHT);
       const window =
         source === undefined
           ? undefined
