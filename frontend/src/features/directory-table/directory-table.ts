@@ -63,7 +63,7 @@ function readRowHeight(element: HTMLElement): number {
 
 function typeLabel(entry: EntrySummary): string {
   if (entry.kind === 'directory') {
-    return 'Folder';
+    return '';
   }
   if (entry.kind === 'symlink') {
     return 'Link';

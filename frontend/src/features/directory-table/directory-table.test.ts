@@ -136,7 +136,7 @@ describe('DirectoryTable rows', () => {
         m(DirectoryTable, {
           state: { type: 'loaded' },
           source: entryArraySource(entries),
-          cursorIndex,
+          ...(cursorIndex === undefined ? {} : { cursorIndex }),
           viewportHeight: 120,
           onCursorChange: (index) => {
             cursorIndex = index;
@@ -193,6 +193,18 @@ describe('DirectoryTable rows', () => {
     expect(root.textContent).toContain('Hidden');
     expect(root.textContent).toContain('↗ Link');
     expect(root.querySelector('.fm-hidden-entry')).not.toBeNull();
+  });
+
+  it('leaves the extension blank for directories and uses two dashes for their size', () => {
+    const { extension: _extension, ...directory } = entry({ kind: 'directory' });
+    mount({
+      state: { type: 'loaded' },
+      source: entryArraySource([directory]),
+    });
+
+    const row = root.querySelector('.fm-directory-row');
+    expect(row?.querySelector('.fm-directory-type')?.textContent).toBe('');
+    expect(row?.querySelector('.fm-directory-size')?.textContent).toBe('--');
   });
 
   it.each([1_000, 10_000, 100_000])(

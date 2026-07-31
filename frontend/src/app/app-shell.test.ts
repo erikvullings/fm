@@ -34,6 +34,11 @@ function themeButton(label: string): HTMLButtonElement {
   return themeButtonIn(root, label);
 }
 
+function openAppearanceSettings(container: HTMLElement = root): void {
+  container.querySelector<HTMLElement>('.fm-settings-button')?.click();
+  m.redraw.sync();
+}
+
 beforeEach(() => {
   vi.stubGlobal('EventSource', TestEventSource);
   root = document.createElement('div');
@@ -163,8 +168,9 @@ describe('AppShell', () => {
     mountShell('mock');
 
     await vi.waitFor(() => expect(root.querySelectorAll('.fm-workspace-pane')).toHaveLength(2));
-    expect(root.querySelector('.fm-app-bar')).not.toBeNull();
+    expect(root.querySelector('.fm-app-bar')).toBeNull();
     expect(root.querySelector('.fm-workspace-toolbar')).not.toBeNull();
+    expect(root.querySelector('.fm-navigation-controls')).not.toBeNull();
     expect(root.querySelector('.fm-operation-centre')).not.toBeNull();
     expect(root.querySelector('.fm-function-key-bar')?.textContent).toContain('F5 Copy');
     expect(root.querySelector('.fm-function-key-bar')?.textContent).toContain('F6 Move');
@@ -255,23 +261,20 @@ describe('AppShell', () => {
     });
   });
 
-  it('names the application and the transport it is running against', () => {
+  it('keeps runtime diagnostics out of the workspace chrome', () => {
     mountShell('mock');
 
-    expect(root.textContent).toContain('File Manager');
-    expect(root.textContent).toContain('mock');
+    expect(root.textContent).not.toContain('File Manager');
+    expect(root.textContent).not.toContain('Connection:');
+    expect(root.textContent).not.toContain('mock');
   });
 
-  it('shows connection state with accessible text and updates it from the client', async () => {
+  it('does not render connection diagnostics in the workspace', async () => {
     const client = new MockFileManagerClient();
     m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
 
-    await vi.waitFor(() =>
-      expect(root.querySelector('.fm-connection-status')?.textContent).toBe('Connection: open'),
-    );
-    const indicator = root.querySelector('.fm-connection-status');
-    expect(indicator?.getAttribute('role')).toBe('status');
-    expect(indicator?.getAttribute('aria-label')).toBe('Backend connection open');
+    await vi.waitFor(() => expect(root.textContent).toContain('Documents'));
+    expect(root.querySelector('.fm-connection-status')).toBeNull();
   });
 
   it('loads operations once then updates progress from events without polling', async () => {
@@ -338,11 +341,11 @@ describe('AppShell', () => {
     await vi.waitFor(() => expect(listDirectory.mock.calls.length).toBeGreaterThan(initialCalls));
   });
 
-  it('reports the runtime it was given rather than a hard-coded default', () => {
+  it('does not expose the runtime in the workspace chrome', () => {
     const client = new MockFileManagerClient();
     m.mount(root, { view: () => m(AppShell, { runtime: 'tauri', client }) });
 
-    expect(root.textContent).toContain('tauri');
+    expect(root.textContent).not.toContain('tauri');
     expect(root.textContent).not.toContain('mock');
   });
 
@@ -379,9 +382,13 @@ describe('AppShell', () => {
     await vi.waitFor(() => expect(root.textContent).toContain('8,192 B'));
   });
 
-  it('renders the mithril-materialized theme switcher', () => {
+  it('renders the theme switcher inside the appearance settings editor', () => {
     mountShell();
 
+    expect(root.querySelector<HTMLDetailsElement>('.fm-settings-disclosure')?.open).toBe(false);
+    openAppearanceSettings();
+    expect(root.querySelector<HTMLDetailsElement>('.fm-settings-disclosure')?.open).toBe(true);
+    expect(root.querySelector('.fm-settings-editor')?.getAttribute('role')).toBe('dialog');
     expect(root.querySelector('.theme-switcher')).not.toBeNull();
     expect(themeButton('Light')).toBeInstanceOf(HTMLButtonElement);
     expect(themeButton('Dark')).toBeInstanceOf(HTMLButtonElement);
@@ -392,6 +399,7 @@ describe('AppShell', () => {
     const setTheme = vi.spyOn(ThemeManager, 'setTheme');
 
     mountShell();
+    openAppearanceSettings();
     themeButton('Dark').click();
     m.redraw.sync();
 
@@ -402,6 +410,7 @@ describe('AppShell', () => {
 
   it('switches light, dark and follow-system themes without remounting', () => {
     mountShell();
+    openAppearanceSettings();
 
     themeButton('Light').click();
     m.redraw.sync();
@@ -419,6 +428,7 @@ describe('AppShell', () => {
 
   it('keeps per-instance theme state in the factory closure', () => {
     mountShell();
+    openAppearanceSettings();
     themeButton('Dark').click();
     m.redraw.sync();
     expect(themeButton('Dark').classList.contains('active')).toBe(true);
@@ -429,6 +439,7 @@ describe('AppShell', () => {
     m.mount(second, {
       view: () => m(AppShell, { runtime: 'http', client: createFileManagerClient('http') }),
     });
+    openAppearanceSettings(second);
 
     expect(themeButtonIn(second, 'Auto').classList.contains('active')).toBe(true);
     expect(themeButtonIn(second, 'Dark').classList.contains('active')).toBe(false);

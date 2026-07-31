@@ -4,8 +4,8 @@
   --fm-background: #f4f6f8;
   --fm-surface: #ffffff;
   --fm-surface-elevated: #ffffff;
-  --fm-text: #172033;
-  --fm-text-muted: #596579;
+  --fm-text: #344054;
+  --fm-text-muted: #667085;
   --fm-border: #c8ced8;
   --fm-accent: #075ea8;
   --fm-selection: #c9e2ff;
@@ -14,9 +14,9 @@
   --fm-error: #b42318;
   --fm-warning: #8a4b08;
   --fm-success: #18723c;
-  --fm-row-height: 30px;
+  --fm-row-height: 24px;
   --fm-font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --fm-font-size: 14px;
+  --fm-font-size: 13px;
   --fm-radius: 4px;
   --fm-shadow: 0 8px 24px rgb(23 32 51 / 16%);
 
@@ -50,8 +50,8 @@
   --fm-background: #11151a;
   --fm-surface: #1b2129;
   --fm-surface-elevated: #252d38;
-  --fm-text: #eef2f6;
-  --fm-text-muted: #abb6c4;
+  --fm-text: #d3dae3;
+  --fm-text-muted: #98a3b0;
   --fm-border: #485463;
   --fm-accent: #79b8ff;
   --fm-selection: #244f78;
@@ -70,8 +70,8 @@
     --fm-background: #11151a;
     --fm-surface: #1b2129;
     --fm-surface-elevated: #252d38;
-    --fm-text: #eef2f6;
-    --fm-text-muted: #abb6c4;
+    --fm-text: #d3dae3;
+    --fm-text-muted: #98a3b0;
     --fm-border: #485463;
     --fm-accent: #79b8ff;
     --fm-selection: #244f78;
@@ -96,35 +96,10 @@ body {
 
 .fm-app-shell {
   display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr) auto auto;
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
   height: 100vh;
   min-width: 520px;
   overflow: hidden;
-}
-
-.fm-app-bar {
-  display: flex;
-  gap: 1rem;
-  align-items: center;
-  padding: 0.75rem 1rem;
-  border-bottom: 1px solid var(--fm-border);
-  background: var(--fm-surface);
-}
-
-.fm-app-title {
-  margin: 0;
-  font-size: 1.25rem;
-}
-
-.fm-runtime-badge {
-  margin-right: auto;
-  color: var(--fm-text-muted);
-}
-
-.fm-connection-status {
-  font-size: 0.75rem;
-  color: var(--fm-text-muted);
-  white-space: nowrap;
 }
 
 .fm-workspace-toolbar,
@@ -140,7 +115,82 @@ body {
 }
 
 .fm-workspace-toolbar strong {
-  margin-right: auto;
+  white-space: nowrap;
+}
+
+.fm-workspace-toolbar {
+  position: relative;
+  gap: 0.35rem;
+}
+
+.fm-workspace-toolbar > span {
+  margin-left: auto;
+  color: var(--fm-text-muted);
+}
+
+.fm-navigation-controls {
+  display: flex;
+  gap: 0.125rem;
+}
+
+.fm-navigation-controls button,
+.fm-workspace-toolbar > button,
+.fm-settings-button,
+.fm-settings-editor button {
+  min-width: 1.75rem;
+  border: 0;
+  border-radius: 2px;
+  padding: 0 0.4rem;
+  background: transparent;
+  color: var(--fm-text-muted);
+  font: inherit;
+}
+
+.fm-navigation-controls button:hover:not(:disabled),
+.fm-workspace-toolbar > button:hover:not(:disabled),
+.fm-settings-button:hover,
+.fm-settings-editor button:hover:not(:disabled) {
+  background: var(--fm-hover);
+  color: var(--fm-text);
+}
+
+.fm-navigation-controls button:disabled {
+  opacity: 0.35;
+}
+
+.fm-settings-editor {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 1px);
+  right: 0.5rem;
+  width: min(22rem, calc(100vw - 2rem));
+  border: 1px solid var(--fm-border);
+  padding: 0.75rem;
+  background: var(--fm-surface-elevated);
+  box-shadow: var(--fm-shadow);
+}
+
+.fm-settings-disclosure {
+  position: relative;
+}
+
+.fm-settings-button {
+  display: flex;
+  min-height: var(--fm-row-height);
+  align-items: center;
+  cursor: default;
+  list-style: none;
+}
+
+.fm-settings-button::-webkit-details-marker {
+  display: none;
+}
+
+.fm-settings-editor-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.5rem;
 }
 
 .fm-workspace {

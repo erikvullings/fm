@@ -52,7 +52,7 @@ export function formatEntrySize(
   settings: EntryFormatSettings = DEFAULT_ENTRY_FORMAT_SETTINGS,
 ): string {
   if (entry.kind === 'directory' || entry.size === undefined) {
-    return '—';
+    return '--';
   }
   if (settings.sizeFormat === 'bytes') {
     return `${new Intl.NumberFormat(settings.locale, { maximumFractionDigits: 0 }).format(entry.size)} B`;

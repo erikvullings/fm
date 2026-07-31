@@ -180,8 +180,8 @@ export class MockFileManagerClient implements FileManagerClient {
   private settings: Settings = {
     schemaVersion: 2,
     theme: 'auto',
-    fontSize: 14,
-    rowHeight: 28,
+    fontSize: 13,
+    rowHeight: 24,
     dateFormat: 'medium',
     sizeFormat: 'binary',
     showHiddenFiles: false,

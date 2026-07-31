@@ -129,8 +129,8 @@ impl Default for Settings {
         Self {
             schema_version: CURRENT_SCHEMA_VERSION,
             theme: Theme::Auto,
-            font_size: 14,
-            row_height: 28,
+            font_size: 13,
+            row_height: 24,
             date_format: DateFormat::Medium,
             size_format: SizeFormat::Binary,
             show_hidden_files: false,

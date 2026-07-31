@@ -21,8 +21,8 @@ describe('entry presentation formatting', () => {
   });
 
   it('displays an em dash for directories and missing sizes', () => {
-    expect(formatEntrySize({ kind: 'directory', size: 4_096 }, settings('binary'))).toBe('—');
-    expect(formatEntrySize({ kind: 'file' }, settings('binary'))).toBe('—');
+    expect(formatEntrySize({ kind: 'directory', size: 4_096 }, settings('binary'))).toBe('--');
+    expect(formatEntrySize({ kind: 'file' }, settings('binary'))).toBe('--');
   });
 
   it('formats a raw timestamp with the selected short date format', () => {

@@ -406,37 +406,6 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
               attrs.tabTitle,
             ),
           ]),
-          m('.fm-navigation-controls', [
-            m(
-              'button',
-              {
-                type: 'button',
-                disabled: !attrs.canNavigateBack,
-                'aria-label': 'Back',
-                onclick: () => void attrs.onBack(),
-              },
-              '←',
-            ),
-            m(
-              'button',
-              {
-                type: 'button',
-                disabled: !attrs.canNavigateForward,
-                'aria-label': 'Forward',
-                onclick: () => void attrs.onForward(),
-              },
-              '→',
-            ),
-            m(
-              'button',
-              {
-                type: 'button',
-                'aria-label': 'Parent directory',
-                onclick: () => void attrs.onParent(),
-              },
-              '↑',
-            ),
-          ]),
           editing
             ? m('.fm-path-editor', [
                 m('input.fm-path-input', {

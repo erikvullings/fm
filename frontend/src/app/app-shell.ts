@@ -399,6 +399,16 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     ).catch(() => undefined);
   }
 
+  function setTheme(client: FileManagerClient, next: Theme): void {
+    theme = next;
+    ThemeManager.setTheme(next);
+    if (currentSettings !== undefined) {
+      const updated = { ...currentSettings, theme: next };
+      currentSettings = updated;
+      void client.updateSettings(updated);
+    }
+  }
+
   function paneContent(
     client: FileManagerClient,
     entryFormatSettings: EntryFormatSettings,
@@ -572,40 +582,25 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
 
     view: ({ attrs }) =>
       m('.fm-app-shell', [
-        m('header.fm-app-bar', [
-          m('h1.fm-app-title', 'File Manager'),
-          m(
-            'span.fm-runtime-badge',
-            { title: 'Active transport, from VITE_RUNTIME' },
-            attrs.runtime,
-          ),
-          m(
-            'span.fm-connection-status',
-            {
-              role: 'status',
-              title: `Backend connection: ${appState?.connection.status ?? 'closed'}`,
-              'aria-label': `Backend connection ${appState?.connection.status ?? 'closed'}`,
-            },
-            `Connection: ${appState?.connection.status ?? 'closed'}`,
-          ),
-          m(ThemeSwitcher, {
-            theme,
-            showLabels: true,
-            onThemeChange: (next: Theme) => {
-              theme = next;
-              ThemeManager.setTheme(next);
-              if (currentSettings !== undefined) {
-                const updated = { ...currentSettings, theme: next };
-                currentSettings = updated;
-                void attrs.client.updateSettings(updated);
-              }
-            },
-          }),
-        ]),
         m('.fm-workspace-toolbar', [
           m('strong', workspace?.name ?? 'Workspace'),
+          m('.fm-navigation-controls', { 'aria-label': 'Active pane navigation' }, [
+            m('button', { type: 'button', disabled: workspace?.panesById[workspace.activePaneId]?.tabsById[workspace.panesById[workspace.activePaneId]?.activeTabId ?? '']?.canNavigateBack !== true, 'aria-label': 'Back', onclick: () => void navigation.back(workspace?.activePaneId ?? '') }, '←'),
+            m('button', { type: 'button', disabled: workspace?.panesById[workspace.activePaneId]?.tabsById[workspace.panesById[workspace.activePaneId]?.activeTabId ?? '']?.canNavigateForward !== true, 'aria-label': 'Forward', onclick: () => void navigation.forward(workspace?.activePaneId ?? '') }, '→'),
+            m('button', { type: 'button', disabled: workspace === undefined, 'aria-label': 'Parent directory', onclick: () => void navigation.parent(workspace?.activePaneId ?? '') }, '↑'),
+          ]),
           m('span', 'Search'),
           m('button', { type: 'button', disabled: true }, 'Command palette'),
+          m('details.fm-settings-disclosure', [
+            m('summary.fm-settings-button', 'Settings'),
+            m('.fm-settings-editor', { role: 'dialog', 'aria-label': 'Appearance settings' }, [
+              m('.fm-settings-editor-heading', [
+                m('strong', 'Appearance'),
+                m('button', { type: 'button', 'aria-label': 'Close settings', onclick: (event: MouseEvent) => { const disclosure = (event.currentTarget as HTMLElement).closest('details'); if (disclosure instanceof HTMLDetailsElement) disclosure.open = false; } }, '×'),
+              ]),
+              m(ThemeSwitcher, { theme, showLabels: true, onThemeChange: (next: Theme) => setTheme(attrs.client, next) }),
+            ]),
+          ]),
         ]),
         m('main.fm-workspace', [
           workspace === undefined
