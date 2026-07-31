@@ -277,7 +277,10 @@ export const DirectoryTable: FactoryComponent<DirectoryTableAttrs> = () => {
       scrollTop: bodyScrollTop,
       viewportHeight: attrs.viewportHeight ?? element.clientHeight ?? DEFAULT_VIEWPORT_HEIGHT,
     });
-    const nextScrollTop = nextBodyScrollTop + rowHeight;
+    if (nextBodyScrollTop === bodyScrollTop) {
+      return;
+    }
+    const nextScrollTop = nextBodyScrollTop === 0 ? 0 : nextBodyScrollTop + rowHeight;
     if (nextScrollTop !== element.scrollTop) {
       element.scrollTop = nextScrollTop;
       scrollTop = nextScrollTop;

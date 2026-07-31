@@ -126,6 +126,31 @@ describe('DirectoryTable rows', () => {
     expect(onCursorChange).toHaveBeenCalledWith(1);
   });
 
+  it('does not scroll when a clicked row is already visible', () => {
+    const entries = Array.from({ length: 10 }, (_, index) =>
+      entry({ id: `entry-${index}`, name: `entry-${index}.txt` }),
+    );
+    let cursorIndex: number | undefined;
+    m.mount(root, {
+      view: () =>
+        m(DirectoryTable, {
+          state: { type: 'loaded' },
+          source: entryArraySource(entries),
+          cursorIndex,
+          viewportHeight: 120,
+          onCursorChange: (index) => {
+            cursorIndex = index;
+          },
+        }),
+    });
+
+    const grid = root.querySelector<HTMLElement>('[role="grid"]');
+    root.querySelectorAll<HTMLElement>('.fm-directory-row')[2]?.click();
+    m.redraw.sync();
+
+    expect(grid?.scrollTop).toBe(0);
+  });
+
   it('activates a double-clicked row', () => {
     const onActivate = vi.fn();
     mount({
