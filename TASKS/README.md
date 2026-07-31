@@ -117,6 +117,7 @@ the workspace-service tasks; see Step 2b above).
 - 0055 Sample plugin: Copy Markdown Path
 - 0056 Sample plugin: File Age column
 - 0057 Plugin management UI
+- 0083 Settings editor UI *(after 0050 and 0057)*
 
 ## Step 10 — Desktop polish (§33.10)
 
@@ -143,6 +144,7 @@ the workspace-service tasks; see Step 2b above).
 - 0070 Favourites, bookmarks and recent locations
 - 0071 Preview service and initial preview panel
 - 0072 Multi-rename tool
+- 0084 Workspace management UI *(after 0069; 0082 already complete)*
 
 ## Milestone 5 backlog (§16.5, §37)
 

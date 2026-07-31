@@ -35,3 +35,6 @@ system"), §29 (platform modifiers) and §36 item 8.
 
 ## Agent Notes
 - Not started.
+- 2026-07-31 codex: This task is a prerequisite for 0083. Keep conflict detection, platform/browser
+  availability and editable binding state behind reusable feature APIs so the settings editor can
+  render them without duplicating dispatcher logic.

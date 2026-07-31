@@ -27,3 +27,6 @@ UI is part of polished version 1).
 
 ## Agent Notes
 - Not started.
+- 2026-07-31 codex: This task is a prerequisite for 0083. Build the plugin list and enable/disable
+  flow as a reusable settings section (or routable feature) so the general settings editor embeds
+  or links to it instead of creating a second plugin-management path.

@@ -33,3 +33,6 @@ and §37.
 
 ## Agent Notes
 - Not started.
+- 2026-07-31 codex: This task is a prerequisite for 0084. Keep tab lifecycle and rendering reusable
+  across workspace switches, and make pending-update flush/subscription cleanup explicit so the
+  later workspace manager does not need to recreate tab behavior.
