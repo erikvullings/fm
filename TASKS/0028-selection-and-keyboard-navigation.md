@@ -1,6 +1,6 @@
 # 0028 Selection model and keyboard navigation
 
-Status: open
+Status: done
 Priority: high
 Owner: unassigned
 Agent: unassigned
@@ -31,4 +31,16 @@ keyboard navigation are named frontend test targets). Selection is independent o
   the action ids now (`core.selectAll`, `core.invertSelection`, ...) to avoid rework.
 
 ## Agent Notes
-- Not started.
+- 2026-07-31 codex: Added a pure stable-`EntryId` selection reducer under
+  `features/selection/` for independent cursor movement, single/range/discontinuous selection,
+  select all, invert, clear, and explicit delta pruning. Range anchors remain stable across
+  reordered visible entries, while filtered-out selections remain selected.
+- 2026-07-31 codex: Added typed semantic key interpretation with reserved `core.*` action IDs,
+  runtime-capability platform modifiers, viewport/edge movement, Shift+Arrow extension, Space
+  toggling, Ctrl/Cmd+A, and 700 ms prefix type-to-select. Integrated it with per-pane AppShell
+  state while preserving task 0027's Enter, Backspace, history, and workspace Tab behavior.
+- 2026-07-31 codex: Verified 28 dedicated reducer/keybinding cases and 4 task-specific pane/AppShell
+  integration cases by rerunning their five Vitest files. Frontend typecheck and production build,
+  repository-wide formatting/clippy/Biome lint, and the full Rust/frontend/script `pnpm test`
+  suite pass. No `CLAUDE.md` exists to update; README documents the added keyboard and selection
+  surface.

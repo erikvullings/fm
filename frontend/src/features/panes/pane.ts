@@ -1,6 +1,13 @@
 import m, { type FactoryComponent, type VnodeDOM } from 'mithril';
 import type { EntryId, EntrySummary, LoadingState } from '../../models';
 import { DirectoryTable, entryArraySource } from '../directory-table/directory-table';
+import {
+  interpretSelectionKey,
+  reduceTypeahead,
+  type SelectionPlatform,
+  type TypeaheadState,
+} from '../selection/keybindings';
+import type { SelectionAction } from '../selection/selection';
 import './pane.css';
 
 /** A cumulative, clickable part of a filesystem path. */
@@ -19,6 +26,7 @@ export interface PaneAttrs {
   readonly selectedEntryIds: ReadonlySet<EntryId>;
   readonly active: boolean;
   readonly cursorIndex?: number;
+  readonly platform: SelectionPlatform;
   readonly canNavigateBack: boolean;
   readonly canNavigateForward: boolean;
   readonly onNavigate: (path: string) => void | Promise<void>;
@@ -26,7 +34,7 @@ export interface PaneAttrs {
   readonly onForward: () => void | Promise<void>;
   readonly onParent: () => void | Promise<void>;
   readonly onOpenEntry: (entry: EntrySummary) => void | Promise<void>;
-  readonly onCursorChange: (index: number) => void;
+  readonly onSelectionAction: (action: SelectionAction) => void;
   readonly onRetry: () => void | Promise<void>;
   readonly onLoadNextPage: () => void | Promise<void>;
 }
@@ -117,6 +125,7 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
   let draftPath = '';
   let pathError: string | undefined;
   let inputElement: HTMLInputElement | undefined;
+  let typeahead: TypeaheadState | undefined;
 
   function beginEditing(path: string): void {
     editing = true;
@@ -167,29 +176,61 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
             if (event.key.toLowerCase() === 'l' && (event.ctrlKey || event.metaKey)) {
               event.preventDefault();
               beginEditing(attrs.path);
-            } else if (event.key === 'ArrowDown' && attrs.entries.length > 0) {
-              event.preventDefault();
-              attrs.onCursorChange(
-                Math.min((attrs.cursorIndex ?? -1) + 1, attrs.entries.length - 1),
-              );
-            } else if (event.key === 'ArrowUp' && attrs.entries.length > 0) {
-              event.preventDefault();
-              attrs.onCursorChange(Math.max((attrs.cursorIndex ?? 0) - 1, 0));
-            } else if (event.key === 'Enter' && attrs.cursorIndex !== undefined) {
+              return;
+            }
+            const command = interpretSelectionKey(event, attrs.platform);
+            if (command?.type === 'switchPane') {
+              return;
+            }
+            if (command?.type === 'open' && attrs.cursorIndex !== undefined) {
               const entry = attrs.entries[attrs.cursorIndex];
               if (entry !== undefined) {
                 event.preventDefault();
                 void attrs.onOpenEntry(entry);
               }
-            } else if (event.key === 'Backspace') {
+            } else if (command?.type === 'parent') {
               event.preventDefault();
               void attrs.onParent();
+            } else if (command?.type === 'moveCursor') {
+              event.preventDefault();
+              attrs.onSelectionAction(command);
+            } else if (command?.type === 'moveCursorByPage') {
+              event.preventDefault();
+              attrs.onSelectionAction({ type: 'moveCursor', offset: command.pages * 10 });
+            } else if (command?.type === 'moveCursorTo') {
+              event.preventDefault();
+              attrs.onSelectionAction(command);
+            } else if (command?.type === 'extendRange') {
+              event.preventDefault();
+              attrs.onSelectionAction(command);
+            } else if (command?.type === 'toggleCursorSelection') {
+              const entry =
+                attrs.cursorIndex === undefined ? undefined : attrs.entries[attrs.cursorIndex];
+              if (entry !== undefined) {
+                event.preventDefault();
+                attrs.onSelectionAction({ type: 'toggle', entryId: entry.id });
+              }
+            } else if (command?.type === 'selectAll') {
+              event.preventDefault();
+              attrs.onSelectionAction({ type: 'selectAll' });
             } else if (event.altKey && event.key === 'ArrowLeft') {
               event.preventDefault();
               void attrs.onBack();
             } else if (event.altKey && event.key === 'ArrowRight') {
               event.preventDefault();
               void attrs.onForward();
+            } else if (
+              event.key.length === 1 &&
+              !event.ctrlKey &&
+              !event.metaKey &&
+              !event.altKey
+            ) {
+              const result = reduceTypeahead(typeahead, event.key, attrs.entries, Date.now());
+              typeahead = result.state;
+              if (result.matchedEntryId !== undefined) {
+                event.preventDefault();
+                attrs.onSelectionAction({ type: 'setCursor', entryId: result.matchedEntryId });
+              }
             }
           },
           onauxclick: (event: MouseEvent) => {
@@ -308,7 +349,12 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
             label: `${attrs.tabTitle} directory`,
             onRetry: () => void attrs.onRetry(),
             onEndReached: () => void attrs.onLoadNextPage(),
-            onCursorChange: attrs.onCursorChange,
+            onCursorChange: (index) => {
+              const entry = attrs.entries[index];
+              if (entry !== undefined) {
+                attrs.onSelectionAction({ type: 'selectOnly', entryId: entry.id });
+              }
+            },
             ...(attrs.cursorIndex === undefined ? {} : { cursorIndex: attrs.cursorIndex }),
           }),
           m('.fm-pane-status', { role: 'status' }, [

@@ -9,6 +9,8 @@ import type {
   WorkspaceProjection,
 } from '../../models';
 import { Pane } from '../panes/pane';
+import type { SelectionPlatform } from '../selection/keybindings';
+import type { SelectionAction } from '../selection/selection';
 import './workspace-layout.css';
 
 const MIN_PANE_WIDTH = 240;
@@ -20,12 +22,13 @@ export interface WorkspacePaneContent {
   readonly selectedEntryIds: ReadonlySet<EntryId>;
   readonly sortLabel: string;
   readonly cursorIndex?: number;
+  readonly platform: SelectionPlatform;
   readonly onNavigate: (path: string) => void | Promise<void>;
   readonly onBack: () => void | Promise<void>;
   readonly onForward: () => void | Promise<void>;
   readonly onParent: () => void | Promise<void>;
   readonly onOpenEntry: (entry: EntrySummary) => void | Promise<void>;
-  readonly onCursorChange: (index: number) => void;
+  readonly onSelectionAction: (action: SelectionAction) => void;
   readonly onRetry: () => void | Promise<void>;
   readonly onLoadNextPage: () => void | Promise<void>;
 }
@@ -190,6 +193,7 @@ export const WorkspaceLayoutView: FactoryComponent<WorkspaceLayoutViewAttrs> = (
         selectedEntryIds: content.selectedEntryIds,
         sortLabel: content.sortLabel,
         active,
+        platform: content.platform,
         canNavigateBack: tab.canNavigateBack,
         canNavigateForward: tab.canNavigateForward,
         ...(content.cursorIndex === undefined ? {} : { cursorIndex: content.cursorIndex }),
@@ -198,7 +202,7 @@ export const WorkspaceLayoutView: FactoryComponent<WorkspaceLayoutViewAttrs> = (
         onForward: content.onForward,
         onParent: content.onParent,
         onOpenEntry: content.onOpenEntry,
-        onCursorChange: content.onCursorChange,
+        onSelectionAction: content.onSelectionAction,
         onRetry: content.onRetry,
         onLoadNextPage: content.onLoadNextPage,
       }),

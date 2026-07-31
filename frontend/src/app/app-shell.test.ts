@@ -75,6 +75,28 @@ describe('AppShell', () => {
     expect(activePane?.querySelector('.fm-cursor-row')?.textContent).toContain('report.pdf');
   });
 
+  it('keeps cursor and selection independent while using keyboard selection', async () => {
+    mountShell('mock');
+
+    await vi.waitFor(() => expect(root.textContent).toContain('Documents'));
+    const activePane = root.querySelector<HTMLElement>('[data-active="true"] > .fm-pane');
+    activePane?.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'a', ctrlKey: true, bubbles: true }),
+    );
+    m.redraw.sync();
+
+    const entryCount = activePane?.querySelectorAll('.fm-directory-row').length ?? 0;
+    expect(activePane?.querySelectorAll('.fm-selected-row')).toHaveLength(entryCount);
+
+    activePane?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+    m.redraw.sync();
+    expect(activePane?.querySelectorAll('.fm-selected-row')).toHaveLength(entryCount);
+
+    activePane?.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true }));
+    m.redraw.sync();
+    expect(activePane?.querySelectorAll('.fm-selected-row')).toHaveLength(entryCount - 1);
+  });
+
   it('composes the complete main-window workspace regions', async () => {
     mountShell('mock');
 

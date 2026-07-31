@@ -7,6 +7,13 @@ import {
   type NavigationController,
   type PaneDirectoryView,
 } from '../features/navigation/navigation';
+import type { SelectionPlatform } from '../features/selection/keybindings';
+import {
+  emptySelection,
+  reduceSelection,
+  type SelectionAction,
+  type SelectionState,
+} from '../features/selection/selection';
 import { dispatchWorkspaceCommand } from '../features/workspace/dispatch-workspace-command';
 import {
   WorkspaceLayoutView,
@@ -34,7 +41,8 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
   let workspace: WorkspaceProjection | undefined;
   let workspaceError: string | undefined;
   const directories = new Map<PaneId, PaneDirectoryView>();
-  const cursors = new Map<PaneId, number>();
+  const selections = new Map<PaneId, SelectionState>();
+  let platform: SelectionPlatform = 'unknown';
   let workspaceRequest: AbortController | undefined;
 
   function locationForPath(current: Location, path: string): Location {
@@ -48,6 +56,8 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
   async function loadWorkspace(client: FileManagerClient): Promise<void> {
     workspaceRequest = new AbortController();
     try {
+      const capabilities = await client.getRuntimeCapabilities(workspaceRequest.signal);
+      platform = capabilities.platform;
       const summaries = await client.listWorkspaces(workspaceRequest.signal);
       const loaded =
         summaries[0] === undefined
@@ -115,12 +125,16 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     };
     const pane = workspace?.panesById[paneId];
     const tab = pane?.tabsById[pane.activeTabId];
-    const cursorIndex = cursors.get(paneId);
+    const selection = selections.get(paneId) ?? emptySelection;
+    const entryIds = directory.entries.map((entry) => entry.id);
+    const cursorIndex =
+      selection.cursorEntryId === undefined ? undefined : entryIds.indexOf(selection.cursorEntryId);
     return {
       ...directory,
-      selectedEntryIds: new Set<EntryId>(),
+      selectedEntryIds: new Set<EntryId>(selection.selectedEntryIds),
       sortLabel: 'Name ascending',
-      ...(cursorIndex === undefined ? {} : { cursorIndex }),
+      platform,
+      ...(cursorIndex === undefined || cursorIndex < 0 ? {} : { cursorIndex }),
       onNavigate: async (path) => {
         if (tab !== undefined) {
           await navigation.navigate(paneId, locationForPath(tab.location, path));
@@ -131,8 +145,8 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       onParent: () => navigation.parent(paneId),
       onOpenEntry: (entry) =>
         entry.kind === 'directory' ? navigation.navigate(paneId, entry.location) : undefined,
-      onCursorChange: (index) => {
-        cursors.set(paneId, index);
+      onSelectionAction: (action: SelectionAction) => {
+        selections.set(paneId, reduceSelection(selection, action, entryIds));
         m.redraw();
       },
       onRetry: () => navigation.retry(paneId),
@@ -150,13 +164,16 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
           const previous = directories.get(paneId);
           directories.set(paneId, view);
           if (view.entries.length === 0) {
-            cursors.delete(paneId);
+            selections.set(paneId, emptySelection);
           } else if (
-            cursors.get(paneId) === undefined ||
-            previous?.location?.uri !== view.location?.uri ||
-            (cursors.get(paneId) ?? 0) >= view.entries.length
+            selections.get(paneId)?.cursorEntryId === undefined ||
+            previous?.location?.uri !== view.location?.uri
           ) {
-            cursors.set(paneId, 0);
+            const firstEntry = view.entries[0];
+            selections.set(paneId, {
+              selectedEntryIds: [],
+              ...(firstEntry === undefined ? {} : { cursorEntryId: firstEntry.id }),
+            });
           }
           m.redraw();
         },

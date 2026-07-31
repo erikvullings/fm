@@ -22,6 +22,9 @@ reproducible million-entry rendering check via `pnpm --dir frontend benchmark:di
 The presentation-only pane composes that table with a compact single-tab strip, clickable
 filesystem breadcrumbs, Ctrl/Cmd+L path editing, inline navigation errors, and entry, selection,
 size, and sort status counters.
+Per-pane selection is keyed by stable entry IDs and remains independent of the keyboard cursor.
+Arrow, page, edge, range, toggle, select-all, pane-switching, open and parent bindings are handled
+through typed semantic commands, with host-platform modifiers and timed type-to-select.
 The main window loads its authoritative workspace projection through the shared client and renders
 the recursive pane layout with a draggable, minimum-width splitter. Pane clicks and Tab traversal
 move visible focus through semantic workspace commands; divider changes are sent as debounced

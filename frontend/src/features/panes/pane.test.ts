@@ -38,13 +38,14 @@ function attrs(overrides: Partial<PaneAttrs> = {}): PaneAttrs {
     sortLabel: 'Name ascending',
     selectedEntryIds: new Set<EntryId>(),
     active: true,
+    platform: 'linux',
     canNavigateBack: true,
     canNavigateForward: true,
     onBack: vi.fn(),
     onForward: vi.fn(),
     onParent: vi.fn(),
     onOpenEntry: vi.fn(),
-    onCursorChange: vi.fn(),
+    onSelectionAction: vi.fn(),
     onRetry: vi.fn(),
     onLoadNextPage: vi.fn(),
     onNavigate: vi.fn(),
@@ -182,16 +183,63 @@ describe('Pane status bar', () => {
 });
 
 describe('Pane navigation input', () => {
-  it('moves the cursor with arrow keys and clamps it to the directory bounds', () => {
-    const onCursorChange = vi.fn();
-    mount(attrs({ cursorIndex: 0, onCursorChange }));
+  it('emits cursor, page and edge movement actions', () => {
+    const onSelectionAction = vi.fn();
+    mount(attrs({ cursorIndex: 0, onSelectionAction }));
     const pane = root.querySelector<HTMLElement>('.fm-pane');
 
     pane?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
     pane?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }));
+    pane?.dispatchEvent(new KeyboardEvent('keydown', { key: 'PageDown', bubbles: true }));
+    pane?.dispatchEvent(new KeyboardEvent('keydown', { key: 'PageUp', bubbles: true }));
+    pane?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Home', bubbles: true }));
+    pane?.dispatchEvent(new KeyboardEvent('keydown', { key: 'End', bubbles: true }));
 
-    expect(onCursorChange).toHaveBeenNthCalledWith(1, 1);
-    expect(onCursorChange).toHaveBeenNthCalledWith(2, 0);
+    expect(onSelectionAction.mock.calls.map(([action]) => action)).toEqual([
+      { type: 'moveCursor', offset: 1 },
+      { type: 'moveCursor', offset: -1 },
+      { type: 'moveCursor', offset: 10 },
+      { type: 'moveCursor', offset: -10 },
+      { type: 'moveCursorTo', edge: 'first' },
+      { type: 'moveCursorTo', edge: 'last' },
+    ]);
+  });
+
+  it('emits range, toggle and platform select-all actions', () => {
+    const onSelectionAction = vi.fn();
+    mount(attrs({ cursorIndex: 0, platform: 'macos', onSelectionAction }));
+    const pane = root.querySelector<HTMLElement>('.fm-pane');
+
+    pane?.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'ArrowDown', shiftKey: true, bubbles: true }),
+    );
+    pane?.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true }));
+    pane?.dispatchEvent(new KeyboardEvent('keydown', { key: 'a', metaKey: true, bubbles: true }));
+    pane?.dispatchEvent(new KeyboardEvent('keydown', { key: 'a', ctrlKey: true, bubbles: true }));
+
+    expect(onSelectionAction.mock.calls.map(([action]) => action)).toEqual([
+      { type: 'extendRange', offset: 1 },
+      { type: 'toggle', entryId: 'one' },
+      { type: 'selectAll' },
+    ]);
+  });
+
+  it('selects clicked rows and type-selects by a timed prefix', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1_000);
+    const onSelectionAction = vi.fn();
+    mount(attrs({ cursorIndex: 0, onSelectionAction }));
+
+    root.querySelectorAll<HTMLElement>('.fm-directory-row')[1]?.click();
+    root
+      .querySelector<HTMLElement>('.fm-pane')
+      ?.dispatchEvent(new KeyboardEvent('keydown', { key: 't', bubbles: true }));
+
+    expect(onSelectionAction.mock.calls.map(([action]) => action)).toEqual([
+      { type: 'selectOnly', entryId: 'two' },
+      { type: 'setCursor', entryId: 'two' },
+    ]);
+    vi.useRealTimers();
   });
 
   it('opens the directory under the cursor with Enter and navigates parent with Backspace', () => {
