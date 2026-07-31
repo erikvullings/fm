@@ -4,12 +4,14 @@ use std::fs;
 
 use fm_domain::{EntryKind, Location, ProviderId};
 use fm_vfs::{
-    EntryRef, FileSystemProvider, ListOptions, ProviderCapabilities, ProviderChange, VfsError,
+    CopyCommitOptions, EntryRef, FileSystemProvider, ListOptions, ProviderCapabilities,
+    ProviderChange, VfsError, WriteOptions,
 };
 use fm_vfs_local::LocalFileSystemProvider;
 use futures::StreamExt;
 use tempfile::tempdir;
 use tokio_util::sync::CancellationToken;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 #[tokio::test]
 async fn creates_one_unicode_child_directory_without_creating_parents() {
@@ -65,6 +67,49 @@ async fn create_directory_rejects_typed_invalid_names_and_collisions() {
             "unexpected error for {name:?}: {error}"
         );
     }
+}
+
+#[tokio::test]
+async fn streams_a_file_to_a_temporary_name_then_commits_it_atomically() {
+    let root = tempdir().expect("temporary directory");
+    fs::write(root.path().join("source.bin"), b"streamed bytes").expect("source fixture");
+    let parent = Location::from_native_path(root.path()).expect("local location");
+    let source = EntryRef {
+        id: fm_domain::EntryId::new(),
+        location: parent.join("source.bin").expect("source location"),
+    };
+    let temporary = parent.join(".fm-copy-test").expect("temporary location");
+    let destination = parent.join("copied.bin").expect("destination location");
+    let provider = LocalFileSystemProvider::new();
+
+    let mut reader = provider
+        .open_read(&source, CancellationToken::new())
+        .await
+        .expect("open source");
+    let mut writer = provider
+        .open_write(&temporary, WriteOptions::default(), CancellationToken::new())
+        .await
+        .expect("open temporary destination");
+    let mut buffer = [0_u8; 4];
+    loop {
+        let read = reader.read(&mut buffer).await.expect("stream read");
+        if read == 0 { break; }
+        writer.write_all(&buffer[..read]).await.expect("stream write");
+    }
+    writer.shutdown().await.expect("flush destination");
+    provider
+        .commit_copy(
+            &source,
+            &temporary,
+            &destination,
+            CopyCommitOptions { overwrite: false, preserve_metadata: true },
+            CancellationToken::new(),
+        )
+        .await
+        .expect("commit copy");
+
+    assert_eq!(fs::read(root.path().join("copied.bin")).unwrap(), b"streamed bytes");
+    assert!(!root.path().join(".fm-copy-test").exists());
 }
 
 #[tokio::test]

@@ -50,7 +50,8 @@ export class TauriEventStream implements EventStream {
   constructor(dependencies: TauriEventStreamDependencies = defaultDependencies) {
     this.dependencies = {
       ...dependencies,
-      requestFrame: dependencies.requestFrame ?? requestAnimationFrame,
+      requestFrame:
+        dependencies.requestFrame ?? ((callback) => globalThis.requestAnimationFrame(callback)),
     };
   }
 

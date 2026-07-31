@@ -3,8 +3,9 @@ use fm_domain::{EntryMetadata, Location, ProviderId};
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    DirectoryPage, EntryRef, ListOptions, ProviderCapabilities, ProviderChangeStream,
-    ProviderReadStream, ProviderWriteStream, RemoveOptions, VfsError, WriteOptions,
+    CopyCommitOptions, DirectoryPage, EntryRef, ListOptions, ProviderCapabilities,
+    ProviderChangeStream, ProviderReadStream, ProviderWriteStream, RemoveOptions, VfsError,
+    WriteOptions,
 };
 
 /// Provider-neutral asynchronous filesystem interface.
@@ -34,6 +35,18 @@ pub trait FileSystemProvider: Send + Sync {
         entry: &EntryRef,
         cancellation: CancellationToken,
     ) -> Result<EntryMetadata, VfsError>;
+
+    /// Returns a regular file's logical byte length for operation planning.
+    async fn file_size(
+        &self,
+        entry: &EntryRef,
+        cancellation: CancellationToken,
+    ) -> Result<u64, VfsError> {
+        let _ = (entry, cancellation);
+        Err(VfsError::UnsupportedCapability {
+            capability: ProviderCapabilities::READ,
+        })
+    }
 
     /// Creates a child directory at a location.
     async fn create_directory(
@@ -73,6 +86,33 @@ pub trait FileSystemProvider: Send + Sync {
         options: WriteOptions,
         cancellation: CancellationToken,
     ) -> Result<ProviderWriteStream, VfsError>;
+
+    /// Atomically publishes a completed temporary copy and applies supported source metadata.
+    async fn commit_copy(
+        &self,
+        source: &EntryRef,
+        temporary: &Location,
+        destination: &Location,
+        options: CopyCommitOptions,
+        cancellation: CancellationToken,
+    ) -> Result<EntryRef, VfsError> {
+        let _ = (source, temporary, destination, options, cancellation);
+        Err(VfsError::UnsupportedCapability {
+            capability: ProviderCapabilities::WRITE,
+        })
+    }
+
+    /// Removes a provider-private temporary copy after failure or cancellation.
+    async fn discard_copy(
+        &self,
+        temporary: &Location,
+        cancellation: CancellationToken,
+    ) -> Result<(), VfsError> {
+        let _ = (temporary, cancellation);
+        Err(VfsError::UnsupportedCapability {
+            capability: ProviderCapabilities::WRITE,
+        })
+    }
 
     /// Watches a location for incremental directory changes.
     async fn watch(

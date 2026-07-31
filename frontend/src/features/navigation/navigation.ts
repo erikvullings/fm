@@ -84,13 +84,11 @@ export function createNavigationController(
 ): NavigationController {
   const activeRequests = new Map<PaneId, ActiveRequest>();
   const paneViews = new Map<PaneId, PaneDirectoryView>();
-  let sequence = 0;
 
   function begin(paneId: PaneId): ActiveRequest {
     activeRequests.get(paneId)?.controller.abort();
-    sequence += 1;
     const request = {
-      id: `navigation-${paneId}-${sequence}`,
+      id: crypto.randomUUID(),
       controller: new AbortController(),
     };
     activeRequests.set(paneId, request);

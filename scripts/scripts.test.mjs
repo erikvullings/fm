@@ -89,3 +89,15 @@ test('scripts/not-implemented.sh reports the script name and task number', () =>
   assert.match(stderr, /dev:tauri/);
   assert.match(stderr, /0015/);
 });
+
+test('Tauri lifecycle commands select its transport and resolve the frontend from their working directory', () => {
+  const config = JSON.parse(
+    readFileSync(join(repoRoot, 'apps', 'fm-desktop', 'src-tauri', 'tauri.conf.json'), 'utf8'),
+  );
+
+  assert.equal(config.build.devUrl, 'http://127.0.0.1:5181');
+  assert.match(config.build.beforeDevCommand, /VITE_RUNTIME=tauri/);
+  assert.match(config.build.beforeDevCommand, /--dir \.\.\/\.\.\/frontend exec vite --port 5181$/);
+  assert.match(config.build.beforeBuildCommand, /VITE_RUNTIME=tauri/);
+  assert.match(config.build.beforeBuildCommand, /--dir \.\.\/\.\.\/frontend build$/);
+});

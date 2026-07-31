@@ -79,7 +79,7 @@ describe('createApiProxyOptions', () => {
   });
 
   it('defaults to the loopback address the Axum host binds to', () => {
-    expect(DEFAULT_BACKEND_ORIGIN).toMatch(/^http:\/\/127\.0\.0\.1:\d+$/);
+    expect(DEFAULT_BACKEND_ORIGIN).toBe('http://127.0.0.1:8787');
     expect(API_PREFIX).toBe('/api');
   });
 

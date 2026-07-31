@@ -22,7 +22,11 @@ struct Cli {
     #[arg(long, env = "FM_SERVER_BIND", default_value = "127.0.0.1")]
     bind: IpAddr,
     /// Port to bind to.
-    #[arg(long, env = "FM_SERVER_PORT", default_value_t = 4180)]
+    #[arg(
+        long,
+        env = "FM_SERVER_PORT",
+        default_value_t = ServerConfig::default().port
+    )]
     port: u16,
     /// Origins allowed to make cross-origin requests. Repeat to allow several;
     /// omit to allow none (spec §22, no wildcard CORS).

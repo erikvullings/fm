@@ -34,7 +34,7 @@ impl Default for ServerConfig {
     fn default() -> Self {
         Self {
             bind_address: IpAddr::from([127, 0, 0, 1]),
-            port: 4180,
+            port: 8787,
             cors_allowed_origins: Vec::new(),
             max_body_bytes: 10 * 1024 * 1024,
             roots: Vec::new(),
@@ -44,5 +44,15 @@ impl Default for ServerConfig {
                 .unwrap_or_else(|| PathBuf::from(".fm-config"))
                 .join("fm"),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_port_matches_the_browser_frontend_proxy() {
+        assert_eq!(ServerConfig::default().port, 8787);
     }
 }

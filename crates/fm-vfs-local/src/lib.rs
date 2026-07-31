@@ -20,9 +20,9 @@ use fm_domain::{
     EntryId, EntryKind, EntryMetadata, EntrySummary, Location, PermissionsInfo, ProviderId,
 };
 use fm_vfs::{
-    DirectoryPage, EntryRef, FileSystemProvider, ListOptions, ProviderCapabilities, ProviderChange,
-    ProviderChangeStream, ProviderReadStream, ProviderWriteStream, RemoveOptions, VfsError,
-    WriteOptions,
+    CopyCommitOptions, DirectoryPage, EntryRef, FileSystemProvider, ListOptions,
+    ProviderCapabilities, ProviderChange, ProviderChangeStream, ProviderReadStream,
+    ProviderWriteStream, RemoveOptions, VfsError, WriteOptions,
 };
 use futures::stream;
 use notify::{Event, RecursiveMode, Watcher};
@@ -56,6 +56,10 @@ impl FileSystemProvider for LocalFileSystemProvider {
             | ProviderCapabilities::WATCH
             | ProviderCapabilities::CREATE_DIRECTORY
             | ProviderCapabilities::RENAME
+            | ProviderCapabilities::READ
+            | ProviderCapabilities::WRITE
+            | ProviderCapabilities::SET_TIMESTAMPS
+            | ProviderCapabilities::SET_PERMISSIONS
     }
 
     async fn list(
@@ -150,6 +154,29 @@ impl FileSystemProvider for LocalFileSystemProvider {
         })
     }
 
+    async fn file_size(
+        &self,
+        entry: &EntryRef,
+        cancellation: CancellationToken,
+    ) -> Result<u64, VfsError> {
+        if cancellation.is_cancelled() {
+            return Err(VfsError::Cancelled);
+        }
+        let path = entry
+            .location
+            .to_native_path()
+            .map_err(|_| invalid_location(&entry.location))?;
+        let metadata = tokio::fs::symlink_metadata(path)
+            .await
+            .map_err(|error| map_io_error(error, &entry.location.uri))?;
+        if !metadata.is_file() {
+            return Err(VfsError::IsADirectory {
+                location: entry.location.uri.clone(),
+            });
+        }
+        Ok(metadata.len())
+    }
+
     async fn create_directory(
         &self,
         location: &Location,
@@ -242,19 +269,103 @@ impl FileSystemProvider for LocalFileSystemProvider {
 
     async fn open_read(
         &self,
-        _entry: &EntryRef,
-        _cancellation: CancellationToken,
+        entry: &EntryRef,
+        cancellation: CancellationToken,
     ) -> Result<ProviderReadStream, VfsError> {
-        unsupported(ProviderCapabilities::READ)
+        if cancellation.is_cancelled() {
+            return Err(VfsError::Cancelled);
+        }
+        let path = entry
+            .location
+            .to_native_path()
+            .map_err(|_| invalid_location(&entry.location))?;
+        let file = tokio::fs::File::open(path)
+            .await
+            .map_err(|error| map_io_error(error, &entry.location.uri))?;
+        Ok(Box::pin(file))
     }
 
     async fn open_write(
         &self,
-        _destination: &Location,
-        _options: WriteOptions,
-        _cancellation: CancellationToken,
+        destination: &Location,
+        options: WriteOptions,
+        cancellation: CancellationToken,
     ) -> Result<ProviderWriteStream, VfsError> {
-        unsupported(ProviderCapabilities::WRITE)
+        if cancellation.is_cancelled() {
+            return Err(VfsError::Cancelled);
+        }
+        let path = destination
+            .to_native_path()
+            .map_err(|_| invalid_location(destination))?;
+        let file = tokio::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(options.overwrite)
+            .create_new(!options.overwrite)
+            .open(path)
+            .await
+            .map_err(|error| map_io_error(error, &destination.uri))?;
+        Ok(Box::pin(file))
+    }
+
+    async fn commit_copy(
+        &self,
+        source: &EntryRef,
+        temporary: &Location,
+        destination: &Location,
+        options: CopyCommitOptions,
+        cancellation: CancellationToken,
+    ) -> Result<EntryRef, VfsError> {
+        if cancellation.is_cancelled() {
+            return Err(VfsError::Cancelled);
+        }
+        let source_path = source
+            .location
+            .to_native_path()
+            .map_err(|_| invalid_location(&source.location))?;
+        let temporary_path = temporary
+            .to_native_path()
+            .map_err(|_| invalid_location(temporary))?;
+        let destination_path = destination
+            .to_native_path()
+            .map_err(|_| invalid_location(destination))?;
+        if options.preserve_metadata {
+            preserve_copy_metadata(&source_path, &temporary_path, &source.location.uri).await?;
+        }
+        if options.overwrite {
+            tokio::fs::rename(&temporary_path, &destination_path)
+                .await
+                .map_err(|error| map_io_error(error, &destination.uri))?;
+        } else {
+            tokio::fs::hard_link(&temporary_path, &destination_path)
+                .await
+                .map_err(|error| map_io_error(error, &destination.uri))?;
+            tokio::fs::remove_file(&temporary_path)
+                .await
+                .map_err(|error| map_io_error(error, &temporary.uri))?;
+        }
+        let metadata = tokio::fs::symlink_metadata(&destination_path)
+            .await
+            .map_err(|error| map_io_error(error, &destination.uri))?;
+        Ok(EntryRef {
+            id: stable_entry_id(&metadata, destination),
+            location: destination.clone(),
+        })
+    }
+
+    async fn discard_copy(
+        &self,
+        temporary: &Location,
+        _cancellation: CancellationToken,
+    ) -> Result<(), VfsError> {
+        let path = temporary
+            .to_native_path()
+            .map_err(|_| invalid_location(temporary))?;
+        match tokio::fs::remove_file(path).await {
+            Ok(()) => Ok(()),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(map_io_error(error, &temporary.uri)),
+        }
     }
 
     async fn watch(
@@ -287,7 +398,7 @@ impl FileSystemProvider for LocalFileSystemProvider {
         )
         .map_err(|error| watch_error(error, location))?;
         watcher
-            .watch(&path, RecursiveMode::Recursive)
+            .watch(&path, RecursiveMode::NonRecursive)
             .map_err(|error| watch_error(error, location))?;
 
         tokio::spawn(async move {
@@ -318,6 +429,38 @@ impl FileSystemProvider for LocalFileSystemProvider {
             receiver.recv().await.map(|change| (change, receiver))
         })))
     }
+}
+
+async fn preserve_copy_metadata(
+    source: &Path,
+    temporary: &Path,
+    location: &str,
+) -> Result<(), VfsError> {
+    let source = source.to_owned();
+    let temporary = temporary.to_owned();
+    let location = location.to_owned();
+    tokio::task::spawn_blocking(move || {
+        let metadata = std::fs::metadata(&source).map_err(|error| map_io_error(error, &location))?;
+        std::fs::set_permissions(&temporary, metadata.permissions())
+            .map_err(|error| map_io_error(error, &location))?;
+        let source_file = std::fs::File::open(&source).map_err(|error| map_io_error(error, &location))?;
+        let destination_file = std::fs::OpenOptions::new()
+            .write(true)
+            .open(&temporary)
+            .map_err(|error| map_io_error(error, &location))?;
+        let source_times = source_file
+            .metadata()
+            .map_err(|error| map_io_error(error, &location))?;
+        destination_file
+            .set_times(
+                std::fs::FileTimes::new()
+                    .set_accessed(source_times.accessed().map_err(|error| map_io_error(error, &location))?)
+                    .set_modified(source_times.modified().map_err(|error| map_io_error(error, &location))?),
+            )
+            .map_err(|error| map_io_error(error, &location))
+    })
+    .await
+    .map_err(|error| VfsError::Io { message: error.to_string() })?
 }
 
 async fn summarize_entry(

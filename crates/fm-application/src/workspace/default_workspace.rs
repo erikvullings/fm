@@ -24,7 +24,7 @@ pub fn resolve_home_directory() -> PathBuf {
 
 pub(crate) fn location_for(path: &Path) -> Location {
     Location::new(
-        ProviderId::new("file"),
+        ProviderId::new("local"),
         format!("file://{}", path.display()),
     )
 }
@@ -156,6 +156,7 @@ mod tests {
         let workspace = default_workspace(Path::new("/Users/erik"), None);
 
         for pane in &workspace.panes {
+            assert_eq!(pane.tabs[0].location.provider_id.as_str(), "local");
             assert_eq!(pane.tabs[0].location.uri, "file:///Users/erik");
         }
     }

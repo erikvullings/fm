@@ -107,7 +107,8 @@ export class SseEventStream implements EventStream {
       reconnectBaseMs: options.reconnectBaseMs ?? 1_000,
       reconnectMaxMs: options.reconnectMaxMs ?? 30_000,
       staleTimeoutMs: options.staleTimeoutMs ?? 45_000,
-      requestFrame: options.requestFrame ?? requestAnimationFrame,
+      requestFrame:
+        options.requestFrame ?? ((callback) => globalThis.requestAnimationFrame(callback)),
     };
   }
 

@@ -140,6 +140,24 @@ describe('navigation controller', () => {
     expect(context.client.listDirectory).toHaveBeenCalledOnce();
   });
 
+  it('uses UUID request identifiers accepted by the transport DTO', async () => {
+    const context = setup();
+    echoingSnapshot(context.client, 'file:///home/erik', []);
+    const controller = createNavigationController({
+      client: context.client,
+      getWorkspace: context.getWorkspace,
+      replaceWorkspace: context.replaceWorkspace,
+      updatePane: (_paneId, view) => context.views.push(view),
+    });
+
+    await controller.load('left');
+
+    const request = vi.mocked(context.client.listDirectory).mock.calls[0]?.[0];
+    expect(request?.requestId).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+    );
+  });
+
   it('navigates with backend history mutation before opening the directory', async () => {
     const context = setup();
     const next = workspace('file:///home/erik/Documents');

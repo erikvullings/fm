@@ -64,6 +64,15 @@ pub struct WriteOptions {
     pub overwrite: bool,
 }
 
+/// Controls publication of a fully-written temporary copy.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct CopyCommitOptions {
+    /// Permit atomically replacing an existing regular file.
+    pub overwrite: bool,
+    /// Preserve timestamps and permissions supported by the provider.
+    pub preserve_metadata: bool,
+}
+
 /// Streaming reader returned by a provider.
 pub type ProviderReadStream = Pin<Box<dyn AsyncRead + Send>>;
 

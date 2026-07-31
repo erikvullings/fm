@@ -38,6 +38,7 @@ pub(super) fn migrate_workspace_json(mut value: Value) -> Result<Value, Workspac
     while version < CURRENT_WORKSPACE_SCHEMA_VERSION {
         value = match version {
             0 => migrate_v0_to_v1(value)?,
+            1 => migrate_v1_to_v2(value)?,
             other => {
                 return Err(WorkspaceError::UnsupportedSchemaVersion {
                     schema_version: other,
@@ -48,6 +49,54 @@ pub(super) fn migrate_workspace_json(mut value: Value) -> Result<Value, Workspac
     }
 
     Ok(value)
+}
+
+/// Repairs the local-provider alias emitted by the original default workspace
+/// builder. The registered provider is named `local`; only `file:` locations
+/// carrying the obsolete `file` provider id are changed.
+fn migrate_v1_to_v2(mut value: Value) -> Result<Value, WorkspaceError> {
+    let object = value.as_object_mut().ok_or_else(|| {
+        WorkspaceError::Serialization("workspace JSON is not an object".to_owned())
+    })?;
+    object.insert("schema_version".to_owned(), json!(2));
+
+    if let Some(panes) = object.get_mut("panes").and_then(Value::as_array_mut) {
+        for pane in panes {
+            let Some(tabs) = pane.get_mut("tabs").and_then(Value::as_array_mut) else {
+                continue;
+            };
+            for tab in tabs {
+                normalize_local_location(&mut tab["location"]);
+                if let Some(history) = tab.get_mut("history") {
+                    for direction in ["back", "forward"] {
+                        if let Some(locations) =
+                            history.get_mut(direction).and_then(Value::as_array_mut)
+                        {
+                            for location in locations {
+                                normalize_local_location(location);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(value)
+}
+
+fn normalize_local_location(location: &mut Value) {
+    let Some(object) = location.as_object_mut() else {
+        return;
+    };
+    let is_file_uri = object
+        .get("uri")
+        .and_then(Value::as_str)
+        .is_some_and(|uri| uri.starts_with("file:"));
+    let uses_obsolete_alias = object.get("provider_id").and_then(Value::as_str) == Some("file");
+    if is_file_uri && uses_obsolete_alias {
+        object.insert("provider_id".to_owned(), json!("local"));
+    }
 }
 
 /// Upgrades the pre-schema-versioning field set to schema version 1: adds
@@ -180,6 +229,26 @@ mod tests {
             migrate_workspace_json(migrated_once.clone()).expect("second migration must succeed");
 
         assert_eq!(migrated_once, migrated_twice);
+    }
+
+    #[test]
+    fn migrates_file_provider_aliases_in_tabs_and_history_to_local() {
+        let mut value = migrate_v0_to_v1(v0_fixture()).expect("v1 fixture must migrate");
+        value["panes"][0]["tabs"][0]["location"]["provider_id"] = json!("file");
+        value["panes"][0]["tabs"][0]["history"]["back"] =
+            json!([{ "provider_id": "file", "uri": "file:///Users" }]);
+
+        let migrated = migrate_workspace_json(value).expect("alias migration must succeed");
+
+        assert_eq!(migrated["schema_version"], json!(2));
+        assert_eq!(
+            migrated["panes"][0]["tabs"][0]["location"]["provider_id"],
+            json!("local")
+        );
+        assert_eq!(
+            migrated["panes"][0]["tabs"][0]["history"]["back"][0]["provider_id"],
+            json!("local")
+        );
     }
 
     #[test]

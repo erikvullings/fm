@@ -307,9 +307,9 @@ mod tests {
     use std::sync::Mutex;
 
     use fm_domain::{
-        ColumnConfiguration, DirectoryViewConfiguration, Location, NavigationHistory,
-        OperationCentrePreferences, PaneId, PaneState, ProviderId, SortDescriptor, SortDirection,
-        TabId, TabState, Workspace, WorkspaceLayout,
+        CURRENT_WORKSPACE_SCHEMA_VERSION, ColumnConfiguration, DirectoryViewConfiguration,
+        Location, NavigationHistory, OperationCentrePreferences, PaneId, PaneState, ProviderId,
+        SortDescriptor, SortDirection, TabId, TabState, Workspace, WorkspaceLayout,
     };
     use tempfile::TempDir;
 
@@ -334,7 +334,7 @@ mod tests {
         };
         let now = Utc::now();
         Workspace {
-            schema_version: 1,
+            schema_version: CURRENT_WORKSPACE_SCHEMA_VERSION,
             id: WorkspaceId::new(),
             name: "Default".to_owned(),
             layout: WorkspaceLayout::Pane { pane_id },
@@ -343,7 +343,7 @@ mod tests {
                 title: None,
                 tabs: vec![TabState {
                     id: tab_id,
-                    location: Location::new(ProviderId::new("file"), "file:///home"),
+                    location: Location::new(ProviderId::new("local"), "file:///home"),
                     title_override: None,
                     history: NavigationHistory {
                         back: vec![],
