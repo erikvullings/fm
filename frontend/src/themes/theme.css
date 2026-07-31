@@ -95,7 +95,11 @@ body {
 }
 
 .fm-app-shell {
-  min-height: 100vh;
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto auto;
+  height: 100vh;
+  min-width: 520px;
+  overflow: hidden;
 }
 
 .fm-app-bar {
@@ -117,13 +121,42 @@ body {
   color: var(--fm-text-muted);
 }
 
-.fm-workspace {
-  padding: 1rem;
+.fm-workspace-toolbar,
+.fm-function-key-bar,
+.fm-operation-centre {
+  display: flex;
+  gap: 1rem;
+  min-height: var(--fm-row-height);
+  align-items: center;
+  border-bottom: 1px solid var(--fm-border);
+  padding: 0 0.75rem;
+  background: var(--fm-surface-elevated);
 }
 
-.fm-directory-preview h2 {
-  margin: 0 0 0.75rem;
-  font-size: 1rem;
+.fm-workspace-toolbar strong {
+  margin-right: auto;
+}
+
+.fm-workspace {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.fm-workspace-loading {
+  padding: 1rem;
+  color: var(--fm-text-muted);
+}
+
+.fm-operation-centre {
+  border-top: 1px solid var(--fm-border);
+  color: var(--fm-text-muted);
+}
+
+.fm-function-key-bar {
+  justify-content: space-around;
+  border-bottom: 0;
+  font-variant-numeric: tabular-nums;
 }
 
 .fm-selected-row {

@@ -22,6 +22,11 @@ reproducible million-entry rendering check via `pnpm --dir frontend benchmark:di
 The presentation-only pane composes that table with a compact single-tab strip, clickable
 filesystem breadcrumbs, Ctrl/Cmd+L path editing, inline navigation errors, and entry, selection,
 size, and sort status counters.
+The main window loads its authoritative workspace projection through the shared client and renders
+the recursive pane layout with a draggable, minimum-width splitter. Pane clicks and Tab traversal
+move visible focus through semantic workspace commands; divider changes are sent as debounced
+`UpdateLayout` commands. Compact workspace, operation-centre placeholder, and function-key rows
+complete the initial two-pane shell.
 
 Development builds include Mithril Inspector. Open the docked inspector with the `M` toggle at the
 bottom of the page, or press `Alt+Shift+M` to select a rendered element. Use it to trace elements to

@@ -44,16 +44,27 @@ describe('AppShell', () => {
   it('shows the directory table and loads the mock root directory', async () => {
     mountShell('mock');
 
-    expect(root.querySelector('.fm-directory-table')).not.toBeNull();
     expect(root.textContent).not.toContain('Shell only');
 
     await vi.waitFor(() => {
+      expect(root.querySelectorAll('.fm-workspace-pane')).toHaveLength(2);
       expect(root.textContent).toContain('Documents');
       expect(root.textContent).toContain('日本語.txt');
     });
     expect(root.querySelector('.fm-pane-tabs')).not.toBeNull();
     expect(root.querySelector('.fm-breadcrumb')).not.toBeNull();
     expect(root.querySelector('.fm-pane-status')?.textContent).toContain('entries');
+  });
+
+  it('composes the complete main-window workspace regions', async () => {
+    mountShell('mock');
+
+    await vi.waitFor(() => expect(root.querySelectorAll('.fm-workspace-pane')).toHaveLength(2));
+    expect(root.querySelector('.fm-app-bar')).not.toBeNull();
+    expect(root.querySelector('.fm-workspace-toolbar')).not.toBeNull();
+    expect(root.querySelector('.fm-operation-centre')).not.toBeNull();
+    expect(root.querySelector('.fm-function-key-bar')?.textContent).toContain('F5 Copy');
+    expect(root.querySelector('.fm-function-key-bar')?.textContent).toContain('F6 Move');
   });
 
   it('names the application and the transport it is running against', () => {

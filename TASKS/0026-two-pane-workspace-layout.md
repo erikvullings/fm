@@ -1,6 +1,6 @@
 # 0026 Two-pane workspace layout and pane focus
 
-Status: open
+Status: done
 Priority: high
 Owner: unassigned
 Agent: unassigned
@@ -30,4 +30,17 @@ exactly two panes (§5.3), but the first UI shows two.
 - Operation centre area is a stub that 0036 fills in.
 
 ## Agent Notes
-- Not started.
+- 2026-07-31 codex: Added a recursive Mithril workspace renderer driven by the backend
+  `WorkspaceLayout` tree, including horizontal and vertical splits, minimum-size ratio clamping,
+  immediate splitter feedback, and 500 ms debounced semantic `UpdateLayout` persistence. Pane
+  clicks activate the containing pane; Tab/Shift+Tab traverse leaves in layout order and transfer
+  DOM focus with visible, non-colour-only focus styling. A nested three-pane fixture verifies that
+  no two-pane-specific component rewrite is required.
+- 2026-07-31 codex: Reworked the application shell to load/create and open its workspace through
+  the transport-neutral client, load each pane's active directory, and render the §14 application
+  bar, workspace toolbar, recursive pane area, operation-centre placeholder, and function-key bar.
+  Added 6 task-specific Vitest tests (5 in `workspace-layout.test.ts`, 1 new shell-composition test)
+  covering activation, Tab focus, recursive order, splitter constraints, debounced persistence,
+  and main-window regions. Frontend typecheck, all 127 frontend tests, production build, repository
+  lint, and the complete Rust/frontend/script test suite pass. The shared Tauri host startup test
+  passes; Windows visual behaviour was not manually exercised on this macOS development host.
