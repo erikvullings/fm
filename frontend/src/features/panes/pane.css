@@ -91,10 +91,10 @@
   min-width: 0;
   padding: 0 0.5rem;
   color: var(--fm-text-muted, #fff);
-  font-family: var(--fm-font-family) !important;
-  font-size: var(--fm-font-size) !important;
-  font-weight: normal !important;
-  line-height: inherit !important;
+  font-family: var(--fm-font-family);
+  font-size: var(--fm-font-size);
+  font-weight: normal;
+  line-height: inherit;
   margin: 0;
   border-bottom: 0 !important;
   box-shadow: none !important;
