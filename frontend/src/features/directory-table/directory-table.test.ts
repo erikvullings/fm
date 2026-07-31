@@ -45,6 +45,18 @@ describe('DirectoryTable states', () => {
     expect(root.querySelectorAll('.fm-directory-placeholder')).toHaveLength(4);
   });
 
+  it('keeps existing rows visible while the next directory loads', () => {
+    mount({
+      state: { type: 'loading' },
+      source: entryArraySource([entry()]),
+      viewportHeight: 120,
+    });
+
+    expect(root.querySelector('.fm-directory-row')?.textContent).toContain('report.txt');
+    expect(root.querySelectorAll('.fm-directory-placeholder')).toHaveLength(0);
+    expect(root.querySelector('[role="grid"]')?.getAttribute('aria-busy')).toBe('true');
+  });
+
   it('renders an empty directory message', () => {
     mount({ state: { type: 'loaded' }, source: entryArraySource([]), viewportHeight: 120 });
 

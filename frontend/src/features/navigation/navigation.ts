@@ -104,6 +104,21 @@ export function createNavigationController(
     options.updatePane(paneId, view);
   }
 
+  function loadingView(
+    paneId: PaneId,
+    request: ActiveRequest,
+    fallbackLocation: Location,
+  ): PaneDirectoryView {
+    const current = paneViews.get(paneId);
+    return {
+      state: { type: 'loading' },
+      entries: current?.entries ?? [],
+      location: current?.location ?? fallbackLocation,
+      requestId: request.id,
+      hasMore: false,
+    };
+  }
+
   function requestFor(
     workspace: WorkspaceProjection,
     paneId: PaneId,
@@ -149,13 +164,7 @@ export function createNavigationController(
       return;
     }
     const request = begin(paneId);
-    publish(paneId, {
-      state: { type: 'loading' },
-      entries: [],
-      location: tab.location,
-      requestId: request.id,
-      hasMore: false,
-    });
+    publish(paneId, loadingView(paneId, request, tab.location));
     try {
       const snapshot = await options.client.listDirectory(
         requestFor(workspace, paneId, request.id, tab.location),
@@ -195,13 +204,7 @@ export function createNavigationController(
       return;
     }
     const request = begin(paneId);
-    publish(paneId, {
-      state: { type: 'loading' },
-      entries: [],
-      location: location ?? tab.location,
-      requestId: request.id,
-      hasMore: false,
-    });
+    publish(paneId, loadingView(paneId, request, location ?? tab.location));
     const command: WorkspaceCommand = {
       type: 'navigateTab',
       workspaceId: workspace.id,

@@ -152,6 +152,9 @@ const INITIAL_COLUMNS: readonly DirectoryColumn[] = [
 
 function stateView(attrs: DirectoryTableAttrs, rowHeight: number): m.Children | undefined {
   if (attrs.state.type === 'loading') {
+    if ((attrs.source?.length ?? 0) > 0) {
+      return undefined;
+    }
     const count = Math.max(
       1,
       Math.ceil((attrs.viewportHeight ?? DEFAULT_VIEWPORT_HEIGHT) / rowHeight),
@@ -398,6 +401,7 @@ export const DirectoryTable: FactoryComponent<DirectoryTableAttrs> = () => {
           'aria-rowcount': (source?.length ?? 0) + 1,
           'aria-colcount': INITIAL_COLUMNS.length,
           'aria-activedescendant': cursorEntry === undefined ? undefined : rowId(cursorEntry.id),
+          'aria-busy': attrs.state.type === 'loading' ? 'true' : undefined,
           'data-active': attrs.active ? 'true' : 'false',
           style: { height: attrs.viewportHeight === undefined ? '100%' : `${viewportHeight}px` },
           onscroll: (event: Event) => {

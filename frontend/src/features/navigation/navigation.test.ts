@@ -140,6 +140,44 @@ describe('navigation controller', () => {
     expect(context.client.listDirectory).toHaveBeenCalledOnce();
   });
 
+  it('keeps the current directory visible while a different folder loads', async () => {
+    const context = setup();
+    const initial = deferred<DirectorySnapshot>();
+    const next = deferred<DirectorySnapshot>();
+    vi.mocked(context.client.listDirectory).mockReturnValueOnce(initial.promise);
+    vi.mocked(context.client.dispatchWorkspaceCommand).mockResolvedValue(
+      workspace('file:///home/erik/Documents'),
+    );
+    vi.mocked(context.client.navigatePane).mockReturnValue(next.promise);
+    const controller = createNavigationController({
+      client: context.client,
+      getWorkspace: context.getWorkspace,
+      replaceWorkspace: context.replaceWorkspace,
+      updatePane: (_paneId, view) => context.views.push(view),
+    });
+
+    const firstLoad = controller.load('left');
+    const firstRequestId = vi.mocked(context.client.listDirectory).mock.calls[0]?.[0].requestId;
+    initial.resolve(snapshot(firstRequestId ?? '', 'file:///home/erik', ['Documents']));
+    await firstLoad;
+
+    const navigation = controller.navigate('left', {
+      providerId: 'local',
+      uri: 'file:///home/erik/Documents',
+    });
+
+    expect(context.views.at(-1)).toEqual(
+      expect.objectContaining({
+        state: { type: 'loading' },
+        entries: [expect.objectContaining({ name: 'Documents' })],
+      }),
+    );
+    await vi.waitFor(() => expect(context.client.navigatePane).toHaveBeenCalledOnce());
+    const nextRequestId = vi.mocked(context.client.navigatePane).mock.calls[0]?.[0].requestId;
+    next.resolve(snapshot(nextRequestId ?? '', 'file:///home/erik/Documents', ['Projects']));
+    await navigation;
+  });
+
   it('uses UUID request identifiers accepted by the transport DTO', async () => {
     const context = setup();
     echoingSnapshot(context.client, 'file:///home/erik', []);
