@@ -224,7 +224,7 @@ describe('Pane navigation input', () => {
     ]);
   });
 
-  it('selects clicked rows and type-selects by a timed prefix', () => {
+  it('selects clicked rows and type-selects the first in-word match', () => {
     vi.useFakeTimers();
     vi.setSystemTime(1_000);
     const onSelectionAction = vi.fn();
@@ -237,7 +237,7 @@ describe('Pane navigation input', () => {
 
     expect(onSelectionAction.mock.calls.map(([action]) => action)).toEqual([
       { type: 'selectOnly', entryId: 'two' },
-      { type: 'setCursor', entryId: 'two' },
+      { type: 'setCursor', entryId: 'one' },
     ]);
     vi.useRealTimers();
   });
@@ -337,7 +337,7 @@ describe('Pane navigation input', () => {
     expect(onSelectionAction).toHaveBeenLastCalledWith({ type: 'clear' });
   });
 
-  it('limits cursor navigation to entries matching the active prefix', () => {
+  it('limits cursor navigation to entries containing the active text', () => {
     const onSelectionAction = vi.fn();
     mount(
       attrs({
@@ -346,13 +346,13 @@ describe('Pane navigation input', () => {
         entries: [
           { ...(entries[0] as EntrySummary), id: 'document', name: 'document.txt' },
           { ...(entries[0] as EntrySummary), id: 'other', name: 'other.txt' },
-          { ...(entries[0] as EntrySummary), id: 'downloads', name: 'downloads.txt' },
+          { ...(entries[0] as EntrySummary), id: 'amendment', name: 'amendment.txt' },
         ],
       }),
     );
     const pane = root.querySelector<HTMLElement>('.fm-pane');
 
-    for (const typed of 'do') {
+    for (const typed of 'men') {
       pane?.dispatchEvent(new KeyboardEvent('keydown', { key: typed, bubbles: true }));
     }
     onSelectionAction.mockClear();
@@ -362,10 +362,10 @@ describe('Pane navigation input', () => {
     pane?.dispatchEvent(new KeyboardEvent('keydown', { key: 'PageDown', bubbles: true }));
 
     expect(onSelectionAction.mock.calls.map(([action]) => action)).toEqual([
-      { type: 'setCursor', entryId: 'downloads' },
-      { type: 'setCursor', entryId: 'downloads' },
+      { type: 'setCursor', entryId: 'amendment' },
+      { type: 'setCursor', entryId: 'amendment' },
       { type: 'setCursor', entryId: 'document' },
-      { type: 'setCursor', entryId: 'downloads' },
+      { type: 'setCursor', entryId: 'amendment' },
     ]);
   });
 

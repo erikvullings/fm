@@ -112,7 +112,14 @@ describe('selection keybindings', () => {
 });
 
 describe('type-to-select', () => {
-  it('jumps to the first case-insensitive prefix match', () => {
+  it('jumps to the first case-insensitive in-word match', () => {
+    expect(reduceTypeahead(undefined, 'lph', entries, 1_000)).toEqual({
+      state: { prefix: 'lph', lastInputAt: 1_000 },
+      matchedEntryId: 'alpha',
+    });
+  });
+
+  it('jumps to the first case-insensitive match', () => {
     expect(reduceTypeahead(undefined, 'a', entries, 1_000)).toEqual({
       state: { prefix: 'a', lastInputAt: 1_000 },
       matchedEntryId: 'alpha',

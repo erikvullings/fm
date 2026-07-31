@@ -98,18 +98,21 @@ const INITIAL_COLUMNS: readonly DirectoryColumn[] = [
         entry.hidden ? 'Hidden' : undefined,
         entry.kind === 'symlink' ? 'Link' : undefined,
       ].filter((status): status is string => status !== undefined);
-      const prefixLength =
-        nameMatchPrefix !== undefined &&
-        entry.name.toLocaleLowerCase().startsWith(nameMatchPrefix.toLocaleLowerCase())
-          ? nameMatchPrefix.length
-          : 0;
+      const matchIndex =
+        nameMatchPrefix === undefined
+          ? -1
+          : entry.name.toLocaleLowerCase().indexOf(nameMatchPrefix.toLocaleLowerCase());
       return [
         m('span.fm-entry-name', [
-          prefixLength === 0
+          matchIndex < 0 || nameMatchPrefix === undefined
             ? entry.name
             : [
-                m('span.fm-typeahead-match', entry.name.slice(0, prefixLength)),
-                entry.name.slice(prefixLength),
+                entry.name.slice(0, matchIndex),
+                m(
+                  'span.fm-typeahead-match',
+                  entry.name.slice(matchIndex, matchIndex + nameMatchPrefix.length),
+                ),
+                entry.name.slice(matchIndex + nameMatchPrefix.length),
               ],
         ]),
         statuses.map((status) =>

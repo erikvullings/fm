@@ -53,3 +53,7 @@ keyboard navigation are named frontend test targets). Selection is independent o
   parent navigation, Escape clears both typeahead and selection, and an unmatched extension flashes
   red for 400 ms before the typeahead disappears. Four focused pane behavior cases, frontend
   typecheck/build, repository lint, and the full Rust/frontend/script test suite pass.
+- 2026-07-31 codex: Typeahead now matches case-insensitive substrings anywhere in full entry names.
+  Every visible match highlights only its first occurrence, and constrained keyboard navigation
+  uses the same containment rule. Three task-specific reducer/table/pane cases, frontend
+  typecheck/build, repository lint, and the full Rust/frontend/script suite pass.

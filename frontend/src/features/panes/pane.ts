@@ -158,7 +158,7 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
       return false;
     }
     const matches = attrs.entries.filter((entry) =>
-      entry.name.toLocaleLowerCase().startsWith(typeahead?.prefix ?? ''),
+      entry.name.toLocaleLowerCase().includes(typeahead?.prefix ?? ''),
     );
     if (matches.length === 0) {
       return true;

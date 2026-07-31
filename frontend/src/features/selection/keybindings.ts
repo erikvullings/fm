@@ -124,7 +124,7 @@ export function reduceTypeahead(
     state === undefined || now - state.lastInputAt > timeoutMs
       ? normalizedInput
       : state.prefix + normalizedInput;
-  const match = entries.find((entry) => entry.name.toLocaleLowerCase().startsWith(prefix));
+  const match = entries.find((entry) => entry.name.toLocaleLowerCase().includes(prefix));
   return {
     state: { prefix, lastInputAt: now },
     ...(match === undefined ? {} : { matchedEntryId: match.id }),

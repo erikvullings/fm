@@ -67,6 +67,21 @@ describe('DirectoryTable states', () => {
 });
 
 describe('DirectoryTable rows', () => {
+  it('highlights only the first in-word occurrence in every matching name', () => {
+    mount({
+      state: { type: 'loaded' },
+      source: entryArraySource([
+        entry({ id: 'banana', name: 'banana-an.txt' }),
+        entry({ id: 'cabana', name: 'cabana.txt' }),
+      ]),
+      nameMatchPrefix: 'an',
+    });
+
+    const matches = [...root.querySelectorAll('.fm-typeahead-match')];
+    expect(matches.map((match) => match.textContent)).toEqual(['an', 'an']);
+    expect(root.querySelectorAll('.fm-directory-row')[0]?.textContent).toContain('banana-an.txt');
+  });
+
   it('moves the cursor to a clicked row', () => {
     const onCursorChange = vi.fn();
     mount({
