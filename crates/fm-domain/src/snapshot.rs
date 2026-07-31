@@ -41,6 +41,11 @@ pub struct DirectorySnapshot {
     pub revision: u64,
     /// The location this snapshot lists.
     pub location: Location,
+    /// Whether the current user may create entries in this directory.
+    ///
+    /// A false value includes providers which cannot establish write access;
+    /// callers must not start a mutating operation against such a target.
+    pub writable: bool,
     /// The entries loaded so far.
     pub entries: Vec<EntrySummary>,
     /// The total number of entries, when known in advance.
@@ -96,6 +101,7 @@ mod tests {
             request_id: Uuid::new_v4(),
             revision: 1,
             location: Location::new(ProviderId::new("file"), "file:///Users/erik"),
+            writable: true,
             entries: vec![],
             total_known_entries: Some(0),
             has_more: false,

@@ -46,6 +46,7 @@ async fn copy(
         if matches!(
             current.state,
             OperationStateDto::Completed
+                | OperationStateDto::CompletedWithWarnings
                 | OperationStateDto::Failed
                 | OperationStateDto::WaitingForConflictResolution
         ) {
@@ -80,6 +81,100 @@ async fn copies_zero_and_large_files_with_byte_and_item_totals() {
         assert_eq!(operation.progress.completed_bytes, size);
         assert_eq!(fs::metadata(destination.join(name)).unwrap().len(), size);
     }
+}
+
+#[tokio::test]
+async fn copies_multiple_selected_sources_in_one_operation() {
+    let root = tempfile::tempdir().expect("temporary root");
+    let destination = root.path().join("destination");
+    fs::create_dir(&destination).unwrap();
+    let first = root.path().join("first.txt");
+    let second = root.path().join("second.txt");
+    fs::write(&first, b"first").unwrap();
+    fs::write(&second, b"second").unwrap();
+    let service = service(&root);
+
+    let started = service
+        .start_operation(
+            StartOperationRequestDto {
+                operation_type: OperationKindDto::Copy,
+                sources: vec![
+                    Location::from_native_path(&first).unwrap().into(),
+                    Location::from_native_path(&second).unwrap().into(),
+                ],
+                destination: Some(Location::from_native_path(&destination).unwrap().into()),
+                conflict_policy: OperationConflictPolicyDto::Ask,
+                name: None,
+                create_intermediate_directories: false,
+                symlink_policy: Default::default(),
+                permanent_delete_confirmed: false,
+                override_read_only: false,
+            },
+            None,
+        )
+        .expect("accepted");
+    for _ in 0..200 {
+        let operation = service.get_operation(started.id.into()).expect("operation");
+        if matches!(
+            operation.state,
+            OperationStateDto::Completed | OperationStateDto::Failed
+        ) {
+            assert_eq!(operation.state, OperationStateDto::Completed);
+            assert_eq!(operation.progress.completed_items, 2);
+            assert_eq!(fs::read(destination.join("first.txt")).unwrap(), b"first");
+            assert_eq!(fs::read(destination.join("second.txt")).unwrap(), b"second");
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    panic!("operation did not finish")
+}
+
+#[tokio::test]
+async fn skips_a_stale_source_and_copies_the_remaining_selection() {
+    let root = tempfile::tempdir().expect("temporary root");
+    let destination = root.path().join("destination");
+    fs::create_dir(&destination).unwrap();
+    let present = root.path().join("present.txt");
+    fs::write(&present, b"present").unwrap();
+    let service = service(&root);
+    let started = service
+        .start_operation(
+            StartOperationRequestDto {
+                operation_type: OperationKindDto::Copy,
+                sources: vec![
+                    Location::from_native_path(&present).unwrap().into(),
+                    Location::from_native_path(&root.path().join("gone.txt"))
+                        .unwrap()
+                        .into(),
+                ],
+                destination: Some(Location::from_native_path(&destination).unwrap().into()),
+                conflict_policy: OperationConflictPolicyDto::Ask,
+                name: None,
+                create_intermediate_directories: false,
+                symlink_policy: Default::default(),
+                permanent_delete_confirmed: false,
+                override_read_only: false,
+            },
+            None,
+        )
+        .expect("accepted");
+    for _ in 0..200 {
+        let operation = service.get_operation(started.id.into()).expect("operation");
+        if matches!(
+            operation.state,
+            OperationStateDto::CompletedWithWarnings | OperationStateDto::Failed
+        ) {
+            assert_eq!(operation.state, OperationStateDto::CompletedWithWarnings);
+            assert_eq!(
+                fs::read(destination.join("present.txt")).unwrap(),
+                b"present"
+            );
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    panic!("operation did not finish")
 }
 
 #[tokio::test]
@@ -188,7 +283,7 @@ async fn preserves_modified_time_and_unix_permissions() {
 }
 
 #[tokio::test]
-async fn a_missing_source_fails_without_creating_a_destination() {
+async fn a_missing_single_source_finishes_with_a_warning_without_creating_a_destination() {
     let root = tempfile::tempdir().expect("temporary root");
     let destination = root.path().join("destination");
     fs::create_dir(&destination).unwrap();
@@ -202,7 +297,7 @@ async fn a_missing_source_fails_without_creating_a_destination() {
     )
     .await;
 
-    assert_eq!(operation.state, OperationStateDto::Failed);
+    assert_eq!(operation.state, OperationStateDto::CompletedWithWarnings);
     assert_eq!(fs::read_dir(destination).unwrap().count(), 0);
 }
 

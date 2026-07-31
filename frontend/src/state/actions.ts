@@ -1,5 +1,6 @@
 import type {
   BackendNotification,
+  ClipboardState,
   DirectoryDelta,
   DirectorySnapshot,
   Operation,
@@ -13,6 +14,7 @@ import type {
 import type { ConnectionState, RuntimeState } from './model';
 import type { AppUpdate } from './patch';
 import {
+  clipboardPatch,
   connectionPatch,
   directoryDeltaPatch,
   directorySnapshotPatch,
@@ -28,6 +30,7 @@ import {
 /** Typed mutations available to components and backend-event producers. */
 export interface AppActions {
   setRuntime(runtime: RuntimeState): void;
+  replaceClipboard(clipboard: ClipboardState): void;
   replaceWorkspace(workspace: WorkspaceProjection): void;
   replaceWorkspaceView(viewState: WorkspaceViewState): void;
   replaceDirectory(snapshot: DirectorySnapshot): void;
@@ -43,6 +46,7 @@ export interface AppActions {
 export function createAppActions(update: AppUpdate): AppActions {
   return {
     setRuntime: (runtime) => update(runtimePatch(runtime)),
+    replaceClipboard: (clipboard) => update(clipboardPatch(clipboard)),
     replaceWorkspace: (workspace) => update(workspaceSnapshotPatch(workspace)),
     replaceWorkspaceView: (viewState) => update(workspaceViewPatch(viewState)),
     replaceDirectory: (snapshot) => update(directorySnapshotPatch(snapshot)),

@@ -55,6 +55,7 @@ impl From<LoadingStateDto> for LoadingState {
     "requestId": "e1ce66cc-64a8-4ae7-9cc1-2882bc80de4e",
     "revision": 1,
     "location": {"providerId": "local", "uri": "file:///Users/erik"},
+    "writable": true,
     "entries": [],
     "totalKnownEntries": 0,
     "hasMore": false,
@@ -70,6 +71,8 @@ pub struct DirectorySnapshotDto {
     pub revision: u64,
     /// The location this snapshot lists.
     pub location: LocationDto,
+    /// Whether the current user may create entries in this directory.
+    pub writable: bool,
     /// The entries loaded so far.
     pub entries: Vec<EntrySummaryDto>,
     /// The total number of entries, when known in advance.
@@ -89,6 +92,7 @@ impl From<DirectorySnapshot> for DirectorySnapshotDto {
             request_id: snapshot.request_id,
             revision: snapshot.revision,
             location: snapshot.location.into(),
+            writable: snapshot.writable,
             entries: snapshot.entries.into_iter().map(Into::into).collect(),
             total_known_entries: snapshot.total_known_entries,
             has_more: snapshot.has_more,
@@ -105,6 +109,7 @@ impl From<DirectorySnapshotDto> for DirectorySnapshot {
             request_id: dto.request_id,
             revision: dto.revision,
             location: dto.location.into(),
+            writable: dto.writable,
             entries: dto.entries.into_iter().map(Into::into).collect(),
             total_known_entries: dto.total_known_entries,
             has_more: dto.has_more,
@@ -129,6 +134,7 @@ mod tests {
                 provider_id: "local".to_owned(),
                 uri: "file:///Users/erik".to_owned(),
             },
+            writable: true,
             entries: vec![],
             total_known_entries: Some(0),
             has_more: false,
@@ -187,6 +193,7 @@ mod tests {
             request_id: Uuid::new_v4(),
             revision: 1,
             location: Location::new(ProviderId::new("local"), "file:///Users/erik"),
+            writable: true,
             entries: vec![],
             total_known_entries: Some(0),
             has_more: false,

@@ -646,6 +646,7 @@ export class MockFileManagerClient implements FileManagerClient {
       requestId: request.requestId,
       revision: 1,
       location: request.location,
+      writable: request.location.uri !== 'mock:///Read-only',
       entries: isUnreadable ? [] : entries,
       totalKnownEntries: totalEntries,
       hasMore: nextOffset < totalEntries,

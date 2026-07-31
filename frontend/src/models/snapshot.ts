@@ -21,6 +21,8 @@ export interface DirectorySnapshot {
   requestId: string;
   revision: number;
   location: Location;
+  /** Whether the current user may create entries in this directory. */
+  writable: boolean;
   entries: EntrySummary[];
   totalKnownEntries?: number;
   hasMore: boolean;

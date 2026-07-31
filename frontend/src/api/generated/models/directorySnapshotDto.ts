@@ -38,4 +38,6 @@ export interface DirectorySnapshotDto {
      * @nullable
      */
   totalKnownEntries?: number | null;
+  /** Whether the current user may create entries in this directory. */
+  writable: boolean;
 }

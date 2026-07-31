@@ -173,7 +173,8 @@
           "paneId": "5b1b6b1e-9b1b-4b1b-8b1b-1b1b1b1b1b1b",
           "requestId": "e1ce66cc-64a8-4ae7-9cc1-2882bc80de4e",
           "revision": 1,
-          "totalKnownEntries": 0
+          "totalKnownEntries": 0,
+          "writable": true
         },
         "properties": {
           "continuationToken": {
@@ -226,6 +227,10 @@
               "integer",
               "null"
             ]
+          },
+          "writable": {
+            "description": "Whether the current user may create entries in this directory.",
+            "type": "boolean"
           }
         },
         "required": [
@@ -233,6 +238,7 @@
           "requestId",
           "revision",
           "location",
+          "writable",
           "entries",
           "hasMore",
           "loadingState"

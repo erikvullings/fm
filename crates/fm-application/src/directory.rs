@@ -4,7 +4,7 @@ use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-use fm_domain::{DirectorySnapshot, EntryKind, EntryMetadata, LoadingState, PaneId};
+use fm_domain::{DirectorySnapshot, EntryId, EntryKind, EntryMetadata, LoadingState, PaneId};
 use fm_events::{
     BackendEventPayload, DirectoryDeltaPayload, EntrySummaryPayload, EventAudience, EventBus,
 };
@@ -129,7 +129,7 @@ impl DirectoryService {
                     continuation_token: request.continuation_token,
                     ..ListOptions::default()
                 },
-                cancellation,
+                cancellation.clone(),
             )
             .await?;
 
@@ -146,11 +146,24 @@ impl DirectoryService {
         }
         sort_entries(&mut entries, &request.sort, request.folders_first);
 
+        let writable = provider
+            .inspect(
+                &EntryRef {
+                    id: EntryId::new(),
+                    location: location.clone(),
+                },
+                cancellation.clone(),
+            )
+            .await
+            .map(|entry| !entry.read_only)
+            .unwrap_or(false);
+
         let snapshot = DirectorySnapshot {
             pane_id,
             request_id: request.request_id,
             revision: state.revision,
             location,
+            writable,
             entries,
             total_known_entries: page.total_known_entries,
             has_more: page.has_more,
@@ -874,6 +887,7 @@ mod tests {
             request_id: Uuid::new_v4(),
             revision: 1,
             location: location.clone(),
+            writable: false,
             entries: Vec::new(),
             total_known_entries: Some(0),
             has_more: false,

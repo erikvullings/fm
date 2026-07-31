@@ -39,6 +39,7 @@ function attrs(overrides: Partial<PaneAttrs> = {}): PaneAttrs {
     sort: [{ columnId: 'core.name', direction: 'ascending' }],
     metadata: { state: 'idle' },
     selectedEntryIds: new Set<EntryId>(),
+    cutEntryIds: new Set<EntryId>(),
     active: true,
     platform: 'linux',
     canNavigateBack: true,

@@ -148,6 +148,8 @@ pub struct DirectorySnapshotPayload {
     pub revision: u64,
     /// Listed location.
     pub location: LocationPayload,
+    /// Whether the current user may create entries in the listed directory.
+    pub writable: bool,
     /// Loaded entries.
     pub entries: Vec<EntrySummaryPayload>,
     /// Known total, when available.
@@ -202,6 +204,7 @@ impl From<DirectorySnapshot> for DirectorySnapshotPayload {
             request_id: snapshot.request_id.to_string(),
             revision: snapshot.revision,
             location: snapshot.location.into(),
+            writable: snapshot.writable,
             entries: snapshot.entries.into_iter().map(Into::into).collect(),
             total_known_entries: snapshot.total_known_entries,
             has_more: snapshot.has_more,
@@ -830,6 +833,7 @@ mod tests {
                 provider_id: ProviderId::new("file"),
                 uri: "file:///fixture".to_owned(),
             },
+            writable: true,
             entries: vec![],
             total_known_entries: Some(0),
             has_more: false,

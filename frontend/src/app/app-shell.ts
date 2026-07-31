@@ -3,6 +3,14 @@ import { type Theme, ThemeManager, ThemeSwitcher } from 'mithril-materialized';
 
 import type { FileManagerClient } from '../api/client/file-manager-client';
 import {
+  clearClipboard,
+  copyToClipboard,
+  cutToClipboard,
+  emptyClipboard,
+  isCutLocation,
+  validatePasteTarget,
+} from '../features/clipboard/clipboard';
+import {
   DEFAULT_ENTRY_FORMAT_SETTINGS,
   type EntryFormatSettings,
 } from '../features/entry-formatting/entry-formatting';
@@ -59,7 +67,13 @@ import type {
   WorkspaceLayout,
   WorkspaceProjection,
 } from '../models';
-import { type AppState, applyAppPatches, connectionPatch, createInitialAppState } from '../state';
+import {
+  type AppState,
+  applyAppPatches,
+  clipboardPatch,
+  connectionPatch,
+  createInitialAppState,
+} from '../state';
 import type { RuntimeKind } from '../utilities/runtime';
 
 /** Attributes of the application shell. */
@@ -107,6 +121,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
   let appState: AppState | undefined;
   let operations = createOperationsState();
   let pendingConflict: OperationConflict | undefined;
+  let clipboardMessage: string | undefined;
   let pendingOperationEvents: BackendEvent[] = [];
   let operationFrame: number | undefined;
   let removed = false;
@@ -260,6 +275,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
         state: delta.snapshot.loadingState,
         entries: delta.snapshot.entries,
         location: delta.snapshot.location,
+        writable: delta.snapshot.writable,
         requestId: delta.snapshot.requestId,
         revision,
         hasMore: delta.snapshot.hasMore,
@@ -305,7 +321,96 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     return paneId === undefined || location === undefined ? undefined : { paneId, location };
   }
 
+  function clipboard() {
+    return appState?.clipboard ?? emptyClipboard;
+  }
+
+  function replaceClipboard(next = emptyClipboard): void {
+    if (appState !== undefined) {
+      appState = applyAppPatches(appState, clipboardPatch(next));
+    }
+  }
+
+  function selectedLocations(): readonly Location[] {
+    const active = activeDirectory();
+    const directory = active === undefined ? undefined : directories.get(active.paneId);
+    const selection = active === undefined ? undefined : selections.get(active.paneId);
+    return (
+      directory?.entries
+        .filter((entry) => selection?.selectedEntryIds.includes(entry.id) === true)
+        .map((entry) => entry.location) ?? []
+    );
+  }
+
+  function isEditableTarget(target: EventTarget | null): boolean {
+    return (
+      target instanceof HTMLInputElement ||
+      target instanceof HTMLTextAreaElement ||
+      target instanceof HTMLSelectElement ||
+      (target instanceof HTMLElement && target.isContentEditable)
+    );
+  }
+
+  function isPrimaryModifier(event: KeyboardEvent): boolean {
+    return platform === 'macos' ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey;
+  }
+
   function handleGlobalKeydown(event: KeyboardEvent): void {
+    if (!isEditableTarget(event.target) && isPrimaryModifier(event) && !event.altKey) {
+      const key = event.key.toLowerCase();
+      const sources = selectedLocations();
+      if ((key === 'c' || key === 'x') && sources.length > 0) {
+        event.preventDefault();
+        replaceClipboard(
+          key === 'c'
+            ? copyToClipboard(clipboard(), sources)
+            : cutToClipboard(clipboard(), sources),
+        );
+        clipboardMessage = undefined;
+        m.redraw();
+        return;
+      }
+      if (key === 'v') {
+        event.preventDefault();
+        const active = activeDirectory();
+        const directory = active === undefined ? undefined : directories.get(active.paneId);
+        const currentClipboard = clipboard();
+        const target =
+          active === undefined || directory === undefined
+            ? undefined
+            : {
+                location: active.location,
+                writable: directory.writable === true,
+                loaded: directory.state.type === 'loaded',
+              };
+        const validation = validatePasteTarget(currentClipboard, target);
+        if (!validation.ok) {
+          clipboardMessage = validation.message;
+          m.redraw();
+          return;
+        }
+        const mode = currentClipboard.mode;
+        if (mode === undefined || active === undefined) return;
+        clipboardMessage = undefined;
+        void attrsClient
+          .startOperation({
+            type: mode,
+            sources: currentClipboard.locations,
+            destination: active.location,
+            conflictPolicy: 'ask',
+          })
+          .then(() => {
+            if (mode === 'move') replaceClipboard(clearClipboard(currentClipboard));
+            m.redraw();
+          })
+          .catch((error: unknown) => {
+            clipboardMessage =
+              error instanceof Error ? error.message : 'Unable to paste clipboard entries.';
+            m.redraw();
+          });
+        return;
+      }
+    }
     if (event.key === 'F5') {
       const active = activeDirectory();
       const selection = active === undefined ? undefined : selections.get(active.paneId);
@@ -490,6 +595,11 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       ...directory,
       entries,
       selectedEntryIds: new Set<EntryId>(selection.selectedEntryIds),
+      cutEntryIds: new Set<EntryId>(
+        directory.entries
+          .filter((entry) => isCutLocation(clipboard(), entry.location))
+          .map((entry) => entry.id),
+      ),
       sortLabel: sortLabel(effectiveSort(tab?.view.sort ?? [])),
       sort: effectiveSort(tab?.view.sort ?? []),
       formatSettings: entryFormatSettings,
@@ -718,6 +828,9 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
                 onUpdateLayout: (layout) => updateLayout(attrs.client, layout),
               }),
         ]),
+        clipboardMessage === undefined
+          ? undefined
+          : m('.fm-clipboard-message', { role: 'alert' }, clipboardMessage),
         m(OperationCentre, {
           state: operations,
           onCancel: (operationId) => {

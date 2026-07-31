@@ -74,6 +74,7 @@ function attrs(overrides: Partial<WorkspaceLayoutViewAttrs> = {}): WorkspaceLayo
       state: { type: 'loaded' },
       entries: [],
       selectedEntryIds: new Set<EntryId>(),
+      cutEntryIds: new Set<EntryId>(),
       sortLabel: 'Name ascending',
       sort: [{ columnId: 'core.name', direction: 'ascending' }],
       metadata: { state: 'idle' },

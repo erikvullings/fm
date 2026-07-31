@@ -1,5 +1,6 @@
 import type {
   BackendNotification,
+  ClipboardState,
   DirectoryDelta,
   DirectorySnapshot,
   EntryId,
@@ -44,6 +45,7 @@ function directoryFromSnapshot(snapshot: DirectorySnapshot): DirectoryState {
     sessionId: snapshot.requestId,
     requestId: snapshot.requestId,
     revision: snapshot.revision,
+    writable: snapshot.writable,
     ...normalizeEntries(snapshot.entries),
   };
 }
@@ -71,6 +73,11 @@ export function runtimeState(
   capabilities?: DeepReadonly<RuntimeCapabilities>,
 ): RuntimeState {
   return capabilities === undefined ? { kind } : { kind, capabilities };
+}
+
+/** Replaces the frontend-owned in-application clipboard. */
+export function clipboardPatch(clipboard: ClipboardState): AppPatch {
+  return { clipboard: () => clipboard };
 }
 
 /** Replaces the workspace projection without copying or invalidating directory sessions. */

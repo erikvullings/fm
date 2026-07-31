@@ -110,6 +110,10 @@ then publish atomically with collision-safe ask, overwrite, and rename-new behav
 selected file to the other pane; byte/item totals, cancellation cleanup, timestamps, and supported
 permissions are handled by the backend operation engine. The precise metadata contract is recorded
 in `docs/architecture/file-copy-metadata.md`.
+Ctrl/Cmd+C, Ctrl/Cmd+X and Ctrl/Cmd+V retain an in-application clipboard of provider-neutral
+locations across panes and tabs. Paste validates the visible destination before it queues a copy or
+move operation; cut rows remain dimmed until that move is accepted. System clipboard integration is
+kept behind the platform-adapter capability boundary.
 The shared application service now exposes semantic operation start/list/get/cancel/pause/resume
 and conflict-resolution methods through matching Axum REST endpoints and Tauri commands. REST
 starts accept `Idempotency-Key` so retries return the original job rather than queueing duplicates;

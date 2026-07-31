@@ -1,5 +1,6 @@
 import type {
   BackendNotification,
+  ClipboardState,
   EntryId,
   EntrySummary,
   Operation,
@@ -34,6 +35,7 @@ export interface DirectoryState {
   readonly sessionId: string;
   readonly requestId: string;
   readonly revision: number;
+  readonly writable: boolean;
   readonly entryIds: readonly EntryId[];
   readonly entriesById: Readonly<Partial<Record<EntryId, DeepReadonly<EntrySummary>>>>;
 }
@@ -69,6 +71,8 @@ export interface ConnectionState {
 /** Complete readonly frontend application snapshot. */
 export interface AppState {
   readonly runtime: RuntimeState;
+  /** In-application copy/cut references; never the system clipboard contents. */
+  readonly clipboard: ClipboardState;
   readonly workspace: WorkspaceState;
   readonly workspaceView: DeepReadonly<WorkspaceViewState> | undefined;
   readonly operations: OperationsState;
@@ -81,6 +85,7 @@ export interface AppState {
 export function createInitialAppState(kind: RuntimeKind): AppState {
   return {
     runtime: { kind },
+    clipboard: { locations: [] },
     workspace: { directories: {} },
     workspaceView: undefined,
     operations: { byId: {} },

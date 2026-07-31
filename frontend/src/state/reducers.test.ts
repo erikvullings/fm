@@ -9,6 +9,7 @@ import type {
 } from '../models';
 import { createInitialAppState } from './model';
 import {
+  clipboardPatch,
   connectionPatch,
   directoryDeltaPatch,
   directorySnapshotPatch,
@@ -55,6 +56,7 @@ function snapshot(entries: EntrySummary[], revision = 1): DirectorySnapshot {
     requestId: `request-${revision}`,
     revision,
     location,
+    writable: true,
     entries,
     hasMore: false,
     loadingState: { type: 'loaded' },
@@ -74,6 +76,18 @@ function operation(): Operation {
 }
 
 describe('state slice reducers', () => {
+  it('keeps in-application clipboard references in their own state slice', () => {
+    const state = applyAppPatches(
+      createInitialAppState('mock'),
+      clipboardPatch({ mode: 'move', locations: [{ providerId: 'file', uri: 'file:///tmp/a' }] }),
+    );
+
+    expect(state.clipboard).toEqual({
+      mode: 'move',
+      locations: [{ providerId: 'file', uri: 'file:///tmp/a' }],
+    });
+  });
+
   it('replaces major workspace snapshots wholesale', () => {
     const initial = applyAppPatches(
       createInitialAppState('mock'),

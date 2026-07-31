@@ -102,6 +102,10 @@
   color: var(--fm-text);
 }
 
+.fm-cut-entry {
+  opacity: 0.5;
+}
+
 .fm-directory-row[data-row-stripe="alternate"] {
   background: var(
     --fm-directory-row-highlight,

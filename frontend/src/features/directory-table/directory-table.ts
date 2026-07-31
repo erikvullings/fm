@@ -34,6 +34,7 @@ export interface DirectoryTableAttrs {
   readonly source?: DirectoryEntrySource;
   readonly cursorIndex?: number;
   readonly selectedEntryIds?: ReadonlySet<EntryId>;
+  readonly cutEntryIds?: ReadonlySet<EntryId>;
   readonly active?: boolean;
   readonly viewportHeight?: number;
   readonly overscan?: number;
@@ -344,6 +345,7 @@ export const DirectoryTable: FactoryComponent<DirectoryTableAttrs> = () => {
                   entry.hidden ? 'fm-hidden-entry' : '',
                   cursor ? 'fm-cursor-row' : '',
                   selected ? 'fm-selected-row' : '',
+                  attrs.cutEntryIds?.has(entry.id) === true ? 'fm-cut-entry' : '',
                 ].join(' '),
                 style: {
                   transform: `translateY(${window.offsetTop + (index - window.start) * rowHeight}px)`,

@@ -37,6 +37,7 @@ export interface PaneAttrs {
   readonly formatSettings?: EntryFormatSettings;
   readonly metadata: EntryMetadataView;
   readonly selectedEntryIds: ReadonlySet<EntryId>;
+  readonly cutEntryIds: ReadonlySet<EntryId>;
   readonly active: boolean;
   readonly cursorIndex?: number;
   readonly platform: SelectionPlatform;
@@ -469,6 +470,7 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
             state: attrs.state,
             source: entryArraySource(attrs.entries),
             selectedEntryIds: attrs.selectedEntryIds,
+            cutEntryIds: attrs.cutEntryIds,
             active: attrs.active,
             sort: attrs.sort,
             ...(attrs.formatSettings === undefined ? {} : { formatSettings: attrs.formatSettings }),

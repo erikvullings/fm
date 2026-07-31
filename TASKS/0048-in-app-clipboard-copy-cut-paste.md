@@ -1,9 +1,9 @@
 # 0048 In-application clipboard copy / cut / paste
 
-Status: open
+Status: done
 Priority: medium
 Owner: unassigned
-Agent: unassigned
+Agent: Codex
 Area: frontend
 Depends on: 0047
 
@@ -31,4 +31,11 @@ application.
   (0058) rather than here.
 
 ## Agent Notes
-- Not started.
+- 2026-08-01 — Added AppState-owned in-app clipboard state and Ctrl/Cmd copy, cut and paste
+  shortcuts. Directory snapshots now expose destination writability, allowing the UI to reject
+  unavailable, read-only and source-subtree targets before starting the corresponding operation.
+  Copy and move operations accept multiple sources; stale copy/move sources are reported as
+  per-entry warnings while remaining sources proceed. System clipboard file-reference integration
+  remains intentionally deferred to the platform adapter in task 0058; the in-app clipboard works
+  in every current host. Verified with affected Vitest suites, `pnpm --dir frontend typecheck`,
+  `cargo test -p fm-application --test copy_file_operation`, and affected Rust crate tests.

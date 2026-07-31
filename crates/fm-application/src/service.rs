@@ -382,43 +382,50 @@ impl FileManagerService {
                 })
             }
             OperationKindDto::Copy => {
-                if request.sources.len() != 1 {
+                if request.sources.is_empty() {
                     return Err(ApplicationError::InvalidRequest(
-                        "copy requires exactly one source".into(),
+                        "copy requires at least one source".into(),
                     ));
                 }
                 let destination_directory = destination.clone().ok_or_else(|| {
                     ApplicationError::InvalidRequest("copy requires a destination directory".into())
                 })?;
-                let source: fm_domain::Location = request.sources[0].clone().into();
-                let source_provider = self
-                    .providers
-                    .resolve(&source)
-                    .map_err(ApplicationError::from)?;
                 let destination_provider = self
                     .providers
                     .resolve(&destination_directory)
-                    .map_err(ApplicationError::from)?;
-                source_provider
-                    .capabilities()
-                    .require(ProviderCapabilities::READ)
                     .map_err(ApplicationError::from)?;
                 destination_provider
                     .capabilities()
                     .require(ProviderCapabilities::WRITE)
                     .map_err(ApplicationError::from)?;
-                Arc::new(CopyExecutor {
-                    source_provider,
-                    destination_provider,
-                    destination_directory,
-                    temporary: Mutex::new(None),
-                    planned: Mutex::new(HashMap::new()),
-                    directories: Mutex::new(Vec::new()),
-                    symlink_policy: request.symlink_policy,
-                    root_name: Mutex::new(None),
-                    source_override: None,
-                    continue_on_error: true,
-                    completed_root_destination: Mutex::new(None),
+                let mut copies = Vec::new();
+                for source_dto in &request.sources {
+                    let source: Location = source_dto.clone().into();
+                    let source_provider = self
+                        .providers
+                        .resolve(&source)
+                        .map_err(ApplicationError::from)?;
+                    source_provider
+                        .capabilities()
+                        .require(ProviderCapabilities::READ)
+                        .map_err(ApplicationError::from)?;
+                    copies.push(CopyExecutor {
+                        source_provider,
+                        destination_provider: Arc::clone(&destination_provider),
+                        destination_directory: destination_directory.clone(),
+                        temporary: Mutex::new(None),
+                        planned: Mutex::new(HashMap::new()),
+                        directories: Mutex::new(Vec::new()),
+                        symlink_policy: request.symlink_policy,
+                        root_name: Mutex::new(None),
+                        source_override: Some(source),
+                        continue_on_error: true,
+                        completed_root_destination: Mutex::new(None),
+                    });
+                }
+                Arc::new(CopyGroupExecutor {
+                    copies,
+                    stale_sources: Mutex::new(HashMap::new()),
                 })
             }
             OperationKindDto::Move => {
@@ -464,7 +471,10 @@ impl FileManagerService {
                         force_fallback: self.force_cross_volume_moves.load(Ordering::Relaxed),
                     });
                 }
-                Arc::new(MoveGroupExecutor { moves })
+                Arc::new(MoveGroupExecutor {
+                    moves,
+                    stale_sources: Mutex::new(HashMap::new()),
+                })
             }
             OperationKindDto::Duplicate => {
                 if request.sources.is_empty() {
@@ -866,6 +876,11 @@ struct CopyExecutor {
     completed_root_destination: Mutex<Option<Location>>,
 }
 
+struct CopyGroupExecutor {
+    copies: Vec<CopyExecutor>,
+    stale_sources: Mutex<HashMap<String, EntryRef>>,
+}
+
 struct DuplicateExecutor {
     copies: Vec<CopyExecutor>,
 }
@@ -1031,18 +1046,36 @@ struct MoveExecutor {
 
 struct MoveGroupExecutor {
     moves: Vec<MoveExecutor>,
+    stale_sources: Mutex<HashMap<String, EntryRef>>,
 }
 
 #[async_trait]
-impl OperationExecutor for MoveGroupExecutor {
+impl OperationExecutor for CopyGroupExecutor {
     async fn plan(
         &self,
         operation: &Operation,
         cancellation: &CancellationToken,
     ) -> Result<OperationPlan, ExecutionError> {
         let mut items = Vec::new();
-        for executor in &self.moves {
-            items.extend(executor.plan(operation, cancellation).await?.items);
+        for executor in &self.copies {
+            match executor.plan(operation, cancellation).await {
+                Ok(plan) => items.extend(plan.items),
+                Err(ExecutionError::Provider(fm_vfs::VfsError::NotFound { .. })) => {
+                    let source = executor.source_override.clone().ok_or_else(|| {
+                        ExecutionError::Failed("copy source is missing from its plan".into())
+                    })?;
+                    let entry = EntryRef {
+                        id: fm_domain::EntryId::new(),
+                        location: source,
+                    };
+                    self.stale_sources
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .insert(entry.location.uri.clone(), entry.clone());
+                    items.push(PlanItem::new(entry, 0));
+                }
+                Err(error) => return Err(error),
+            }
         }
         Ok(OperationPlan::new(items))
     }
@@ -1055,6 +1088,98 @@ impl OperationExecutor for MoveGroupExecutor {
         pause: &PauseToken,
         cancellation: &CancellationToken,
     ) -> Result<fm_operations::ExecutionOutcome, ExecutionError> {
+        if self
+            .stale_sources
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .contains_key(&item.entry.location.uri)
+        {
+            return Err(ExecutionError::Warning {
+                entry: item.entry.clone(),
+                message: "Source no longer exists; skipped.".into(),
+            });
+        }
+        for executor in &self.copies {
+            if executor
+                .planned
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .contains_key(&item.entry.location.uri)
+            {
+                return executor
+                    .execute(operation, item, resolution, pause, cancellation)
+                    .await;
+            }
+        }
+        Err(ExecutionError::Failed("copy plan entry is missing".into()))
+    }
+
+    async fn cleanup_partial(&self, operation: &Operation) -> Result<(), ExecutionError> {
+        for executor in &self.copies {
+            executor.cleanup_partial(operation).await?;
+        }
+        Ok(())
+    }
+
+    async fn finish(
+        &self,
+        operation: &Operation,
+        cancellation: &CancellationToken,
+    ) -> Result<(), ExecutionError> {
+        for executor in &self.copies {
+            executor.finish(operation, cancellation).await?;
+        }
+        Ok(())
+    }
+}
+
+#[async_trait]
+impl OperationExecutor for MoveGroupExecutor {
+    async fn plan(
+        &self,
+        operation: &Operation,
+        cancellation: &CancellationToken,
+    ) -> Result<OperationPlan, ExecutionError> {
+        let mut items = Vec::new();
+        for executor in &self.moves {
+            match executor.plan(operation, cancellation).await {
+                Ok(plan) => items.extend(plan.items),
+                Err(ExecutionError::Provider(fm_vfs::VfsError::NotFound { .. })) => {
+                    let entry = EntryRef {
+                        id: fm_domain::EntryId::new(),
+                        location: executor.source.clone(),
+                    };
+                    self.stale_sources
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .insert(entry.location.uri.clone(), entry.clone());
+                    items.push(PlanItem::new(entry, 0));
+                }
+                Err(error) => return Err(error),
+            }
+        }
+        Ok(OperationPlan::new(items))
+    }
+
+    async fn execute(
+        &self,
+        operation: &Operation,
+        item: &PlanItem,
+        resolution: Option<fm_operations::ConflictResolution>,
+        pause: &PauseToken,
+        cancellation: &CancellationToken,
+    ) -> Result<fm_operations::ExecutionOutcome, ExecutionError> {
+        if self
+            .stale_sources
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .contains_key(&item.entry.location.uri)
+        {
+            return Err(ExecutionError::Warning {
+                entry: item.entry.clone(),
+                message: "Source no longer exists; skipped.".into(),
+            });
+        }
         for executor in &self.moves {
             if item.entry.location == executor.source
                 || executor

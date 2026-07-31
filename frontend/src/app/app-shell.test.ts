@@ -261,6 +261,42 @@ describe('AppShell', () => {
     });
   });
 
+  it('cuts a selection, dims it, and pastes the move into the active pane', async () => {
+    const client = new MockFileManagerClient();
+    const startOperation = vi.spyOn(client, 'startOperation');
+    m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
+    await vi.waitFor(() => expect(root.textContent).toContain('.env'));
+    const left = root.querySelector<HTMLElement>('[data-active="true"] > .fm-pane');
+    const file = [...(left?.querySelectorAll<HTMLElement>('.fm-directory-row') ?? [])].find((row) =>
+      row.textContent?.includes('.env'),
+    );
+    file?.click();
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'x', ctrlKey: true, bubbles: true }),
+    );
+    m.redraw.sync();
+    expect(file?.classList.contains('fm-cut-entry')).toBe(true);
+
+    root.querySelector<HTMLElement>('[data-pane-id="right"]')?.click();
+    await vi.waitFor(() =>
+      expect(root.querySelector('[data-pane-id="right"]')?.getAttribute('data-active')).toBe(
+        'true',
+      ),
+    );
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'v', ctrlKey: true, bubbles: true }),
+    );
+
+    await vi.waitFor(() => expect(startOperation).toHaveBeenCalledOnce());
+    expect(startOperation.mock.calls[0]?.[0]).toMatchObject({
+      type: 'move',
+      sources: [{ uri: 'mock:///.env' }],
+      destination: { uri: 'mock:///Documents' },
+      conflictPolicy: 'ask',
+    });
+    await vi.waitFor(() => expect(file?.classList.contains('fm-cut-entry')).toBe(false));
+  });
+
   it('keeps runtime diagnostics out of the workspace chrome', () => {
     mountShell('mock');
 

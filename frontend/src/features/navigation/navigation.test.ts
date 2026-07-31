@@ -66,6 +66,7 @@ function snapshot(
     hasMore: false,
     loadingState: { type: 'loaded' },
     ...overrides,
+    writable: overrides.writable ?? true,
   };
 }
 

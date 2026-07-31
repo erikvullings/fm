@@ -23,6 +23,7 @@ export interface WorkspacePaneContent {
   readonly state: LoadingState;
   readonly entries: readonly EntrySummary[];
   readonly selectedEntryIds: ReadonlySet<EntryId>;
+  readonly cutEntryIds: ReadonlySet<EntryId>;
   readonly sortLabel: string;
   readonly sort: readonly SortDescriptor[];
   readonly formatSettings?: EntryFormatSettings;
@@ -199,6 +200,7 @@ export const WorkspaceLayoutView: FactoryComponent<WorkspaceLayoutViewAttrs> = (
         state: content.state,
         entries: content.entries,
         selectedEntryIds: content.selectedEntryIds,
+        cutEntryIds: content.cutEntryIds,
         sortLabel: content.sortLabel,
         sort: content.sort,
         ...(content.formatSettings === undefined ? {} : { formatSettings: content.formatSettings }),
