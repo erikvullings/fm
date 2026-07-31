@@ -1,6 +1,6 @@
 # 0040 Operation: copy a directory tree
 
-Status: open
+Status: done
 Priority: high
 Owner: unassigned
 Agent: unassigned
@@ -31,4 +31,9 @@ Depends on: 0039
 - Concurrency across files is bounded by the settings-driven operation concurrency (0030).
 
 ## Agent Notes
-- Not started.
+- 2026-07-31: Added iterative recursive planning/execution, explicit copy-link/copy-target policies
+  with stable-id cycle protection, post-order directory metadata, warning aggregation, and safe
+  cancellation cleanup. Covered Unicode/empty trees, both symlink policies and a loop, deep nesting,
+  destination-inside-source rejection, and the 10,000-file fixture in temporary roots.
+- 2026-07-31: Local-provider native copy avoids per-file process spawning; macOS clone attempts are
+  reserved for files >= 1 MiB. Windows behavior compiles but was not exercised on a Windows host.

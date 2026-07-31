@@ -6,16 +6,25 @@ use fm_events::{BackendEventPayload, OperationStatePayload, SessionId, Subscript
 use serde_json::json;
 
 #[tokio::test]
-async fn start_retry_uses_stable_id_and_noop_emits_full_lifecycle() {
+async fn start_retry_uses_stable_id_and_copy_emits_full_lifecycle() {
     let server = common::TestServer::spawn().await;
+    let root = tempfile::tempdir().expect("must create a temporary operation root");
+    let source = root.path().join("source.txt");
+    let destination = root.path().join("destination");
+    tokio::fs::write(&source, b"copy through the operation route")
+        .await
+        .expect("must write the source fixture");
+    tokio::fs::create_dir(&destination)
+        .await
+        .expect("must create the destination fixture");
     let mut events = server
         .event_bus
         .subscribe_all_workspaces(SessionId::new("operations-test"), None);
     let client = reqwest::Client::new();
     let request = json!({
         "type": "copy",
-        "sources": [{"providerId":"local","uri":"file:///tmp/source"}],
-        "destination": {"providerId":"local","uri":"file:///tmp/destination"},
+        "sources": [{"providerId":"local","uri": format!("file://{}", source.display())}],
+        "destination": {"providerId":"local","uri": format!("file://{}", destination.display())},
         "conflictPolicy": "ask"
     });
     let first: serde_json::Value = client
@@ -85,6 +94,7 @@ async fn start_retry_uses_stable_id_and_noop_emits_full_lifecycle() {
         [
             "operation.created",
             "operation.stateChanged",
+            "operation.progress",
             "operation.stateChanged",
             "operation.progress",
             "operation.stateChanged",

@@ -1,6 +1,6 @@
 # 0042 Operation: duplicate
 
-Status: open
+Status: done
 Priority: medium
 Owner: unassigned
 Agent: unassigned
@@ -28,4 +28,6 @@ operation set).
   keep it settings-overridable later rather than branching now.
 
 ## Agent Notes
-- Not started.
+- 2026-07-31: Added aggregate multi-selection duplicate through the shared recursive-copy executor.
+  The pure naming function handles collisions, dotfiles, full multipart extensions, and Unicode;
+  integration coverage includes files, trees, an existing copy, and a read-only source.

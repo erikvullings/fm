@@ -36,6 +36,9 @@ async fn create(
                 conflict_policy: OperationConflictPolicyDto::Ask,
                 name: Some(name.to_owned()),
                 create_intermediate_directories: create_intermediates,
+                symlink_policy: Default::default(),
+                permanent_delete_confirmed: false,
+                override_read_only: false,
             },
             None,
         )

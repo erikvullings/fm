@@ -1,6 +1,6 @@
 # 0044 Operation: permanent delete with confirmation
 
-Status: open
+Status: done
 Priority: high
 Owner: unassigned
 Agent: unassigned
@@ -30,4 +30,9 @@ confirmation"), §36 item 11 (no silent permanent deletion) and §17 safety requ
 - The dialog is a `mithril-materialized` modal with correct focus trapping (§29).
 
 ## Agent Notes
-- Not started.
+- 2026-07-31: Added iterative post-order delete planning, exact confirmation totals, mandatory
+  cancel-first materialized modal with trapped focus, read-only override, symlink-safe removal,
+  per-entry warnings, exact cancellation progress, and content-free JSONL auditing. All destructive
+  tests use temporary roots.
+- 2026-07-31: Task 0043 trash remains a separate operation; this task implements only explicitly
+  confirmed permanent deletion.

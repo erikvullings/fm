@@ -32,6 +32,9 @@ async fn copy(
                 conflict_policy,
                 name: None,
                 create_intermediate_directories: false,
+                symlink_policy: Default::default(),
+                permanent_delete_confirmed: false,
+                override_read_only: false,
             },
             None,
         )
@@ -224,6 +227,9 @@ async fn cancellation_removes_the_private_partial_destination() {
                 conflict_policy: OperationConflictPolicyDto::Ask,
                 name: None,
                 create_intermediate_directories: false,
+                symlink_policy: Default::default(),
+                permanent_delete_confirmed: false,
+                override_read_only: false,
             },
             None,
         )

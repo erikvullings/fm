@@ -541,7 +541,9 @@ export class MockFileManagerClient implements FileManagerClient {
         ...operation,
         ...(request.resolution === 'cancelOperation'
           ? { state: 'cancelled' as const }
-          : { conflictPolicy: request.resolution, state: 'running' as const }),
+          : request.resolution === 'confirm'
+            ? { state: 'running' as const }
+            : { conflictPolicy: request.resolution, state: 'running' as const }),
       });
     });
   }

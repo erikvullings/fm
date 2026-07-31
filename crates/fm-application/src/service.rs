@@ -1,12 +1,14 @@
 //! The `FileManagerService` facade (specification §7).
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
+use std::sync::atomic::AtomicU64;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use fm_domain::OperationId;
-use fm_domain::{DirectorySnapshot, EntryMetadata};
+use fm_domain::{DirectorySnapshot, EntryKind, EntryMetadata, Location};
 use fm_events::{
     BackendEventPayload, EventAudience, EventBus, NotificationLevelPayload, NotificationPayload,
 };
@@ -55,6 +57,8 @@ pub struct FileManagerService {
     settings: Mutex<Settings>,
     operations: Scheduler,
     operation_idempotency: Mutex<HashMap<String, OperationId>>,
+    force_cross_volume_moves: AtomicBool,
+    audit_log_path: PathBuf,
 }
 
 impl FileManagerService {
@@ -80,9 +84,10 @@ impl FileManagerService {
         settings_directory: impl Into<PathBuf>,
         events: EventBus,
     ) -> Self {
+        let settings_directory = settings_directory.into();
         let mut providers = ProviderRegistry::new();
         providers.register(Arc::new(LocalFileSystemProvider));
-        let settings_store = SettingsStore::new(settings_directory);
+        let settings_store = SettingsStore::new(&settings_directory);
         let loaded = settings_store
             .load()
             .unwrap_or_else(|_| fm_settings::LoadOutcome {
@@ -116,6 +121,8 @@ impl FileManagerService {
             settings: Mutex::new(loaded.settings),
             operations: Scheduler::new(operation_concurrency, events),
             operation_idempotency: Mutex::new(HashMap::new()),
+            force_cross_volume_moves: AtomicBool::new(false),
+            audit_log_path: settings_directory.join("audit.jsonl"),
         }
     }
 
@@ -193,7 +200,7 @@ impl FileManagerService {
             OperationKindDto::Copy => {
                 if request.sources.len() != 1 {
                     return Err(ApplicationError::InvalidRequest(
-                        "single-file copy requires exactly one source".into(),
+                        "copy requires exactly one source".into(),
                     ));
                 }
                 let destination_directory = destination.clone().ok_or_else(|| {
@@ -216,11 +223,131 @@ impl FileManagerService {
                     .capabilities()
                     .require(ProviderCapabilities::WRITE)
                     .map_err(ApplicationError::from)?;
-                Arc::new(CopyFileExecutor {
+                Arc::new(CopyExecutor {
                     source_provider,
                     destination_provider,
                     destination_directory,
                     temporary: Mutex::new(None),
+                    planned: Mutex::new(HashMap::new()),
+                    directories: Mutex::new(Vec::new()),
+                    symlink_policy: request.symlink_policy,
+                    root_name: Mutex::new(None),
+                    source_override: None,
+                    continue_on_error: true,
+                })
+            }
+            OperationKindDto::Move => {
+                if request.sources.is_empty() {
+                    return Err(ApplicationError::InvalidRequest(
+                        "move requires at least one source".into(),
+                    ));
+                }
+                let destination_directory = destination.clone().ok_or_else(|| {
+                    ApplicationError::InvalidRequest("move requires a destination directory".into())
+                })?;
+                let destination_provider = self
+                    .providers
+                    .resolve(&destination_directory)
+                    .map_err(ApplicationError::from)?;
+                let mut moves = Vec::new();
+                for source_dto in &request.sources {
+                    let source: Location = source_dto.clone().into();
+                    let source_provider = self
+                        .providers
+                        .resolve(&source)
+                        .map_err(ApplicationError::from)?;
+                    let copy = CopyExecutor {
+                        source_provider: Arc::clone(&source_provider),
+                        destination_provider: Arc::clone(&destination_provider),
+                        destination_directory: destination_directory.clone(),
+                        temporary: Mutex::new(None),
+                        planned: Mutex::new(HashMap::new()),
+                        directories: Mutex::new(Vec::new()),
+                        symlink_policy: request.symlink_policy,
+                        root_name: Mutex::new(None),
+                        source_override: Some(source.clone()),
+                        continue_on_error: false,
+                    };
+                    moves.push(MoveExecutor {
+                        source,
+                        source_provider,
+                        destination_provider: Arc::clone(&destination_provider),
+                        destination_directory: destination_directory.clone(),
+                        copy,
+                        fallback: Mutex::new(false),
+                        force_fallback: self.force_cross_volume_moves.load(Ordering::Relaxed),
+                    });
+                }
+                Arc::new(MoveGroupExecutor { moves })
+            }
+            OperationKindDto::Duplicate => {
+                if request.sources.is_empty() {
+                    return Err(ApplicationError::InvalidRequest(
+                        "duplicate requires at least one source".into(),
+                    ));
+                }
+                let mut copies = Vec::new();
+                for source_dto in &request.sources {
+                    let source: Location = source_dto.clone().into();
+                    let parent = source
+                        .parent()
+                        .map_err(|error| ApplicationError::InvalidRequest(error.to_string()))?
+                        .ok_or_else(|| {
+                            ApplicationError::InvalidRequest(
+                                "cannot duplicate a filesystem root".into(),
+                            )
+                        })?;
+                    let provider = self
+                        .providers
+                        .resolve(&source)
+                        .map_err(ApplicationError::from)?;
+                    copies.push(CopyExecutor {
+                        source_provider: Arc::clone(&provider),
+                        destination_provider: provider,
+                        destination_directory: parent,
+                        temporary: Mutex::new(None),
+                        planned: Mutex::new(HashMap::new()),
+                        directories: Mutex::new(Vec::new()),
+                        symlink_policy: request.symlink_policy,
+                        root_name: Mutex::new(None),
+                        source_override: Some(source),
+                        continue_on_error: true,
+                    });
+                }
+                Arc::new(DuplicateExecutor { copies })
+            }
+            OperationKindDto::Delete => {
+                if request.sources.is_empty() {
+                    return Err(ApplicationError::InvalidRequest(
+                        "delete requires at least one source".into(),
+                    ));
+                }
+                let requires_confirmation = self
+                    .settings
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .confirm_permanent_delete;
+                let mut providers = HashMap::new();
+                for source in &request.sources {
+                    let location: Location = source.clone().into();
+                    let provider = self
+                        .providers
+                        .resolve(&location)
+                        .map_err(ApplicationError::from)?;
+                    provider
+                        .capabilities()
+                        .require(ProviderCapabilities::DELETE)
+                        .map_err(ApplicationError::from)?;
+                    providers.insert(location.provider_id.clone(), provider);
+                }
+                Arc::new(DeleteExecutor {
+                    providers,
+                    override_read_only: request.override_read_only,
+                    audit_log_path: self.audit_log_path.clone(),
+                    deleted: AtomicU64::new(0),
+                    audited: AtomicBool::new(false),
+                    requires_confirmation: requires_confirmation
+                        && !request.permanent_delete_confirmed,
                 })
             }
             _ => Arc::new(NoOpExecutor),
@@ -270,6 +397,13 @@ impl FileManagerService {
     /// Requests cancellation of an operation.
     pub fn cancel_operation(&self, id: OperationId) -> Result<(), ApplicationError> {
         self.operations.cancel(id).map_err(map_scheduler_error)
+    }
+
+    /// Forces move's copy/delete fallback for deterministic integration tests.
+    #[doc(hidden)]
+    pub fn force_cross_volume_moves_for_tests(&self, force: bool) {
+        self.force_cross_volume_moves
+            .store(force, Ordering::Relaxed);
     }
 
     /// Pauses a running operation.
@@ -469,30 +603,204 @@ struct RenameExecutor {
     destination: fm_domain::Location,
 }
 
-struct CopyFileExecutor {
+#[derive(Clone)]
+struct PlannedCopyEntry {
+    kind: EntryKind,
+    destination: Location,
+    source: EntryRef,
+    is_root: bool,
+}
+
+struct CopyExecutor {
     source_provider: Arc<dyn FileSystemProvider>,
     destination_provider: Arc<dyn FileSystemProvider>,
     destination_directory: fm_domain::Location,
     temporary: Mutex<Option<fm_domain::Location>>,
+    planned: Mutex<HashMap<String, PlannedCopyEntry>>,
+    directories: Mutex<Vec<(EntryRef, EntryRef)>>,
+    symlink_policy: fm_transport_dto::SymlinkPolicyDto,
+    root_name: Mutex<Option<String>>,
+    source_override: Option<Location>,
+    continue_on_error: bool,
+}
+
+struct DuplicateExecutor {
+    copies: Vec<CopyExecutor>,
+}
+
+struct DeleteExecutor {
+    providers: HashMap<fm_domain::ProviderId, Arc<dyn FileSystemProvider>>,
+    override_read_only: bool,
+    audit_log_path: PathBuf,
+    deleted: AtomicU64,
+    audited: AtomicBool,
+    requires_confirmation: bool,
+}
+
+impl DeleteExecutor {
+    async fn write_audit(&self, operation: &Operation) -> Result<(), ExecutionError> {
+        if self.audited.load(Ordering::Acquire) {
+            return Ok(());
+        }
+        if let Some(parent) = self.audit_log_path.parent() {
+            tokio::fs::create_dir_all(parent)
+                .await
+                .map_err(copy_stream_error)?;
+        }
+        let record = serde_json::json!({
+            "timestamp": chrono::Utc::now(),
+            "operationId": operation.id.to_string(),
+            "kind": "permanentDelete",
+            "sources": operation.sources.iter().map(|entry| &entry.location.uri).collect::<Vec<_>>(),
+            "deletedItems": self.deleted.load(Ordering::Acquire),
+        });
+        let mut file = tokio::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&self.audit_log_path)
+            .await
+            .map_err(copy_stream_error)?;
+        file.write_all(format!("{record}\n").as_bytes())
+            .await
+            .map_err(copy_stream_error)?;
+        self.audited.store(true, Ordering::Release);
+        Ok(())
+    }
 }
 
 #[async_trait]
-impl OperationExecutor for CopyFileExecutor {
+impl OperationExecutor for DeleteExecutor {
+    fn requires_confirmation(&self) -> bool {
+        self.requires_confirmation
+    }
     async fn plan(
         &self,
         operation: &Operation,
         cancellation: &CancellationToken,
     ) -> Result<OperationPlan, ExecutionError> {
-        let source = operation
-            .sources
-            .first()
-            .cloned()
-            .ok_or_else(|| ExecutionError::Failed("copy source is missing".into()))?;
-        let size = self
-            .source_provider
-            .file_size(&source, cancellation.clone())
-            .await?;
-        Ok(OperationPlan::new(vec![PlanItem::new(source, size)]))
+        let mut items = Vec::new();
+        for source in &operation.sources {
+            let provider = self
+                .providers
+                .get(&source.location.provider_id)
+                .ok_or_else(|| ExecutionError::Failed("delete provider is missing".into()))?;
+            let root = provider.inspect(source, cancellation.clone()).await?;
+            let mut stack = vec![(root, false)];
+            while let Some((summary, visited)) = stack.pop() {
+                if cancellation.is_cancelled() {
+                    return Err(fm_vfs::VfsError::Cancelled.into());
+                }
+                if summary.read_only && !self.override_read_only {
+                    return Err(ExecutionError::Failed(format!(
+                        "read-only entry requires explicit override: {}",
+                        summary.location.uri
+                    )));
+                }
+                let entry = EntryRef {
+                    id: summary.id,
+                    location: summary.location.clone(),
+                };
+                if summary.kind == EntryKind::Directory && !visited {
+                    stack.push((summary.clone(), true));
+                    let mut continuation_token = None;
+                    loop {
+                        let page = provider
+                            .list(
+                                &summary.location,
+                                fm_vfs::ListOptions {
+                                    page_size: 512,
+                                    continuation_token,
+                                },
+                                cancellation.clone(),
+                            )
+                            .await?;
+                        for child in page.entries.into_iter().rev() {
+                            stack.push((child, false));
+                        }
+                        if !page.has_more {
+                            break;
+                        }
+                        continuation_token = page.continuation_token;
+                    }
+                } else {
+                    items.push(PlanItem::new(entry, summary.size.unwrap_or(0)));
+                }
+            }
+        }
+        Ok(OperationPlan::new(items))
+    }
+
+    async fn execute(
+        &self,
+        _operation: &Operation,
+        item: &PlanItem,
+        cancellation: &CancellationToken,
+    ) -> Result<(), ExecutionError> {
+        let provider = self
+            .providers
+            .get(&item.entry.location.provider_id)
+            .ok_or_else(|| ExecutionError::Failed("delete provider is missing".into()))?;
+        match provider
+            .remove(
+                &item.entry,
+                fm_vfs::RemoveOptions {
+                    recursive: false,
+                    use_trash: false,
+                },
+                cancellation.clone(),
+            )
+            .await
+        {
+            Ok(()) => {
+                self.deleted.fetch_add(1, Ordering::Relaxed);
+                Ok(())
+            }
+            Err(error) => Err(ExecutionError::Warning {
+                entry: item.entry.clone(),
+                message: error.to_string(),
+            }),
+        }
+    }
+
+    async fn cleanup_partial(&self, operation: &Operation) -> Result<(), ExecutionError> {
+        self.write_audit(operation).await
+    }
+
+    async fn finish(
+        &self,
+        operation: &Operation,
+        _cancellation: &CancellationToken,
+    ) -> Result<(), ExecutionError> {
+        self.write_audit(operation).await
+    }
+}
+
+struct MoveExecutor {
+    source: Location,
+    source_provider: Arc<dyn FileSystemProvider>,
+    destination_provider: Arc<dyn FileSystemProvider>,
+    destination_directory: Location,
+    copy: CopyExecutor,
+    fallback: Mutex<bool>,
+    force_fallback: bool,
+}
+
+struct MoveGroupExecutor {
+    moves: Vec<MoveExecutor>,
+}
+
+#[async_trait]
+impl OperationExecutor for MoveGroupExecutor {
+    async fn plan(
+        &self,
+        operation: &Operation,
+        cancellation: &CancellationToken,
+    ) -> Result<OperationPlan, ExecutionError> {
+        let mut items = Vec::new();
+        for executor in &self.moves {
+            items.extend(executor.plan(operation, cancellation).await?.items);
+        }
+        Ok(OperationPlan::new(items))
     }
 
     async fn execute(
@@ -501,11 +809,455 @@ impl OperationExecutor for CopyFileExecutor {
         item: &PlanItem,
         cancellation: &CancellationToken,
     ) -> Result<(), ExecutionError> {
+        for executor in &self.moves {
+            if item.entry.location == executor.source
+                || executor
+                    .copy
+                    .planned
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .contains_key(&item.entry.location.uri)
+            {
+                return executor.execute(operation, item, cancellation).await;
+            }
+        }
+        Err(ExecutionError::Failed("move plan entry is missing".into()))
+    }
+
+    async fn cleanup_partial(&self, operation: &Operation) -> Result<(), ExecutionError> {
+        for executor in &self.moves {
+            executor.cleanup_partial(operation).await?;
+        }
+        Ok(())
+    }
+
+    async fn finish(
+        &self,
+        operation: &Operation,
+        cancellation: &CancellationToken,
+    ) -> Result<(), ExecutionError> {
+        for executor in &self.moves {
+            executor.finish(operation, cancellation).await?;
+        }
+        Ok(())
+    }
+}
+
+#[async_trait]
+impl OperationExecutor for DuplicateExecutor {
+    async fn plan(
+        &self,
+        operation: &Operation,
+        cancellation: &CancellationToken,
+    ) -> Result<OperationPlan, ExecutionError> {
+        let mut items = Vec::new();
+        for copy in &self.copies {
+            let source_location = copy
+                .source_override
+                .as_ref()
+                .ok_or_else(|| ExecutionError::Failed("duplicate source is missing".into()))?;
+            let source_name = source_location
+                .name()
+                .map_err(|error| ExecutionError::Failed(error.to_string()))?;
+            let mut index = 1_u32;
+            loop {
+                let candidate = fm_operations::duplicate_name(&source_name, index);
+                let destination = copy
+                    .destination_directory
+                    .join(&candidate)
+                    .map_err(|error| ExecutionError::Failed(error.to_string()))?;
+                let probe = EntryRef {
+                    id: fm_domain::EntryId::new(),
+                    location: destination,
+                };
+                match copy
+                    .destination_provider
+                    .inspect(&probe, cancellation.clone())
+                    .await
+                {
+                    Err(fm_vfs::VfsError::NotFound { .. }) => {
+                        *copy.root_name.lock().unwrap_or_else(|e| e.into_inner()) = Some(candidate);
+                        break;
+                    }
+                    Ok(_) => index = index.saturating_add(1),
+                    Err(error) => return Err(error.into()),
+                }
+            }
+            items.extend(copy.plan(operation, cancellation).await?.items);
+        }
+        Ok(OperationPlan::new(items))
+    }
+
+    async fn execute(
+        &self,
+        operation: &Operation,
+        item: &PlanItem,
+        cancellation: &CancellationToken,
+    ) -> Result<(), ExecutionError> {
+        for copy in &self.copies {
+            if copy
+                .planned
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .contains_key(&item.entry.location.uri)
+            {
+                return copy.execute(operation, item, cancellation).await;
+            }
+        }
+        Err(ExecutionError::Failed(
+            "duplicate plan entry is missing".into(),
+        ))
+    }
+
+    async fn cleanup_partial(&self, operation: &Operation) -> Result<(), ExecutionError> {
+        for copy in &self.copies {
+            copy.cleanup_partial(operation).await?;
+        }
+        Ok(())
+    }
+
+    async fn finish(
+        &self,
+        operation: &Operation,
+        cancellation: &CancellationToken,
+    ) -> Result<(), ExecutionError> {
+        for copy in &self.copies {
+            copy.finish(operation, cancellation).await?;
+        }
+        Ok(())
+    }
+}
+
+#[async_trait]
+impl OperationExecutor for MoveExecutor {
+    async fn plan(
+        &self,
+        operation: &Operation,
+        cancellation: &CancellationToken,
+    ) -> Result<OperationPlan, ExecutionError> {
+        let source = EntryRef {
+            id: fm_domain::EntryId::new(),
+            location: self.source.clone(),
+        };
+        let name = source
+            .location
+            .name()
+            .map_err(|error| ExecutionError::Failed(error.to_string()))?;
+        let destination = self
+            .destination_directory
+            .join(&name)
+            .map_err(|error| ExecutionError::Failed(error.to_string()))?;
+        fm_operations::validate_paths(&source.location, &destination, cfg!(not(windows)))
+            .map_err(|error| ExecutionError::Failed(error.to_string()))?;
+        let same_provider = self.source_provider.id() == self.destination_provider.id();
+        let same_filesystem = !self.force_fallback
+            && same_provider
+            && self
+                .source_provider
+                .same_filesystem(&source, &self.destination_directory, cancellation.clone())
+                .await?;
+        *self.fallback.lock().unwrap_or_else(|e| e.into_inner()) = !same_filesystem;
+        if same_filesystem {
+            Ok(OperationPlan::new(vec![PlanItem::new(source, 0)]))
+        } else {
+            self.copy.plan(operation, cancellation).await
+        }
+    }
+
+    async fn execute(
+        &self,
+        operation: &Operation,
+        item: &PlanItem,
+        cancellation: &CancellationToken,
+    ) -> Result<(), ExecutionError> {
+        if *self.fallback.lock().unwrap_or_else(|e| e.into_inner()) {
+            return self.copy.execute(operation, item, cancellation).await;
+        }
         let name = item
             .entry
             .location
             .name()
             .map_err(|error| ExecutionError::Failed(error.to_string()))?;
+        let destination = self
+            .destination_directory
+            .join(&name)
+            .map_err(|error| ExecutionError::Failed(error.to_string()))?;
+        self.source_provider
+            .rename(&item.entry, &destination, cancellation.clone())
+            .await?;
+        Ok(())
+    }
+
+    async fn cleanup_partial(&self, operation: &Operation) -> Result<(), ExecutionError> {
+        self.copy.cleanup_partial(operation).await
+    }
+
+    async fn finish(
+        &self,
+        operation: &Operation,
+        cancellation: &CancellationToken,
+    ) -> Result<(), ExecutionError> {
+        if !*self.fallback.lock().unwrap_or_else(|e| e.into_inner()) {
+            return Ok(());
+        }
+        self.copy.finish(operation, cancellation).await?;
+        if cancellation.is_cancelled() {
+            return Ok(());
+        }
+        let source = EntryRef {
+            id: fm_domain::EntryId::new(),
+            location: self.source.clone(),
+        };
+        let name = source
+            .location
+            .name()
+            .map_err(|error| ExecutionError::Failed(error.to_string()))?;
+        let destination = self
+            .destination_directory
+            .join(&name)
+            .map_err(|error| ExecutionError::Failed(error.to_string()))?;
+        self.destination_provider
+            .inspect(
+                &EntryRef {
+                    id: fm_domain::EntryId::new(),
+                    location: destination,
+                },
+                cancellation.clone(),
+            )
+            .await?;
+        self.source_provider
+            .remove(
+                &source,
+                fm_vfs::RemoveOptions {
+                    recursive: true,
+                    use_trash: false,
+                },
+                cancellation.clone(),
+            )
+            .await?;
+        Ok(())
+    }
+}
+
+#[async_trait]
+impl OperationExecutor for CopyExecutor {
+    async fn plan(
+        &self,
+        operation: &Operation,
+        cancellation: &CancellationToken,
+    ) -> Result<OperationPlan, ExecutionError> {
+        let source = if let Some(location) = &self.source_override {
+            EntryRef {
+                id: fm_domain::EntryId::new(),
+                location: location.clone(),
+            }
+        } else {
+            operation
+                .sources
+                .first()
+                .cloned()
+                .ok_or_else(|| ExecutionError::Failed("copy source is missing".into()))?
+        };
+        let summary = self
+            .source_provider
+            .inspect(&source, cancellation.clone())
+            .await?;
+        let root_name = self
+            .root_name
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
+            .unwrap_or(summary.name.clone());
+        let root_destination = self
+            .destination_directory
+            .join(&root_name)
+            .map_err(|error| ExecutionError::Failed(error.to_string()))?;
+        fm_operations::validate_paths(&source.location, &root_destination, cfg!(not(windows)))
+            .map_err(|error| ExecutionError::Failed(error.to_string()))?;
+        let root_source_uri = source.location.uri.clone();
+        let mut stack = vec![(summary, root_destination)];
+        let mut items = Vec::new();
+        let mut planned = HashMap::new();
+        let mut directories = Vec::new();
+        let mut followed_directories = HashSet::new();
+        while let Some((summary, destination)) = stack.pop() {
+            if cancellation.is_cancelled() {
+                return Err(fm_vfs::VfsError::Cancelled.into());
+            }
+            let plan_entry = EntryRef {
+                id: summary.id,
+                location: summary.location.clone(),
+            };
+            let (summary, followed_target) = if summary.kind == EntryKind::Symlink
+                && self.symlink_policy == fm_transport_dto::SymlinkPolicyDto::CopyTarget
+            {
+                let target = self
+                    .source_provider
+                    .resolve_symlink(&plan_entry, cancellation.clone())
+                    .await?;
+                if target.kind == EntryKind::Directory && !followed_directories.insert(target.id) {
+                    continue;
+                }
+                (target, true)
+            } else {
+                (summary, false)
+            };
+            if summary.kind == EntryKind::Directory
+                && !followed_target
+                && self.symlink_policy == fm_transport_dto::SymlinkPolicyDto::CopyTarget
+            {
+                followed_directories.insert(summary.id);
+            }
+            let source_entry = EntryRef {
+                id: summary.id,
+                location: summary.location.clone(),
+            };
+            let bytes = summary.size.unwrap_or(0);
+            planned.insert(
+                plan_entry.location.uri.clone(),
+                PlannedCopyEntry {
+                    kind: summary.kind,
+                    destination: destination.clone(),
+                    source: source_entry.clone(),
+                    is_root: plan_entry.location.uri == root_source_uri,
+                },
+            );
+            items.push(PlanItem::new(plan_entry, bytes));
+            if summary.kind == EntryKind::Directory {
+                directories.push((
+                    source_entry,
+                    EntryRef {
+                        id: fm_domain::EntryId::new(),
+                        location: destination.clone(),
+                    },
+                ));
+                let mut continuation_token = None;
+                loop {
+                    let page = self
+                        .source_provider
+                        .list(
+                            &summary.location,
+                            fm_vfs::ListOptions {
+                                page_size: 512,
+                                continuation_token,
+                            },
+                            cancellation.clone(),
+                        )
+                        .await?;
+                    for child in page.entries.into_iter().rev() {
+                        let child_destination = destination
+                            .join(&child.name)
+                            .map_err(|error| ExecutionError::Failed(error.to_string()))?;
+                        stack.push((child, child_destination));
+                    }
+                    if !page.has_more {
+                        break;
+                    }
+                    continuation_token = page.continuation_token;
+                }
+            }
+        }
+        *self.planned.lock().unwrap_or_else(|e| e.into_inner()) = planned;
+        *self.directories.lock().unwrap_or_else(|e| e.into_inner()) = directories;
+        Ok(OperationPlan::new(items))
+    }
+
+    async fn execute(
+        &self,
+        operation: &Operation,
+        item: &PlanItem,
+        cancellation: &CancellationToken,
+    ) -> Result<(), ExecutionError> {
+        let planned = self
+            .planned
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .get(&item.entry.location.uri)
+            .cloned()
+            .ok_or_else(|| ExecutionError::Failed("copy plan entry is missing".into()))?;
+        let result = if planned.kind == EntryKind::Directory {
+            let parent = planned
+                .destination
+                .parent()
+                .map_err(|error| ExecutionError::Failed(error.to_string()))?
+                .ok_or_else(|| ExecutionError::Failed("copy destination has no parent".into()))?;
+            let name = planned
+                .destination
+                .name()
+                .map_err(|error| ExecutionError::Failed(error.to_string()))?;
+            self.destination_provider
+                .create_directory(&parent, &name, cancellation.clone())
+                .await
+                .map(|_| ())
+                .map_err(ExecutionError::from)
+        } else if planned.kind == EntryKind::Symlink {
+            self.destination_provider
+                .copy_symlink(&item.entry, &planned.destination, cancellation.clone())
+                .await
+                .map(|_| ())
+                .map_err(ExecutionError::from)
+        } else {
+            let source_item = PlanItem::new(planned.source.clone(), item.bytes);
+            self.copy_file(operation, &source_item, &planned.destination, cancellation)
+                .await
+        };
+        match result {
+            Err(error) if self.continue_on_error && !planned.is_root => {
+                Err(ExecutionError::Warning {
+                    entry: item.entry.clone(),
+                    message: error.to_string(),
+                })
+            }
+            other => other,
+        }
+    }
+
+    async fn cleanup_partial(&self, _operation: &Operation) -> Result<(), ExecutionError> {
+        let temporary = self
+            .temporary
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .take();
+        if let Some(temporary) = temporary {
+            self.destination_provider
+                .discard_copy(&temporary, CancellationToken::new())
+                .await?;
+        }
+        Ok(())
+    }
+
+    async fn finish(
+        &self,
+        _operation: &Operation,
+        cancellation: &CancellationToken,
+    ) -> Result<(), ExecutionError> {
+        let mut directories = self
+            .directories
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone();
+        directories.reverse();
+        for (source, destination) in directories {
+            self.destination_provider
+                .preserve_metadata(&source, &destination, cancellation.clone())
+                .await?;
+        }
+        Ok(())
+    }
+}
+
+impl CopyExecutor {
+    async fn copy_file(
+        &self,
+        operation: &Operation,
+        item: &PlanItem,
+        final_destination: &Location,
+        cancellation: &CancellationToken,
+    ) -> Result<(), ExecutionError> {
+        let destination_directory = final_destination
+            .parent()
+            .map_err(|error| ExecutionError::Failed(error.to_string()))?
+            .ok_or_else(|| ExecutionError::Failed("copy destination has no parent".into()))?;
         let temporary = self
             .destination_directory
             .join(&format!(".fm-copy-{}", Uuid::new_v4()))
@@ -536,17 +1288,17 @@ impl OperationExecutor for CopyFileExecutor {
             let mut buffer = vec![0_u8; 128 * 1024];
             loop {
                 if cancellation.is_cancelled() {
-                    return Ok(());
+                    return Err(fm_vfs::VfsError::Cancelled.into());
                 }
                 let read = tokio::select! {
-                    () = cancellation.cancelled() => return Ok(()),
+                    () = cancellation.cancelled() => return Err(fm_vfs::VfsError::Cancelled.into()),
                     result = reader.read(&mut buffer) => result.map_err(copy_stream_error)?,
                 };
                 if read == 0 {
                     break;
                 }
                 tokio::select! {
-                    () = cancellation.cancelled() => return Ok(()),
+                    () = cancellation.cancelled() => return Err(fm_vfs::VfsError::Cancelled.into()),
                     result = writer.write_all(&buffer[..read]) => result.map_err(copy_stream_error)?,
                 }
             }
@@ -554,14 +1306,11 @@ impl OperationExecutor for CopyFileExecutor {
             drop(writer);
         }
         if cancellation.is_cancelled() {
-            return Ok(());
+            return Err(fm_vfs::VfsError::Cancelled.into());
         }
 
         let overwrite = operation.conflict_policy == fm_operations::ConflictPolicy::Overwrite;
-        let mut destination = self
-            .destination_directory
-            .join(&name)
-            .map_err(|error| ExecutionError::Failed(error.to_string()))?;
+        let mut destination = final_destination.clone();
         let mut suffix = 1_u32;
         loop {
             match self
@@ -582,8 +1331,10 @@ impl OperationExecutor for CopyFileExecutor {
                 Err(fm_vfs::VfsError::AlreadyExists { .. })
                     if operation.conflict_policy == fm_operations::ConflictPolicy::RenameNew =>
                 {
-                    destination = self
-                        .destination_directory
+                    let name = final_destination
+                        .name()
+                        .map_err(|error| ExecutionError::Failed(error.to_string()))?;
+                    destination = destination_directory
                         .join(&copy_name(&name, suffix))
                         .map_err(|error| ExecutionError::Failed(error.to_string()))?;
                     suffix = suffix.saturating_add(1);
@@ -592,20 +1343,6 @@ impl OperationExecutor for CopyFileExecutor {
             }
         }
         *self.temporary.lock().unwrap_or_else(|e| e.into_inner()) = None;
-        Ok(())
-    }
-
-    async fn cleanup_partial(&self, _operation: &Operation) -> Result<(), ExecutionError> {
-        let temporary = self
-            .temporary
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .take();
-        if let Some(temporary) = temporary {
-            self.destination_provider
-                .discard_copy(&temporary, CancellationToken::new())
-                .await?;
-        }
         Ok(())
     }
 }
@@ -844,6 +1581,17 @@ fn operation_dto(operation: Operation) -> OperationDto {
         created_at: operation.created_at,
         started_at: operation.started_at,
         completed_at: operation.completed_at,
+        errors: operation
+            .errors
+            .into_iter()
+            .map(|error| fm_transport_dto::OperationEntryErrorDto {
+                entry: fm_transport_dto::EntryRefDto {
+                    id: error.entry.id.into(),
+                    location: error.entry.location.into(),
+                },
+                message: error.message,
+            })
+            .collect(),
     }
 }
 

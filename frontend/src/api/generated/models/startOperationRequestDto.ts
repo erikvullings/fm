@@ -5,6 +5,7 @@
 import type { LocationDto } from './locationDto';
 import type { OperationConflictPolicyDto } from './operationConflictPolicyDto';
 import type { OperationKindDto } from './operationKindDto';
+import type { SymlinkPolicyDto } from './symlinkPolicyDto';
 
 /**
  * A request to start one backend-owned semantic operation.
@@ -20,8 +21,14 @@ export interface StartOperationRequestDto {
      * @nullable
      */
   name?: string | null;
+  /** The user explicitly allowed deletion of read-only entries. */
+  overrideReadOnly?: boolean;
+  /** The user explicitly confirmed an irreversible permanent delete. */
+  permanentDeleteConfirmed?: boolean;
   /** Provider-neutral source locations. */
   sources: LocationDto[];
+  /** Policy for symbolic links encountered during recursive copying. */
+  symlinkPolicy?: SymlinkPolicyDto;
   /** Semantic operation discriminator. `type` is the stable JSON field name. */
   type: OperationKindDto;
 }

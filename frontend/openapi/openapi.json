@@ -116,6 +116,7 @@
       "ConflictResolutionDto": {
         "description": "User decision for a pending conflict.",
         "enum": [
+          "confirm",
           "skip",
           "overwrite",
           "renameNew",
@@ -968,6 +969,13 @@
               }
             ]
           },
+          "errors": {
+            "description": "Entry-scoped failures that did not abort the operation.",
+            "items": {
+              "$ref": "#/components/schemas/OperationEntryErrorDto"
+            },
+            "type": "array"
+          },
           "id": {
             "description": "Stable operation identifier.",
             "format": "uuid",
@@ -1008,7 +1016,26 @@
           "sources",
           "progress",
           "conflictPolicy",
-          "createdAt"
+          "createdAt",
+          "errors"
+        ],
+        "type": "object"
+      },
+      "OperationEntryErrorDto": {
+        "description": "One non-fatal failure associated with a planned entry.",
+        "properties": {
+          "entry": {
+            "$ref": "#/components/schemas/EntryRefDto",
+            "description": "Entry that could not be processed."
+          },
+          "message": {
+            "description": "Sanitized error message.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "entry",
+          "message"
         ],
         "type": "object"
       },
@@ -1555,12 +1582,24 @@
               "null"
             ]
           },
+          "overrideReadOnly": {
+            "description": "The user explicitly allowed deletion of read-only entries.",
+            "type": "boolean"
+          },
+          "permanentDeleteConfirmed": {
+            "description": "The user explicitly confirmed an irreversible permanent delete.",
+            "type": "boolean"
+          },
           "sources": {
             "description": "Provider-neutral source locations.",
             "items": {
               "$ref": "#/components/schemas/LocationDto"
             },
             "type": "array"
+          },
+          "symlinkPolicy": {
+            "$ref": "#/components/schemas/SymlinkPolicyDto",
+            "description": "Policy for symbolic links encountered during recursive copying."
           },
           "type": {
             "$ref": "#/components/schemas/OperationKindDto",
@@ -1573,6 +1612,14 @@
           "conflictPolicy"
         ],
         "type": "object"
+      },
+      "SymlinkPolicyDto": {
+        "description": "Controls recursive-copy handling of symbolic links.",
+        "enum": [
+          "copyLink",
+          "copyTarget"
+        ],
+        "type": "string"
       },
       "TabStateDto": {
         "description": "A single tab: a location, its navigation history and its view configuration.",

@@ -5,6 +5,7 @@
 import type { EntryRefDto } from './entryRefDto';
 import type { LocationDto } from './locationDto';
 import type { OperationConflictPolicyDto } from './operationConflictPolicyDto';
+import type { OperationEntryErrorDto } from './operationEntryErrorDto';
 import type { OperationKindDto } from './operationKindDto';
 import type { OperationProgressDto } from './operationProgressDto';
 import type { OperationStateDto } from './operationStateDto';
@@ -23,6 +24,8 @@ export interface OperationDto {
   /** Acceptance timestamp. */
   createdAt: string;
   destination?: null | LocationDto;
+  /** Entry-scoped failures that did not abort the operation. */
+  errors: OperationEntryErrorDto[];
   /** Stable operation identifier. */
   id: string;
   /** Latest progress. */

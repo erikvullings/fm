@@ -54,10 +54,13 @@ export interface StartOperationRequest {
   conflictPolicy: ConflictPolicy;
   name?: string;
   createIntermediateDirectories?: boolean;
+  symlinkPolicy?: 'copyLink' | 'copyTarget';
+  permanentDeleteConfirmed?: boolean;
+  overrideReadOnly?: boolean;
 }
 
 /** Submits the user's decision for a queued conflict (spec §17). */
-export type ConflictResolution = 'skip' | 'overwrite' | 'renameNew' | 'cancelOperation';
+export type ConflictResolution = 'confirm' | 'skip' | 'overwrite' | 'renameNew' | 'cancelOperation';
 
 export interface ResolveConflictRequest {
   operationId: OperationId;

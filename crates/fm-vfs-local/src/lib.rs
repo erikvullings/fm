@@ -58,11 +58,10 @@ impl FileSystemProvider for LocalFileSystemProvider {
             | ProviderCapabilities::RENAME
             | ProviderCapabilities::READ
             | ProviderCapabilities::WRITE
+            | ProviderCapabilities::SERVER_SIDE_COPY
             | ProviderCapabilities::SET_TIMESTAMPS
             | ProviderCapabilities::SET_PERMISSIONS;
-        #[cfg(target_os = "macos")]
-        let capabilities = capabilities | ProviderCapabilities::SERVER_SIDE_COPY;
-        capabilities
+        capabilities | ProviderCapabilities::MOVE | ProviderCapabilities::DELETE
     }
 
     async fn list(
@@ -155,6 +154,21 @@ impl FileSystemProvider for LocalFileSystemProvider {
             archive: None,
             plugin_fields: BTreeMap::new(),
         })
+    }
+
+    async fn inspect(
+        &self,
+        entry: &EntryRef,
+        cancellation: CancellationToken,
+    ) -> Result<EntrySummary, VfsError> {
+        if cancellation.is_cancelled() {
+            return Err(VfsError::Cancelled);
+        }
+        let path = entry
+            .location
+            .to_native_path()
+            .map_err(|_| invalid_location(&entry.location))?;
+        summarize_path(&path, &entry.location).await
     }
 
     async fn file_size(
@@ -263,11 +277,36 @@ impl FileSystemProvider for LocalFileSystemProvider {
 
     async fn remove(
         &self,
-        _entry: &EntryRef,
-        _options: RemoveOptions,
-        _cancellation: CancellationToken,
+        entry: &EntryRef,
+        options: RemoveOptions,
+        cancellation: CancellationToken,
     ) -> Result<(), VfsError> {
-        unsupported(ProviderCapabilities::DELETE)
+        if cancellation.is_cancelled() {
+            return Err(VfsError::Cancelled);
+        }
+        if options.use_trash {
+            return unsupported(ProviderCapabilities::TRASH);
+        }
+        let path = entry
+            .location
+            .to_native_path()
+            .map_err(|_| invalid_location(&entry.location))?;
+        let metadata = tokio::fs::symlink_metadata(&path)
+            .await
+            .map_err(|error| map_io_error(error, &entry.location.uri))?;
+        if metadata.file_type().is_symlink() || metadata.is_file() {
+            tokio::fs::remove_file(path)
+                .await
+                .map_err(|error| map_io_error(error, &entry.location.uri))
+        } else if options.recursive {
+            tokio::fs::remove_dir_all(path)
+                .await
+                .map_err(|error| map_io_error(error, &entry.location.uri))
+        } else {
+            tokio::fs::remove_dir(path)
+                .await
+                .map_err(|error| map_io_error(error, &entry.location.uri))
+        }
     }
 
     async fn open_read(
@@ -365,22 +404,30 @@ impl FileSystemProvider for LocalFileSystemProvider {
         if cancellation.is_cancelled() {
             return Err(VfsError::Cancelled);
         }
+        let source_path = source
+            .location
+            .to_native_path()
+            .map_err(|_| invalid_location(&source.location))?;
+        let temporary_path = temporary
+            .to_native_path()
+            .map_err(|_| invalid_location(temporary))?;
+        let source_metadata = tokio::fs::metadata(&source_path)
+            .await
+            .map_err(|error| map_io_error(error, &source.location.uri))?;
+        if source_metadata.permissions().readonly() {
+            return Ok(false);
+        }
         #[cfg(target_os = "macos")]
-        {
-            let source_path = source
-                .location
-                .to_native_path()
-                .map_err(|_| invalid_location(&source.location))?;
-            let temporary_path = temporary
-                .to_native_path()
-                .map_err(|_| invalid_location(temporary))?;
+        if source_metadata.len() >= 1024 * 1024 {
+            let clone_source = source_path.clone();
+            let clone_temporary = temporary_path.clone();
             let result = tokio::task::spawn_blocking(move || {
                 std::process::Command::new("cp")
                     .arg("-c")
-                    .arg(source_path)
-                    .arg(&temporary_path)
+                    .arg(clone_source)
+                    .arg(&clone_temporary)
                     .status()
-                    .map(|status| (status.success(), temporary_path))
+                    .map(|status| (status.success(), clone_temporary))
             })
             .await
             .map_err(|error| VfsError::Io {
@@ -389,14 +436,14 @@ impl FileSystemProvider for LocalFileSystemProvider {
             .map_err(|error| map_io_error(error, &temporary.uri))?;
             if !result.0 {
                 let _ = tokio::fs::remove_file(result.1).await;
+            } else {
+                return Ok(true);
             }
-            Ok(result.0)
         }
-        #[cfg(not(target_os = "macos"))]
-        {
-            let _ = (source, temporary);
-            Ok(false)
-        }
+        tokio::fs::copy(source_path, temporary_path)
+            .await
+            .map_err(|error| map_io_error(error, &temporary.uri))?;
+        Ok(true)
     }
 
     async fn discard_copy(
@@ -412,6 +459,107 @@ impl FileSystemProvider for LocalFileSystemProvider {
             Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
             Err(error) => Err(map_io_error(error, &temporary.uri)),
         }
+    }
+
+    async fn copy_symlink(
+        &self,
+        source: &EntryRef,
+        destination: &Location,
+        cancellation: CancellationToken,
+    ) -> Result<EntryRef, VfsError> {
+        if cancellation.is_cancelled() {
+            return Err(VfsError::Cancelled);
+        }
+        let source_path = source
+            .location
+            .to_native_path()
+            .map_err(|_| invalid_location(&source.location))?;
+        let destination_path = destination
+            .to_native_path()
+            .map_err(|_| invalid_location(destination))?;
+        let target = tokio::fs::read_link(&source_path)
+            .await
+            .map_err(|error| map_io_error(error, &source.location.uri))?;
+        let destination_clone = destination.clone();
+        let symlink_path = destination_path.clone();
+        tokio::task::spawn_blocking(move || create_symlink(&target, &symlink_path))
+            .await
+            .map_err(|error| VfsError::Io {
+                message: error.to_string(),
+            })?
+            .map_err(|error| map_io_error(error, &destination_clone.uri))?;
+        let metadata = tokio::fs::symlink_metadata(destination_path)
+            .await
+            .map_err(|error| map_io_error(error, &destination.uri))?;
+        Ok(EntryRef {
+            id: stable_entry_id(&metadata, destination),
+            location: destination.clone(),
+        })
+    }
+
+    async fn resolve_symlink(
+        &self,
+        source: &EntryRef,
+        cancellation: CancellationToken,
+    ) -> Result<EntrySummary, VfsError> {
+        if cancellation.is_cancelled() {
+            return Err(VfsError::Cancelled);
+        }
+        let source_path = source
+            .location
+            .to_native_path()
+            .map_err(|_| invalid_location(&source.location))?;
+        let target_path = tokio::fs::canonicalize(source_path)
+            .await
+            .map_err(|error| map_io_error(error, &source.location.uri))?;
+        let target_location = Location::from_native_path(&target_path)
+            .map_err(|_| invalid_location(&source.location))?;
+        summarize_path(&target_path, &target_location).await
+    }
+
+    async fn preserve_metadata(
+        &self,
+        source: &EntryRef,
+        destination: &EntryRef,
+        cancellation: CancellationToken,
+    ) -> Result<(), VfsError> {
+        if cancellation.is_cancelled() {
+            return Err(VfsError::Cancelled);
+        }
+        let source_path = source
+            .location
+            .to_native_path()
+            .map_err(|_| invalid_location(&source.location))?;
+        let destination_path = destination
+            .location
+            .to_native_path()
+            .map_err(|_| invalid_location(&destination.location))?;
+        preserve_entry_metadata(&source_path, &destination_path, &source.location.uri).await
+    }
+
+    async fn same_filesystem(
+        &self,
+        source: &EntryRef,
+        destination_directory: &Location,
+        cancellation: CancellationToken,
+    ) -> Result<bool, VfsError> {
+        if cancellation.is_cancelled() {
+            return Err(VfsError::Cancelled);
+        }
+        let source_path = source
+            .location
+            .to_native_path()
+            .map_err(|_| invalid_location(&source.location))?;
+        let destination_path = destination_directory
+            .to_native_path()
+            .map_err(|_| invalid_location(destination_directory))?;
+        let source_metadata = tokio::fs::symlink_metadata(source_path)
+            .await
+            .map_err(|error| map_io_error(error, &source.location.uri))?;
+        let destination_metadata = tokio::fs::symlink_metadata(destination_path)
+            .await
+            .map_err(|error| map_io_error(error, &destination_directory.uri))?;
+        Ok(same_device(&source_metadata, &destination_metadata))
     }
 
     async fn watch(
@@ -488,37 +636,86 @@ async fn preserve_copy_metadata(
     tokio::task::spawn_blocking(move || {
         let metadata =
             std::fs::metadata(&source).map_err(|error| map_io_error(error, &location))?;
-        std::fs::set_permissions(&temporary, metadata.permissions())
-            .map_err(|error| map_io_error(error, &location))?;
-        let source_file =
-            std::fs::File::open(&source).map_err(|error| map_io_error(error, &location))?;
         let destination_file = std::fs::OpenOptions::new()
             .write(true)
             .open(&temporary)
-            .map_err(|error| map_io_error(error, &location))?;
-        let source_times = source_file
-            .metadata()
             .map_err(|error| map_io_error(error, &location))?;
         destination_file
             .set_times(
                 std::fs::FileTimes::new()
                     .set_accessed(
-                        source_times
+                        metadata
                             .accessed()
                             .map_err(|error| map_io_error(error, &location))?,
                     )
                     .set_modified(
-                        source_times
+                        metadata
                             .modified()
                             .map_err(|error| map_io_error(error, &location))?,
                     ),
             )
+            .map_err(|error| map_io_error(error, &location))?;
+        drop(destination_file);
+        std::fs::set_permissions(&temporary, metadata.permissions())
             .map_err(|error| map_io_error(error, &location))
     })
     .await
     .map_err(|error| VfsError::Io {
         message: error.to_string(),
     })?
+}
+
+async fn preserve_entry_metadata(
+    source: &Path,
+    destination: &Path,
+    location: &str,
+) -> Result<(), VfsError> {
+    let source = source.to_owned();
+    let destination = destination.to_owned();
+    let location = location.to_owned();
+    tokio::task::spawn_blocking(move || {
+        let metadata =
+            std::fs::metadata(&source).map_err(|error| map_io_error(error, &location))?;
+        let destination_file =
+            std::fs::File::open(&destination).map_err(|error| map_io_error(error, &location))?;
+        destination_file
+            .set_times(
+                std::fs::FileTimes::new()
+                    .set_accessed(
+                        metadata
+                            .accessed()
+                            .map_err(|error| map_io_error(error, &location))?,
+                    )
+                    .set_modified(
+                        metadata
+                            .modified()
+                            .map_err(|error| map_io_error(error, &location))?,
+                    ),
+            )
+            .map_err(|error| map_io_error(error, &location))?;
+        drop(destination_file);
+        std::fs::set_permissions(&destination, metadata.permissions())
+            .map_err(|error| map_io_error(error, &location))?;
+        Ok(())
+    })
+    .await
+    .map_err(|error| VfsError::Io {
+        message: error.to_string(),
+    })?
+}
+
+#[cfg(unix)]
+fn create_symlink(target: &Path, destination: &Path) -> io::Result<()> {
+    std::os::unix::fs::symlink(target, destination)
+}
+
+#[cfg(windows)]
+fn create_symlink(target: &Path, destination: &Path) -> io::Result<()> {
+    if target.is_dir() {
+        std::os::windows::fs::symlink_dir(target, destination)
+    } else {
+        std::os::windows::fs::symlink_file(target, destination)
+    }
 }
 
 async fn summarize_entry(
@@ -566,6 +763,39 @@ async fn summarize_entry(
     })
 }
 
+async fn summarize_path(path: &Path, location: &Location) -> Result<EntrySummary, VfsError> {
+    let name = location.name().map_err(|_| invalid_location(location))?;
+    let metadata = tokio::fs::symlink_metadata(path)
+        .await
+        .map_err(|error| map_io_error(error, &location.uri))?;
+    let file_type = metadata.file_type();
+    let kind = if is_link(&file_type, &metadata) {
+        EntryKind::Symlink
+    } else if file_type.is_dir() {
+        EntryKind::Directory
+    } else {
+        EntryKind::File
+    };
+    Ok(EntrySummary {
+        id: stable_entry_id(&metadata, location),
+        location: location.clone(),
+        extension: Path::new(&name)
+            .extension()
+            .and_then(|extension| extension.to_str())
+            .map(str::to_owned),
+        hidden: is_hidden(&name, &metadata),
+        name,
+        kind,
+        size: (kind == EntryKind::File).then_some(metadata.len()),
+        modified_at: metadata.modified().ok().map(DateTime::<Utc>::from),
+        created_at: metadata.created().ok().map(DateTime::<Utc>::from),
+        read_only: metadata.permissions().readonly(),
+        mime_type: None,
+        icon_key: None,
+        metadata_revision: 0,
+    })
+}
+
 fn stable_entry_id(metadata: &std::fs::Metadata, _location: &Location) -> EntryId {
     #[cfg(unix)]
     let identity = {
@@ -585,6 +815,23 @@ fn stable_entry_id(metadata: &std::fs::Metadata, _location: &Location) -> EntryI
     let identity = format!("local:{}", _location.uri);
 
     EntryId::from(Uuid::new_v5(&Uuid::NAMESPACE_URL, identity.as_bytes()))
+}
+
+#[cfg(unix)]
+fn same_device(left: &std::fs::Metadata, right: &std::fs::Metadata) -> bool {
+    use std::os::unix::fs::MetadataExt;
+    left.dev() == right.dev()
+}
+
+#[cfg(windows)]
+fn same_device(left: &std::fs::Metadata, right: &std::fs::Metadata) -> bool {
+    use std::os::windows::fs::MetadataExt;
+    left.volume_serial_number() == right.volume_serial_number()
+}
+
+#[cfg(not(any(unix, windows)))]
+fn same_device(_left: &std::fs::Metadata, _right: &std::fs::Metadata) -> bool {
+    false
 }
 
 fn watch_error(error: notify::Error, location: &Location) -> VfsError {

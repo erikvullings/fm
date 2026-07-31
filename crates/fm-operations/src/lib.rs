@@ -5,13 +5,16 @@
 //! tasks 0037 through 0044.
 
 mod model;
+mod naming;
 mod progress;
 mod safety;
 mod scheduler;
 
 pub use model::{
-    ConflictPolicy, Operation, OperationKind, OperationProgress, OperationState, TransitionError,
+    ConflictPolicy, Operation, OperationEntryError, OperationKind, OperationProgress,
+    OperationState, TransitionError,
 };
+pub use naming::duplicate_name;
 pub use progress::ProgressPublisher;
 pub use safety::{CycleDetector, EntryType, SafetyError, validate_paths, validate_replacement};
 pub use scheduler::{

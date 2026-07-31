@@ -1,6 +1,6 @@
 # 0041 Operation: move files and directories
 
-Status: open
+Status: done
 Priority: high
 Owner: unassigned
 Agent: unassigned
@@ -30,4 +30,8 @@ Depends on: 0040
 - Reuse 0039/0040 for the copy half; do not fork the logic.
 
 ## Agent Notes
-- Not started.
+- 2026-07-31: Added multi-selection move, same-filesystem rename, and strict recursive
+  copy/verify/delete fallback. Integration tests force the fallback and prove collision failure and
+  cancellation retain the source. F6 targets the other pane.
+- 2026-07-31: The real cross-volume path is platform-untested as requested; tests use the documented
+  test-only fallback flag.

@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use fm_domain::{EntryMetadata, Location, ProviderId};
+use fm_domain::{EntryMetadata, EntrySummary, Location, ProviderId};
 use tokio_util::sync::CancellationToken;
 
 use crate::{
@@ -35,6 +35,18 @@ pub trait FileSystemProvider: Send + Sync {
         entry: &EntryRef,
         cancellation: CancellationToken,
     ) -> Result<EntryMetadata, VfsError>;
+
+    /// Inspects one entry without following symbolic links.
+    async fn inspect(
+        &self,
+        entry: &EntryRef,
+        cancellation: CancellationToken,
+    ) -> Result<EntrySummary, VfsError> {
+        let _ = (entry, cancellation);
+        Err(VfsError::UnsupportedCapability {
+            capability: ProviderCapabilities::LIST,
+        })
+    }
 
     /// Returns a regular file's logical byte length for operation planning.
     async fn file_size(
@@ -125,6 +137,55 @@ pub trait FileSystemProvider: Send + Sync {
         Err(VfsError::UnsupportedCapability {
             capability: ProviderCapabilities::WRITE,
         })
+    }
+
+    /// Copies a symbolic link itself rather than following its target.
+    async fn copy_symlink(
+        &self,
+        source: &EntryRef,
+        destination: &Location,
+        cancellation: CancellationToken,
+    ) -> Result<EntryRef, VfsError> {
+        let _ = (source, destination, cancellation);
+        Err(VfsError::UnsupportedCapability {
+            capability: ProviderCapabilities::WRITE,
+        })
+    }
+
+    /// Resolves a symbolic link for an explicit copy-target request.
+    async fn resolve_symlink(
+        &self,
+        source: &EntryRef,
+        cancellation: CancellationToken,
+    ) -> Result<EntrySummary, VfsError> {
+        let _ = (source, cancellation);
+        Err(VfsError::UnsupportedCapability {
+            capability: ProviderCapabilities::READ,
+        })
+    }
+
+    /// Applies supported timestamps and permissions from one entry to another.
+    async fn preserve_metadata(
+        &self,
+        source: &EntryRef,
+        destination: &EntryRef,
+        cancellation: CancellationToken,
+    ) -> Result<(), VfsError> {
+        let _ = (source, destination, cancellation);
+        Err(VfsError::UnsupportedCapability {
+            capability: ProviderCapabilities::SET_TIMESTAMPS,
+        })
+    }
+
+    /// Reports whether an atomic rename can span the two locations.
+    async fn same_filesystem(
+        &self,
+        source: &EntryRef,
+        destination_directory: &Location,
+        cancellation: CancellationToken,
+    ) -> Result<bool, VfsError> {
+        let _ = (source, destination_directory, cancellation);
+        Ok(false)
     }
 
     /// Watches a location for incremental directory changes.

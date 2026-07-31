@@ -23,6 +23,7 @@ import {
   dismissOperation,
   reduceOperationEvents,
 } from '../features/operations/operation-state';
+import { PermanentDeleteDialog } from '../features/operations/permanent-delete-dialog';
 import { isParentEntry, withParentEntry } from '../features/panes/parent-entry';
 import type { SelectionPlatform } from '../features/selection/keybindings';
 import {
@@ -322,6 +323,46 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       }
       return;
     }
+    if (event.key === 'F6') {
+      const active = activeDirectory();
+      const selection = active === undefined ? undefined : selections.get(active.paneId);
+      const directory = active === undefined ? undefined : directories.get(active.paneId);
+      const selected = directory?.entries.filter(
+        (entry) => selection?.selectedEntryIds.includes(entry.id) === true,
+      );
+      const otherPaneId = workspace?.paneOrder.find((paneId) => paneId !== active?.paneId);
+      const destination =
+        otherPaneId === undefined ? undefined : directories.get(otherPaneId)?.location;
+      if (selected !== undefined && selected.length > 0 && destination !== undefined) {
+        event.preventDefault();
+        void attrsClient.startOperation({
+          type: 'move',
+          sources: selected.map((entry) => entry.location),
+          destination,
+          conflictPolicy: 'ask',
+        });
+      }
+      return;
+    }
+    if (event.key === 'Delete' && event.shiftKey) {
+      const active = activeDirectory();
+      const selection = active === undefined ? undefined : selections.get(active.paneId);
+      const directory = active === undefined ? undefined : directories.get(active.paneId);
+      const selected = directory?.entries.filter(
+        (entry) => selection?.selectedEntryIds.includes(entry.id) === true,
+      );
+      if (selected !== undefined && selected.length > 0) {
+        event.preventDefault();
+        void attrsClient.startOperation({
+          type: 'delete',
+          sources: selected.map((entry) => entry.location),
+          conflictPolicy: 'ask',
+          permanentDeleteConfirmed: currentSettings?.confirmPermanentDelete === false,
+          overrideReadOnly: false,
+        });
+      }
+      return;
+    }
     if (event.key === 'F7' && !createDirectoryOpen && activeDirectory() !== undefined) {
       event.preventDefault();
       createDirectoryOpen = true;
@@ -580,8 +621,12 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       document.documentElement.style.removeProperty('--fm-row-height');
     },
 
-    view: ({ attrs }) =>
-      m('.fm-app-shell', [
+    view: ({ attrs }) => {
+      const pendingDelete = Object.values(operations.byId).find(
+        (operation) =>
+          operation?.kind === 'delete' && operation.state === 'waitingForConflictResolution',
+      );
+      return m('.fm-app-shell', [
         m('.fm-workspace-toolbar', [
           m('strong', workspace?.name ?? 'Workspace'),
           m('.fm-navigation-controls', { 'aria-label': 'Active pane navigation' }, [
@@ -653,6 +698,23 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
               });
           },
         }),
+        m(PermanentDeleteDialog, {
+          open: pendingDelete !== undefined,
+          itemCount: pendingDelete?.progress.totalItems ?? 0,
+          totalBytes: pendingDelete?.progress.totalBytes ?? 0,
+          onCancel: () => {
+            if (pendingDelete !== undefined) void attrs.client.cancelOperation(pendingDelete.id);
+          },
+          onConfirm: () => {
+            if (pendingDelete !== undefined) {
+              void attrs.client.resolveConflict({
+                operationId: pendingDelete.id,
+                resolution: 'confirm',
+                applyToAllSimilar: false,
+              });
+            }
+          },
+        }),
         m('.fm-function-key-bar', [
           m('span', 'F2 Rename'),
           m('span', 'F5 Copy'),
@@ -660,6 +722,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
           m('span', 'F7 New folder'),
           m('span', 'F8 Delete'),
         ]),
-      ]),
+      ]);
+    },
   };
 };

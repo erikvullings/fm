@@ -26,6 +26,25 @@ pub struct StartOperationRequestDto {
     /// Whether a multi-component create-directory name may create missing parents.
     #[serde(default)]
     pub create_intermediate_directories: bool,
+    /// Policy for symbolic links encountered during recursive copying.
+    #[serde(default)]
+    pub symlink_policy: SymlinkPolicyDto,
+    /// The user explicitly confirmed an irreversible permanent delete.
+    #[serde(default)]
+    pub permanent_delete_confirmed: bool,
+    /// The user explicitly allowed deletion of read-only entries.
+    #[serde(default)]
+    pub override_read_only: bool,
+}
+
+/// Controls recursive-copy handling of symbolic links.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[allow(missing_docs)]
+pub enum SymlinkPolicyDto {
+    #[default]
+    CopyLink,
+    CopyTarget,
 }
 
 /// Initial semantic operation kinds.
@@ -114,6 +133,18 @@ pub struct OperationDto {
     pub started_at: Option<DateTime<Utc>>,
     /// Terminal timestamp.
     pub completed_at: Option<DateTime<Utc>>,
+    /// Entry-scoped failures that did not abort the operation.
+    pub errors: Vec<OperationEntryErrorDto>,
+}
+
+/// One non-fatal failure associated with a planned entry.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct OperationEntryErrorDto {
+    /// Entry that could not be processed.
+    pub entry: EntryRefDto,
+    /// Sanitized error message.
+    pub message: String,
 }
 
 /// Stable provider-neutral reference included in operation snapshots.
@@ -141,6 +172,7 @@ pub struct ResolveOperationConflictRequestDto {
 #[serde(rename_all = "camelCase")]
 #[allow(missing_docs)]
 pub enum ConflictResolutionDto {
+    Confirm,
     Skip,
     Overwrite,
     RenameNew,

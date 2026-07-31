@@ -45,6 +45,9 @@ async fn rename(
                 conflict_policy: OperationConflictPolicyDto::Ask,
                 name: None,
                 create_intermediate_directories: false,
+                symlink_policy: Default::default(),
+                permanent_delete_confirmed: false,
+                override_read_only: false,
             },
             None,
         )

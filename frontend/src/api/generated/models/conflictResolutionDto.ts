@@ -10,6 +10,7 @@ export type ConflictResolutionDto = typeof ConflictResolutionDto[keyof typeof Co
 
 
 export const ConflictResolutionDto = {
+  confirm: 'confirm',
   skip: 'skip',
   overwrite: 'overwrite',
   renameNew: 'renameNew',

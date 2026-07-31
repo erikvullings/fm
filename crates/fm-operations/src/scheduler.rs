@@ -72,6 +72,14 @@ pub enum ExecutionError {
     /// Provider-neutral filesystem failure.
     #[error(transparent)]
     Provider(#[from] fm_vfs::VfsError),
+    /// An entry failed but independent plan items may continue.
+    #[error("{message}")]
+    Warning {
+        /// Entry that failed.
+        entry: EntryRef,
+        /// Sanitized failure text.
+        message: String,
+    },
 }
 
 /// Planning/execution boundary implemented by future operation-kind tasks.
@@ -94,6 +102,20 @@ pub trait OperationExecutor: Send + Sync + 'static {
 
     /// Removes any private/temporary destination after cancellation or failure.
     async fn cleanup_partial(&self, operation: &Operation) -> Result<(), ExecutionError>;
+
+    /// Applies post-order finalization after all plan items have succeeded.
+    async fn finish(
+        &self,
+        _operation: &Operation,
+        _cancellation: &CancellationToken,
+    ) -> Result<(), ExecutionError> {
+        Ok(())
+    }
+
+    /// Whether execution must wait for explicit user confirmation after planning.
+    fn requires_confirmation(&self) -> bool {
+        false
+    }
 }
 
 /// Scheduler lookup, transition, or execution failure.
@@ -302,11 +324,24 @@ impl Scheduler {
             let mut operation = job.operation.lock().unwrap_or_else(|e| e.into_inner());
             operation.progress.total_items = plan.total_items;
             operation.progress.total_bytes = plan.total_bytes;
-            self.transition_and_publish(&mut operation, OperationState::Running)?;
+            let state = if executor.requires_confirmation() {
+                OperationState::WaitingForConflictResolution
+            } else {
+                OperationState::Running
+            };
+            self.publish_progress(&operation);
+            self.transition_and_publish(&mut operation, state)?;
+        }
+        if executor.requires_confirmation() {
+            self.wait_while_blocked(&job).await;
+            if job.cancellation.is_cancelled() {
+                self.finish_cancelled(&job, executor.as_ref()).await?;
+                return Ok(());
+            }
         }
         let mut progress = ProgressPublisher::new(Duration::from_millis(100), 0.25);
         for item in &plan.items {
-            self.wait_while_paused(&job).await;
+            self.wait_while_blocked(&job).await;
             if job.cancellation.is_cancelled() {
                 self.finish_cancelled(&job, executor.as_ref()).await?;
                 return Ok(());
@@ -317,31 +352,61 @@ impl Scheduler {
                 .unwrap_or_else(|e| e.into_inner())
                 .clone();
             let execution = executor.execute(&snapshot, item, &job.cancellation).await;
+            if job.cancellation.is_cancelled() && execution.is_err() {
+                self.finish_cancelled(&job, executor.as_ref()).await?;
+                return Ok(());
+            }
+            let mut completed_bytes = item.bytes;
+            if let Err(error) = execution {
+                match error {
+                    ExecutionError::Warning { entry, message } => {
+                        job.operation
+                            .lock()
+                            .unwrap_or_else(|e| e.into_inner())
+                            .errors
+                            .push(crate::OperationEntryError { entry, message });
+                        completed_bytes = 0;
+                    }
+                    other => return Err(other.into()),
+                }
+            }
+            {
+                let mut operation = job.operation.lock().unwrap_or_else(|e| e.into_inner());
+                operation.progress.completed_items =
+                    operation.progress.completed_items.saturating_add(1);
+                operation.progress.completed_bytes = operation
+                    .progress
+                    .completed_bytes
+                    .saturating_add(completed_bytes);
+                operation.progress.current_entry = Some(item.entry.clone());
+                if let Some(rate) = progress.record(Instant::now(), completed_bytes) {
+                    operation.progress.bytes_per_second = rate.bytes_per_second;
+                    self.publish_progress(&operation);
+                }
+            }
             if job.cancellation.is_cancelled() {
                 self.finish_cancelled(&job, executor.as_ref()).await?;
                 return Ok(());
             }
-            execution?;
-            let mut operation = job.operation.lock().unwrap_or_else(|e| e.into_inner());
-            operation.progress.completed_items =
-                operation.progress.completed_items.saturating_add(1);
-            operation.progress.completed_bytes = operation
-                .progress
-                .completed_bytes
-                .saturating_add(item.bytes);
-            operation.progress.current_entry = Some(item.entry.clone());
-            if let Some(rate) = progress.record(Instant::now(), item.bytes) {
-                operation.progress.bytes_per_second = rate.bytes_per_second;
-                self.publish_progress(&operation);
-            }
         }
-        self.wait_while_paused(&job).await;
+        self.wait_while_blocked(&job).await;
         if job.cancellation.is_cancelled() {
             self.finish_cancelled(&job, executor.as_ref()).await?;
             return Ok(());
         }
+        let snapshot = job
+            .operation
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone();
+        executor.finish(&snapshot, &job.cancellation).await?;
         let mut operation = job.operation.lock().unwrap_or_else(|e| e.into_inner());
-        self.transition_and_publish(&mut operation, OperationState::Completed)?;
+        let terminal = if operation.errors.is_empty() {
+            OperationState::Completed
+        } else {
+            OperationState::CompletedWithWarnings
+        };
+        self.transition_and_publish(&mut operation, terminal)?;
         self.events.publish(
             EventAudience::Global,
             BackendEventPayload::OperationCompleted {
@@ -351,15 +416,16 @@ impl Scheduler {
         Ok(())
     }
 
-    async fn wait_while_paused(&self, job: &Job) {
+    async fn wait_while_blocked(&self, job: &Job) {
         loop {
             let resumed = job.resumed.notified();
-            if job
+            let state = job
                 .operation
                 .lock()
                 .unwrap_or_else(|e| e.into_inner())
-                .state
-                != OperationState::Paused
+                .state;
+            if state != OperationState::Paused
+                && state != OperationState::WaitingForConflictResolution
             {
                 return;
             }

@@ -27,6 +27,8 @@ pub struct Operation {
     pub started_at: Option<DateTime<Utc>>,
     /// Time a terminal state was reached.
     pub completed_at: Option<DateTime<Utc>>,
+    /// Entry-scoped failures that did not abort the whole operation.
+    pub errors: Vec<OperationEntryError>,
 }
 
 impl Operation {
@@ -49,6 +51,7 @@ impl Operation {
             created_at: Utc::now(),
             started_at: None,
             completed_at: None,
+            errors: Vec::new(),
         }
     }
 
@@ -70,6 +73,15 @@ impl Operation {
         }
         Ok(())
     }
+}
+
+/// One non-fatal per-entry operation failure.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OperationEntryError {
+    /// Entry that could not be processed.
+    pub entry: EntryRef,
+    /// Sanitized provider/application error.
+    pub message: String,
 }
 
 /// Operation lifecycle states from specification §17.
@@ -109,7 +121,10 @@ impl OperationState {
         matches!(
             (self, next),
             (Queued, Planning | Cancelling | Failed)
-                | (Planning, Running | Cancelling | Failed)
+                | (
+                    Planning,
+                    Running | WaitingForConflictResolution | Cancelling | Failed
+                )
                 | (
                     Running,
                     Paused

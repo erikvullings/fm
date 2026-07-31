@@ -537,6 +537,38 @@ async fn symbolic_links_are_flagged_and_never_followed() {
 
 #[cfg(unix)]
 #[tokio::test]
+async fn copies_a_symbolic_link_without_following_its_target() {
+    use std::os::unix::fs::symlink;
+
+    let root = tempdir().expect("temporary directory");
+    let target_path = root.path().join("target");
+    let source_path = root.path().join("source-link");
+    let destination_path = root.path().join("copied-link");
+    fs::write(&target_path, b"target contents").expect("create target");
+    symlink(&target_path, &source_path).expect("create source symlink");
+    let source_location = Location::from_native_path(&source_path).expect("source location");
+    let destination = Location::from_native_path(&destination_path).expect("destination location");
+
+    LocalFileSystemProvider::new()
+        .copy_symlink(
+            &EntryRef {
+                id: fm_domain::EntryId::new(),
+                location: source_location,
+            },
+            &destination,
+            CancellationToken::new(),
+        )
+        .await
+        .expect("copy symlink");
+
+    assert_eq!(
+        fs::read_link(destination_path).expect("read copied link"),
+        target_path
+    );
+}
+
+#[cfg(unix)]
+#[tokio::test]
 async fn unreadable_directories_return_permission_denied_where_enforced() {
     use std::os::unix::fs::PermissionsExt;
 
