@@ -39,6 +39,16 @@ pub struct EventEnvelope<T> {
     pub payload: T,
 }
 
+/// Serializes one backend envelope at the shared SSE/Tauri wire boundary.
+///
+/// Both hosts call this function so field omission, casing and JSON bytes
+/// cannot drift between transports.
+pub fn serialize_event_envelope(
+    envelope: &EventEnvelope<BackendEventPayload>,
+) -> Result<String, serde_json::Error> {
+    serde_json::to_string(envelope)
+}
+
 /// Provider-neutral location in event payloads.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

@@ -5,11 +5,13 @@
 //! below builds, so both exercise the exact same `Builder`.
 
 mod commands;
+mod event_stream;
 
 use std::sync::Arc;
 
 use fm_application::FileManagerService;
 use fm_transport_dto::RuntimeKindDto;
+use tauri::Manager;
 
 /// State injected into every Tauri command (spec §7: commands only call the
 /// service).
@@ -44,7 +46,17 @@ pub fn run() {
                     .to_path_buf(),
             )),
         })
+        .manage(event_stream::EventSubscriptionRegistry::default())
+        .on_window_event(|window, event| {
+            if matches!(event, tauri::WindowEvent::Destroyed) {
+                window
+                    .state::<event_stream::EventSubscriptionRegistry>()
+                    .unsubscribe_window(window.label());
+            }
+        })
         .invoke_handler(tauri::generate_handler![
+            commands::subscribe_events,
+            commands::unsubscribe_events,
             commands::get_runtime_capabilities,
             commands::get_settings,
             commands::update_settings,
@@ -85,7 +97,10 @@ mod tests {
                     settings_directory,
                 )),
             })
+            .manage(event_stream::EventSubscriptionRegistry::default())
             .invoke_handler(tauri::generate_handler![
+                commands::subscribe_events,
+                commands::unsubscribe_events,
                 commands::get_runtime_capabilities,
                 commands::get_settings,
                 commands::update_settings,

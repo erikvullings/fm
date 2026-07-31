@@ -2,7 +2,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const invoke = vi.fn();
 
+class MockChannel<T> {
+  constructor(public onmessage: (message: T) => void) {}
+}
+
 vi.mock('@tauri-apps/api/core', () => ({
+  Channel: MockChannel,
   invoke: (...args: unknown[]) => invoke(...args),
 }));
 
@@ -98,12 +103,16 @@ describe('TauriFileManagerClient', () => {
 
   describe('subscribe', () => {
     it('connects the Tauri event stream and forwards dispatched events to the listener', async () => {
+      invoke.mockResolvedValue('subscription-1');
       const client = new TauriFileManagerClient();
       const listener = vi.fn();
 
       const unsubscribe = await client.subscribe(listener);
 
       expect(typeof unsubscribe).toBe('function');
+      expect(invoke).toHaveBeenCalledWith('subscribe_events', {
+        onEvent: expect.any(MockChannel),
+      });
     });
   });
 });

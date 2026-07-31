@@ -228,7 +228,8 @@ describe('AppShell', () => {
   });
 
   it('reports the runtime it was given rather than a hard-coded default', () => {
-    mountShell('tauri');
+    const client = new MockFileManagerClient();
+    m.mount(root, { view: () => m(AppShell, { runtime: 'tauri', client }) });
 
     expect(root.textContent).toContain('tauri');
     expect(root.textContent).not.toContain('mock');

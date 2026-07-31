@@ -1082,6 +1082,7 @@ name = "fm-desktop"
 version = "0.1.0"
 dependencies = [
  "fm-application",
+ "fm-events",
  "fm-transport-dto",
  "serde",
  "serde_json",

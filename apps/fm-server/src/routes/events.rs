@@ -6,7 +6,9 @@ use axum::extract::{Query, State};
 use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::sse::Event;
 use axum::response::{IntoResponse, Response, Sse};
-use fm_events::{BackendEventPayload, EventAudience, SessionId, SubscriptionEvent};
+use fm_events::{
+    BackendEventPayload, EventAudience, SessionId, SubscriptionEvent, serialize_event_envelope,
+};
 use futures::stream;
 use serde::Deserialize;
 
@@ -64,7 +66,7 @@ pub(crate) async fn get_events(
                     Ok(SubscriptionEvent::Event(envelope)) => {
                         let name = envelope.payload.event_name();
                         let id = envelope.event_id.to_string();
-                        serde_json::to_string(&envelope)
+                        serialize_event_envelope(&envelope)
                             .map(|data| Event::default().event(name).id(id).data(data))
                     }
                     Ok(SubscriptionEvent::Gap {

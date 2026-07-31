@@ -68,8 +68,14 @@ Browser mode exposes that bus as one multiplexed `GET /api/v1/events` SSE connec
 carry the shared typed envelope and numeric replay ID, while observable named keep-alive events let
 the frontend detect stale connections. Reconnects resume through `Last-Event-ID` or the browser-safe
 `lastEventId` query parameter; expired IDs produce a `resynchronise` event that refetches affected
-pane snapshots. Connection state is shown textually in the application header. The Vite `/api` development
-proxy forwards the stream without compression or buffering. Until task 0064 introduces production
+pane snapshots. Desktop mode forwards the same serialized envelope bytes over one ordered Tauri
+channel; channel setup is `connecting`, an installed channel remains `open` until explicit shutdown,
+and Tauri does not expose SSE-style `reconnecting`. Directory deltas and operation progress share
+the frontend's animation-frame batching policy with SSE. One-off notifications remain on the same
+channel to preserve total event ordering and byte parity. Closing a window or disconnecting the
+client cancels its Rust subscription task. Connection state is shown textually in the application
+header. The Vite `/api` development proxy forwards the stream without compression or buffering.
+Until task 0064 introduces production
 sessions, REST and SSE share one explicit loopback-only development session; this is not a
 production authentication mechanism.
 

@@ -1,7 +1,8 @@
 //! Tauri commands: thin wrappers over `FileManagerService`, mirroring the
 //! semantic REST API rather than reproducing HTTP concepts (spec §11).
 //!
-use tauri::State;
+use tauri::ipc::Channel;
+use tauri::{Runtime, State, Window};
 use uuid::Uuid;
 
 use fm_transport_dto::{
@@ -10,7 +11,31 @@ use fm_transport_dto::{
     SettingsDto, WorkspaceCommandDto, WorkspaceDto, WorkspaceSummaryDto,
 };
 
-use crate::AppState;
+use crate::{AppState, event_stream::EventSubscriptionRegistry};
+
+/// Starts one ordered EventBus-to-IPC channel subscription for this window.
+#[tauri::command]
+pub(crate) fn subscribe_events<R: Runtime>(
+    state: State<'_, AppState>,
+    subscriptions: State<'_, EventSubscriptionRegistry>,
+    window: Window<R>,
+    on_event: Channel<String>,
+) -> Uuid {
+    subscriptions.subscribe(
+        state.service.event_bus(),
+        window.label().to_owned(),
+        on_event,
+    )
+}
+
+/// Releases a desktop event subscription created by [`subscribe_events`].
+#[tauri::command]
+pub(crate) fn unsubscribe_events(
+    subscriptions: State<'_, EventSubscriptionRegistry>,
+    subscription_id: Uuid,
+) {
+    subscriptions.unsubscribe(subscription_id);
+}
 
 /// Reports the capabilities available for the current runtime and platform
 /// (spec §21), identical in shape to `GET /api/v1/runtime`.
