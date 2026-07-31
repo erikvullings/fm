@@ -1390,8 +1390,15 @@
                 "type": "integer"
               },
               "location": {
-                "$ref": "#/components/schemas/LocationDto",
-                "description": "The tab's new location."
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/LocationDto",
+                    "description": "The explicit target for push/refresh navigation. Omitted for\nbackend-resolved back/forward navigation."
+                  }
+                ]
               },
               "navigationMode": {
                 "$ref": "#/components/schemas/NavigationModeDto",
@@ -1423,7 +1430,6 @@
               "workspaceId",
               "paneId",
               "tabId",
-              "location",
               "navigationMode",
               "expectedRevision",
               "type"

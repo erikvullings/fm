@@ -32,6 +32,8 @@ export interface DirectoryTableAttrs {
   readonly viewportHeight?: number;
   readonly overscan?: number;
   readonly label?: string;
+  readonly onRetry?: () => void;
+  readonly onEndReached?: () => void;
 }
 
 function readRowHeight(element: HTMLElement): number {
@@ -147,6 +149,9 @@ function stateView(attrs: DirectoryTableAttrs, rowHeight: number): m.Children | 
     return m('.fm-directory-state.fm-directory-error', { role: 'alert' }, [
       m('strong', 'Unable to load directory.'),
       m('span', attrs.state.message),
+      attrs.onRetry === undefined
+        ? undefined
+        : m('button.fm-directory-retry', { type: 'button', onclick: attrs.onRetry }, 'Retry'),
     ]);
   }
   if (attrs.state.type === 'idle') {
@@ -287,7 +292,11 @@ export const DirectoryTable: FactoryComponent<DirectoryTableAttrs> = () => {
           'data-active': attrs.active ? 'true' : 'false',
           style: { height: `${viewportHeight}px` },
           onscroll: (event: Event) => {
-            scrollTop = (event.currentTarget as HTMLElement).scrollTop;
+            const target = event.currentTarget as HTMLElement;
+            scrollTop = target.scrollTop;
+            if (target.scrollTop + target.clientHeight >= target.scrollHeight - rowHeight) {
+              attrs.onEndReached?.();
+            }
           },
         },
         [

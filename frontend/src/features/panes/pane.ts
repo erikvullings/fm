@@ -19,7 +19,15 @@ export interface PaneAttrs {
   readonly selectedEntryIds: ReadonlySet<EntryId>;
   readonly active: boolean;
   readonly cursorIndex?: number;
+  readonly canNavigateBack: boolean;
+  readonly canNavigateForward: boolean;
   readonly onNavigate: (path: string) => void | Promise<void>;
+  readonly onBack: () => void | Promise<void>;
+  readonly onForward: () => void | Promise<void>;
+  readonly onParent: () => void | Promise<void>;
+  readonly onOpenEntry: (entry: EntrySummary) => void | Promise<void>;
+  readonly onRetry: () => void | Promise<void>;
+  readonly onLoadNextPage: () => void | Promise<void>;
 }
 
 function posixSegments(path: string): readonly BreadcrumbSegment[] {
@@ -158,6 +166,30 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
             if (event.key.toLowerCase() === 'l' && (event.ctrlKey || event.metaKey)) {
               event.preventDefault();
               beginEditing(attrs.path);
+            } else if (event.key === 'Enter' && attrs.cursorIndex !== undefined) {
+              const entry = attrs.entries[attrs.cursorIndex];
+              if (entry !== undefined) {
+                event.preventDefault();
+                void attrs.onOpenEntry(entry);
+              }
+            } else if (event.key === 'Backspace') {
+              event.preventDefault();
+              void attrs.onParent();
+            } else if (event.altKey && event.key === 'ArrowLeft') {
+              event.preventDefault();
+              void attrs.onBack();
+            } else if (event.altKey && event.key === 'ArrowRight') {
+              event.preventDefault();
+              void attrs.onForward();
+            }
+          },
+          onauxclick: (event: MouseEvent) => {
+            if (event.button === 3) {
+              event.preventDefault();
+              void attrs.onBack();
+            } else if (event.button === 4) {
+              event.preventDefault();
+              void attrs.onForward();
             }
           },
         },
@@ -167,6 +199,37 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
               'button.fm-pane-tab',
               { type: 'button', role: 'tab', 'aria-selected': 'true' },
               attrs.tabTitle,
+            ),
+          ]),
+          m('.fm-navigation-controls', [
+            m(
+              'button',
+              {
+                type: 'button',
+                disabled: !attrs.canNavigateBack,
+                'aria-label': 'Back',
+                onclick: () => void attrs.onBack(),
+              },
+              '←',
+            ),
+            m(
+              'button',
+              {
+                type: 'button',
+                disabled: !attrs.canNavigateForward,
+                'aria-label': 'Forward',
+                onclick: () => void attrs.onForward(),
+              },
+              '→',
+            ),
+            m(
+              'button',
+              {
+                type: 'button',
+                'aria-label': 'Parent directory',
+                onclick: () => void attrs.onParent(),
+              },
+              '↑',
             ),
           ]),
           editing
@@ -234,6 +297,8 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
             selectedEntryIds: attrs.selectedEntryIds,
             active: attrs.active,
             label: `${attrs.tabTitle} directory`,
+            onRetry: () => void attrs.onRetry(),
+            onEndReached: () => void attrs.onLoadNextPage(),
             ...(attrs.cursorIndex === undefined ? {} : { cursorIndex: attrs.cursorIndex }),
           }),
           m('.fm-pane-status', { role: 'status' }, [

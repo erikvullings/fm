@@ -208,8 +208,10 @@ pub enum WorkspaceCommandDto {
         pane_id: Uuid,
         /// The tab to navigate.
         tab_id: Uuid,
-        /// The tab's new location.
-        location: LocationDto,
+        /// The explicit target for push/refresh navigation. Omitted for
+        /// backend-resolved back/forward navigation.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        location: Option<LocationDto>,
         /// How the navigation affects history.
         navigation_mode: NavigationModeDto,
         /// The revision this command was issued against.
@@ -306,7 +308,7 @@ impl From<WorkspaceCommand> for WorkspaceCommandDto {
                 workspace_id: workspace_id.into(),
                 pane_id: pane_id.into(),
                 tab_id: tab_id.into(),
-                location: location.into(),
+                location: location.map(Into::into),
                 navigation_mode: navigation_mode.into(),
                 expected_revision,
             },
@@ -401,7 +403,7 @@ impl From<WorkspaceCommandDto> for WorkspaceCommand {
                 workspace_id: workspace_id.into(),
                 pane_id: pane_id.into(),
                 tab_id: tab_id.into(),
-                location: location.into(),
+                location: location.map(Into::into),
                 navigation_mode: navigation_mode.into(),
                 expected_revision,
             },
@@ -449,7 +451,7 @@ mod tests {
             workspace_id: Uuid::new_v4(),
             pane_id: Uuid::new_v4(),
             tab_id: Uuid::new_v4(),
-            location: location(),
+            location: Some(location()),
             navigation_mode: NavigationModeDto::Push,
             expected_revision: 4,
         };
@@ -460,6 +462,27 @@ mod tests {
         let parsed: WorkspaceCommandDto =
             serde_json::from_str(&json).expect("deserialization must succeed");
         assert_eq!(dto, parsed);
+    }
+
+    #[test]
+    fn back_navigation_dto_accepts_a_backend_resolved_target() {
+        let json = format!(
+            r#"{{"type":"navigateTab","workspaceId":"{}","paneId":"{}","tabId":"{}","navigationMode":"back","expectedRevision":4}}"#,
+            Uuid::new_v4(),
+            Uuid::new_v4(),
+            Uuid::new_v4(),
+        );
+
+        let parsed =
+            serde_json::from_str::<WorkspaceCommandDto>(&json).expect("back target is optional");
+
+        assert!(matches!(
+            parsed,
+            WorkspaceCommandDto::NavigateTab {
+                navigation_mode: NavigationModeDto::Back,
+                ..
+            }
+        ));
     }
 
     #[test]
@@ -500,7 +523,10 @@ mod tests {
                 workspace_id,
                 pane_id,
                 tab_id,
-                location: fm_domain::Location::new(ProviderId::new("local"), "file:///tmp"),
+                location: Some(fm_domain::Location::new(
+                    ProviderId::new("local"),
+                    "file:///tmp",
+                )),
                 navigation_mode: NavigationMode::Back,
                 expected_revision: 1,
             },

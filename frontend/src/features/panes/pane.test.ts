@@ -38,6 +38,14 @@ function attrs(overrides: Partial<PaneAttrs> = {}): PaneAttrs {
     sortLabel: 'Name ascending',
     selectedEntryIds: new Set<EntryId>(),
     active: true,
+    canNavigateBack: true,
+    canNavigateForward: true,
+    onBack: vi.fn(),
+    onForward: vi.fn(),
+    onParent: vi.fn(),
+    onOpenEntry: vi.fn(),
+    onRetry: vi.fn(),
+    onLoadNextPage: vi.fn(),
     onNavigate: vi.fn(),
     ...overrides,
   };
@@ -169,5 +177,39 @@ describe('Pane status bar', () => {
 
     expect(root.querySelector('.fm-pane')?.getAttribute('data-active')).toBe('false');
     expect(root.querySelector('.fm-selected-row')).not.toBeNull();
+  });
+});
+
+describe('Pane navigation input', () => {
+  it('opens the directory under the cursor with Enter and navigates parent with Backspace', () => {
+    const onOpenEntry = vi.fn();
+    const onParent = vi.fn();
+    mount(attrs({ cursorIndex: 0, onOpenEntry, onParent }));
+    const pane = root.querySelector<HTMLElement>('.fm-pane');
+
+    pane?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    pane?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Backspace', bubbles: true }));
+
+    expect(onOpenEntry).toHaveBeenCalledWith(entries[0]);
+    expect(onParent).toHaveBeenCalledOnce();
+  });
+
+  it('supports history keyboard shortcuts and auxiliary mouse buttons', () => {
+    const onBack = vi.fn();
+    const onForward = vi.fn();
+    mount(attrs({ onBack, onForward }));
+    const pane = root.querySelector<HTMLElement>('.fm-pane');
+
+    pane?.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'ArrowLeft', altKey: true, bubbles: true }),
+    );
+    pane?.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'ArrowRight', altKey: true, bubbles: true }),
+    );
+    pane?.dispatchEvent(new MouseEvent('auxclick', { button: 3, bubbles: true }));
+    pane?.dispatchEvent(new MouseEvent('auxclick', { button: 4, bubbles: true }));
+
+    expect(onBack).toHaveBeenCalledTimes(2);
+    expect(onForward).toHaveBeenCalledTimes(2);
   });
 });

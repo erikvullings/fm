@@ -80,8 +80,7 @@ export type WorkspaceCommandDto = {
      * @minimum 0
      */
   expectedRevision: number;
-  /** The tab's new location. */
-  location: LocationDto;
+  location?: null | LocationDto;
   /** How the navigation affects history. */
   navigationMode: NavigationModeDto;
   /** The pane the tab belongs to. */

@@ -11,6 +11,7 @@ import type {
   EntryMetadataRequest,
   InvokeActionRequest,
   ListDirectoryRequest,
+  Location,
   NavigateRequest,
   Operation,
   OperationId,
@@ -165,6 +166,7 @@ export class MockFileManagerClient implements FileManagerClient {
   private readonly listeners = new Set<(event: BackendEvent) => void>();
   private readonly scriptedEvents: BackendEvent[] = [];
   private readonly operations = new Map<OperationId, Operation>();
+  private readonly navigationHistory = new Map<string, { back: Location[]; forward: Location[] }>();
   private readonly workspaces = new Map<WorkspaceId, WorkspaceProjection>();
   private operationSequence = 0;
   private tabSequence = 0;
@@ -353,13 +355,40 @@ export class MockFileManagerClient implements FileManagerClient {
           if (tab === undefined) {
             throw new MockClientError('tabNotFound', `No mock tab with id ${command.tabId}`);
           }
+          const historyKey = `${current.id}:${pane.id}:${tab.id}`;
+          const history = this.navigationHistory.get(historyKey) ?? { back: [], forward: [] };
+          let navigatedLocation = tab.location;
+          if (command.type === 'navigateTab') {
+            if (command.navigationMode === 'push' && command.location != null) {
+              if (command.location.uri !== tab.location.uri) {
+                history.back.push(tab.location);
+              }
+              history.forward = [];
+              navigatedLocation = command.location;
+            } else if (command.navigationMode === 'back') {
+              const target = history.back.pop();
+              if (target !== undefined) {
+                history.forward.push(tab.location);
+                navigatedLocation = target;
+              }
+            } else if (command.navigationMode === 'forward') {
+              const target = history.forward.pop();
+              if (target !== undefined) {
+                history.back.push(tab.location);
+                navigatedLocation = target;
+              }
+            } else if (command.navigationMode === 'refresh' && command.location != null) {
+              navigatedLocation = command.location;
+            }
+            this.navigationHistory.set(historyKey, history);
+          }
           const nextTab =
             command.type === 'navigateTab'
               ? {
                   ...tab,
-                  location: command.location,
-                  canNavigateBack: command.navigationMode !== 'back',
-                  canNavigateForward: command.navigationMode === 'back',
+                  location: navigatedLocation,
+                  canNavigateBack: history.back.length > 0,
+                  canNavigateForward: history.forward.length > 0,
                 }
               : command.type === 'updateView'
                 ? {

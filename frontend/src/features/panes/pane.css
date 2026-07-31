@@ -1,9 +1,33 @@
 .fm-pane {
   display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  grid-template-rows: auto auto auto minmax(0, 1fr) auto;
   min-width: 0;
   border: 1px solid var(--fm-border);
   background: var(--fm-surface);
+}
+
+.fm-navigation-controls {
+  display: flex;
+  gap: 0.125rem;
+  border-bottom: 1px solid var(--fm-border);
+  padding: 0.125rem 0.25rem;
+}
+
+.fm-navigation-controls button {
+  min-width: 2rem;
+  border: 0;
+  border-radius: var(--fm-radius);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+}
+
+.fm-navigation-controls button:hover:not(:disabled) {
+  background: var(--fm-hover);
+}
+
+.fm-navigation-controls button:disabled {
+  opacity: 0.4;
 }
 
 .fm-pane[data-active="true"] {

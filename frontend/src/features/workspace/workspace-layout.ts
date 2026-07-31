@@ -21,6 +21,12 @@ export interface WorkspacePaneContent {
   readonly sortLabel: string;
   readonly cursorIndex?: number;
   readonly onNavigate: (path: string) => void | Promise<void>;
+  readonly onBack: () => void | Promise<void>;
+  readonly onForward: () => void | Promise<void>;
+  readonly onParent: () => void | Promise<void>;
+  readonly onOpenEntry: (entry: EntrySummary) => void | Promise<void>;
+  readonly onRetry: () => void | Promise<void>;
+  readonly onLoadNextPage: () => void | Promise<void>;
 }
 
 /** Inputs for the recursive workspace layout renderer. */
@@ -181,8 +187,16 @@ export const WorkspaceLayoutView: FactoryComponent<WorkspaceLayoutViewAttrs> = (
         selectedEntryIds: content.selectedEntryIds,
         sortLabel: content.sortLabel,
         active,
+        canNavigateBack: tab.canNavigateBack,
+        canNavigateForward: tab.canNavigateForward,
         ...(content.cursorIndex === undefined ? {} : { cursorIndex: content.cursorIndex }),
         onNavigate: content.onNavigate,
+        onBack: content.onBack,
+        onForward: content.onForward,
+        onParent: content.onParent,
+        onOpenEntry: content.onOpenEntry,
+        onRetry: content.onRetry,
+        onLoadNextPage: content.onLoadNextPage,
       }),
     );
   }

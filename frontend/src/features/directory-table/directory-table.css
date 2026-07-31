@@ -94,6 +94,10 @@
   color: var(--fm-error);
 }
 
+.fm-directory-retry {
+  justify-self: center;
+}
+
 .fm-directory-placeholder {
   width: min(36rem, 70vw);
   border-bottom: 1px solid var(--fm-border);

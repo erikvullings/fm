@@ -74,7 +74,7 @@ pub(crate) fn apply(
             ..
         } => {
             let tab = find_tab_mut(workspace, pane_id, tab_id)?;
-            navigate(tab, location, navigation_mode);
+            navigate(tab, location, navigation_mode)?;
         }
         WorkspaceCommand::UpdateView {
             pane_id,
@@ -198,9 +198,18 @@ fn close_tab(
 
 /// Mutates a tab's location and navigation history per [`NavigationMode`]
 /// (inferred rules, task 0080's Agent Notes — not literally specified).
-fn navigate(tab: &mut TabState, location: Location, mode: NavigationMode) {
+fn navigate(
+    tab: &mut TabState,
+    location: Option<Location>,
+    mode: NavigationMode,
+) -> Result<(), WorkspaceError> {
     match mode {
         NavigationMode::Push => {
+            let location = location.ok_or_else(|| {
+                WorkspaceError::InvalidCommand(
+                    "push navigation requires an explicit location".to_owned(),
+                )
+            })?;
             if tab.location != location {
                 push_history_entry(&mut tab.history.back, tab.location.clone());
             }
@@ -209,21 +218,28 @@ fn navigate(tab: &mut TabState, location: Location, mode: NavigationMode) {
             enforce_history_bound(&mut tab.history);
         }
         NavigationMode::Back => {
-            push_history_entry(&mut tab.history.forward, tab.location.clone());
-            tab.history.back.pop();
-            tab.location = location;
-            enforce_history_bound(&mut tab.history);
+            if let Some(target) = tab.history.back.pop() {
+                push_history_entry(&mut tab.history.forward, tab.location.clone());
+                tab.location = target;
+                enforce_history_bound(&mut tab.history);
+            }
         }
         NavigationMode::Forward => {
-            push_history_entry(&mut tab.history.back, tab.location.clone());
-            tab.history.forward.pop();
-            tab.location = location;
-            enforce_history_bound(&mut tab.history);
+            if let Some(target) = tab.history.forward.pop() {
+                push_history_entry(&mut tab.history.back, tab.location.clone());
+                tab.location = target;
+                enforce_history_bound(&mut tab.history);
+            }
         }
         NavigationMode::Refresh => {
-            tab.location = location;
+            tab.location = location.ok_or_else(|| {
+                WorkspaceError::InvalidCommand(
+                    "refresh navigation requires an explicit location".to_owned(),
+                )
+            })?;
         }
     }
+    Ok(())
 }
 
 /// Pushes `location` onto `stack`, unless it would create a consecutive
@@ -531,7 +547,7 @@ mod tests {
                 workspace_id,
                 pane_id,
                 tab_id,
-                location: location("file:///Users/erik/Downloads"),
+                location: Some(location("file:///Users/erik/Downloads")),
                 navigation_mode: NavigationMode::Push,
                 expected_revision,
             },
@@ -560,7 +576,7 @@ mod tests {
                 workspace_id,
                 pane_id,
                 tab_id,
-                location: current.clone(),
+                location: Some(current.clone()),
                 navigation_mode: NavigationMode::Push,
                 expected_revision,
             },
@@ -573,7 +589,7 @@ mod tests {
     }
 
     #[test]
-    fn navigate_tab_back_moves_current_location_to_forward() {
+    fn navigate_tab_back_and_forward_resolve_targets_from_backend_history() {
         let mut ws = workspace();
         let workspace_id = ws.id;
         let expected_revision = ws.revision;
@@ -588,7 +604,7 @@ mod tests {
                 workspace_id,
                 pane_id,
                 tab_id,
-                location: downloads.clone(),
+                location: Some(downloads.clone()),
                 navigation_mode: NavigationMode::Push,
                 expected_revision,
             },
@@ -602,7 +618,7 @@ mod tests {
                 workspace_id,
                 pane_id,
                 tab_id,
-                location: original_location.clone(),
+                location: None,
                 navigation_mode: NavigationMode::Back,
                 expected_revision,
             },
@@ -613,7 +629,48 @@ mod tests {
         let tab = ws.panes[0].tabs.iter().find(|t| t.id == tab_id).unwrap();
         assert_eq!(tab.location, original_location);
         assert!(tab.history.back.is_empty());
-        assert_eq!(tab.history.forward, vec![downloads]);
+        assert_eq!(tab.history.forward, vec![downloads.clone()]);
+
+        apply(
+            &mut ws,
+            WorkspaceCommand::NavigateTab {
+                workspace_id,
+                pane_id,
+                tab_id,
+                location: None,
+                navigation_mode: NavigationMode::Forward,
+                expected_revision,
+            },
+            home(),
+        )
+        .expect("navigate forward must succeed");
+
+        let tab = ws.panes[0].tabs.iter().find(|t| t.id == tab_id).unwrap();
+        assert_eq!(tab.location, downloads);
+        assert_eq!(tab.history.back, vec![original_location]);
+        assert!(tab.history.forward.is_empty());
+    }
+
+    #[test]
+    fn navigate_tab_back_with_empty_history_is_a_no_op() {
+        let mut ws = workspace();
+        let original = ws.clone();
+
+        apply(
+            &mut ws,
+            WorkspaceCommand::NavigateTab {
+                workspace_id: original.id,
+                pane_id: original.active_pane_id,
+                tab_id: original.panes[0].tabs[0].id,
+                location: None,
+                navigation_mode: NavigationMode::Back,
+                expected_revision: original.revision,
+            },
+            home(),
+        )
+        .expect("empty history must be a successful no-op");
+
+        assert_eq!(ws, original);
     }
 
     #[test]
@@ -631,7 +688,7 @@ mod tests {
                 workspace_id,
                 pane_id,
                 tab_id,
-                location: current.clone(),
+                location: Some(current.clone()),
                 navigation_mode: NavigationMode::Refresh,
                 expected_revision,
             },
@@ -657,7 +714,7 @@ mod tests {
                 workspace_id,
                 pane_id,
                 tab_id: TabId::new(),
-                location: location("file:///Users/erik/Downloads"),
+                location: Some(location("file:///Users/erik/Downloads")),
                 navigation_mode: NavigationMode::Push,
                 expected_revision,
             },
@@ -683,7 +740,7 @@ mod tests {
                     workspace_id,
                     pane_id,
                     tab_id,
-                    location: location(&format!("file:///Users/erik/dir-{i}")),
+                    location: Some(location(&format!("file:///Users/erik/dir-{i}"))),
                     navigation_mode: NavigationMode::Push,
                     expected_revision,
                 },

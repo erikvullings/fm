@@ -1,5 +1,5 @@
 import m from 'mithril';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createGeneratedDirectory } from '../../api/client/mock-directory-generator';
 import type { EntrySummary } from '../../models';
@@ -52,10 +52,17 @@ describe('DirectoryTable states', () => {
   });
 
   it('renders an error without requiring a source', () => {
-    mount({ state: { type: 'error', message: 'Permission denied' }, viewportHeight: 120 });
+    const onRetry = vi.fn();
+    mount({
+      state: { type: 'error', message: 'Permission denied' },
+      viewportHeight: 120,
+      onRetry,
+    });
 
     const alert = root.querySelector('[role="alert"]');
     expect(alert?.textContent).toContain('Permission denied');
+    root.querySelector<HTMLButtonElement>('.fm-directory-retry')?.click();
+    expect(onRetry).toHaveBeenCalledOnce();
   });
 });
 
@@ -136,6 +143,29 @@ describe('DirectoryTable rows', () => {
 
     expect(root.querySelector('.fm-directory-row')).toBe(originalRow);
     expect(originalRow?.textContent).toContain('renamed.txt');
+  });
+
+  it('requests another page when scrolling reaches the loaded end', () => {
+    const onEndReached = vi.fn();
+    mount({
+      state: { type: 'loaded' },
+      source: entryArraySource([entry()]),
+      viewportHeight: 120,
+      onEndReached,
+    });
+    const grid = root.querySelector<HTMLElement>('.fm-directory-table');
+    if (grid === null) {
+      throw new Error('directory grid was not rendered');
+    }
+    Object.defineProperties(grid, {
+      clientHeight: { value: 120 },
+      scrollHeight: { value: 120 },
+      scrollTop: { value: 0, writable: true },
+    });
+
+    grid.dispatchEvent(new Event('scroll'));
+
+    expect(onEndReached).toHaveBeenCalledOnce();
   });
 
   it('announces and scrolls a cursor supplied by the navigation layer', () => {

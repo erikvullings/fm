@@ -327,6 +327,31 @@ async fn navigate_tab_command_updates_location_and_history() {
         .find(|tab| tab["id"] == tab_id)
         .unwrap();
     assert_eq!(tab["location"]["uri"], "file:///Users/erik/Downloads");
+
+    let restored = apply_command(
+        &server,
+        &created["id"],
+        json!({
+            "type": "navigateTab",
+            "workspaceId": created["id"],
+            "paneId": pane_id,
+            "tabId": tab_id,
+            "navigationMode": "back",
+            "expectedRevision": updated["revision"],
+        }),
+    )
+    .await;
+    let restored_tab = restored["panes"][0]["tabs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|tab| tab["id"] == tab_id)
+        .unwrap();
+    assert_ne!(
+        restored_tab["location"]["uri"],
+        "file:///Users/erik/Downloads"
+    );
+    assert_eq!(tab["location"]["uri"], "file:///Users/erik/Downloads");
     assert_eq!(tab["history"]["back"].as_array().unwrap().len(), 1);
 }
 

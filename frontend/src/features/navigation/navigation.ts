@@ -1,0 +1,306 @@
+import type { FileManagerClient } from '../../api/client/file-manager-client';
+import type {
+  DirectorySnapshot,
+  EntrySummary,
+  ListDirectoryRequest,
+  LoadingState,
+  Location,
+  PaneId,
+  WorkspaceCommand,
+  WorkspaceProjection,
+} from '../../models';
+
+/** Client surface required by directory navigation. */
+export type NavigationClient = Pick<
+  FileManagerClient,
+  'dispatchWorkspaceCommand' | 'listDirectory' | 'navigatePane'
+>;
+
+/** Renderable directory state for one pane, including paging information. */
+export interface PaneDirectoryView {
+  readonly state: LoadingState;
+  readonly entries: readonly EntrySummary[];
+  readonly location?: Location;
+  readonly requestId?: string;
+  readonly hasMore: boolean;
+  readonly continuationToken?: string;
+}
+
+/** Integration callbacks kept outside the navigation module. */
+export interface NavigationControllerOptions {
+  readonly client: NavigationClient;
+  readonly getWorkspace: () => WorkspaceProjection | undefined;
+  readonly replaceWorkspace: (workspace: WorkspaceProjection) => void;
+  readonly updatePane: (paneId: PaneId, view: PaneDirectoryView) => void;
+}
+
+/** Public navigation operations consumed by pane and workspace input handlers. */
+export interface NavigationController {
+  load(paneId: PaneId): Promise<void>;
+  navigate(paneId: PaneId, location: Location): Promise<void>;
+  parent(paneId: PaneId): Promise<void>;
+  back(paneId: PaneId): Promise<void>;
+  forward(paneId: PaneId): Promise<void>;
+  retry(paneId: PaneId): Promise<void>;
+  loadNextPage(paneId: PaneId): Promise<void>;
+  dispose(): void;
+}
+
+interface ActiveRequest {
+  readonly id: string;
+  readonly controller: AbortController;
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : 'Unable to load directory';
+}
+
+function activeTab(workspace: WorkspaceProjection, paneId: PaneId) {
+  const pane = workspace.panesById[paneId];
+  return pane?.tabsById[pane.activeTabId];
+}
+
+/** Returns a provider-preserving lexical parent; roots map to themselves. */
+export function parentLocation(location: Location): Location {
+  try {
+    const url = new URL(location.uri);
+    const path = url.pathname;
+    if (path === '/' || path.length === 0) {
+      return location;
+    }
+    const trimmed = path.replace(/\/+$/, '');
+    const finalSeparator = trimmed.lastIndexOf('/');
+    url.pathname = finalSeparator <= 0 ? '/' : trimmed.slice(0, finalSeparator);
+    return { ...location, uri: url.toString() };
+  } catch {
+    return location;
+  }
+}
+
+/** Coordinates workspace history and cancellable directory requests per pane. */
+export function createNavigationController(
+  options: NavigationControllerOptions,
+): NavigationController {
+  const activeRequests = new Map<PaneId, ActiveRequest>();
+  const paneViews = new Map<PaneId, PaneDirectoryView>();
+  let sequence = 0;
+
+  function begin(paneId: PaneId): ActiveRequest {
+    activeRequests.get(paneId)?.controller.abort();
+    sequence += 1;
+    const request = {
+      id: `navigation-${paneId}-${sequence}`,
+      controller: new AbortController(),
+    };
+    activeRequests.set(paneId, request);
+    return request;
+  }
+
+  function isCurrent(paneId: PaneId, request: ActiveRequest): boolean {
+    return activeRequests.get(paneId)?.id === request.id && !request.controller.signal.aborted;
+  }
+
+  function publish(paneId: PaneId, view: PaneDirectoryView): void {
+    paneViews.set(paneId, view);
+    options.updatePane(paneId, view);
+  }
+
+  function requestFor(
+    workspace: WorkspaceProjection,
+    paneId: PaneId,
+    requestId: string,
+    location: Location,
+    continuationToken?: string,
+  ): ListDirectoryRequest {
+    const tab = activeTab(workspace, paneId);
+    return {
+      workspaceId: workspace.id,
+      paneId,
+      requestId,
+      location,
+      ...(continuationToken === undefined ? {} : { continuationToken }),
+      ...(tab?.view.sort === undefined ? {} : { sort: tab.view.sort }),
+      ...(tab === undefined
+        ? {}
+        : { showHidden: tab.view.showHidden, foldersFirst: tab.view.foldersFirst }),
+    };
+  }
+
+  function viewFromSnapshot(
+    snapshot: DirectorySnapshot,
+    entries: readonly EntrySummary[] = snapshot.entries,
+  ): PaneDirectoryView {
+    return {
+      state: snapshot.loadingState,
+      entries,
+      location: snapshot.location,
+      requestId: snapshot.requestId,
+      hasMore: snapshot.hasMore,
+      ...(snapshot.continuationToken === undefined
+        ? {}
+        : { continuationToken: snapshot.continuationToken }),
+    };
+  }
+
+  async function load(paneId: PaneId): Promise<void> {
+    const workspace = options.getWorkspace();
+    const tab = workspace === undefined ? undefined : activeTab(workspace, paneId);
+    if (workspace === undefined || tab === undefined) {
+      return;
+    }
+    const request = begin(paneId);
+    publish(paneId, {
+      state: { type: 'loading' },
+      entries: [],
+      location: tab.location,
+      requestId: request.id,
+      hasMore: false,
+    });
+    try {
+      const snapshot = await options.client.listDirectory(
+        requestFor(workspace, paneId, request.id, tab.location),
+        request.controller.signal,
+      );
+      if (isCurrent(paneId, request) && snapshot.requestId === request.id) {
+        publish(paneId, viewFromSnapshot(snapshot));
+      }
+    } catch (error: unknown) {
+      if (isCurrent(paneId, request)) {
+        publish(paneId, {
+          state: { type: 'error', message: errorMessage(error) },
+          entries: [],
+          location: tab.location,
+          requestId: request.id,
+          hasMore: false,
+        });
+      }
+    }
+  }
+
+  async function navigateHistory(
+    paneId: PaneId,
+    navigationMode: 'push' | 'back' | 'forward',
+    location?: Location,
+  ): Promise<void> {
+    const workspace = options.getWorkspace();
+    const pane = workspace?.panesById[paneId];
+    const tab = pane?.tabsById[pane.activeTabId];
+    if (
+      workspace === undefined ||
+      pane === undefined ||
+      tab === undefined ||
+      (navigationMode === 'back' && !tab.canNavigateBack) ||
+      (navigationMode === 'forward' && !tab.canNavigateForward)
+    ) {
+      return;
+    }
+    const request = begin(paneId);
+    publish(paneId, {
+      state: { type: 'loading' },
+      entries: [],
+      location: location ?? tab.location,
+      requestId: request.id,
+      hasMore: false,
+    });
+    const command: WorkspaceCommand = {
+      type: 'navigateTab',
+      workspaceId: workspace.id,
+      paneId,
+      tabId: tab.id,
+      navigationMode,
+      expectedRevision: workspace.revision,
+      ...(location === undefined ? {} : { location }),
+    };
+    try {
+      const updated = await options.client.dispatchWorkspaceCommand(
+        command,
+        request.controller.signal,
+      );
+      if (!isCurrent(paneId, request)) {
+        return;
+      }
+      options.replaceWorkspace(updated);
+      const updatedTab = activeTab(updated, paneId);
+      if (updatedTab === undefined) {
+        return;
+      }
+      const snapshot = await options.client.navigatePane(
+        {
+          workspaceId: updated.id,
+          paneId,
+          requestId: request.id,
+          location: updatedTab.location,
+        },
+        request.controller.signal,
+      );
+      if (isCurrent(paneId, request) && snapshot.requestId === request.id) {
+        publish(paneId, viewFromSnapshot(snapshot));
+      }
+    } catch (error: unknown) {
+      if (isCurrent(paneId, request)) {
+        publish(paneId, {
+          state: { type: 'error', message: errorMessage(error) },
+          entries: [],
+          location: location ?? tab.location,
+          requestId: request.id,
+          hasMore: false,
+        });
+      }
+    }
+  }
+
+  return {
+    load,
+    navigate: (paneId, location) => navigateHistory(paneId, 'push', location),
+    parent: async (paneId) => {
+      const workspace = options.getWorkspace();
+      const tab = workspace === undefined ? undefined : activeTab(workspace, paneId);
+      if (tab === undefined) {
+        return;
+      }
+      const parent = parentLocation(tab.location);
+      if (parent.uri !== tab.location.uri) {
+        await navigateHistory(paneId, 'push', parent);
+      }
+    },
+    back: (paneId) => navigateHistory(paneId, 'back'),
+    forward: (paneId) => navigateHistory(paneId, 'forward'),
+    retry: load,
+    loadNextPage: async (paneId) => {
+      const workspace = options.getWorkspace();
+      const current = paneViews.get(paneId);
+      if (
+        workspace === undefined ||
+        current?.location === undefined ||
+        !current.hasMore ||
+        current.continuationToken === undefined
+      ) {
+        return;
+      }
+      const request = begin(paneId);
+      try {
+        const snapshot = await options.client.listDirectory(
+          requestFor(workspace, paneId, request.id, current.location, current.continuationToken),
+          request.controller.signal,
+        );
+        if (isCurrent(paneId, request) && snapshot.requestId === request.id) {
+          publish(paneId, viewFromSnapshot(snapshot, [...current.entries, ...snapshot.entries]));
+        }
+      } catch (error: unknown) {
+        if (isCurrent(paneId, request)) {
+          publish(paneId, {
+            ...current,
+            state: { type: 'error', message: errorMessage(error) },
+            requestId: request.id,
+          });
+        }
+      }
+    },
+    dispose: () => {
+      for (const request of activeRequests.values()) {
+        request.controller.abort();
+      }
+      activeRequests.clear();
+    },
+  };
+}

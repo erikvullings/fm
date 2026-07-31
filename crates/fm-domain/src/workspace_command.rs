@@ -72,8 +72,9 @@ pub enum WorkspaceCommand {
         pane_id: PaneId,
         /// The tab to navigate.
         tab_id: TabId,
-        /// The location to navigate to.
-        location: Location,
+        /// The explicit target for push/refresh navigation. Back and forward
+        /// resolve their target from the tab's authoritative history.
+        location: Option<Location>,
         /// How this navigation affects back/forward history.
         navigation_mode: NavigationMode,
         /// The revision the caller last observed.
@@ -245,7 +246,7 @@ mod tests {
                 workspace_id,
                 pane_id,
                 tab_id,
-                location: location(),
+                location: Some(location()),
                 navigation_mode: NavigationMode::Push,
                 expected_revision: 6,
             },

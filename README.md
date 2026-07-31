@@ -65,6 +65,11 @@ revisions and cancellation of superseded requests. Thin Axum and Tauri adapters 
 list, refresh, navigation and metadata operations; listing options include server-side hidden-file
 filtering, folder grouping and sorting.
 
+Each frontend pane now loads its active tab's real directory through that shared client surface.
+Directory navigation, parent traversal, backend-resolved per-tab history, retryable in-pane errors,
+and continuation-token paging are coordinated outside the view components. Superseded requests are
+aborted and responses are correlated by request ID before they may replace the visible snapshot.
+
 ## CI
 
 `.github/workflows/ci.yml` runs on every push to `main` and every pull request:
