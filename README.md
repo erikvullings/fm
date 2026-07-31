@@ -83,6 +83,14 @@ Filesystem access is isolated behind the `fm-vfs` provider contract. Providers a
 capabilities, expose cancellable asynchronous operations and streaming reads/writes, and are
 resolved from provider-neutral locations through a typed registry.
 
+Mutating filesystem work is represented by typed jobs in `fm-operations`. Its bounded scheduler
+runs a planning phase before execution, publishes lifecycle and coalesced progress events through
+the shared event bus, calculates a smoothed transfer rate, and cooperatively cancels at safe points
+with partial-destination cleanup delegated to each operation implementation. Shared preflight
+checks reject same/nested destinations, case-only renames on insensitive filesystems, traversal
+cycles, and file/directory replacement mismatches. Concrete mutation kinds land in tasks
+0037–0044; this task establishes only their engine contract.
+
 Local paths are represented as validated, percent-encoded `file:` locations rather than raw path
 strings. Conversion preserves POSIX, Windows drive, UNC, long-path and Unicode forms; lexical
 normalization is constrained to a configured root. See

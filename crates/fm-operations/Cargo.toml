@@ -7,6 +7,16 @@ rust-version.workspace = true
 license.workspace = true
 
 [dependencies]
+async-trait.workspace = true
+chrono.workspace = true
+fm-domain.workspace = true
+fm-events.workspace = true
+fm-vfs.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+tracing.workspace = true
 
 [lints]
 workspace = true

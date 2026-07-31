@@ -1,6 +1,6 @@
 # 0035 Operation engine core: jobs, scheduler, progress
 
-Status: open
+Status: done
 Priority: high
 Owner: unassigned
 Agent: unassigned
@@ -39,4 +39,19 @@ one at a time in 0037–0044.
 - Design the plan step so it can later be persisted for crash-safe history (§37).
 
 ## Agent Notes
-- Not started.
+
+- 2026-07-31 codex: Added the exact §17 operation model, typed lifecycle transition errors, a
+  settings-configurable bounded scheduler, materialized planning totals, cooperative cancellation
+  with partial-destination cleanup, 10 Hz coalesced progress, exponentially smoothed transfer
+  rates, structured `operation_id` tracing, and all required operation lifecycle events.
+- 2026-07-31 codex: Added shared preflight checks for same and nested destinations, case-only
+  differences on case-insensitive filesystems, provider-supplied symlink-cycle identities, and
+  file/directory replacement mismatches. Concrete operation kinds remain unimplemented and plug in
+  only through the typed planning/execution boundary owned by tasks 0037–0044.
+- 2026-07-31 codex: Added 11 task-specific public-contract tests in `operation_engine.rs`, including
+  realistically interleaved planning input, scheduler concurrency/event sequencing, and safe-point
+  cancellation cleanup. Verified with `cargo test -p fm-operations --test operation_engine`,
+  `cargo check -p fm-operations --all-targets`, `cargo test -p fm-operations`, workspace formatting,
+  strict workspace Clippy, and the full `pnpm test` suite. `CLAUDE.md` does not exist. Platform path
+  comparisons were executed on macOS; Windows case-insensitive behavior is exercised through the
+  explicit filesystem-sensitivity input rather than on a Windows host.

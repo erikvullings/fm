@@ -1,6 +1,19 @@
-//! The operation engine (task 0035).
+//! Cancellable, provider-neutral file-operation jobs.
 //!
-//! Every mutating action - create, rename, copy, move, duplicate, trash and
-//! delete - is a cancellable job owned by the backend and reported through
-//! progress events. The individual kinds are implemented one at a time in
-//! tasks 0037 to 0044.
+//! The engine owns lifecycle, planning, scheduling, safety checks and event
+//! publication. Concrete filesystem mutations are added independently by
+//! tasks 0037 through 0044.
+
+mod model;
+mod progress;
+mod safety;
+mod scheduler;
+
+pub use model::{
+    ConflictPolicy, Operation, OperationKind, OperationProgress, OperationState, TransitionError,
+};
+pub use progress::ProgressPublisher;
+pub use safety::{CycleDetector, EntryType, SafetyError, validate_paths, validate_replacement};
+pub use scheduler::{
+    ExecutionError, OperationExecutor, OperationPlan, PlanItem, Scheduler, SchedulerError,
+};

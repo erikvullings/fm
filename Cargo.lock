@@ -1123,6 +1123,18 @@ version = "0.1.0"
 [[package]]
 name = "fm-operations"
 version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "fm-domain",
+ "fm-events",
+ "fm-vfs",
+ "serde",
+ "thiserror 2.0.19",
+ "tokio",
+ "tokio-util",
+ "tracing",
+]
 
 [[package]]
 name = "fm-platform"
