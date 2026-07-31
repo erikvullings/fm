@@ -26,9 +26,9 @@ importers:
       '@tauri-apps/api':
         specifier: ^2
         version: 2.11.1
-      mergerino:
-        specifier: ^0.4.0
-        version: 0.4.0
+      meiosis-setup:
+        specifier: ^6.2.3
+        version: 6.2.3
       mithril:
         specifier: ^2.3.8
         version: 2.3.8
@@ -1201,6 +1201,9 @@ packages:
 
   mdurl@2.1.0:
     resolution: {integrity: sha512-1+HBaOx0zi/dQWht8rNv9MYf9qqpqL/kxI0hXImU6Y547zM6Sni8BQibt7ifgMcYtQg41ao3Ivd6cnSM86inpg==}
+
+  meiosis-setup@6.2.3:
+    resolution: {integrity: sha512-Rr+imuvtanMwsLxWGOV5XHeGY/yU//INasi6YltEr50xVMgJMdL3mrVBDx3ta8d6B8fbnSfUD2MYWjFpWOXe8A==}
 
   mergerino@0.4.0:
     resolution: {integrity: sha512-dvyWWLp9GN7OZoAoqn1u2ewCDV06oggVi6AwFsgHxUV8jNnaTOMEyux3fZ7Njm7Hg/ypK2+M0p6liCIEWcJnbg==}
@@ -2550,6 +2553,10 @@ snapshots:
   mdn-data@2.27.1: {}
 
   mdurl@2.1.0: {}
+
+  meiosis-setup@6.2.3:
+    dependencies:
+      mergerino: 0.4.0
 
   mergerino@0.4.0: {}
 

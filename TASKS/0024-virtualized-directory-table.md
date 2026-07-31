@@ -53,3 +53,8 @@ Depends on: 0021, 0022, 0013
   Repository-wide `pnpm run lint` remains blocked only by the pre-existing Biome formatting
   failures in `scripts/architecture-docs.test.mjs` and `scripts/ci-workflow.test.mjs`; no Tauri
   runtime UI smoke test was added because this host-neutral component has no transport integration.
+- 2026-07-31 codex: Follow-up wired the table into the mounted application shell. Mock runtime now
+  loads `mock:///` through `FileManagerClient` with cancellation and displays the resulting entries;
+  other runtimes show the table's idle state until workspace navigation is implemented. Replaced the
+  direct Mergerino store wiring with `meiosis-setup`, retaining frame-batched publications, targeted
+  subscriptions, and one redraw per frame.

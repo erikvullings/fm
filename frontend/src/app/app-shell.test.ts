@@ -41,6 +41,18 @@ afterEach(() => {
 });
 
 describe('AppShell', () => {
+  it('shows the directory table and loads the mock root directory', async () => {
+    mountShell('mock');
+
+    expect(root.querySelector('.fm-directory-table')).not.toBeNull();
+    expect(root.textContent).not.toContain('Shell only');
+
+    await vi.waitFor(() => {
+      expect(root.textContent).toContain('Documents');
+      expect(root.textContent).toContain('日本語.txt');
+    });
+  });
+
   it('names the application and the transport it is running against', () => {
     mountShell('mock');
 

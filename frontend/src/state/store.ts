@@ -1,6 +1,6 @@
-import merge from 'mergerino';
+import { meiosisSetup } from 'meiosis-setup';
+import type { Patch } from 'meiosis-setup/types';
 import m from 'mithril';
-import Stream from 'mithril/stream';
 
 import type { AppState } from './model';
 import type { AppPatch } from './patch';
@@ -28,7 +28,9 @@ export interface AppStore {
 
 /** Applies one or more immutable patches immediately. */
 export function applyAppPatches(state: AppState, ...patches: readonly AppPatch[]): AppState {
-  return merge(state, ...patches) as AppState;
+  const cells = meiosisSetup<AppState>({ app: { initial: state } });
+  cells().update(patches as Patch<AppState>);
+  return cells().getState();
 }
 
 /**
@@ -38,12 +40,7 @@ export function applyAppPatches(state: AppState, ...patches: readonly AppPatch[]
 export function createAppStore(initialState: AppState, options: AppStoreOptions = {}): AppStore {
   const requestFrame = options.requestFrame ?? requestAnimationFrame;
   const redraw = options.redraw ?? m.redraw;
-  const patchBatches = Stream<readonly AppPatch[]>();
-  const states = Stream.scan(
-    (state, patches) => applyAppPatches(state, ...patches),
-    initialState,
-    patchBatches,
-  );
+  const cells = meiosisSetup<AppState>({ app: { initial: initialState } });
   let pending: AppPatch[] = [];
   let framePending = false;
 
@@ -51,12 +48,12 @@ export function createAppStore(initialState: AppState, options: AppStoreOptions 
     framePending = false;
     const patches = pending;
     pending = [];
-    patchBatches(patches);
+    cells().update(patches as Patch<AppState>);
     redraw();
   }
 
   return {
-    getState: () => states(),
+    getState: () => cells().getState(),
     update: (patch) => {
       pending.push(patch);
       if (!framePending) {
@@ -65,9 +62,9 @@ export function createAppStore(initialState: AppState, options: AppStoreOptions 
       }
     },
     subscribe: (selector, listener) => {
-      let selected = selector(states());
-      const subscription = states.map((state) => {
-        const next = selector(state);
+      let selected = selector(cells().state);
+      const subscription = cells.map((cell) => {
+        const next = selector(cell.state);
         if (!Object.is(next, selected)) {
           selected = next;
           listener(next);
