@@ -98,6 +98,11 @@ operation without copy/delete fallback, reject occupied destinations, and safely
 changes on insensitive filesystems. F2 opens an inline table editor with basename selection,
 client-side validation, Esc cancellation, and Enter commit; stable entry IDs retain cursor and
 selection when the directory delta arrives.
+Single-file copy jobs stream through provider readers and writers into a private temporary file,
+then publish atomically with collision-safe ask, overwrite, and rename-new behavior. F5 copies one
+selected file to the other pane; byte/item totals, cancellation cleanup, timestamps, and supported
+permissions are handled by the backend operation engine. The precise metadata contract is recorded
+in `docs/architecture/file-copy-metadata.md`.
 The shared application service now exposes semantic operation start/list/get/cancel/pause/resume
 and conflict-resolution methods through matching Axum REST endpoints and Tauri commands. REST
 starts accept `Idempotency-Key` so retries return the original job rather than queueing duplicates;

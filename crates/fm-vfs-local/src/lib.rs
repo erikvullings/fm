@@ -52,14 +52,17 @@ impl FileSystemProvider for LocalFileSystemProvider {
     }
 
     fn capabilities(&self) -> ProviderCapabilities {
-        ProviderCapabilities::LIST
+        let capabilities = ProviderCapabilities::LIST
             | ProviderCapabilities::WATCH
             | ProviderCapabilities::CREATE_DIRECTORY
             | ProviderCapabilities::RENAME
             | ProviderCapabilities::READ
             | ProviderCapabilities::WRITE
             | ProviderCapabilities::SET_TIMESTAMPS
-            | ProviderCapabilities::SET_PERMISSIONS
+            | ProviderCapabilities::SET_PERMISSIONS;
+        #[cfg(target_os = "macos")]
+        let capabilities = capabilities | ProviderCapabilities::SERVER_SIDE_COPY;
+        capabilities
     }
 
     async fn list(
@@ -353,6 +356,49 @@ impl FileSystemProvider for LocalFileSystemProvider {
         })
     }
 
+    async fn server_side_copy(
+        &self,
+        source: &EntryRef,
+        temporary: &Location,
+        cancellation: CancellationToken,
+    ) -> Result<bool, VfsError> {
+        if cancellation.is_cancelled() {
+            return Err(VfsError::Cancelled);
+        }
+        #[cfg(target_os = "macos")]
+        {
+            let source_path = source
+                .location
+                .to_native_path()
+                .map_err(|_| invalid_location(&source.location))?;
+            let temporary_path = temporary
+                .to_native_path()
+                .map_err(|_| invalid_location(temporary))?;
+            let result = tokio::task::spawn_blocking(move || {
+                std::process::Command::new("cp")
+                    .arg("-c")
+                    .arg(source_path)
+                    .arg(&temporary_path)
+                    .status()
+                    .map(|status| (status.success(), temporary_path))
+            })
+            .await
+            .map_err(|error| VfsError::Io {
+                message: error.to_string(),
+            })?
+            .map_err(|error| map_io_error(error, &temporary.uri))?;
+            if !result.0 {
+                let _ = tokio::fs::remove_file(result.1).await;
+            }
+            Ok(result.0)
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            let _ = (source, temporary);
+            Ok(false)
+        }
+    }
+
     async fn discard_copy(
         &self,
         temporary: &Location,
@@ -440,10 +486,12 @@ async fn preserve_copy_metadata(
     let temporary = temporary.to_owned();
     let location = location.to_owned();
     tokio::task::spawn_blocking(move || {
-        let metadata = std::fs::metadata(&source).map_err(|error| map_io_error(error, &location))?;
+        let metadata =
+            std::fs::metadata(&source).map_err(|error| map_io_error(error, &location))?;
         std::fs::set_permissions(&temporary, metadata.permissions())
             .map_err(|error| map_io_error(error, &location))?;
-        let source_file = std::fs::File::open(&source).map_err(|error| map_io_error(error, &location))?;
+        let source_file =
+            std::fs::File::open(&source).map_err(|error| map_io_error(error, &location))?;
         let destination_file = std::fs::OpenOptions::new()
             .write(true)
             .open(&temporary)
@@ -454,13 +502,23 @@ async fn preserve_copy_metadata(
         destination_file
             .set_times(
                 std::fs::FileTimes::new()
-                    .set_accessed(source_times.accessed().map_err(|error| map_io_error(error, &location))?)
-                    .set_modified(source_times.modified().map_err(|error| map_io_error(error, &location))?),
+                    .set_accessed(
+                        source_times
+                            .accessed()
+                            .map_err(|error| map_io_error(error, &location))?,
+                    )
+                    .set_modified(
+                        source_times
+                            .modified()
+                            .map_err(|error| map_io_error(error, &location))?,
+                    ),
             )
             .map_err(|error| map_io_error(error, &location))
     })
     .await
-    .map_err(|error| VfsError::Io { message: error.to_string() })?
+    .map_err(|error| VfsError::Io {
+        message: error.to_string(),
+    })?
 }
 
 async fn summarize_entry(

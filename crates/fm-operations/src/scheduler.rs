@@ -161,8 +161,16 @@ impl Scheduler {
             .insert(id, Arc::clone(&job));
         let scheduler = self.clone();
         tokio::spawn(async move {
-            let result = scheduler.run_job(Arc::clone(&job), executor).await;
+            let result = scheduler
+                .run_job(Arc::clone(&job), Arc::clone(&executor))
+                .await;
             if let Err(error) = result {
+                let snapshot = job
+                    .operation
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .clone();
+                let _ = executor.cleanup_partial(&snapshot).await;
                 scheduler.fail_job(&job, &error.to_string());
             }
             job.completed.notify_waiters();
@@ -308,11 +316,12 @@ impl Scheduler {
                 .lock()
                 .unwrap_or_else(|e| e.into_inner())
                 .clone();
-            executor.execute(&snapshot, item, &job.cancellation).await?;
+            let execution = executor.execute(&snapshot, item, &job.cancellation).await;
             if job.cancellation.is_cancelled() {
                 self.finish_cancelled(&job, executor.as_ref()).await?;
                 return Ok(());
             }
+            execution?;
             let mut operation = job.operation.lock().unwrap_or_else(|e| e.into_inner());
             operation.progress.completed_items =
                 operation.progress.completed_items.saturating_add(1);

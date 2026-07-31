@@ -26,6 +26,7 @@ use fm_transport_dto::{
 };
 use fm_vfs::{EntryRef, FileSystemProvider, ProviderCapabilities, ProviderRegistry};
 use fm_vfs_local::LocalFileSystemProvider;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
@@ -187,6 +188,39 @@ impl FileManagerService {
                     provider,
                     source,
                     destination,
+                })
+            }
+            OperationKindDto::Copy => {
+                if request.sources.len() != 1 {
+                    return Err(ApplicationError::InvalidRequest(
+                        "single-file copy requires exactly one source".into(),
+                    ));
+                }
+                let destination_directory = destination.clone().ok_or_else(|| {
+                    ApplicationError::InvalidRequest("copy requires a destination directory".into())
+                })?;
+                let source: fm_domain::Location = request.sources[0].clone().into();
+                let source_provider = self
+                    .providers
+                    .resolve(&source)
+                    .map_err(ApplicationError::from)?;
+                let destination_provider = self
+                    .providers
+                    .resolve(&destination_directory)
+                    .map_err(ApplicationError::from)?;
+                source_provider
+                    .capabilities()
+                    .require(ProviderCapabilities::READ)
+                    .map_err(ApplicationError::from)?;
+                destination_provider
+                    .capabilities()
+                    .require(ProviderCapabilities::WRITE)
+                    .map_err(ApplicationError::from)?;
+                Arc::new(CopyFileExecutor {
+                    source_provider,
+                    destination_provider,
+                    destination_directory,
+                    temporary: Mutex::new(None),
                 })
             }
             _ => Arc::new(NoOpExecutor),
@@ -433,6 +467,166 @@ struct RenameExecutor {
     provider: Arc<dyn FileSystemProvider>,
     source: fm_domain::Location,
     destination: fm_domain::Location,
+}
+
+struct CopyFileExecutor {
+    source_provider: Arc<dyn FileSystemProvider>,
+    destination_provider: Arc<dyn FileSystemProvider>,
+    destination_directory: fm_domain::Location,
+    temporary: Mutex<Option<fm_domain::Location>>,
+}
+
+#[async_trait]
+impl OperationExecutor for CopyFileExecutor {
+    async fn plan(
+        &self,
+        operation: &Operation,
+        cancellation: &CancellationToken,
+    ) -> Result<OperationPlan, ExecutionError> {
+        let source = operation
+            .sources
+            .first()
+            .cloned()
+            .ok_or_else(|| ExecutionError::Failed("copy source is missing".into()))?;
+        let size = self
+            .source_provider
+            .file_size(&source, cancellation.clone())
+            .await?;
+        Ok(OperationPlan::new(vec![PlanItem::new(source, size)]))
+    }
+
+    async fn execute(
+        &self,
+        operation: &Operation,
+        item: &PlanItem,
+        cancellation: &CancellationToken,
+    ) -> Result<(), ExecutionError> {
+        let name = item
+            .entry
+            .location
+            .name()
+            .map_err(|error| ExecutionError::Failed(error.to_string()))?;
+        let temporary = self
+            .destination_directory
+            .join(&format!(".fm-copy-{}", Uuid::new_v4()))
+            .map_err(|error| ExecutionError::Failed(error.to_string()))?;
+        *self.temporary.lock().unwrap_or_else(|e| e.into_inner()) = Some(temporary.clone());
+        let cloned = self.source_provider.id() == self.destination_provider.id()
+            && self
+                .source_provider
+                .capabilities()
+                .contains(ProviderCapabilities::SERVER_SIDE_COPY)
+            && self
+                .source_provider
+                .server_side_copy(&item.entry, &temporary, cancellation.clone())
+                .await?;
+        if !cloned {
+            let mut reader = self
+                .source_provider
+                .open_read(&item.entry, cancellation.clone())
+                .await?;
+            let mut writer = self
+                .destination_provider
+                .open_write(
+                    &temporary,
+                    fm_vfs::WriteOptions::default(),
+                    cancellation.clone(),
+                )
+                .await?;
+            let mut buffer = vec![0_u8; 128 * 1024];
+            loop {
+                if cancellation.is_cancelled() {
+                    return Ok(());
+                }
+                let read = tokio::select! {
+                    () = cancellation.cancelled() => return Ok(()),
+                    result = reader.read(&mut buffer) => result.map_err(copy_stream_error)?,
+                };
+                if read == 0 {
+                    break;
+                }
+                tokio::select! {
+                    () = cancellation.cancelled() => return Ok(()),
+                    result = writer.write_all(&buffer[..read]) => result.map_err(copy_stream_error)?,
+                }
+            }
+            writer.shutdown().await.map_err(copy_stream_error)?;
+            drop(writer);
+        }
+        if cancellation.is_cancelled() {
+            return Ok(());
+        }
+
+        let overwrite = operation.conflict_policy == fm_operations::ConflictPolicy::Overwrite;
+        let mut destination = self
+            .destination_directory
+            .join(&name)
+            .map_err(|error| ExecutionError::Failed(error.to_string()))?;
+        let mut suffix = 1_u32;
+        loop {
+            match self
+                .destination_provider
+                .commit_copy(
+                    &item.entry,
+                    &temporary,
+                    &destination,
+                    fm_vfs::CopyCommitOptions {
+                        overwrite,
+                        preserve_metadata: true,
+                    },
+                    cancellation.clone(),
+                )
+                .await
+            {
+                Ok(_) => break,
+                Err(fm_vfs::VfsError::AlreadyExists { .. })
+                    if operation.conflict_policy == fm_operations::ConflictPolicy::RenameNew =>
+                {
+                    destination = self
+                        .destination_directory
+                        .join(&copy_name(&name, suffix))
+                        .map_err(|error| ExecutionError::Failed(error.to_string()))?;
+                    suffix = suffix.saturating_add(1);
+                }
+                Err(error) => return Err(error.into()),
+            }
+        }
+        *self.temporary.lock().unwrap_or_else(|e| e.into_inner()) = None;
+        Ok(())
+    }
+
+    async fn cleanup_partial(&self, _operation: &Operation) -> Result<(), ExecutionError> {
+        let temporary = self
+            .temporary
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .take();
+        if let Some(temporary) = temporary {
+            self.destination_provider
+                .discard_copy(&temporary, CancellationToken::new())
+                .await?;
+        }
+        Ok(())
+    }
+}
+
+fn copy_name(name: &str, suffix: u32) -> String {
+    let path = std::path::Path::new(name);
+    let stem = path
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .unwrap_or(name);
+    match path.extension().and_then(|value| value.to_str()) {
+        Some(extension) => format!("{stem} (copy {suffix}).{extension}"),
+        None => format!("{stem} (copy {suffix})"),
+    }
+}
+
+fn copy_stream_error(error: std::io::Error) -> ExecutionError {
+    fm_vfs::VfsError::Io {
+        message: error.to_string(),
+    }
+    .into()
 }
 
 #[async_trait]

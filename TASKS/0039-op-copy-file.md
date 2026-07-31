@@ -1,9 +1,9 @@
 # 0039 Operation: copy a single file
 
-Status: open
+Status: done
 Priority: high
 Owner: unassigned
-Agent: unassigned
+Agent: Codex
 Area: backend
 Depends on: 0038
 
@@ -34,4 +34,23 @@ establishes the streaming, temp-name and metadata-preservation pattern that dire
 - Sparse-file preservation is best-effort; document the behaviour rather than claiming support.
 
 ## Agent Notes
-- Not started.
+- Implemented a provider-backed single-file copy executor with a bounded 128 KiB streaming
+  fallback, private temporary destination, cancellation/failure cleanup, and atomic publication.
+- Added an APFS clone fast path behind `SERVER_SIDE_COPY`; unsupported or failed clones fall back
+  to streaming. ReFS cloning is not advertised because Rust's standard library does not expose a
+  safe implementation. Sparse preservation remains best-effort and is documented.
+- Added safe collision handling for `overwrite` and `renameNew`; all unresolved policies fail
+  without replacing the destination. Metadata preservation covers modified/accessed timestamps and
+  platform permissions; unsupported metadata is listed in
+  `docs/architecture/file-copy-metadata.md`.
+- Wired F5 to copy exactly one selected file to the other pane through the shared application API,
+  preserving browser/Tauri parity.
+- Added provider and application integration coverage for streamed temporary copies, zero/large
+  files, cancellation cleanup, missing sources, destination races, overwrite/rename-new, progress,
+  and metadata, plus a focused F5 component test. OS I/O errors (including disk-full, permission,
+  and locked-file errors) flow through the same typed failure and cleanup path; Windows-specific
+  locked-file behavior was not executable on the macOS development host.
+- Verification: `cargo check` and `cargo clippy -- -D warnings` passed for all affected crates;
+  `fm-vfs-local`, `fm-operations`, and copy-operation tests passed; TypeScript checking and the
+  focused F5 test passed. The complete `app-shell.test.ts` file still has one pre-existing keyboard
+  selection failure (`keeps cursor and selection independent...`, expected 4 rows but received 5).

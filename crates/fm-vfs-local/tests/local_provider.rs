@@ -10,8 +10,8 @@ use fm_vfs::{
 use fm_vfs_local::LocalFileSystemProvider;
 use futures::StreamExt;
 use tempfile::tempdir;
-use tokio_util::sync::CancellationToken;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio_util::sync::CancellationToken;
 
 #[tokio::test]
 async fn creates_one_unicode_child_directory_without_creating_parents() {
@@ -87,14 +87,23 @@ async fn streams_a_file_to_a_temporary_name_then_commits_it_atomically() {
         .await
         .expect("open source");
     let mut writer = provider
-        .open_write(&temporary, WriteOptions::default(), CancellationToken::new())
+        .open_write(
+            &temporary,
+            WriteOptions::default(),
+            CancellationToken::new(),
+        )
         .await
         .expect("open temporary destination");
     let mut buffer = [0_u8; 4];
     loop {
         let read = reader.read(&mut buffer).await.expect("stream read");
-        if read == 0 { break; }
-        writer.write_all(&buffer[..read]).await.expect("stream write");
+        if read == 0 {
+            break;
+        }
+        writer
+            .write_all(&buffer[..read])
+            .await
+            .expect("stream write");
     }
     writer.shutdown().await.expect("flush destination");
     provider
@@ -102,13 +111,19 @@ async fn streams_a_file_to_a_temporary_name_then_commits_it_atomically() {
             &source,
             &temporary,
             &destination,
-            CopyCommitOptions { overwrite: false, preserve_metadata: true },
+            CopyCommitOptions {
+                overwrite: false,
+                preserve_metadata: true,
+            },
             CancellationToken::new(),
         )
         .await
         .expect("commit copy");
 
-    assert_eq!(fs::read(root.path().join("copied.bin")).unwrap(), b"streamed bytes");
+    assert_eq!(
+        fs::read(root.path().join("copied.bin")).unwrap(),
+        b"streamed bytes"
+    );
     assert!(!root.path().join(".fm-copy-test").exists());
 }
 
@@ -474,6 +489,15 @@ async fn metadata_is_separate_and_capabilities_are_truthful() {
             | ProviderCapabilities::WATCH
             | ProviderCapabilities::CREATE_DIRECTORY
             | ProviderCapabilities::RENAME
+            | ProviderCapabilities::READ
+            | ProviderCapabilities::WRITE
+            | ProviderCapabilities::SET_TIMESTAMPS
+            | ProviderCapabilities::SET_PERMISSIONS
+            | if cfg!(target_os = "macos") {
+                ProviderCapabilities::SERVER_SIDE_COPY
+            } else {
+                ProviderCapabilities::empty()
+            }
     );
     let metadata = provider
         .metadata(&entry, CancellationToken::new())

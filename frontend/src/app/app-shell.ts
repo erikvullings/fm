@@ -301,6 +301,27 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
   }
 
   function handleGlobalKeydown(event: KeyboardEvent): void {
+    if (event.key === 'F5') {
+      const active = activeDirectory();
+      const selection = active === undefined ? undefined : selections.get(active.paneId);
+      const directory = active === undefined ? undefined : directories.get(active.paneId);
+      const selected = directory?.entries.filter(
+        (entry) => selection?.selectedEntryIds.includes(entry.id) === true && entry.kind === 'file',
+      );
+      const otherPaneId = workspace?.paneOrder.find((paneId) => paneId !== active?.paneId);
+      const destination = otherPaneId === undefined ? undefined : directories.get(otherPaneId)?.location;
+      const source = selected?.length === 1 ? selected[0] : undefined;
+      if (source !== undefined && destination !== undefined) {
+        event.preventDefault();
+        void attrsClient.startOperation({
+          type: 'copy',
+          sources: [source.location],
+          destination,
+          conflictPolicy: 'ask',
+        });
+      }
+      return;
+    }
     if (event.key === 'F7' && !createDirectoryOpen && activeDirectory() !== undefined) {
       event.preventDefault();
       createDirectoryOpen = true;

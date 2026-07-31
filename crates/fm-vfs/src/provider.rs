@@ -87,6 +87,19 @@ pub trait FileSystemProvider: Send + Sync {
         cancellation: CancellationToken,
     ) -> Result<ProviderWriteStream, VfsError>;
 
+    /// Attempts a provider-native clone into a private temporary destination.
+    ///
+    /// `false` requests the caller's streaming fallback without exposing a destination.
+    async fn server_side_copy(
+        &self,
+        source: &EntryRef,
+        temporary: &Location,
+        cancellation: CancellationToken,
+    ) -> Result<bool, VfsError> {
+        let _ = (source, temporary, cancellation);
+        Ok(false)
+    }
+
     /// Atomically publishes a completed temporary copy and applies supported source metadata.
     async fn commit_copy(
         &self,

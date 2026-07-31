@@ -96,7 +96,157 @@ async fn destination_collision_is_reported_without_overwriting_or_leaving_a_temp
 
     assert_eq!(operation.state, OperationStateDto::Failed);
     assert_eq!(fs::read(destination.join("same.txt")).unwrap(), b"existing");
-    assert!(fs::read_dir(&destination)
+    assert!(fs::read_dir(&destination).unwrap().all(|entry| {
+        !entry
+            .unwrap()
+            .file_name()
+            .to_string_lossy()
+            .starts_with(".fm-copy-")
+    }));
+}
+
+#[tokio::test]
+async fn explicit_overwrite_and_rename_new_policies_are_safe() {
+    let root = tempfile::tempdir().expect("temporary root");
+    let destination = root.path().join("destination");
+    fs::create_dir(&destination).unwrap();
+    fs::write(root.path().join("same.txt"), b"source").unwrap();
+    fs::write(destination.join("same.txt"), b"existing").unwrap();
+    let service = service(&root);
+    let source = Location::from_native_path(&root.path().join("same.txt")).unwrap();
+    let target = Location::from_native_path(&destination).unwrap();
+
+    assert_eq!(
+        copy(
+            &service,
+            source.clone(),
+            target.clone(),
+            OperationConflictPolicyDto::RenameNew
+        )
+        .await
+        .state,
+        OperationStateDto::Completed
+    );
+    assert_eq!(
+        fs::read(destination.join("same (copy 1).txt")).unwrap(),
+        b"source"
+    );
+    assert_eq!(
+        copy(
+            &service,
+            source,
+            target,
+            OperationConflictPolicyDto::Overwrite
+        )
+        .await
+        .state,
+        OperationStateDto::Completed
+    );
+    assert_eq!(fs::read(destination.join("same.txt")).unwrap(), b"source");
+}
+
+#[tokio::test]
+async fn preserves_modified_time_and_unix_permissions() {
+    let root = tempfile::tempdir().expect("temporary root");
+    let destination = root.path().join("destination");
+    fs::create_dir(&destination).unwrap();
+    let source_path = root.path().join("metadata.bin");
+    fs::write(&source_path, b"metadata").unwrap();
+    let source_file = fs::OpenOptions::new()
+        .write(true)
+        .open(&source_path)
+        .unwrap();
+    let modified = std::time::SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
+    source_file
+        .set_times(std::fs::FileTimes::new().set_modified(modified))
+        .unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&source_path, fs::Permissions::from_mode(0o640)).unwrap();
+    }
+    let service = service(&root);
+
+    let operation = copy(
+        &service,
+        Location::from_native_path(&source_path).unwrap(),
+        Location::from_native_path(&destination).unwrap(),
+        OperationConflictPolicyDto::Ask,
+    )
+    .await;
+
+    assert_eq!(operation.state, OperationStateDto::Completed);
+    let copied = fs::metadata(destination.join("metadata.bin")).unwrap();
+    assert_eq!(copied.modified().unwrap(), modified);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        assert_eq!(copied.permissions().mode() & 0o777, 0o640);
+    }
+}
+
+#[tokio::test]
+async fn a_missing_source_fails_without_creating_a_destination() {
+    let root = tempfile::tempdir().expect("temporary root");
+    let destination = root.path().join("destination");
+    fs::create_dir(&destination).unwrap();
+    let service = service(&root);
+
+    let operation = copy(
+        &service,
+        Location::from_native_path(&root.path().join("vanished.bin")).unwrap(),
+        Location::from_native_path(&destination).unwrap(),
+        OperationConflictPolicyDto::Ask,
+    )
+    .await;
+
+    assert_eq!(operation.state, OperationStateDto::Failed);
+    assert_eq!(fs::read_dir(destination).unwrap().count(), 0);
+}
+
+#[tokio::test]
+async fn cancellation_removes_the_private_partial_destination() {
+    let root = tempfile::tempdir().expect("temporary root");
+    let destination = root.path().join("destination");
+    fs::create_dir(&destination).unwrap();
+    let source_path = root.path().join("large-sparse.bin");
+    fs::File::create(&source_path)
         .unwrap()
-        .all(|entry| !entry.unwrap().file_name().to_string_lossy().starts_with(".fm-copy-")));
+        .set_len(128 * 1024 * 1024)
+        .unwrap();
+    let service = service(&root);
+    let operation = service
+        .start_operation(
+            StartOperationRequestDto {
+                operation_type: OperationKindDto::Copy,
+                sources: vec![Location::from_native_path(&source_path).unwrap().into()],
+                destination: Some(Location::from_native_path(&destination).unwrap().into()),
+                conflict_policy: OperationConflictPolicyDto::Ask,
+                name: None,
+                create_intermediate_directories: false,
+            },
+            None,
+        )
+        .unwrap();
+    for _ in 0..1_000 {
+        if service.get_operation(operation.id.into()).unwrap().state == OperationStateDto::Running {
+            service.cancel_operation(operation.id.into()).unwrap();
+            break;
+        }
+        tokio::task::yield_now().await;
+    }
+    for _ in 0..200 {
+        let state = service.get_operation(operation.id.into()).unwrap().state;
+        if state == OperationStateDto::Cancelled {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+
+    assert_eq!(
+        service.get_operation(operation.id.into()).unwrap().state,
+        OperationStateDto::Cancelled
+    );
+    assert!(!destination.join("large-sparse.bin").exists());
+    assert_eq!(fs::read_dir(destination).unwrap().count(), 0);
 }
