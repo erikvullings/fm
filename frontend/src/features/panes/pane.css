@@ -116,3 +116,11 @@
   font-size: 0.9em;
   font-variant-numeric: tabular-nums;
 }
+
+.fm-pane nav,
+.fm-pane nav .nav-wrapper i,
+.fm-pane nav a.sidenav-trigger,
+.fm-pane nav a.sidenav-trigger i {
+  height: 1rem;
+  line-height: 1rem;
+}
