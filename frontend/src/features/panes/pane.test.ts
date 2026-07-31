@@ -274,7 +274,7 @@ describe('Pane navigation input', () => {
     vi.useRealTimers();
   });
 
-  it('flashes an unmatched prefix as an error, then clears it', () => {
+  it('briefly marks an unmatched prefix as an error, then keeps it editable', () => {
     vi.useFakeTimers();
     mount(
       attrs({
@@ -295,7 +295,15 @@ describe('Pane navigation input', () => {
 
     vi.runAllTimers();
     m.redraw.sync();
-    expect(root.querySelector('.fm-typeahead-status')).toBeNull();
+    expect(root.querySelector('.fm-typeahead-status')?.textContent).toBe('dox');
+    expect(root.querySelector('.fm-typeahead-status')?.classList).not.toContain(
+      'fm-typeahead-status-error',
+    );
+
+    pane?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Backspace', bubbles: true }));
+    m.redraw.sync();
+    expect(root.querySelector('.fm-typeahead-status')?.textContent).toBe('do');
+    expect(root.querySelector('.fm-typeahead-match')?.textContent).toBe('do');
     vi.useRealTimers();
   });
 

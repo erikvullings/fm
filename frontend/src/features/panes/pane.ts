@@ -141,7 +141,6 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
     clearTypeaheadTimer();
     typeaheadError = true;
     typeaheadTimer = setTimeout(() => {
-      typeahead = undefined;
       typeaheadError = false;
       typeaheadTimer = undefined;
       m.redraw();

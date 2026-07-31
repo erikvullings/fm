@@ -57,3 +57,6 @@ keyboard navigation are named frontend test targets). Selection is independent o
   Every visible match highlights only its first occurrence, and constrained keyboard navigation
   uses the same containment rule. Three task-specific reducer/table/pane cases, frontend
   typecheck/build, repository lint, and the full Rust/frontend/script suite pass.
+- 2026-07-31 codex: Unmatched typeahead text now remains after its 400 ms red warning so Backspace
+  can repair a typo; only Escape explicitly clears it. The focused pane regression test, frontend
+  typecheck/build, repository lint, and full Rust/frontend/script test suite pass.

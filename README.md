@@ -28,7 +28,7 @@ through typed semantic commands, with host-platform modifiers and type-to-select
 active it appears behind a divider at the right of the pane footer, highlights the first matching
 in-word occurrence in every matching name, and constrains keyboard cursor movement to those
 matches. Backspace edits the prefix, Escape clears it and the selection, and an unmatched prefix
-briefly flashes red before clearing. Non-root directories prepend a synthetic `..` row that
+briefly flashes red but remains editable. Non-root directories prepend a synthetic `..` row that
 navigates to the parent without entering the selectable file set.
 The main window loads its authoritative workspace projection through the shared client and renders
 the recursive pane layout with a draggable, minimum-width splitter. Pane clicks and Tab traversal
