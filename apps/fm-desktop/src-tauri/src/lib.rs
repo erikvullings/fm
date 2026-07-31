@@ -70,6 +70,13 @@ pub fn run() {
             commands::delete_workspace,
             commands::open_workspace,
             commands::apply_workspace_command,
+            commands::start_operation,
+            commands::list_operations,
+            commands::get_operation,
+            commands::cancel_operation,
+            commands::pause_operation,
+            commands::resume_operation,
+            commands::resolve_operation_conflict,
         ])
         .run(build_context())
         .expect("error while running the Tauri application");
@@ -114,6 +121,13 @@ mod tests {
                 commands::delete_workspace,
                 commands::open_workspace,
                 commands::apply_workspace_command,
+                commands::start_operation,
+                commands::list_operations,
+                commands::get_operation,
+                commands::cancel_operation,
+                commands::pause_operation,
+                commands::resume_operation,
+                commands::resolve_operation_conflict,
             ])
             // Uses the app's real `tauri.conf.json` config (same as `run()`)
             // rather than `mock_context(noop_assets())`'s empty default config,

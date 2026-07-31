@@ -189,6 +189,32 @@ describe('AppShell', () => {
     expect(indicator?.getAttribute('aria-label')).toBe('Backend connection open');
   });
 
+  it('loads operations once then updates progress from events without polling', async () => {
+    const client = new MockFileManagerClient();
+    const operation = await client.startOperation({
+      type: 'copy',
+      sources: [{ providerId: 'file', uri: 'mock:///Documents/report.pdf' }],
+      destination: { providerId: 'file', uri: 'mock:///Empty' },
+      conflictPolicy: 'ask',
+    });
+    const listOperations = vi.spyOn(client, 'listOperations');
+    m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
+
+    await vi.waitFor(() => expect(root.textContent).toContain('copy · running'));
+    client.emit({
+      eventId: 11,
+      timestamp: '2026-07-31T12:00:00Z',
+      payload: {
+        type: 'operation.progress',
+        operationId: operation.id,
+        progress: { completedItems: 1, totalItems: 2, completedBytes: 512 },
+      },
+    });
+
+    await vi.waitFor(() => expect(root.textContent).toContain('1 / 2 items'));
+    expect(listOperations).toHaveBeenCalledTimes(1);
+  });
+
   it('ignores old directory revisions and refetches pane snapshots after a replay gap', async () => {
     const client = new MockFileManagerClient();
     const listDirectory = vi.spyOn(client, 'listDirectory');

@@ -38,8 +38,9 @@ navigates to the parent without entering the selectable file set.
 The main window loads its authoritative workspace projection through the shared client and renders
 the recursive pane layout with a draggable, minimum-width splitter. Pane clicks and Tab traversal
 move visible focus through semantic workspace commands; divider changes are sent as debounced
-`UpdateLayout` commands. Compact workspace, operation-centre placeholder, and function-key rows
-complete the initial two-pane shell.
+`UpdateLayout` commands. The event-driven operation centre shows queued, running, paused, completed,
+and failed jobs with progress, transfer rate, current entry, lifecycle controls, retained results,
+and expandable failure details. Completed and failed jobs remain visible until dismissed.
 Application-wide settings are stored as versioned JSON in the platform configuration directory
 and are shared by the Axum `GET`/`PUT /api/v1/settings` endpoints and equivalent Tauri commands.
 Writes are atomic, older schemas migrate forward, and corrupt files are backed up before defaults
@@ -90,6 +91,11 @@ with partial-destination cleanup delegated to each operation implementation. Sha
 checks reject same/nested destinations, case-only renames on insensitive filesystems, traversal
 cycles, and file/directory replacement mismatches. Concrete mutation kinds land in tasks
 0037–0044; this task establishes only their engine contract.
+The shared application service now exposes semantic operation start/list/get/cancel/pause/resume
+and conflict-resolution methods through matching Axum REST endpoints and Tauri commands. REST
+starts accept `Idempotency-Key` so retries return the original job rather than queueing duplicates;
+the generated HTTP client and the Tauri and mock adapters expose the same transport-neutral client
+surface.
 
 Local paths are represented as validated, percent-encoded `file:` locations rather than raw path
 strings. Conversion preserves POSIX, Windows drive, UNC, long-path and Unicode forms; lexical

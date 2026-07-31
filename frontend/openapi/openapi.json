@@ -113,6 +113,16 @@
         ],
         "type": "string"
       },
+      "ConflictResolutionDto": {
+        "description": "User decision for a pending conflict.",
+        "enum": [
+          "skip",
+          "overwrite",
+          "renameNew",
+          "cancelOperation"
+        ],
+        "type": "string"
+      },
       "CreateWorkspaceRequestDto": {
         "description": "Requests a new workspace (`POST /api/v1/workspaces`).",
         "example": {
@@ -451,6 +461,25 @@
         },
         "required": [
           "entryId",
+          "location"
+        ],
+        "type": "object"
+      },
+      "EntryRefDto": {
+        "description": "Stable provider-neutral reference included in operation snapshots.",
+        "properties": {
+          "id": {
+            "description": "Stable entry identifier assigned by the backend.",
+            "format": "uuid",
+            "type": "string"
+          },
+          "location": {
+            "$ref": "#/components/schemas/LocationDto",
+            "description": "Provider-neutral entry location."
+          }
+        },
+        "required": [
+          "id",
           "location"
         ],
         "type": "object"
@@ -897,6 +926,181 @@
         ],
         "type": "object"
       },
+      "OperationConflictPolicyDto": {
+        "description": "Conflict policy carried by an operation request and snapshot.",
+        "enum": [
+          "ask",
+          "skip",
+          "overwrite",
+          "renameNew",
+          "keepNewer"
+        ],
+        "type": "string"
+      },
+      "OperationDto": {
+        "description": "Complete transport snapshot of an operation.",
+        "properties": {
+          "completedAt": {
+            "description": "Terminal timestamp.",
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "conflictPolicy": {
+            "$ref": "#/components/schemas/OperationConflictPolicyDto",
+            "description": "Selected conflict policy."
+          },
+          "createdAt": {
+            "description": "Acceptance timestamp.",
+            "format": "date-time",
+            "type": "string"
+          },
+          "destination": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/LocationDto",
+                "description": "Optional destination."
+              }
+            ]
+          },
+          "id": {
+            "description": "Stable operation identifier.",
+            "format": "uuid",
+            "type": "string"
+          },
+          "progress": {
+            "$ref": "#/components/schemas/OperationProgressDto",
+            "description": "Latest progress."
+          },
+          "sources": {
+            "description": "Stable source references.",
+            "items": {
+              "$ref": "#/components/schemas/EntryRefDto"
+            },
+            "type": "array"
+          },
+          "startedAt": {
+            "description": "Planning start timestamp.",
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "state": {
+            "$ref": "#/components/schemas/OperationStateDto",
+            "description": "Current lifecycle state."
+          },
+          "type": {
+            "$ref": "#/components/schemas/OperationKindDto",
+            "description": "Semantic operation discriminator."
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "state",
+          "sources",
+          "progress",
+          "conflictPolicy",
+          "createdAt"
+        ],
+        "type": "object"
+      },
+      "OperationKindDto": {
+        "description": "Initial semantic operation kinds.",
+        "enum": [
+          "createDirectory",
+          "rename",
+          "copy",
+          "move",
+          "duplicate",
+          "trash",
+          "delete"
+        ],
+        "type": "string"
+      },
+      "OperationProgressDto": {
+        "description": "Progress counters for an operation snapshot.",
+        "properties": {
+          "bytesPerSecond": {
+            "description": "Smoothed byte rate.",
+            "format": "int64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "completedBytes": {
+            "description": "Completed bytes.",
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "completedItems": {
+            "description": "Completed plan items.",
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "currentEntry": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/EntryRefDto",
+                "description": "Entry currently processed."
+              }
+            ]
+          },
+          "totalBytes": {
+            "description": "Planned bytes.",
+            "format": "int64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "totalItems": {
+            "description": "Planned item count.",
+            "format": "int64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "completedItems",
+          "completedBytes"
+        ],
+        "type": "object"
+      },
+      "OperationStateDto": {
+        "description": "Observable operation lifecycle state.",
+        "enum": [
+          "queued",
+          "planning",
+          "running",
+          "paused",
+          "waitingForConflictResolution",
+          "cancelling",
+          "cancelled",
+          "completed",
+          "completedWithWarnings",
+          "failed"
+        ],
+        "type": "string"
+      },
       "OwnershipInfoDto": {
         "description": "Ownership information for an entry.",
         "properties": {
@@ -1051,6 +1255,24 @@
             "type": "object"
           }
         ]
+      },
+      "ResolveOperationConflictRequestDto": {
+        "description": "Reserved conflict-resolution request for the dialog introduced by task 0045.",
+        "properties": {
+          "applyToAllSimilar": {
+            "description": "Whether the decision applies to subsequent similar conflicts.",
+            "type": "boolean"
+          },
+          "resolution": {
+            "$ref": "#/components/schemas/ConflictResolutionDto",
+            "description": "Decision for this conflict."
+          }
+        },
+        "required": [
+          "resolution",
+          "applyToAllSimilar"
+        ],
+        "type": "object"
       },
       "RuntimeCapabilitiesDto": {
         "description": "Capabilities the current runtime and platform support, so the frontend can\nrespond to capabilities rather than detecting operating systems directly\n(spec §21).",
@@ -1303,6 +1525,43 @@
           "vertical"
         ],
         "type": "string"
+      },
+      "StartOperationRequestDto": {
+        "description": "A request to start one backend-owned semantic operation.",
+        "properties": {
+          "conflictPolicy": {
+            "$ref": "#/components/schemas/OperationConflictPolicyDto",
+            "description": "Conflict behavior selected before execution."
+          },
+          "destination": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/LocationDto",
+                "description": "Optional target directory or entry."
+              }
+            ]
+          },
+          "sources": {
+            "description": "Provider-neutral source locations.",
+            "items": {
+              "$ref": "#/components/schemas/LocationDto"
+            },
+            "type": "array"
+          },
+          "type": {
+            "$ref": "#/components/schemas/OperationKindDto",
+            "description": "Semantic operation discriminator. `type` is the stable JSON field name."
+          }
+        },
+        "required": [
+          "type",
+          "sources",
+          "conflictPolicy"
+        ],
+        "type": "object"
       },
       "TabStateDto": {
         "description": "A single tab: a location, its navigation history and its view configuration.",
@@ -2138,6 +2397,273 @@
           }
         },
         "summary": "Navigates a pane and returns the destination's first page."
+      }
+    },
+    "/api/v1/operations": {
+      "get": {
+        "operationId": "listOperations",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/OperationDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": ""
+          }
+        }
+      },
+      "post": {
+        "operationId": "startOperation",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StartOperationRequestDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperationDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationErrorDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/v1/operations/{operationId}": {
+      "get": {
+        "operationId": "getOperation",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "operationId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperationDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationErrorDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/v1/operations/{operationId}/cancel": {
+      "post": {
+        "operationId": "cancelOperation",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "operationId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationErrorDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationErrorDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/v1/operations/{operationId}/pause": {
+      "post": {
+        "operationId": "pauseOperation",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "operationId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationErrorDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationErrorDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/v1/operations/{operationId}/resolve-conflict": {
+      "post": {
+        "operationId": "resolveOperationConflict",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "operationId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResolveOperationConflictRequestDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationErrorDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationErrorDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/v1/operations/{operationId}/resume": {
+      "post": {
+        "operationId": "resumeOperation",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "operationId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationErrorDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationErrorDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        }
       }
     },
     "/api/v1/runtime": {

@@ -46,11 +46,24 @@ export interface Operation {
   id: OperationId;
   kind: OperationKind;
   state: OperationState;
-  sources: EntryRef[];
+  sources: readonly EntryRef[];
   destination?: Location;
   progress: OperationProgress;
   conflictPolicy: ConflictPolicy;
   createdAt: string;
   startedAt?: string;
   completedAt?: string;
+  /** Backend-provided completion summary retained in the operation centre. */
+  result?: OperationResult;
+}
+
+export interface OperationResult {
+  message: string;
+  details?: Readonly<Record<string, unknown>>;
+}
+
+export interface OperationFailure {
+  code: string;
+  message: string;
+  details?: Readonly<Record<string, unknown>>;
 }

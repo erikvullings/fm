@@ -1,22 +1,33 @@
 //! The `FileManagerService` facade (specification §7).
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
+use async_trait::async_trait;
+use fm_domain::OperationId;
 use fm_domain::{DirectorySnapshot, EntryMetadata};
 use fm_events::{
     BackendEventPayload, EventAudience, EventBus, NotificationLevelPayload, NotificationPayload,
+};
+use fm_operations::{
+    ExecutionError, Operation, OperationExecutor, OperationPlan, PlanItem, Scheduler,
+    SchedulerError,
 };
 use fm_settings::{
     ConflictPolicy, DateFormat, DefaultPaneLayout, Settings, SettingsStore, SizeFormat, Theme,
 };
 use fm_transport_dto::{
-    ConflictPolicyDto, DateFormatDto, DefaultPaneLayoutDto, EntryMetadataRequest,
-    ListDirectoryRequest, NavigateRequest, PlatformKindDto, RuntimeCapabilitiesDto, RuntimeKindDto,
-    SettingsDto, SizeFormatDto, ThemeDto, WorkspaceCommandDto, WorkspaceDto, WorkspaceSummaryDto,
+    ConflictPolicyDto, ConflictResolutionDto, DateFormatDto, DefaultPaneLayoutDto,
+    EntryMetadataRequest, ListDirectoryRequest, NavigateRequest, OperationDto, OperationKindDto,
+    OperationProgressDto, OperationStateDto, PlatformKindDto, ResolveOperationConflictRequestDto,
+    RuntimeCapabilitiesDto, RuntimeKindDto, SettingsDto, SizeFormatDto, StartOperationRequestDto,
+    ThemeDto, WorkspaceCommandDto, WorkspaceDto, WorkspaceSummaryDto,
 };
+use fm_vfs::EntryRef;
 use fm_vfs::ProviderRegistry;
 use fm_vfs_local::LocalFileSystemProvider;
+use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 use crate::DirectoryService;
@@ -41,6 +52,8 @@ pub struct FileManagerService {
     events: EventBus,
     settings_store: SettingsStore,
     settings: Mutex<Settings>,
+    operations: Scheduler,
+    operation_idempotency: Mutex<HashMap<String, OperationId>>,
 }
 
 impl FileManagerService {
@@ -89,16 +102,106 @@ impl FileManagerService {
                 },
             );
         }
+        let operation_concurrency = loaded.settings.operation_concurrency;
         Self {
             runtime,
             workspaces: WorkspaceService::new(JsonFileWorkspaceRepository::new(
                 workspace_directory,
             )),
             directories: DirectoryService::with_event_bus(providers, events.clone()),
-            events,
+            events: events.clone(),
             settings_store,
             settings: Mutex::new(loaded.settings),
+            operations: Scheduler::new(operation_concurrency, events),
+            operation_idempotency: Mutex::new(HashMap::new()),
         }
+    }
+
+    /// Starts a semantic operation, deduplicating retries by idempotency key.
+    pub fn start_operation(
+        &self,
+        request: StartOperationRequestDto,
+        idempotency_key: Option<String>,
+    ) -> Result<OperationDto, ApplicationError> {
+        let mut idempotency = self
+            .operation_idempotency
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        if let Some(existing) = idempotency_key
+            .as_ref()
+            .and_then(|key| idempotency.get(key).copied())
+        {
+            return self.get_operation(existing);
+        }
+        let sources: Vec<EntryRef> = request
+            .sources
+            .into_iter()
+            .map(|location| EntryRef {
+                id: fm_domain::EntryId::new(),
+                location: location.into(),
+            })
+            .collect();
+        let operation = Operation::new(
+            operation_kind(request.operation_type),
+            sources,
+            request.destination.map(Into::into),
+            conflict_policy(request.conflict_policy),
+        );
+        let id = self
+            .operations
+            .submit(operation, Arc::new(NoOpExecutor))
+            .map_err(map_scheduler_error)?;
+        if let Some(key) = idempotency_key {
+            idempotency.insert(key, id);
+        }
+        self.get_operation(id)
+    }
+
+    /// Lists all operation snapshots.
+    #[must_use]
+    pub fn list_operations(&self) -> Vec<OperationDto> {
+        self.operations
+            .list()
+            .into_iter()
+            .map(operation_dto)
+            .collect()
+    }
+
+    /// Gets one operation snapshot.
+    pub fn get_operation(&self, id: OperationId) -> Result<OperationDto, ApplicationError> {
+        self.operations
+            .get(id)
+            .map(operation_dto)
+            .map_err(map_scheduler_error)
+    }
+
+    /// Requests cancellation of an operation.
+    pub fn cancel_operation(&self, id: OperationId) -> Result<(), ApplicationError> {
+        self.operations.cancel(id).map_err(map_scheduler_error)
+    }
+
+    /// Pauses a running operation.
+    pub fn pause_operation(&self, id: OperationId) -> Result<(), ApplicationError> {
+        self.operations.pause(id).map_err(map_scheduler_error)
+    }
+
+    /// Resumes a paused operation.
+    pub fn resume_operation(&self, id: OperationId) -> Result<(), ApplicationError> {
+        self.operations.resume(id).map_err(map_scheduler_error)
+    }
+
+    /// Applies a reserved conflict decision through the shared operation service.
+    pub fn resolve_operation_conflict(
+        &self,
+        id: OperationId,
+        request: ResolveOperationConflictRequestDto,
+    ) -> Result<(), ApplicationError> {
+        if request.resolution == ConflictResolutionDto::CancelOperation {
+            return self.cancel_operation(id);
+        }
+        self.operations
+            .resolve_conflict(id)
+            .map_err(map_scheduler_error)
     }
 
     /// Returns the current application-wide settings.
@@ -256,6 +359,146 @@ impl From<WorkspaceSummary> for WorkspaceSummaryDto {
             updated_at: summary.updated_at,
             revision: summary.revision,
         }
+    }
+}
+
+struct NoOpExecutor;
+
+#[async_trait]
+impl OperationExecutor for NoOpExecutor {
+    async fn plan(
+        &self,
+        operation: &Operation,
+        _cancellation: &CancellationToken,
+    ) -> Result<OperationPlan, ExecutionError> {
+        Ok(OperationPlan::new(
+            operation
+                .sources
+                .iter()
+                .cloned()
+                .map(|entry| PlanItem::new(entry, 0))
+                .collect(),
+        ))
+    }
+    async fn execute(
+        &self,
+        _operation: &Operation,
+        _item: &PlanItem,
+        _cancellation: &CancellationToken,
+    ) -> Result<(), ExecutionError> {
+        Ok(())
+    }
+    async fn cleanup_partial(&self, _operation: &Operation) -> Result<(), ExecutionError> {
+        Ok(())
+    }
+}
+
+fn map_scheduler_error(error: SchedulerError) -> ApplicationError {
+    match error {
+        SchedulerError::UnknownOperation(_) => ApplicationError::NotFound,
+        SchedulerError::Transition(error) => ApplicationError::InvalidRequest(error.to_string()),
+        SchedulerError::Execution(_) => ApplicationError::Internal,
+    }
+}
+
+const fn operation_kind(kind: OperationKindDto) -> fm_operations::OperationKind {
+    match kind {
+        OperationKindDto::CreateDirectory => fm_operations::OperationKind::CreateDirectory,
+        OperationKindDto::Rename => fm_operations::OperationKind::Rename,
+        OperationKindDto::Copy => fm_operations::OperationKind::Copy,
+        OperationKindDto::Move => fm_operations::OperationKind::Move,
+        OperationKindDto::Duplicate => fm_operations::OperationKind::Duplicate,
+        OperationKindDto::Trash => fm_operations::OperationKind::Trash,
+        OperationKindDto::Delete => fm_operations::OperationKind::Delete,
+    }
+}
+
+const fn conflict_policy(
+    policy: fm_transport_dto::OperationConflictPolicyDto,
+) -> fm_operations::ConflictPolicy {
+    match policy {
+        fm_transport_dto::OperationConflictPolicyDto::Ask => fm_operations::ConflictPolicy::Ask,
+        fm_transport_dto::OperationConflictPolicyDto::Skip => fm_operations::ConflictPolicy::Skip,
+        fm_transport_dto::OperationConflictPolicyDto::Overwrite => {
+            fm_operations::ConflictPolicy::Overwrite
+        }
+        fm_transport_dto::OperationConflictPolicyDto::RenameNew => {
+            fm_operations::ConflictPolicy::RenameNew
+        }
+        fm_transport_dto::OperationConflictPolicyDto::KeepNewer => {
+            fm_operations::ConflictPolicy::KeepNewer
+        }
+    }
+}
+
+fn operation_dto(operation: Operation) -> OperationDto {
+    OperationDto {
+        id: operation.id.into(),
+        operation_type: match operation.kind {
+            fm_operations::OperationKind::CreateDirectory => OperationKindDto::CreateDirectory,
+            fm_operations::OperationKind::Rename => OperationKindDto::Rename,
+            fm_operations::OperationKind::Copy => OperationKindDto::Copy,
+            fm_operations::OperationKind::Move => OperationKindDto::Move,
+            fm_operations::OperationKind::Duplicate => OperationKindDto::Duplicate,
+            fm_operations::OperationKind::Trash => OperationKindDto::Trash,
+            fm_operations::OperationKind::Delete => OperationKindDto::Delete,
+        },
+        state: match operation.state {
+            fm_operations::OperationState::Queued => OperationStateDto::Queued,
+            fm_operations::OperationState::Planning => OperationStateDto::Planning,
+            fm_operations::OperationState::Running => OperationStateDto::Running,
+            fm_operations::OperationState::Paused => OperationStateDto::Paused,
+            fm_operations::OperationState::WaitingForConflictResolution => {
+                OperationStateDto::WaitingForConflictResolution
+            }
+            fm_operations::OperationState::Cancelling => OperationStateDto::Cancelling,
+            fm_operations::OperationState::Cancelled => OperationStateDto::Cancelled,
+            fm_operations::OperationState::Completed => OperationStateDto::Completed,
+            fm_operations::OperationState::CompletedWithWarnings => {
+                OperationStateDto::CompletedWithWarnings
+            }
+            fm_operations::OperationState::Failed => OperationStateDto::Failed,
+        },
+        sources: operation
+            .sources
+            .into_iter()
+            .map(|entry| fm_transport_dto::EntryRefDto {
+                id: entry.id.into(),
+                location: entry.location.into(),
+            })
+            .collect(),
+        destination: operation.destination.map(Into::into),
+        progress: OperationProgressDto {
+            completed_items: operation.progress.completed_items,
+            total_items: operation.progress.total_items,
+            completed_bytes: operation.progress.completed_bytes,
+            total_bytes: operation.progress.total_bytes,
+            current_entry: operation.progress.current_entry.map(|entry| {
+                fm_transport_dto::EntryRefDto {
+                    id: entry.id.into(),
+                    location: entry.location.into(),
+                }
+            }),
+            bytes_per_second: operation.progress.bytes_per_second,
+        },
+        conflict_policy: match operation.conflict_policy {
+            fm_operations::ConflictPolicy::Ask => fm_transport_dto::OperationConflictPolicyDto::Ask,
+            fm_operations::ConflictPolicy::Skip => {
+                fm_transport_dto::OperationConflictPolicyDto::Skip
+            }
+            fm_operations::ConflictPolicy::Overwrite => {
+                fm_transport_dto::OperationConflictPolicyDto::Overwrite
+            }
+            fm_operations::ConflictPolicy::RenameNew => {
+                fm_transport_dto::OperationConflictPolicyDto::RenameNew
+            }
+            fm_operations::ConflictPolicy::KeepNewer => {
+                fm_transport_dto::OperationConflictPolicyDto::KeepNewer
+            }
+        },
+        created_at: operation.created_at,
+        started_at: operation.started_at,
+        completed_at: operation.completed_at,
     }
 }
 

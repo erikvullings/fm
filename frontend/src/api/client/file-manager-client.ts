@@ -87,7 +87,13 @@ export interface FileManagerClient {
 
   startOperation(request: StartOperationRequest, signal?: AbortSignal): Promise<Operation>;
 
+  listOperations(signal?: AbortSignal): Promise<Operation[]>;
+
   cancelOperation(operationId: OperationId, signal?: AbortSignal): Promise<void>;
+
+  pauseOperation(operationId: OperationId, signal?: AbortSignal): Promise<void>;
+
+  resumeOperation(operationId: OperationId, signal?: AbortSignal): Promise<void>;
 
   resolveConflict(request: ResolveConflictRequest, signal?: AbortSignal): Promise<void>;
 

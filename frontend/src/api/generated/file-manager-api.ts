@@ -12,8 +12,11 @@ import type {
   HealthDto,
   ListDirectoryRequest,
   NavigateRequest,
+  OperationDto,
+  ResolveOperationConflictRequestDto,
   RuntimeCapabilitiesDto,
   SettingsDto,
+  StartOperationRequestDto,
   WorkspaceCommandDto,
   WorkspaceDto,
   WorkspaceSummaryDto
@@ -300,6 +303,300 @@ export const navigatePane = async (navigateRequest: NavigateRequest, options?: P
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
     body: JSON.stringify(navigateRequest)
+  }
+);}
+
+
+
+export type listOperationsResponse200 = {
+  data: OperationDto[]
+  status: 200
+}
+
+export type listOperationsResponseSuccess = (listOperationsResponse200) & {
+  headers: Headers;
+};
+;
+
+export type listOperationsResponse = (listOperationsResponseSuccess)
+
+export const getListOperationsUrl = () => {
+
+
+
+
+  return `/api/v1/operations`
+}
+
+export const listOperations = async ( options?: Parameters<typeof fetchMutator>[1]): Promise<listOperationsResponse> => {
+
+  return fetchMutator<listOperationsResponse>(getListOperationsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+export type startOperationResponse201 = {
+  data: OperationDto
+  status: 201
+}
+
+export type startOperationResponse400 = {
+  data: ApplicationErrorDto
+  status: 400
+}
+
+export type startOperationResponseSuccess = (startOperationResponse201) & {
+  headers: Headers;
+};
+export type startOperationResponseError = (startOperationResponse400) & {
+  headers: Headers;
+};
+
+export type startOperationResponse = (startOperationResponseSuccess | startOperationResponseError)
+
+export const getStartOperationUrl = () => {
+
+
+
+
+  return `/api/v1/operations`
+}
+
+export const startOperation = async (startOperationRequestDto: StartOperationRequestDto, options?: Parameters<typeof fetchMutator>[1]): Promise<startOperationResponse> => {
+
+  return fetchMutator<startOperationResponse>(getStartOperationUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(startOperationRequestDto)
+  }
+);}
+
+
+
+export type getOperationResponse200 = {
+  data: OperationDto
+  status: 200
+}
+
+export type getOperationResponse404 = {
+  data: ApplicationErrorDto
+  status: 404
+}
+
+export type getOperationResponseSuccess = (getOperationResponse200) & {
+  headers: Headers;
+};
+export type getOperationResponseError = (getOperationResponse404) & {
+  headers: Headers;
+};
+
+export type getOperationResponse = (getOperationResponseSuccess | getOperationResponseError)
+
+export const getGetOperationUrl = (operationId: string,) => {
+
+
+
+
+  return `/api/v1/operations/${operationId}`
+}
+
+export const getOperation = async (operationId: string, options?: Parameters<typeof fetchMutator>[1]): Promise<getOperationResponse> => {
+
+  return fetchMutator<getOperationResponse>(getGetOperationUrl(operationId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+export type cancelOperationResponse204 = {
+  data: void
+  status: 204
+}
+
+export type cancelOperationResponse400 = {
+  data: ApplicationErrorDto
+  status: 400
+}
+
+export type cancelOperationResponse404 = {
+  data: ApplicationErrorDto
+  status: 404
+}
+
+export type cancelOperationResponseSuccess = (cancelOperationResponse204) & {
+  headers: Headers;
+};
+export type cancelOperationResponseError = (cancelOperationResponse400 | cancelOperationResponse404) & {
+  headers: Headers;
+};
+
+export type cancelOperationResponse = (cancelOperationResponseSuccess | cancelOperationResponseError)
+
+export const getCancelOperationUrl = (operationId: string,) => {
+
+
+
+
+  return `/api/v1/operations/${operationId}/cancel`
+}
+
+export const cancelOperation = async (operationId: string, options?: Parameters<typeof fetchMutator>[1]): Promise<cancelOperationResponse> => {
+
+  return fetchMutator<cancelOperationResponse>(getCancelOperationUrl(operationId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+export type pauseOperationResponse204 = {
+  data: void
+  status: 204
+}
+
+export type pauseOperationResponse400 = {
+  data: ApplicationErrorDto
+  status: 400
+}
+
+export type pauseOperationResponse404 = {
+  data: ApplicationErrorDto
+  status: 404
+}
+
+export type pauseOperationResponseSuccess = (pauseOperationResponse204) & {
+  headers: Headers;
+};
+export type pauseOperationResponseError = (pauseOperationResponse400 | pauseOperationResponse404) & {
+  headers: Headers;
+};
+
+export type pauseOperationResponse = (pauseOperationResponseSuccess | pauseOperationResponseError)
+
+export const getPauseOperationUrl = (operationId: string,) => {
+
+
+
+
+  return `/api/v1/operations/${operationId}/pause`
+}
+
+export const pauseOperation = async (operationId: string, options?: Parameters<typeof fetchMutator>[1]): Promise<pauseOperationResponse> => {
+
+  return fetchMutator<pauseOperationResponse>(getPauseOperationUrl(operationId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+export type resolveOperationConflictResponse204 = {
+  data: void
+  status: 204
+}
+
+export type resolveOperationConflictResponse400 = {
+  data: ApplicationErrorDto
+  status: 400
+}
+
+export type resolveOperationConflictResponse404 = {
+  data: ApplicationErrorDto
+  status: 404
+}
+
+export type resolveOperationConflictResponseSuccess = (resolveOperationConflictResponse204) & {
+  headers: Headers;
+};
+export type resolveOperationConflictResponseError = (resolveOperationConflictResponse400 | resolveOperationConflictResponse404) & {
+  headers: Headers;
+};
+
+export type resolveOperationConflictResponse = (resolveOperationConflictResponseSuccess | resolveOperationConflictResponseError)
+
+export const getResolveOperationConflictUrl = (operationId: string,) => {
+
+
+
+
+  return `/api/v1/operations/${operationId}/resolve-conflict`
+}
+
+export const resolveOperationConflict = async (operationId: string,
+    resolveOperationConflictRequestDto: ResolveOperationConflictRequestDto, options?: Parameters<typeof fetchMutator>[1]): Promise<resolveOperationConflictResponse> => {
+
+  return fetchMutator<resolveOperationConflictResponse>(getResolveOperationConflictUrl(operationId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(resolveOperationConflictRequestDto)
+  }
+);}
+
+
+
+export type resumeOperationResponse204 = {
+  data: void
+  status: 204
+}
+
+export type resumeOperationResponse400 = {
+  data: ApplicationErrorDto
+  status: 400
+}
+
+export type resumeOperationResponse404 = {
+  data: ApplicationErrorDto
+  status: 404
+}
+
+export type resumeOperationResponseSuccess = (resumeOperationResponse204) & {
+  headers: Headers;
+};
+export type resumeOperationResponseError = (resumeOperationResponse400 | resumeOperationResponse404) & {
+  headers: Headers;
+};
+
+export type resumeOperationResponse = (resumeOperationResponseSuccess | resumeOperationResponseError)
+
+export const getResumeOperationUrl = (operationId: string,) => {
+
+
+
+
+  return `/api/v1/operations/${operationId}/resume`
+}
+
+export const resumeOperation = async (operationId: string, options?: Parameters<typeof fetchMutator>[1]): Promise<resumeOperationResponse> => {
+
+  return fetchMutator<resumeOperationResponse>(getResumeOperationUrl(operationId),
+  {
+    ...options,
+    method: 'POST'
+
+
   }
 );}
 

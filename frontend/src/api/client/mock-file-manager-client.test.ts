@@ -103,11 +103,11 @@ describe('MockFileManagerClient API', () => {
   it('tracks operation lifecycle calls in memory', async () => {
     const client = new MockFileManagerClient({ seed: 22 });
     const operation = await client.startOperation({
-      kind: 'copy',
+      type: 'copy',
       sources: [
         {
-          id: 'source-1',
-          location: { providerId: 'file', uri: 'mock:///Documents/report.pdf' },
+          providerId: 'file',
+          uri: 'mock:///Documents/report.pdf',
         },
       ],
       destination: { providerId: 'file', uri: 'mock:///Empty' },
@@ -117,7 +117,7 @@ describe('MockFileManagerClient API', () => {
     await client.resolveConflict({
       operationId: operation.id,
       resolution: 'skip',
-      applyToAll: false,
+      applyToAllSimilar: false,
     });
     await client.cancelOperation(operation.id);
 

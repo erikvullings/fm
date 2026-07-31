@@ -1,6 +1,6 @@
 import type { SortDescriptorDto } from '../api/generated/models/sortDescriptorDto';
 import type { ActionId, EntryId, OperationId, PaneId } from './ids';
-import type { EntryRef, Location } from './location';
+import type { Location } from './location';
 import type { ConflictPolicy, OperationKind } from './operation';
 
 /** Open column sort descriptor shared by workspace views and directory requests. */
@@ -48,17 +48,19 @@ export interface EntryMetadataRequest {
  * struct until then.
  */
 export interface StartOperationRequest {
-  kind: OperationKind;
-  sources: EntryRef[];
+  type: OperationKind;
+  sources: readonly Location[];
   destination?: Location;
   conflictPolicy: ConflictPolicy;
 }
 
 /** Submits the user's decision for a queued conflict (spec §17). */
+export type ConflictResolution = 'skip' | 'overwrite' | 'renameNew' | 'cancelOperation';
+
 export interface ResolveConflictRequest {
   operationId: OperationId;
-  resolution: ConflictPolicy;
-  applyToAll: boolean;
+  resolution: ConflictResolution;
+  applyToAllSimilar: boolean;
 }
 
 /** Invokes a registered action (spec §18). */

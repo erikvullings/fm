@@ -1055,6 +1055,7 @@ dependencies = [
  "dirs",
  "fm-domain",
  "fm-events",
+ "fm-operations",
  "fm-settings",
  "fm-transport-dto",
  "fm-vfs",
@@ -1082,6 +1083,7 @@ name = "fm-desktop"
 version = "0.1.0"
 dependencies = [
  "fm-application",
+ "fm-domain",
  "fm-events",
  "fm-transport-dto",
  "serde",

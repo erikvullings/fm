@@ -25,9 +25,15 @@ import type {
 import { workspaceProjectionFromDto } from '../../models/workspace';
 import { SseEventStream } from '../events/sse-event-stream';
 import {
+  resolveOperationConflict as requestConflictResolution,
   listDirectory as requestDirectory,
   getEntryMetadata as requestEntryMetadata,
   navigatePane as requestNavigation,
+  cancelOperation as requestOperationCancel,
+  pauseOperation as requestOperationPause,
+  resumeOperation as requestOperationResume,
+  startOperation as requestOperationStart,
+  listOperations as requestOperations,
   getRuntimeCapabilities as requestRuntimeCapabilities,
   getSettings as requestSettings,
   updateSettings as requestSettingsUpdate,
@@ -38,6 +44,7 @@ import {
   openWorkspace as requestWorkspaceOpen,
   listWorkspaces as requestWorkspaces,
 } from '../generated/file-manager-api';
+import type { OperationDto } from '../generated/models/operationDto';
 import type { SettingsDto } from '../generated/models/settingsDto';
 import { type FileManagerClient, NotImplementedError } from './file-manager-client';
 
@@ -192,16 +199,57 @@ export class HttpFileManagerClient implements FileManagerClient {
     return response.data as EntryMetadata;
   }
 
-  startOperation(_request: StartOperationRequest, _signal?: AbortSignal): Promise<Operation> {
-    return this.notImplemented('startOperation', '0036');
+  async startOperation(request: StartOperationRequest, signal?: AbortSignal): Promise<Operation> {
+    const response = await requestOperationStart(
+      { ...request, sources: [...request.sources] },
+      signal === undefined ? undefined : { signal },
+    );
+    if (response.status !== 201) {
+      throw new Error(`Unexpected startOperation response status: ${response.status}`);
+    }
+    return operationFromDto(response.data);
   }
 
-  cancelOperation(_operationId: OperationId, _signal?: AbortSignal): Promise<void> {
-    return this.notImplemented('cancelOperation', '0036');
+  async listOperations(signal?: AbortSignal): Promise<Operation[]> {
+    const response = await requestOperations(signal === undefined ? undefined : { signal });
+    return response.data.map(operationFromDto);
   }
 
-  resolveConflict(_request: ResolveConflictRequest, _signal?: AbortSignal): Promise<void> {
-    return this.notImplemented('resolveConflict', '0036');
+  async cancelOperation(operationId: OperationId, signal?: AbortSignal): Promise<void> {
+    const response = await requestOperationCancel(
+      operationId,
+      signal === undefined ? undefined : { signal },
+    );
+    if (response.status !== 204)
+      throw new Error(`Unexpected cancelOperation response status: ${response.status}`);
+  }
+
+  async pauseOperation(operationId: OperationId, signal?: AbortSignal): Promise<void> {
+    const response = await requestOperationPause(
+      operationId,
+      signal === undefined ? undefined : { signal },
+    );
+    if (response.status !== 204)
+      throw new Error(`Unexpected pauseOperation response status: ${response.status}`);
+  }
+
+  async resumeOperation(operationId: OperationId, signal?: AbortSignal): Promise<void> {
+    const response = await requestOperationResume(
+      operationId,
+      signal === undefined ? undefined : { signal },
+    );
+    if (response.status !== 204)
+      throw new Error(`Unexpected resumeOperation response status: ${response.status}`);
+  }
+
+  async resolveConflict(request: ResolveConflictRequest, signal?: AbortSignal): Promise<void> {
+    const response = await requestConflictResolution(
+      request.operationId,
+      { resolution: request.resolution, applyToAllSimilar: request.applyToAllSimilar },
+      signal === undefined ? undefined : { signal },
+    );
+    if (response.status !== 204)
+      throw new Error(`Unexpected resolveConflict response status: ${response.status}`);
   }
 
   listActions(_signal?: AbortSignal): Promise<ActionDescriptor[]> {
@@ -229,6 +277,30 @@ export class HttpFileManagerClient implements FileManagerClient {
   disconnect(): void {
     this.eventStream.close();
   }
+}
+
+function operationFromDto(dto: OperationDto): Operation {
+  return {
+    id: dto.id,
+    kind: dto.type,
+    state: dto.state,
+    sources: dto.sources,
+    ...(dto.destination == null ? {} : { destination: dto.destination }),
+    progress: {
+      completedItems: dto.progress.completedItems,
+      completedBytes: dto.progress.completedBytes,
+      ...(dto.progress.totalItems == null ? {} : { totalItems: dto.progress.totalItems }),
+      ...(dto.progress.totalBytes == null ? {} : { totalBytes: dto.progress.totalBytes }),
+      ...(dto.progress.currentEntry == null ? {} : { currentEntry: dto.progress.currentEntry }),
+      ...(dto.progress.bytesPerSecond == null
+        ? {}
+        : { bytesPerSecond: dto.progress.bytesPerSecond }),
+    },
+    conflictPolicy: dto.conflictPolicy,
+    createdAt: dto.createdAt,
+    ...(dto.startedAt == null ? {} : { startedAt: dto.startedAt }),
+    ...(dto.completedAt == null ? {} : { completedAt: dto.completedAt }),
+  };
 }
 
 function settingsFromDto(settings: SettingsDto): Settings {

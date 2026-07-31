@@ -1,6 +1,6 @@
 # 0036 Operations API and operation centre UI
 
-Status: open
+Status: done
 Priority: high
 Owner: unassigned
 Agent: unassigned
@@ -40,4 +40,24 @@ window) and §36 item 5.
 - Reserve the conflict endpoint's DTO now; the dialog lands in 0045.
 
 ## Agent Notes
-- Not started.
+
+- 2026-07-31 codex: Added shared operation DTOs and `FileManagerService` methods; seven stable
+  Axum operation endpoints; atomic `Idempotency-Key` retry deduplication; matching Tauri commands;
+  and generated OpenAPI/Orval artifacts. The reserved conflict-decision DTO supports one decision,
+  applying it to similar conflicts, or cancelling the operation. A no-op executor exercises the
+  API boundary until concrete operation kinds land in tasks 0037–0044.
+- 2026-07-31 codex: Completed the HTTP, Tauri, and deterministic mock `FileManagerClient` operation
+  surfaces and replaced the shell placeholder with an event-driven operation centre. Progress is
+  reduced in animation-frame batches without polling; queued/running/paused/completed/failed jobs
+  show progress, rate, current entry, lifecycle controls, retained results, dismissal, and
+  expandable failure details.
+- 2026-07-31 codex: Added 2 task-specific Rust integration tests in `operation_routes.rs`, verified
+  directly with `cargo test -p fm-server --test operation_routes`, covering stable operation IDs,
+  idempotent retry, and the exact no-op lifecycle event sequence. Added 3 task-specific Vitest
+  tests in `operation-centre.test.ts`, verified directly with `vitest run`, covering realistically
+  interleaved progress reduction and the required operation-centre states. Also verified all
+  affected Rust package suites, the Tauri mock-runtime suite, the complete 233-test frontend suite,
+  strict `tsc --noEmit`, full workspace Clippy/formatting and Biome lint, and regenerated API
+  freshness. Tauri commands compile and the desktop mock runtime passes on macOS, but the new
+  operation commands were not manually invoked in a packaged desktop application. `CLAUDE.md`
+  does not exist, so only README documentation was updated.

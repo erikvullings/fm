@@ -16,6 +16,12 @@ import {
   type NavigationController,
   type PaneDirectoryView,
 } from '../features/navigation/navigation';
+import { OperationCentre } from '../features/operations/operation-centre';
+import {
+  createOperationsState,
+  dismissOperation,
+  reduceOperationEvents,
+} from '../features/operations/operation-state';
 import { isParentEntry, withParentEntry } from '../features/panes/parent-entry';
 import type { SelectionPlatform } from '../features/selection/keybindings';
 import {
@@ -92,6 +98,9 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
   let unsubscribeConnection: (() => void) | undefined;
   let unsubscribeResynchronise: (() => void) | undefined;
   let appState: AppState | undefined;
+  let operations = createOperationsState();
+  let pendingOperationEvents: BackendEvent[] = [];
+  let operationFrame: number | undefined;
   let removed = false;
   const DEFAULT_SORT: readonly SortDescriptor[] = [
     { columnId: 'core.name', direction: 'ascending' },
@@ -273,6 +282,18 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
   function handleBackendEvent(event: BackendEvent): void {
     if (event.workspaceId !== undefined && event.workspaceId !== workspace?.id) return;
     const payload = event.payload;
+    if (payload.type.startsWith('operation.')) {
+      pendingOperationEvents.push(event);
+      if (operationFrame === undefined) {
+        operationFrame = requestAnimationFrame(() => {
+          operationFrame = undefined;
+          operations = reduceOperationEvents(operations, pendingOperationEvents);
+          pendingOperationEvents = [];
+          m.redraw();
+        });
+      }
+      return;
+    }
     if (payload.type === 'directory.snapshot') {
       const current = directories.get(payload.snapshot.paneId);
       if (current?.revision !== undefined && payload.snapshot.revision <= current.revision) return;
@@ -450,6 +471,15 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       ThemeManager.initialize(theme);
       void loadSettings(attrs.client);
       void loadWorkspace(attrs.client);
+      void Promise.resolve()
+        .then(() => attrs.client.listOperations())
+        .then((listed) => {
+          if (!removed) {
+            operations = createOperationsState(listed);
+            m.redraw();
+          }
+        })
+        .catch(() => undefined);
       unsubscribeConnection = attrs.client.connection.subscribe((status) => {
         if (appState !== undefined) {
           appState = applyAppPatches(appState, connectionPatch({ status }));
@@ -465,6 +495,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
 
     onremove: () => {
       removed = true;
+      if (operationFrame !== undefined) cancelAnimationFrame(operationFrame);
       workspaceRequest?.abort();
       unsubscribeEvents?.();
       unsubscribeConnection?.();
@@ -528,7 +559,18 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
                 onUpdateLayout: (layout) => updateLayout(attrs.client, layout),
               }),
         ]),
-        m('.fm-operation-centre', { 'aria-label': 'Operation centre' }, 'No active operations'),
+        m(OperationCentre, {
+          state: operations,
+          onCancel: (operationId) =>
+            void attrs.client.cancelOperation(operationId).catch(() => undefined),
+          onPause: (operationId) =>
+            void attrs.client.pauseOperation(operationId).catch(() => undefined),
+          onResume: (operationId) =>
+            void attrs.client.resumeOperation(operationId).catch(() => undefined),
+          onDismiss: (operationId) => {
+            operations = dismissOperation(operations, operationId);
+          },
+        }),
         m('.fm-function-key-bar', [
           m('span', 'F5 Copy'),
           m('span', 'F6 Move'),

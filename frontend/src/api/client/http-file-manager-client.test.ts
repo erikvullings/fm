@@ -12,6 +12,12 @@ const getWorkspace = vi.fn();
 const deleteWorkspace = vi.fn();
 const openWorkspace = vi.fn();
 const applyWorkspaceCommand = vi.fn();
+const requestStartOperation = vi.fn();
+const requestListOperations = vi.fn();
+const requestCancelOperation = vi.fn();
+const requestPauseOperation = vi.fn();
+const requestResumeOperation = vi.fn();
+const requestResolveOperationConflict = vi.fn();
 
 vi.mock('../generated/file-manager-api', () => ({
   getRuntimeCapabilities: (...args: unknown[]) => getRuntimeCapabilities(...args),
@@ -24,6 +30,12 @@ vi.mock('../generated/file-manager-api', () => ({
   deleteWorkspace: (...args: unknown[]) => deleteWorkspace(...args),
   openWorkspace: (...args: unknown[]) => openWorkspace(...args),
   applyWorkspaceCommand: (...args: unknown[]) => applyWorkspaceCommand(...args),
+  startOperation: (...args: unknown[]) => requestStartOperation(...args),
+  listOperations: (...args: unknown[]) => requestListOperations(...args),
+  cancelOperation: (...args: unknown[]) => requestCancelOperation(...args),
+  pauseOperation: (...args: unknown[]) => requestPauseOperation(...args),
+  resumeOperation: (...args: unknown[]) => requestResumeOperation(...args),
+  resolveOperationConflict: (...args: unknown[]) => requestResolveOperationConflict(...args),
 }));
 
 const { HttpFileManagerClient } = await import('./http-file-manager-client');
@@ -65,6 +77,12 @@ afterEach(() => {
   deleteWorkspace.mockReset();
   openWorkspace.mockReset();
   applyWorkspaceCommand.mockReset();
+  requestStartOperation.mockReset();
+  requestListOperations.mockReset();
+  requestCancelOperation.mockReset();
+  requestPauseOperation.mockReset();
+  requestResumeOperation.mockReset();
+  requestResolveOperationConflict.mockReset();
 });
 
 describe('HttpFileManagerClient', () => {
@@ -191,22 +209,74 @@ describe('HttpFileManagerClient', () => {
     });
   });
 
-  describe('methods with no backend endpoint yet', () => {
-    it('throws NotImplementedError for startOperation, naming task 0036', () => {
+  describe('operation methods', () => {
+    it('starts a semantic operation and maps the wire type discriminator', async () => {
+      requestStartOperation.mockResolvedValue({
+        status: 201,
+        headers: new Headers(),
+        data: {
+          id: 'operation-1',
+          type: 'copy',
+          state: 'queued',
+          sources: [],
+          destination: null,
+          progress: { completedItems: 0, completedBytes: 0 },
+          conflictPolicy: 'ask',
+          createdAt: '2026-07-31T12:00:00Z',
+        },
+      });
+      const client = new HttpFileManagerClient();
+      const request = {
+        type: 'copy',
+        sources: [{ providerId: 'local', uri: 'file:///Documents' }],
+        conflictPolicy: 'ask',
+      } as const;
+
+      await expect(client.startOperation(request)).resolves.toMatchObject({
+        id: 'operation-1',
+        kind: 'copy',
+        state: 'queued',
+      });
+      expect(requestStartOperation).toHaveBeenCalledWith(request, undefined);
+    });
+
+    it('lists operations and forwards cancellation to every lifecycle request', async () => {
+      requestListOperations.mockResolvedValue({ status: 200, data: [], headers: new Headers() });
+      requestCancelOperation.mockResolvedValue({ status: 204, headers: new Headers() });
+      requestPauseOperation.mockResolvedValue({ status: 204, headers: new Headers() });
+      requestResumeOperation.mockResolvedValue({ status: 204, headers: new Headers() });
+      const controller = new AbortController();
       const client = new HttpFileManagerClient();
 
-      expect(() =>
-        client.startOperation({
-          kind: 'copy',
-          sources: [],
-          destination: { providerId: 'file', uri: 'file:///' },
-          conflictPolicy: 'ask',
-        }),
-      ).toThrowError(
-        expect.objectContaining({
-          name: 'NotImplementedError',
-          message: expect.stringContaining('0036'),
-        }),
+      await expect(client.listOperations(controller.signal)).resolves.toEqual([]);
+      await client.cancelOperation('operation-1', controller.signal);
+      await client.pauseOperation('operation-1', controller.signal);
+      await client.resumeOperation('operation-1', controller.signal);
+
+      const options = expect.objectContaining({ signal: controller.signal });
+      expect(requestListOperations).toHaveBeenCalledWith(options);
+      expect(requestCancelOperation).toHaveBeenCalledWith('operation-1', options);
+      expect(requestPauseOperation).toHaveBeenCalledWith('operation-1', options);
+      expect(requestResumeOperation).toHaveBeenCalledWith('operation-1', options);
+    });
+
+    it('reserves the exact conflict request shape without duplicating the operation id in JSON', async () => {
+      requestResolveOperationConflict.mockResolvedValue({
+        status: 204,
+        headers: new Headers(),
+      });
+      const client = new HttpFileManagerClient();
+
+      await client.resolveConflict({
+        operationId: 'operation-1',
+        resolution: 'renameNew',
+        applyToAllSimilar: true,
+      });
+
+      expect(requestResolveOperationConflict).toHaveBeenCalledWith(
+        'operation-1',
+        { resolution: 'renameNew', applyToAllSimilar: true },
+        undefined,
       );
     });
   });

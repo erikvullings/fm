@@ -5,10 +5,12 @@ use tauri::ipc::Channel;
 use tauri::{Runtime, State, Window};
 use uuid::Uuid;
 
+use fm_domain::OperationId;
 use fm_transport_dto::{
     ApplicationErrorDto, CreateWorkspaceRequestDto, DirectorySnapshotDto, EntryMetadataDto,
-    EntryMetadataRequest, ListDirectoryRequest, NavigateRequest, RuntimeCapabilitiesDto,
-    SettingsDto, WorkspaceCommandDto, WorkspaceDto, WorkspaceSummaryDto,
+    EntryMetadataRequest, ListDirectoryRequest, NavigateRequest, OperationDto,
+    ResolveOperationConflictRequestDto, RuntimeCapabilitiesDto, SettingsDto,
+    StartOperationRequestDto, WorkspaceCommandDto, WorkspaceDto, WorkspaceSummaryDto,
 };
 
 use crate::{AppState, event_stream::EventSubscriptionRegistry};
@@ -200,4 +202,63 @@ pub(crate) async fn apply_workspace_command(
         .apply_workspace_command(command)
         .await
         .map_err(|error| error.into_dto(Uuid::new_v4()))
+}
+
+/// Starts an operation through the same service method as REST.
+#[tauri::command]
+pub(crate) fn start_operation(
+    state: State<'_, AppState>,
+    request: StartOperationRequestDto,
+    idempotency_key: Option<String>,
+) -> Result<OperationDto, ApplicationErrorDto> {
+    state
+        .service
+        .start_operation(request, idempotency_key)
+        .map_err(|e| e.into_dto(Uuid::new_v4()))
+}
+/// Lists operation snapshots through the shared service.
+#[tauri::command]
+pub(crate) fn list_operations(state: State<'_, AppState>) -> Vec<OperationDto> {
+    state.service.list_operations()
+}
+/// Gets one operation through the shared service.
+#[tauri::command]
+pub(crate) fn get_operation(
+    state: State<'_, AppState>,
+    operation_id: Uuid,
+) -> Result<OperationDto, ApplicationErrorDto> {
+    state
+        .service
+        .get_operation(OperationId::from(operation_id))
+        .map_err(|e| e.into_dto(Uuid::new_v4()))
+}
+macro_rules! operation_command {
+    ($name:ident) => {
+        #[doc = "Applies an operation lifecycle command through the shared service."]
+        #[tauri::command]
+        pub(crate) fn $name(
+            state: State<'_, AppState>,
+            operation_id: Uuid,
+        ) -> Result<(), ApplicationErrorDto> {
+            state
+                .service
+                .$name(OperationId::from(operation_id))
+                .map_err(|e| e.into_dto(Uuid::new_v4()))
+        }
+    };
+}
+operation_command!(cancel_operation);
+operation_command!(pause_operation);
+operation_command!(resume_operation);
+/// Resolves a pending operation conflict through the shared service.
+#[tauri::command]
+pub(crate) fn resolve_operation_conflict(
+    state: State<'_, AppState>,
+    operation_id: Uuid,
+    request: ResolveOperationConflictRequestDto,
+) -> Result<(), ApplicationErrorDto> {
+    state
+        .service
+        .resolve_operation_conflict(OperationId::from(operation_id), request)
+        .map_err(|e| e.into_dto(Uuid::new_v4()))
 }

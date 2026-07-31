@@ -10,6 +10,7 @@ license.workspace = true
 axum.workspace = true
 clap.workspace = true
 fm-application.workspace = true
+fm-domain.workspace = true
 fm-events.workspace = true
 fm-transport-dto.workspace = true
 futures.workspace = true
@@ -31,6 +32,5 @@ uuid.workspace = true
 workspace = true
 
 [dev-dependencies]
-fm-domain.workspace = true
 reqwest.workspace = true
 tempfile.workspace = true

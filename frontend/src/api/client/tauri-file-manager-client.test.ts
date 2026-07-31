@@ -81,6 +81,38 @@ describe('TauriFileManagerClient', () => {
     });
   });
 
+  describe('operation methods', () => {
+    it('invokes semantic operation commands without enumerating source files', async () => {
+      const request = {
+        type: 'copy',
+        sources: [{ providerId: 'local', uri: 'file:///Documents' }],
+        destination: { providerId: 'local', uri: 'file:///Archive' },
+        conflictPolicy: 'ask',
+      } as const;
+      const operation = {
+        id: 'operation-1',
+        kind: 'copy',
+        state: 'queued',
+        sources: request.sources,
+        destination: request.destination,
+        progress: { completedItems: 0, completedBytes: 0 },
+        conflictPolicy: 'ask',
+        createdAt: '2026-07-31T12:00:00Z',
+      };
+      invoke.mockResolvedValue(operation);
+      const client = new TauriFileManagerClient();
+
+      await expect(client.startOperation(request)).resolves.toEqual(operation);
+      expect(invoke).toHaveBeenCalledWith('start_operation', { request });
+      await client.pauseOperation(operation.id);
+      expect(invoke).toHaveBeenCalledWith('pause_operation', { operationId: operation.id });
+      await client.resumeOperation(operation.id);
+      expect(invoke).toHaveBeenCalledWith('resume_operation', { operationId: operation.id });
+      await client.cancelOperation(operation.id);
+      expect(invoke).toHaveBeenCalledWith('cancel_operation', { operationId: operation.id });
+    });
+  });
+
   describe('workspace methods', () => {
     it('invokes get_workspace and normalizes the result', async () => {
       invoke.mockResolvedValue({

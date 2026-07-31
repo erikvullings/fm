@@ -61,7 +61,10 @@ export type MockClientMethod =
   | 'listDirectory'
   | 'getEntryMetadata'
   | 'startOperation'
+  | 'listOperations'
   | 'cancelOperation'
+  | 'pauseOperation'
+  | 'resumeOperation'
   | 'resolveConflict'
   | 'listActions'
   | 'invokeAction'
@@ -490,9 +493,9 @@ export class MockFileManagerClient implements FileManagerClient {
       this.operationSequence += 1;
       const operation: Operation = {
         id: `mock-operation-${this.seed}-${this.operationSequence}`,
-        kind: request.kind,
+        kind: request.type,
         state: 'running',
-        sources: request.sources,
+        sources: request.sources.map((location) => ({ id: location.uri, location })),
         ...(request.destination === undefined ? {} : { destination: request.destination }),
         progress: { completedItems: 0, completedBytes: 0 },
         conflictPolicy: request.conflictPolicy,
@@ -504,10 +507,30 @@ export class MockFileManagerClient implements FileManagerClient {
     });
   }
 
+  listOperations(signal?: AbortSignal): Promise<Operation[]> {
+    return this.perform('listOperations', signal, () =>
+      [...this.operations.values()].map((operation) => structuredClone(operation)),
+    );
+  }
+
   cancelOperation(operationId: OperationId, signal?: AbortSignal): Promise<void> {
     return this.perform('cancelOperation', signal, () => {
       const operation = this.requireOperation(operationId);
       this.operations.set(operationId, { ...operation, state: 'cancelled' });
+    });
+  }
+
+  pauseOperation(operationId: OperationId, signal?: AbortSignal): Promise<void> {
+    return this.perform('pauseOperation', signal, () => {
+      const operation = this.requireOperation(operationId);
+      this.operations.set(operationId, { ...operation, state: 'paused' });
+    });
+  }
+
+  resumeOperation(operationId: OperationId, signal?: AbortSignal): Promise<void> {
+    return this.perform('resumeOperation', signal, () => {
+      const operation = this.requireOperation(operationId);
+      this.operations.set(operationId, { ...operation, state: 'running' });
     });
   }
 
@@ -516,8 +539,9 @@ export class MockFileManagerClient implements FileManagerClient {
       const operation = this.requireOperation(request.operationId);
       this.operations.set(request.operationId, {
         ...operation,
-        conflictPolicy: request.resolution,
-        state: 'running',
+        ...(request.resolution === 'cancelOperation'
+          ? { state: 'cancelled' as const }
+          : { conflictPolicy: request.resolution, state: 'running' as const }),
       });
     });
   }

@@ -1,0 +1,151 @@
+import m from 'mithril';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import type { BackendEvent, Operation } from '../../models';
+import { OperationCentre } from './operation-centre';
+import { createOperationsState, reduceOperationEvents } from './operation-state';
+
+const operation = (state: Operation['state'], id: string = state): Operation => ({
+  id,
+  kind: 'copy',
+  state,
+  sources: [],
+  destination: { providerId: 'local', uri: 'file:///Archive' },
+  progress: {
+    completedItems: 2,
+    totalItems: 4,
+    completedBytes: 1_024,
+    totalBytes: 2_048,
+    bytesPerSecond: 512,
+    currentEntry: {
+      id: 'report',
+      location: { providerId: 'local', uri: 'file:///Documents/report.pdf' },
+    },
+  },
+  conflictPolicy: 'ask',
+  createdAt: '2026-07-31T10:00:00Z',
+});
+
+const event = (eventId: number, payload: BackendEvent['payload']): BackendEvent => ({
+  eventId,
+  timestamp: '2026-07-31T10:00:00Z',
+  payload,
+});
+
+describe('operation progress reducer', () => {
+  it('batches realistically interleaved operation events without assuming group order', () => {
+    const initial = createOperationsState([operation('queued', 'a'), operation('running', 'b')]);
+    const next = reduceOperationEvents(initial, [
+      event(1, {
+        type: 'operation.progress',
+        operationId: 'b',
+        progress: { completedItems: 3, completedBytes: 1_536, bytesPerSecond: 600 },
+      }),
+      event(2, { type: 'operation.stateChanged', operationId: 'a', state: 'running' }),
+      event(3, {
+        type: 'operation.progress',
+        operationId: 'a',
+        progress: { completedItems: 1, completedBytes: 256 },
+      }),
+      event(4, { type: 'operation.completed', operation: operation('completed', 'b') }),
+    ]);
+
+    expect(next.byId.a).toMatchObject({ state: 'running', progress: { completedItems: 1 } });
+    expect(next.byId.b).toMatchObject({ state: 'completed', progress: { completedItems: 2 } });
+  });
+
+  it('retains failure details and ignores progress for unknown operations', () => {
+    const next = reduceOperationEvents(createOperationsState([operation('running', 'a')]), [
+      event(1, {
+        type: 'operation.progress',
+        operationId: 'missing',
+        progress: { completedItems: 9, completedBytes: 9 },
+      }),
+      event(2, {
+        type: 'operation.failed',
+        operationId: 'a',
+        code: 'permissionDenied',
+        message: 'Could not copy report.pdf.',
+        details: { reason: 'Permission denied' },
+      }),
+    ]);
+
+    expect(next.byId.missing).toBeUndefined();
+    expect(next.byId.a?.state).toBe('failed');
+    expect(next.failuresById.a).toEqual({
+      code: 'permissionDenied',
+      message: 'Could not copy report.pdf.',
+      details: { reason: 'Permission denied' },
+    });
+  });
+});
+
+describe('OperationCentre states', () => {
+  let root: HTMLElement;
+
+  beforeEach(() => {
+    root = document.createElement('div');
+    document.body.appendChild(root);
+  });
+
+  afterEach(() => {
+    m.mount(root, null);
+    root.remove();
+  });
+
+  it('shows queued, running, paused, completed, and failed states with appropriate controls', () => {
+    const operations = [
+      operation('queued'),
+      operation('running'),
+      operation('paused'),
+      { ...operation('completed'), result: { message: 'Copied 4 items.' } },
+      operation('failed'),
+    ];
+    const onCancel = vi.fn();
+    const onPause = vi.fn();
+    const onResume = vi.fn();
+    const onDismiss = vi.fn();
+
+    m.mount(root, {
+      view: () =>
+        m(OperationCentre, {
+          state: {
+            ...createOperationsState(operations),
+            failuresById: {
+              failed: {
+                code: 'permissionDenied',
+                message: 'Could not copy report.pdf.',
+                details: { reason: 'Permission denied' },
+              },
+            },
+          },
+          onCancel,
+          onPause,
+          onResume,
+          onDismiss,
+        }),
+    });
+
+    expect(root.querySelectorAll('.fm-operation')).toHaveLength(5);
+    expect(root.textContent).toContain('report.pdf');
+    expect(root.textContent).toContain('512 B/s');
+    expect(root.textContent).toContain('Copied 4 items.');
+    expect(root.textContent).toContain('Could not copy report.pdf.');
+    expect(root.querySelector('details')?.textContent).toContain('Permission denied');
+    expect(
+      root.querySelector('[data-operation-id="queued"] [data-action="cancel"]'),
+    ).not.toBeNull();
+    expect(
+      root.querySelector('[data-operation-id="running"] [data-action="pause"]'),
+    ).not.toBeNull();
+    expect(
+      root.querySelector('[data-operation-id="paused"] [data-action="resume"]'),
+    ).not.toBeNull();
+    expect(
+      root.querySelector('[data-operation-id="completed"] [data-action="dismiss"]'),
+    ).not.toBeNull();
+    expect(
+      root.querySelector('[data-operation-id="failed"] [data-action="dismiss"]'),
+    ).not.toBeNull();
+  });
+});

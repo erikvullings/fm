@@ -111,6 +111,7 @@ struct Job {
     operation: Mutex<Operation>,
     cancellation: CancellationToken,
     completed: Notify,
+    resumed: Notify,
 }
 
 /// Runs operation jobs with bounded concurrency and publishes their lifecycle.
@@ -149,6 +150,7 @@ impl Scheduler {
             operation: Mutex::new(operation),
             cancellation: CancellationToken::new(),
             completed: Notify::new(),
+            resumed: Notify::new(),
         });
         self.jobs
             .lock()
@@ -176,6 +178,38 @@ impl Scheduler {
             .clone())
     }
 
+    /// Returns snapshots of every accepted operation, newest first.
+    #[must_use]
+    pub fn list(&self) -> Vec<Operation> {
+        let jobs = self.jobs.lock().unwrap_or_else(|e| e.into_inner());
+        let mut operations: Vec<_> = jobs
+            .values()
+            .map(|job| {
+                job.operation
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .clone()
+            })
+            .collect();
+        operations.sort_by_key(|operation| std::cmp::Reverse(operation.created_at));
+        operations
+    }
+
+    /// Marks a running operation as paused.
+    pub fn pause(&self, id: OperationId) -> Result<(), SchedulerError> {
+        self.transition_by_id(id, OperationState::Paused)
+    }
+
+    /// Resumes a paused operation.
+    pub fn resume(&self, id: OperationId) -> Result<(), SchedulerError> {
+        self.transition_by_id(id, OperationState::Running)
+    }
+
+    /// Continues an operation waiting for a conflict decision.
+    pub fn resolve_conflict(&self, id: OperationId) -> Result<(), SchedulerError> {
+        self.transition_by_id(id, OperationState::Running)
+    }
+
     /// Requests cooperative cancellation at the next safe point.
     pub fn cancel(&self, id: OperationId) -> Result<(), SchedulerError> {
         let jobs = self.jobs.lock().unwrap_or_else(|e| e.into_inner());
@@ -185,6 +219,7 @@ impl Scheduler {
         if !operation.state.is_terminal() && operation.state != OperationState::Cancelling {
             self.transition_and_publish(&mut operation, OperationState::Cancelling)?;
         }
+        job.resumed.notify_waiters();
         Ok(())
     }
 
@@ -210,6 +245,20 @@ impl Scheduler {
             }
             notified.await;
         }
+    }
+
+    fn transition_by_id(
+        &self,
+        id: OperationId,
+        state: OperationState,
+    ) -> Result<(), SchedulerError> {
+        let jobs = self.jobs.lock().unwrap_or_else(|e| e.into_inner());
+        let job = jobs.get(&id).ok_or(SchedulerError::UnknownOperation(id))?;
+        self.transition_job(job, state)?;
+        if state == OperationState::Running {
+            job.resumed.notify_waiters();
+        }
+        Ok(())
     }
 
     #[tracing::instrument(skip_all, fields(operation_id = %job.operation.lock().unwrap_or_else(|e| e.into_inner()).id))]
@@ -246,6 +295,7 @@ impl Scheduler {
         }
         let mut progress = ProgressPublisher::new(Duration::from_millis(100), 0.25);
         for item in &plan.items {
+            self.wait_while_paused(&job).await;
             if job.cancellation.is_cancelled() {
                 self.finish_cancelled(&job, executor.as_ref()).await?;
                 return Ok(());
@@ -273,6 +323,11 @@ impl Scheduler {
                 self.publish_progress(&operation);
             }
         }
+        self.wait_while_paused(&job).await;
+        if job.cancellation.is_cancelled() {
+            self.finish_cancelled(&job, executor.as_ref()).await?;
+            return Ok(());
+        }
         let mut operation = job.operation.lock().unwrap_or_else(|e| e.into_inner());
         self.transition_and_publish(&mut operation, OperationState::Completed)?;
         self.events.publish(
@@ -282,6 +337,22 @@ impl Scheduler {
             },
         );
         Ok(())
+    }
+
+    async fn wait_while_paused(&self, job: &Job) {
+        loop {
+            let resumed = job.resumed.notified();
+            if job
+                .operation
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .state
+                != OperationState::Paused
+            {
+                return;
+            }
+            resumed.await;
+        }
     }
 
     async fn finish_cancelled(

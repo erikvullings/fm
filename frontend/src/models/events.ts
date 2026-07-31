@@ -67,7 +67,13 @@ export type BackendEventPayload =
   | { type: 'operation.stateChanged'; operationId: OperationId; state: OperationState }
   | ({ type: 'operation.conflict' } & OperationConflict)
   | { type: 'operation.completed'; operation: Operation }
-  | { type: 'operation.failed'; operationId: OperationId; code: string; message: string }
+  | {
+      type: 'operation.failed';
+      operationId: OperationId;
+      code: string;
+      message: string;
+      details?: Readonly<Record<string, unknown>>;
+    }
   | { type: 'plugin.changed'; plugin: PluginDescriptor }
   | { type: 'notification.created'; notification: BackendNotification };
 

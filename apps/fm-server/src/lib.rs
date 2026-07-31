@@ -12,7 +12,7 @@ mod state;
 use std::sync::Arc;
 
 use axum::Router;
-use axum::http::{HeaderValue, Method};
+use axum::http::{HeaderName, HeaderValue, Method};
 use fm_application::FileManagerService;
 use fm_transport_dto::RuntimeKindDto;
 use tokio_util::sync::CancellationToken;
@@ -46,6 +46,15 @@ fn api_router() -> OpenApiRouter<AppState> {
         .routes(utoipa_axum::routes!(routes::directory::navigate_pane))
         .routes(utoipa_axum::routes!(routes::directory::get_entry_metadata))
         .routes(utoipa_axum::routes!(routes::workspace::list_workspaces))
+        .routes(utoipa_axum::routes!(routes::operation::list_operations))
+        .routes(utoipa_axum::routes!(routes::operation::start_operation))
+        .routes(utoipa_axum::routes!(routes::operation::get_operation))
+        .routes(utoipa_axum::routes!(routes::operation::cancel_operation))
+        .routes(utoipa_axum::routes!(routes::operation::pause_operation))
+        .routes(utoipa_axum::routes!(routes::operation::resume_operation))
+        .routes(utoipa_axum::routes!(
+            routes::operation::resolve_operation_conflict
+        ))
         .routes(utoipa_axum::routes!(routes::workspace::create_workspace))
         .routes(utoipa_axum::routes!(routes::workspace::get_workspace))
         .routes(utoipa_axum::routes!(routes::workspace::delete_workspace))
@@ -184,5 +193,8 @@ fn cors_layer(config: &ServerConfig) -> CorsLayer {
             Method::PATCH,
             Method::DELETE,
         ])
-        .allow_headers([axum::http::header::CONTENT_TYPE])
+        .allow_headers([
+            axum::http::header::CONTENT_TYPE,
+            HeaderName::from_static("idempotency-key"),
+        ])
 }

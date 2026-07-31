@@ -9,6 +9,7 @@ pub mod entry;
 pub mod error;
 pub mod health;
 pub mod location;
+pub mod operation;
 pub mod requests;
 pub mod runtime;
 pub mod settings;
@@ -23,6 +24,11 @@ pub use entry::{
 pub use error::{ApplicationErrorCode, ApplicationErrorDto};
 pub use health::{HealthDto, HealthStatusDto};
 pub use location::LocationDto;
+pub use operation::{
+    ConflictResolutionDto, EntryRefDto, OperationConflictPolicyDto, OperationDto, OperationKindDto,
+    OperationProgressDto, OperationStateDto, ResolveOperationConflictRequestDto,
+    StartOperationRequestDto,
+};
 pub use requests::{EntryMetadataRequest, ListDirectoryRequest, NavigateRequest};
 pub use runtime::{PlatformKindDto, RuntimeCapabilitiesDto, RuntimeKindDto};
 pub use settings::{

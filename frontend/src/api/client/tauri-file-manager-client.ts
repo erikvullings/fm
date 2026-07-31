@@ -123,16 +123,28 @@ export class TauriFileManagerClient implements FileManagerClient {
     return invoke<EntryMetadata>('get_entry_metadata', { request });
   }
 
-  startOperation(_request: StartOperationRequest, _signal?: AbortSignal): Promise<Operation> {
-    return this.notImplemented('startOperation', '0036');
+  startOperation(request: StartOperationRequest, _signal?: AbortSignal): Promise<Operation> {
+    return invoke<Operation>('start_operation', { request });
   }
 
-  cancelOperation(_operationId: OperationId, _signal?: AbortSignal): Promise<void> {
-    return this.notImplemented('cancelOperation', '0036');
+  listOperations(_signal?: AbortSignal): Promise<Operation[]> {
+    return invoke<Operation[]>('list_operations');
   }
 
-  resolveConflict(_request: ResolveConflictRequest, _signal?: AbortSignal): Promise<void> {
-    return this.notImplemented('resolveConflict', '0036');
+  async cancelOperation(operationId: OperationId, _signal?: AbortSignal): Promise<void> {
+    await invoke('cancel_operation', { operationId });
+  }
+
+  async pauseOperation(operationId: OperationId, _signal?: AbortSignal): Promise<void> {
+    await invoke('pause_operation', { operationId });
+  }
+
+  async resumeOperation(operationId: OperationId, _signal?: AbortSignal): Promise<void> {
+    await invoke('resume_operation', { operationId });
+  }
+
+  async resolveConflict(request: ResolveConflictRequest, _signal?: AbortSignal): Promise<void> {
+    await invoke('resolve_operation_conflict', { request });
   }
 
   listActions(_signal?: AbortSignal): Promise<ActionDescriptor[]> {
