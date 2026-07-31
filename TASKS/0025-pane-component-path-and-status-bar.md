@@ -1,6 +1,6 @@
 # 0025 Pane component: tab strip, breadcrumb path bar and status bar
 
-Status: open
+Status: done
 Priority: high
 Owner: unassigned
 Agent: unassigned
@@ -30,4 +30,16 @@ bar, a breadcrumb/path input, the directory table and a status bar.
 - Tab strip renders one tab now; multi-tab behaviour is task 0069.
 
 ## Agent Notes
-- Not started.
+- 2026-07-31 codex: Added a presentation-only Mithril `Pane` composing the task 0024 virtualized
+  directory table with a compact single-tab strip, cumulative clickable POSIX/home/drive/UNC
+  breadcrumbs, Ctrl/Cmd+L and click-to-edit path input, Escape/Enter handling, inline validation
+  and backend navigation errors, and entry/selection/selected-size/sort status counters. Wired the
+  mock application shell through the pane without moving filesystem state into the component;
+  active panes use the existing active selection token while inactive panes retain
+  `--fm-selection-inactive`.
+- 2026-07-31 codex: Added and explicitly verified 10 task-specific Vitest tests in `pane.test.ts`
+  plus the app-shell composition assertion. Frontend typecheck, all 121 frontend tests, production
+  build, repository lint (Biome, Rust fmt and clippy), and a real-Chrome render smoke check pass.
+  The complete repository test command reached an unrelated Rust property-test failure because its
+  generator produced the reserved Windows name `AuX.`; all affected-package tests pass and no
+  regression seed file was retained.

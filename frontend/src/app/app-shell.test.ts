@@ -51,6 +51,9 @@ describe('AppShell', () => {
       expect(root.textContent).toContain('Documents');
       expect(root.textContent).toContain('日本語.txt');
     });
+    expect(root.querySelector('.fm-pane-tabs')).not.toBeNull();
+    expect(root.querySelector('.fm-breadcrumb')).not.toBeNull();
+    expect(root.querySelector('.fm-pane-status')?.textContent).toContain('entries');
   });
 
   it('names the application and the transport it is running against', () => {

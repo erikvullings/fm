@@ -2,8 +2,8 @@ import m, { type FactoryComponent } from 'mithril';
 import { type Theme, ThemeManager, ThemeSwitcher } from 'mithril-materialized';
 
 import type { FileManagerClient } from '../api/client/file-manager-client';
-import { DirectoryTable, entryArraySource } from '../features/directory-table/directory-table';
-import type { EntrySummary, LoadingState } from '../models';
+import { Pane } from '../features/panes/pane';
+import type { EntryId, EntrySummary, LoadingState } from '../models';
 import type { RuntimeKind } from '../utilities/runtime';
 
 /** Attributes of the application shell. */
@@ -24,6 +24,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
   let theme: Theme = DEFAULT_THEME;
   let directoryState: LoadingState = { type: 'idle' };
   let entries: readonly EntrySummary[] = [];
+  let currentPath = '/';
   let directoryRequest: AbortController | undefined;
 
   function loadMockDirectory(client: FileManagerClient): void {
@@ -56,6 +57,31 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
           m.redraw();
         },
       );
+  }
+
+  async function navigateMockDirectory(
+    client: FileManagerClient,
+    runtime: RuntimeKind,
+    path: string,
+  ): Promise<void> {
+    if (runtime !== 'mock') {
+      throw new Error('Path navigation is not available for this runtime yet');
+    }
+    const request = new AbortController();
+    directoryRequest?.abort();
+    directoryRequest = request;
+    const snapshot = await client.listDirectory(
+      {
+        workspaceId: 'mock-workspace',
+        paneId: 'left',
+        requestId: `app-shell-${path}`,
+        location: { providerId: 'file', uri: `mock:///${path.replace(/^[/~]+/, '')}` },
+      },
+      request.signal,
+    );
+    entries = snapshot.entries;
+    directoryState = snapshot.loadingState;
+    currentPath = path;
   }
 
   return {
@@ -92,13 +118,17 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
         ]),
         m('main.fm-workspace', [
           m('section.fm-directory-preview', [
-            m('h2', 'Directory'),
-            m(DirectoryTable, {
+            m(Pane, {
+              path: currentPath,
+              tabTitle: 'Directory',
               state: directoryState,
-              source: entryArraySource(entries),
+              entries,
+              sortLabel: 'Name ascending',
+              selectedEntryIds: new Set<EntryId>(),
               active: true,
-              label: 'Current directory',
               ...(entries.length > 0 ? { cursorIndex: 0 } : {}),
+              onNavigate: (path: string) =>
+                navigateMockDirectory(attrs.client, attrs.runtime, path),
             }),
           ]),
         ]),
