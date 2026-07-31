@@ -3,7 +3,7 @@ import { defineConfig } from 'vite';
 
 import { API_PREFIX, createApiProxyOptions, DEFAULT_BACKEND_ORIGIN } from './config/api-proxy';
 
-const backendOrigin = process.env['FM_SERVER_ORIGIN'] ?? DEFAULT_BACKEND_ORIGIN;
+const backendOrigin = process.env.FM_SERVER_ORIGIN ?? DEFAULT_BACKEND_ORIGIN;
 
 export default defineConfig({
   plugins: [
