@@ -20,6 +20,9 @@ fm-application = { path = "crates/fm-application" }
 fm-domain = { path = "crates/fm-domain" }
 fm-events = { path = "crates/fm-events" }
 fm-operations = { path = "crates/fm-operations" }
+fm-platform = { path = "crates/fm-platform" }
+fm-platform-macos = { path = "crates/fm-platform-macos" }
+fm-platform-windows = { path = "crates/fm-platform-windows" }
 fm-plugin-api = { path = "crates/fm-plugin-api" }
 fm-plugin-runtime = { path = "crates/fm-plugin-runtime" }
 fm-settings = { path = "crates/fm-settings" }

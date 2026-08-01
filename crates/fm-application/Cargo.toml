@@ -13,6 +13,7 @@ dirs.workspace = true
 fm-domain.workspace = true
 fm-events.workspace = true
 fm-operations.workspace = true
+fm-platform.workspace = true
 fm-plugin-api.workspace = true
 fm-plugin-runtime.workspace = true
 fm-settings.workspace = true

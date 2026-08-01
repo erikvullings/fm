@@ -6,10 +6,12 @@
 
 mod commands;
 mod event_stream;
+mod platform;
 
 use std::sync::Arc;
 
 use fm_application::FileManagerService;
+use fm_events::EventBus;
 use fm_transport_dto::RuntimeKindDto;
 use tauri::Manager;
 
@@ -37,13 +39,15 @@ fn build_context<R: tauri::Runtime>() -> tauri::Context<R> {
 pub fn run() {
     tauri::Builder::default()
         .manage(AppState {
-            service: Arc::new(FileManagerService::new(
+            service: Arc::new(FileManagerService::with_platform_adapter(
                 RuntimeKindDto::Tauri,
                 fm_application::workspace::JsonFileWorkspaceRepository::default_directory(),
                 fm_application::workspace::JsonFileWorkspaceRepository::default_directory()
                     .parent()
                     .unwrap_or_else(|| std::path::Path::new(".fm-config/fm"))
                     .to_path_buf(),
+                EventBus::default(),
+                platform::build_platform_adapter(),
             )),
         })
         .manage(event_stream::EventSubscriptionRegistry::default())
@@ -104,10 +108,12 @@ mod tests {
         let workspace_directory = workspace_directory.keep();
         builder
             .manage(AppState {
-                service: Arc::new(FileManagerService::new(
+                service: Arc::new(FileManagerService::with_platform_adapter(
                     RuntimeKindDto::Tauri,
                     workspace_directory,
                     settings_directory,
+                    EventBus::default(),
+                    platform::build_platform_adapter(),
                 )),
             })
             .manage(event_stream::EventSubscriptionRegistry::default())

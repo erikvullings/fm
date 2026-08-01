@@ -19,12 +19,19 @@ tauri-build = { workspace = true, features = [] }
 fm-application.workspace = true
 fm-domain.workspace = true
 fm-events.workspace = true
+fm-platform.workspace = true
 fm-transport-dto.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tauri.workspace = true
 tokio.workspace = true
 uuid.workspace = true
+
+[target.'cfg(target_os = "macos")'.dependencies]
+fm-platform-macos.workspace = true
+
+[target.'cfg(target_os = "windows")'.dependencies]
+fm-platform-windows.workspace = true
 
 [dev-dependencies]
 tauri = { workspace = true, features = ["test"] }

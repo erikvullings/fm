@@ -1,0 +1,105 @@
+use std::path::{Path, PathBuf};
+
+use crate::{MountedVolume, PlatformCapabilities, PlatformError};
+
+/// Native OS integrations the application calls into: file icons,
+/// thumbnails, revealing entries in the system file manager, trash, opening
+/// with the default application, opening a terminal, system clipboard file
+/// references, mounted volumes/drives and native menus (specification §23).
+///
+/// Every method has a default implementation reporting its capability as
+/// unsupported, so a concrete adapter only needs to override the methods it
+/// actually implements. [`PlatformAdapter::capabilities`] must stay in sync
+/// with the overridden methods, so unsupported functions are always reported
+/// as `false` and their UI affordances can be hidden or disabled rather than
+/// left present-but-broken.
+///
+/// Methods are synchronous: native OS calls are blocking. Callers running
+/// inside an async runtime must invoke them through `spawn_blocking` rather
+/// than awaiting them directly, so a native call never blocks the Tauri UI
+/// thread (specification §28).
+pub trait PlatformAdapter: Send + Sync {
+    /// Reports which capabilities this adapter actually implements.
+    fn capabilities(&self) -> PlatformCapabilities;
+
+    /// Fetches a file's native icon, encoded as PNG bytes.
+    fn file_icon(&self, path: &Path) -> Result<Vec<u8>, PlatformError> {
+        let _ = path;
+        Err(PlatformError::Unsupported {
+            capability: PlatformCapabilities::FILE_ICONS,
+        })
+    }
+
+    /// Fetches a native thumbnail preview, encoded as PNG bytes, no larger
+    /// than `max_size` pixels on its longest side.
+    fn thumbnail(&self, path: &Path, max_size: u32) -> Result<Vec<u8>, PlatformError> {
+        let _ = (path, max_size);
+        Err(PlatformError::Unsupported {
+            capability: PlatformCapabilities::THUMBNAILS,
+        })
+    }
+
+    /// Reveals an entry in the system file manager (Finder/Explorer/...).
+    fn reveal_in_file_manager(&self, path: &Path) -> Result<(), PlatformError> {
+        let _ = path;
+        Err(PlatformError::Unsupported {
+            capability: PlatformCapabilities::REVEAL_IN_FILE_MANAGER,
+        })
+    }
+
+    /// Moves an entry to the system trash/recycle bin.
+    fn trash(&self, path: &Path) -> Result<(), PlatformError> {
+        let _ = path;
+        Err(PlatformError::Unsupported {
+            capability: PlatformCapabilities::TRASH,
+        })
+    }
+
+    /// Opens an entry with the OS default application.
+    fn open_with_default_application(&self, path: &Path) -> Result<(), PlatformError> {
+        let _ = path;
+        Err(PlatformError::Unsupported {
+            capability: PlatformCapabilities::OPEN_WITH_DEFAULT_APPLICATION,
+        })
+    }
+
+    /// Opens a terminal at a location.
+    fn open_terminal(&self, path: &Path) -> Result<(), PlatformError> {
+        let _ = path;
+        Err(PlatformError::Unsupported {
+            capability: PlatformCapabilities::OPEN_TERMINAL,
+        })
+    }
+
+    /// Reads the file paths currently referenced on the OS clipboard.
+    fn read_clipboard_file_references(&self) -> Result<Vec<PathBuf>, PlatformError> {
+        Err(PlatformError::Unsupported {
+            capability: PlatformCapabilities::CLIPBOARD_FILE_REFERENCES,
+        })
+    }
+
+    /// Writes file paths to the OS clipboard as file references.
+    fn write_clipboard_file_references(&self, paths: &[PathBuf]) -> Result<(), PlatformError> {
+        let _ = paths;
+        Err(PlatformError::Unsupported {
+            capability: PlatformCapabilities::CLIPBOARD_FILE_REFERENCES,
+        })
+    }
+
+    /// Lists currently mounted volumes/drives.
+    fn mounted_volumes(&self) -> Result<Vec<MountedVolume>, PlatformError> {
+        Err(PlatformError::Unsupported {
+            capability: PlatformCapabilities::MOUNTED_VOLUMES,
+        })
+    }
+
+    /// Installs the application's native menu bar.
+    ///
+    /// A hook point only: menu content/structure is deliberately out of
+    /// scope for task 0058 (see its Implementation Notes).
+    fn install_native_menu(&self) -> Result<(), PlatformError> {
+        Err(PlatformError::Unsupported {
+            capability: PlatformCapabilities::NATIVE_MENUS,
+        })
+    }
+}

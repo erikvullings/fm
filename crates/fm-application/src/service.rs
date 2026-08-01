@@ -22,6 +22,7 @@ use fm_operations::{
     ConflictResolution, ExecutionError, ExecutionOutcome, Operation, OperationExecutor,
     OperationPlan, OperationSnapshotObserver, PauseToken, PlanItem, Scheduler, SchedulerError,
 };
+use fm_platform::{FallbackPlatformAdapter, PlatformAdapter, PlatformCapabilities};
 use fm_plugin_api::{ActionContribution, PluginManifest, PluginPermissions, SelectedEntryContext};
 use fm_plugin_runtime::{PluginDiscovery, PluginRuntime};
 use fm_settings::{
@@ -60,6 +61,7 @@ use crate::workspace::{JsonFileWorkspaceRepository, WorkspaceService, WorkspaceS
 /// benefit since every host uses the same JSON-file-backed repository.
 pub struct FileManagerService {
     runtime: RuntimeKindDto,
+    platform: Arc<dyn PlatformAdapter>,
     workspaces: WorkspaceService<JsonFileWorkspaceRepository>,
     directories: DirectoryService,
     providers: ProviderRegistry,
@@ -260,11 +262,39 @@ impl FileManagerService {
     }
 
     /// Builds a service using a caller-provided event bus.
+    ///
+    /// Uses [`FallbackPlatformAdapter`]; hosts with real native integration
+    /// available should call [`Self::with_platform_adapter`] instead.
     pub fn with_event_bus(
         runtime: RuntimeKindDto,
         workspace_directory: impl Into<PathBuf>,
         settings_directory: impl Into<PathBuf>,
         events: EventBus,
+    ) -> Self {
+        Self::with_platform_adapter(
+            runtime,
+            workspace_directory,
+            settings_directory,
+            events,
+            Arc::new(FallbackPlatformAdapter),
+        )
+    }
+
+    /// Builds a service using a caller-provided event bus and platform
+    /// adapter.
+    ///
+    /// [`Self::runtime_capabilities`] derives its native-integration flags
+    /// from `platform`, so the frontend responds to capabilities rather than
+    /// detecting the operating system itself (spec §21). Browser/server mode
+    /// should pass [`FallbackPlatformAdapter`] (it has no native access to a
+    /// remote client's OS); a desktop host should pass a real per-OS adapter
+    /// once one exists.
+    pub fn with_platform_adapter(
+        runtime: RuntimeKindDto,
+        workspace_directory: impl Into<PathBuf>,
+        settings_directory: impl Into<PathBuf>,
+        events: EventBus,
+        platform: Arc<dyn PlatformAdapter>,
     ) -> Self {
         let settings_directory = settings_directory.into();
         let mut providers = ProviderRegistry::new();
@@ -299,6 +329,7 @@ impl FileManagerService {
         });
         Self {
             runtime,
+            platform,
             workspaces: WorkspaceService::new(JsonFileWorkspaceRepository::new(
                 workspace_directory,
             )),
@@ -1077,17 +1108,26 @@ impl FileManagerService {
     /// platform, so the frontend can respond to capabilities rather than
     /// detecting operating systems itself (spec §21).
     pub fn runtime_capabilities(&self) -> RuntimeCapabilitiesDto {
+        let capabilities = self.platform.capabilities();
         RuntimeCapabilitiesDto {
             runtime: self.runtime,
             platform: detect_platform(),
-            native_menus: false,
-            native_file_icons: false,
-            native_thumbnails: false,
-            native_drag_out: false,
-            system_trash: false,
-            reveal_in_system_file_manager: false,
-            open_terminal: false,
-            // The browser Clipboard API works without any native bridge.
+            native_menus: capabilities.contains(PlatformCapabilities::NATIVE_MENUS),
+            native_file_icons: capabilities.contains(PlatformCapabilities::FILE_ICONS),
+            native_thumbnails: capabilities.contains(PlatformCapabilities::THUMBNAILS),
+            native_drag_out: capabilities.contains(PlatformCapabilities::NATIVE_DRAG_OUT),
+            system_trash: capabilities.contains(PlatformCapabilities::TRASH),
+            reveal_in_system_file_manager: capabilities
+                .contains(PlatformCapabilities::REVEAL_IN_FILE_MANAGER),
+            open_terminal: capabilities.contains(PlatformCapabilities::OPEN_TERMINAL),
+            // Basic text/data clipboard access works through the browser
+            // Clipboard API without any native bridge, on every host. This is
+            // deliberately not derived from `PlatformCapabilities::
+            // CLIPBOARD_FILE_REFERENCES`, which instead gates pasting actual
+            // file path lists (e.g. from Finder/Explorer) - a capability
+            // `RuntimeCapabilitiesDto` has no field for yet. A future task
+            // adding file-reference paste support should add one rather than
+            // overload this flag.
             clipboard: true,
             plugins: true,
             server_administration: false,
@@ -3208,6 +3248,43 @@ mod tests {
         assert!(capabilities.plugins);
         assert!(!capabilities.server_administration);
         assert!(capabilities.clipboard);
+    }
+
+    /// A platform adapter test double reporting a hand-picked, non-uniform
+    /// set of capabilities, so `runtime_capabilities` tests can distinguish
+    /// "derives from the adapter" from "always reports every flag the same
+    /// way" - a fixture where every flag were true or every flag were false
+    /// would pass even if the mapping from bit to DTO field were wrong.
+    #[derive(Debug, Clone, Copy)]
+    struct StubPlatformAdapter;
+
+    impl fm_platform::PlatformAdapter for StubPlatformAdapter {
+        fn capabilities(&self) -> PlatformCapabilities {
+            PlatformCapabilities::TRASH
+                | PlatformCapabilities::OPEN_TERMINAL
+                | PlatformCapabilities::NATIVE_DRAG_OUT
+        }
+    }
+
+    #[test]
+    fn runtime_capabilities_are_derived_from_the_injected_platform_adapter() {
+        let dir = tempfile::tempdir().expect("must create a temp dir");
+        let service = FileManagerService::with_platform_adapter(
+            RuntimeKindDto::Tauri,
+            dir.path(),
+            dir.path().join("settings"),
+            EventBus::default(),
+            Arc::new(StubPlatformAdapter),
+        );
+        let capabilities = service.runtime_capabilities();
+
+        assert!(capabilities.system_trash);
+        assert!(capabilities.open_terminal);
+        assert!(capabilities.native_drag_out);
+        assert!(!capabilities.native_menus);
+        assert!(!capabilities.native_file_icons);
+        assert!(!capabilities.native_thumbnails);
+        assert!(!capabilities.reveal_in_system_file_manager);
     }
 
     #[test]

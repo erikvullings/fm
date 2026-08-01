@@ -4,3 +4,15 @@
 //! (specification §3 rule 10) rather than as conditional compilation at every
 //! call site. A fallback implementation keeps browser/server mode and
 //! unsupported platforms working.
+
+mod adapter;
+mod capabilities;
+mod error;
+mod fallback;
+mod types;
+
+pub use adapter::PlatformAdapter;
+pub use capabilities::PlatformCapabilities;
+pub use error::PlatformError;
+pub use fallback::FallbackPlatformAdapter;
+pub use types::MountedVolume;
