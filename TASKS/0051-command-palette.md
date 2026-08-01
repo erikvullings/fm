@@ -1,6 +1,6 @@
 # 0051 Command palette
 
-Status: open
+Status: done
 Priority: high
 Owner: unassigned
 Agent: unassigned
@@ -31,4 +31,4 @@ and §36 item 8.
 - Plugin-contributed actions appear automatically once 0053 lands — no palette changes needed.
 
 ## Agent Notes
-- Not started.
+- 2026-08-01 Codex: Added a custom accessible command palette backed by the already-loaded action registry. It fuzzy-filters title/id/category, ranks by match quality and recency, displays shortcuts and disabled reasons, traps focus, restores prior focus, supports keyboard filtering/navigation/invocation/escape, and renders a typed form for supported object `parameterSchema` properties. Core create-directory remains a local semantic action; other palette invocations use the shared transport-neutral client with active pane/selection context. Verified 4 new focused palette tests and one AppShell keyboard-flow test via Vitest, full frontend Vitest (270 passed, 1 skipped), frontend typecheck, and Rust formatting/clippy. Root Biome lint has two pre-existing `!important` warnings in `frontend/src/features/panes/pane.css`; this task adds none.

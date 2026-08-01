@@ -16,7 +16,11 @@ export type ActionCategory = string;
 export type ActionSource = { kind: 'core' } | { kind: 'plugin'; pluginId: PluginId };
 
 /** Left opaque until task 0052 defines the concrete availability rules. */
-export type ActionContextRequirements = Record<string, unknown>;
+export interface ActionContextRequirements {
+  readonly featureAvailable?: boolean;
+  readonly requiresSelection?: boolean;
+  readonly requiresSingleSelection?: boolean;
+}
 
 /**
  * Typed context supplied with an action invocation: the active pane, the

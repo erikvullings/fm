@@ -204,6 +204,109 @@ body {
   color: var(--fm-text-muted);
 }
 
+.fm-command-palette-backdrop {
+  position: fixed;
+  z-index: 100;
+  inset: 0;
+  display: grid;
+  place-items: start center;
+  padding-top: min(18vh, 10rem);
+  background: rgb(0 0 0 / 35%);
+}
+
+.fm-command-palette {
+  width: min(42rem, calc(100vw - 2rem));
+  max-height: min(65vh, 38rem);
+  overflow: hidden auto;
+  border: 1px solid var(--fm-border);
+  border-radius: var(--fm-radius);
+  background: var(--fm-surface-elevated);
+  box-shadow: var(--fm-shadow);
+}
+
+.fm-command-palette-input {
+  box-sizing: border-box;
+  width: 100%;
+  border: 0;
+  border-bottom: 1px solid var(--fm-border);
+  outline: 0;
+  padding: 0.8rem 1rem;
+  background: transparent;
+  color: var(--fm-text);
+  font: inherit;
+  font-size: 1rem;
+}
+
+.fm-command-palette-status,
+.fm-command-palette-results small,
+.fm-command-palette-unavailable,
+.fm-command-palette-error {
+  color: var(--fm-text-muted);
+}
+
+.fm-command-palette-status {
+  display: block;
+  padding: 0.35rem 1rem;
+  font-size: 0.85rem;
+}
+
+.fm-command-palette-results {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.fm-command-palette-results li {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.55rem 1rem;
+}
+
+.fm-command-palette-results li > span {
+  display: grid;
+  gap: 0.15rem;
+}
+
+.fm-command-palette-results li[aria-disabled="true"] {
+  opacity: 0.55;
+}
+
+.fm-command-palette-active {
+  background: var(--fm-selection);
+}
+
+.fm-command-palette-results kbd {
+  align-self: center;
+  color: var(--fm-text-muted);
+  font: inherit;
+  white-space: nowrap;
+}
+
+.fm-command-palette-parameters {
+  display: grid;
+  gap: 0.75rem;
+  padding: 1rem;
+}
+
+.fm-command-palette-parameters h2 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.fm-command-palette-parameters label {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.fm-command-palette-parameters input {
+  border: 1px solid var(--fm-border);
+  padding: 0.35rem;
+  background: var(--fm-surface);
+  color: var(--fm-text);
+  font: inherit;
+}
+
 .fm-operation-centre {
   border-top: 1px solid var(--fm-border);
   color: var(--fm-text-muted);

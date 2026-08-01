@@ -36,6 +36,10 @@ in-word occurrence in every matching name, and constrains keyboard cursor moveme
 matches. Backspace edits the prefix, Escape clears it and the selection, and an unmatched prefix
 briefly flashes red but remains editable. Non-root directories prepend a synthetic `..` row that
 navigates to the parent without entering the selectable file set.
+Ctrl/Cmd+P opens a custom, keyboard-first command palette over the already-loaded action registry.
+It fuzzy-filters action titles, ids and categories, ranks matches and recently used commands, shows
+shortcuts and availability reasons, prompts for schema-defined parameters, and returns focus to its
+previous target when closed.
 The main window loads its authoritative workspace projection through the shared client and renders
 the recursive pane layout with a draggable, minimum-width splitter. Pane clicks and Tab traversal
 move visible focus through semantic workspace commands; divider changes are sent as debounced

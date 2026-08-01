@@ -10,6 +10,7 @@ import {
   isCutLocation,
   validatePasteTarget,
 } from '../features/clipboard/clipboard';
+import { CommandPalette } from '../features/command-palette/command-palette';
 import {
   DEFAULT_ENTRY_FORMAT_SETTINGS,
   type EntryFormatSettings,
@@ -108,6 +109,9 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
   let workspace: WorkspaceProjection | undefined;
   let workspaceError: string | undefined;
   let createDirectoryOpen = false;
+  let commandPaletteOpen = false;
+  let commandPaletteError: string | undefined;
+  const commandPaletteRecency = new Map<string, number>();
   let pendingCreatedLocation: string | undefined;
   const directories = new Map<PaneId, PaneDirectoryView>();
   const selections = new Map<PaneId, SelectionState>();
@@ -351,6 +355,40 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     );
   }
 
+  function actionContext() {
+    const active = activeDirectory();
+    const selection = active === undefined ? undefined : selections.get(active.paneId);
+    return {
+      ...(active === undefined ? {} : { paneId: active.paneId }),
+      ...(selection === undefined || selection.selectedEntryIds.length === 0
+        ? {}
+        : { selectedEntryIds: [...selection.selectedEntryIds] }),
+      ...(selection?.cursorEntryId === undefined ? {} : { cursorEntryId: selection.cursorEntryId }),
+    };
+  }
+
+  function invokePaletteAction(action: ActionDescriptor, parameters?: unknown): void {
+    if (action.id === 'core.palette') return;
+    if (action.id === 'core.createDirectory') {
+      createDirectoryOpen = true;
+      return;
+    }
+    void attrsClient
+      .invokeAction({
+        actionId: action.id,
+        ...(parameters === undefined ? {} : { parameters }),
+        context: actionContext(),
+      })
+      .then(() => {
+        commandPaletteRecency.set(action.id, Date.now());
+        m.redraw();
+      })
+      .catch((error: unknown) => {
+        commandPaletteError = error instanceof Error ? error.message : 'Unable to run command.';
+        m.redraw();
+      });
+  }
+
   function isEditableTarget(target: EventTarget | null): boolean {
     return (
       target instanceof HTMLInputElement ||
@@ -361,6 +399,14 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
   }
 
   function handleGlobalKeydown(event: KeyboardEvent): void {
+    if (commandPaletteOpen) return;
+    if (hasPrimaryModifier(event, platform) && !event.altKey && event.key.toLowerCase() === 'p') {
+      event.preventDefault();
+      commandPaletteOpen = true;
+      commandPaletteError = undefined;
+      m.redraw();
+      return;
+    }
     const dispatchedAction = dispatchKeybinding(
       event,
       {
@@ -816,7 +862,18 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
             ),
           ]),
           m('span', 'Search'),
-          m('button', { type: 'button', disabled: true }, 'Command palette'),
+          m(
+            'button',
+            {
+              type: 'button',
+              disabled: registeredActions.length === 0,
+              onclick: () => {
+                commandPaletteOpen = true;
+                commandPaletteError = undefined;
+              },
+            },
+            'Command palette',
+          ),
           m('details.fm-settings-disclosure', [
             m('summary.fm-settings-button', 'Settings'),
             m('.fm-settings-editor', { role: 'dialog', 'aria-label': 'Appearance settings' }, [
@@ -861,6 +918,19 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
         clipboardMessage === undefined
           ? undefined
           : m('.fm-clipboard-message', { role: 'alert' }, clipboardMessage),
+        commandPaletteError === undefined
+          ? undefined
+          : m('.fm-command-palette-error', { role: 'alert' }, commandPaletteError),
+        m(CommandPalette, {
+          open: commandPaletteOpen,
+          actions: registeredActions,
+          recency: commandPaletteRecency,
+          context: actionContext(),
+          onClose: () => {
+            commandPaletteOpen = false;
+          },
+          onInvoke: invokePaletteAction,
+        }),
         m(OperationCentre, {
           state: operations,
           onCancel: (operationId) => {

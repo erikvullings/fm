@@ -176,6 +176,42 @@ describe('AppShell', () => {
     expect(root.querySelector('.fm-function-key-bar')?.textContent).toContain('F6 Move');
   });
 
+  it('opens the command palette with Ctrl+P, supports keyboard invocation, and restores focus', async () => {
+    const client = new MockFileManagerClient();
+    const invokeAction = vi.spyOn(client, 'invokeAction');
+    m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
+    await vi.waitFor(() => expect(root.textContent).toContain('Documents'));
+
+    const trigger = root.querySelector<HTMLButtonElement>(
+      '.fm-workspace-toolbar > button:last-of-type',
+    );
+    trigger?.focus();
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'p', ctrlKey: true, bubbles: true }),
+    );
+    m.redraw.sync();
+
+    const input = root.querySelector<HTMLInputElement>('.fm-command-palette-input');
+    expect(input).not.toBeNull();
+    input?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+    input?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    await vi.waitFor(() => expect(invokeAction).toHaveBeenCalledOnce());
+    expect(invokeAction).toHaveBeenCalledWith(
+      expect.objectContaining({ actionId: 'core.clearSelection' }),
+    );
+
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'p', ctrlKey: true, bubbles: true }),
+    );
+    m.redraw.sync();
+    root
+      .querySelector('.fm-command-palette-input')
+      ?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    m.redraw.sync();
+    expect(root.querySelector('.fm-command-palette')).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+  });
+
   it('opens F7 validation and selects the delta-added directory after creation', async () => {
     const client = new MockFileManagerClient();
     const startOperation = vi.spyOn(client, 'startOperation');
