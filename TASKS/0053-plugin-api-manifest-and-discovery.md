@@ -1,6 +1,6 @@
 # 0053 Plugin API, manifest, discovery and permissions
 
-Status: open
+Status: done
 Priority: medium
 Owner: unassigned
 Agent: unassigned
@@ -38,4 +38,13 @@ Wasm isolation and must never expose unstable Rust ABI types (§19.4, §35).
 - No public native Rust dynamic-library ABI (§35).
 
 ## Agent Notes
-- Not started.
+- 2026-08-01 codex: Added the versioned `fm-plugin-api` manifest contract, explicit default-deny
+  permissions, contribution declarations, typed permission denials, and a narrow host-services
+  interface without a native Rust ABI. `fm-plugin-runtime` discovers direct-child plugin manifests
+  deterministically and retains malformed ones as disabled diagnostics. `FileManagerService`
+  projects discovery to REST/Tauri and persists enablement in `Settings`; added
+  `GET /api/v1/plugins`, plus enable/disable endpoints and matching Tauri commands. Generated the
+  OpenAPI/Orval client, documented the manifest and permission model, and recorded restricted Lua
+  with Wasmtime Component Model migration in ADR 0006. Verified 6 task-specific tests (4 API,
+  1 malformed-discovery, 1 REST) plus affected Rust package tests, `cargo fmt --all --check`, and
+  frontend `tsc --noEmit`.

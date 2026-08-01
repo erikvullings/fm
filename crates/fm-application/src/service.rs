@@ -18,6 +18,7 @@ use fm_operations::{
     ConflictResolution, ExecutionError, ExecutionOutcome, Operation, OperationExecutor,
     OperationPlan, OperationSnapshotObserver, PauseToken, PlanItem, Scheduler, SchedulerError,
 };
+use fm_plugin_runtime::PluginDiscovery;
 use fm_settings::{
     ConflictPolicy, DateFormat, DefaultPaneLayout, Settings, SettingsStore, SizeFormat, Theme,
 };
@@ -59,6 +60,7 @@ pub struct FileManagerService {
     events: EventBus,
     settings_store: SettingsStore,
     settings: Mutex<Settings>,
+    plugins: PluginDiscovery,
     operations: Scheduler,
     operation_history: Arc<OperationHistory>,
     operation_idempotency: Mutex<HashMap<String, OperationId>>,
@@ -298,6 +300,7 @@ impl FileManagerService {
             events: events.clone(),
             settings_store,
             settings: Mutex::new(loaded.settings),
+            plugins: PluginDiscovery::new(settings_directory.join("plugins")),
             operations: Scheduler::new(operation_concurrency, events)
                 .with_observer(operation_observer),
             operation_history,
@@ -685,6 +688,70 @@ impl FileManagerService {
         self.actions.list().into_iter().map(Into::into).collect()
     }
 
+    /// Lists discovered plugins, retaining malformed manifests as disabled records.
+    #[must_use]
+    pub fn list_plugins(&self) -> Vec<fm_transport_dto::PluginDescriptorDto> {
+        let enabled = self
+            .settings
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .enabled_plugins
+            .clone();
+        self.plugins
+            .discover()
+            .into_iter()
+            .map(|plugin| {
+                let id = plugin.id();
+                let (name, version, description) = plugin.manifest.as_ref().map_or_else(
+                    || (id.clone(), String::new(), String::new()),
+                    |manifest| {
+                        (
+                            manifest.name.clone(),
+                            manifest.version.clone(),
+                            manifest.description.clone(),
+                        )
+                    },
+                );
+                fm_transport_dto::PluginDescriptorDto {
+                    enabled: plugin.is_valid() && enabled.contains(&id),
+                    id,
+                    name,
+                    version,
+                    description,
+                    diagnostic: plugin.diagnostic,
+                }
+            })
+            .collect()
+    }
+
+    /// Persists a plugin enablement decision after confirming its manifest is valid.
+    pub fn set_plugin_enabled(
+        &self,
+        plugin_id: String,
+        enabled: bool,
+    ) -> Result<(), ApplicationError> {
+        let exists = self
+            .plugins
+            .discover()
+            .into_iter()
+            .any(|plugin| plugin.is_valid() && plugin.id() == plugin_id);
+        if !exists {
+            return Err(ApplicationError::NotFound);
+        }
+        let mut settings = self
+            .settings
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        settings.enabled_plugins.retain(|id| id != &plugin_id);
+        if enabled {
+            settings.enabled_plugins.push(plugin_id);
+            settings.enabled_plugins.sort();
+        }
+        self.settings_store
+            .save(&settings)
+            .map_err(|_| ApplicationError::Internal)
+    }
+
     /// Invokes a registered action, re-validating its context requirements
     /// server-side and delegating file-mutating actions to the operation
     /// engine (spec §18). Never panics: an unknown or unavailable action is
@@ -807,7 +874,7 @@ impl FileManagerService {
             open_terminal: false,
             // The browser Clipboard API works without any native bridge.
             clipboard: true,
-            plugins: false,
+            plugins: true,
             server_administration: false,
         }
     }
@@ -2532,7 +2599,7 @@ mod tests {
         assert!(!capabilities.system_trash);
         assert!(!capabilities.reveal_in_system_file_manager);
         assert!(!capabilities.open_terminal);
-        assert!(!capabilities.plugins);
+        assert!(capabilities.plugins);
         assert!(!capabilities.server_administration);
         assert!(capabilities.clipboard);
     }

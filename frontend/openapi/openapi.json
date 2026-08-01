@@ -1548,6 +1548,46 @@
         ],
         "type": "string"
       },
+      "PluginDescriptorDto": {
+        "description": "A discovered plugin, including disabled plugins with safe diagnostics.",
+        "properties": {
+          "description": {
+            "description": "Manifest description when available.",
+            "type": "string"
+          },
+          "diagnostic": {
+            "description": "Validation or discovery diagnostic for disabled plugins.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "enabled": {
+            "description": "Whether the valid plugin is enabled in persisted settings.",
+            "type": "boolean"
+          },
+          "id": {
+            "description": "Stable manifest identifier, or a directory-derived identifier when invalid.",
+            "type": "string"
+          },
+          "name": {
+            "description": "User-facing name when available.",
+            "type": "string"
+          },
+          "version": {
+            "description": "Package version when available.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "version",
+          "description",
+          "enabled"
+        ],
+        "type": "object"
+      },
       "QuickFilterPatchDto": {
         "description": "Sets or clears a tab's persisted quick-filter as part of a\n[`DirectoryViewPatchDto`].",
         "oneOf": [
@@ -3122,6 +3162,87 @@
                 }
               }
             },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationErrorDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/v1/plugins": {
+      "get": {
+        "operationId": "listPlugins",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PluginDescriptorDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "Lists valid and disabled discovered plugins."
+      }
+    },
+    "/api/v1/plugins/{pluginId}/disable": {
+      "post": {
+        "operationId": "disablePlugin",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "pluginId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationErrorDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/v1/plugins/{pluginId}/enable": {
+      "post": {
+        "operationId": "enablePlugin",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "pluginId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
             "description": ""
           },
           "404": {

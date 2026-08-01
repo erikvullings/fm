@@ -27,7 +27,7 @@ import type {
 import { workspaceProjectionFromDto } from '../../models/workspace';
 import { TauriEventStream } from '../events/tauri-event-stream';
 import type { WorkspaceDto } from '../generated/models/workspaceDto';
-import { type FileManagerClient, NotImplementedError } from './file-manager-client';
+import { type FileManagerClient } from './file-manager-client';
 
 /**
  * Tauri transport adapter, calling `FileManagerService` through `invoke`
@@ -38,10 +38,6 @@ import { type FileManagerClient, NotImplementedError } from './file-manager-clie
 export class TauriFileManagerClient implements FileManagerClient {
   private readonly eventStream = new TauriEventStream();
   readonly connection = this.eventStream.status;
-
-  private notImplemented(methodName: string, taskNumber: string): never {
-    throw new NotImplementedError(`TauriFileManagerClient.${methodName}`, taskNumber);
-  }
 
   async getRuntimeCapabilities(_signal?: AbortSignal): Promise<RuntimeCapabilities> {
     return invoke<RuntimeCapabilities>('get_runtime_capabilities');
@@ -159,7 +155,7 @@ export class TauriFileManagerClient implements FileManagerClient {
   }
 
   listPlugins(_signal?: AbortSignal): Promise<PluginDescriptor[]> {
-    return this.notImplemented('listPlugins', '0053');
+    return invoke<PluginDescriptor[]>('list_plugins');
   }
 
   /** TODO(0034): full EventBus → Tauri channel parity; connects the minimal skeleton for now. */

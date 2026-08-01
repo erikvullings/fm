@@ -11,6 +11,7 @@ pub mod error;
 pub mod health;
 pub mod location;
 pub mod operation;
+pub mod plugin;
 pub mod requests;
 pub mod runtime;
 pub mod settings;
@@ -35,6 +36,7 @@ pub use operation::{
     OperationStateDto, ResolveOperationConflictRequestDto, StartOperationRequestDto,
     SymlinkPolicyDto,
 };
+pub use plugin::PluginDescriptorDto;
 pub use requests::{EntryMetadataRequest, ListDirectoryRequest, NavigateRequest};
 pub use runtime::{PlatformKindDto, RuntimeCapabilitiesDto, RuntimeKindDto};
 pub use settings::{

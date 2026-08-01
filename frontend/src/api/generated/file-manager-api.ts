@@ -18,6 +18,7 @@ import type {
   NavigateRequest,
   OperationDto,
   OperationPageDto,
+  PluginDescriptorDto,
   ResolveOperationConflictRequestDto,
   RuntimeCapabilitiesDto,
   SettingsDto,
@@ -688,6 +689,122 @@ export const getResumeOperationUrl = (operationId: string,) => {
 export const resumeOperation = async (operationId: string, options?: Parameters<typeof fetchMutator>[1]): Promise<resumeOperationResponse> => {
 
   return fetchMutator<resumeOperationResponse>(getResumeOperationUrl(operationId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+export type listPluginsResponse200 = {
+  data: PluginDescriptorDto[]
+  status: 200
+}
+
+export type listPluginsResponseSuccess = (listPluginsResponse200) & {
+  headers: Headers;
+};
+;
+
+export type listPluginsResponse = (listPluginsResponseSuccess)
+
+export const getListPluginsUrl = () => {
+
+
+
+
+  return `/api/v1/plugins`
+}
+
+/**
+ * @summary Lists valid and disabled discovered plugins.
+ */
+export const listPlugins = async ( options?: Parameters<typeof fetchMutator>[1]): Promise<listPluginsResponse> => {
+
+  return fetchMutator<listPluginsResponse>(getListPluginsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+export type disablePluginResponse204 = {
+  data: void
+  status: 204
+}
+
+export type disablePluginResponse404 = {
+  data: ApplicationErrorDto
+  status: 404
+}
+
+export type disablePluginResponseSuccess = (disablePluginResponse204) & {
+  headers: Headers;
+};
+export type disablePluginResponseError = (disablePluginResponse404) & {
+  headers: Headers;
+};
+
+export type disablePluginResponse = (disablePluginResponseSuccess | disablePluginResponseError)
+
+export const getDisablePluginUrl = (pluginId: string,) => {
+
+
+
+
+  return `/api/v1/plugins/${pluginId}/disable`
+}
+
+export const disablePlugin = async (pluginId: string, options?: Parameters<typeof fetchMutator>[1]): Promise<disablePluginResponse> => {
+
+  return fetchMutator<disablePluginResponse>(getDisablePluginUrl(pluginId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+export type enablePluginResponse204 = {
+  data: void
+  status: 204
+}
+
+export type enablePluginResponse404 = {
+  data: ApplicationErrorDto
+  status: 404
+}
+
+export type enablePluginResponseSuccess = (enablePluginResponse204) & {
+  headers: Headers;
+};
+export type enablePluginResponseError = (enablePluginResponse404) & {
+  headers: Headers;
+};
+
+export type enablePluginResponse = (enablePluginResponseSuccess | enablePluginResponseError)
+
+export const getEnablePluginUrl = (pluginId: string,) => {
+
+
+
+
+  return `/api/v1/plugins/${pluginId}/enable`
+}
+
+export const enablePlugin = async (pluginId: string, options?: Parameters<typeof fetchMutator>[1]): Promise<enablePluginResponse> => {
+
+  return fetchMutator<enablePluginResponse>(getEnablePluginUrl(pluginId),
   {
     ...options,
     method: 'POST'

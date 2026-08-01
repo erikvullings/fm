@@ -171,6 +171,7 @@ describe('state slice reducers', () => {
       id: 'plugin-1',
       name: 'Example',
       version: '1.0.0',
+      description: 'Example plugin',
       enabled: true,
     };
     const patches = [

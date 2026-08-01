@@ -1056,6 +1056,7 @@ dependencies = [
  "fm-domain",
  "fm-events",
  "fm-operations",
+ "fm-plugin-runtime",
  "fm-settings",
  "fm-transport-dto",
  "fm-vfs",
@@ -1153,10 +1154,21 @@ version = "0.1.0"
 [[package]]
 name = "fm-plugin-api"
 version = "0.1.0"
+dependencies = [
+ "serde",
+ "thiserror 2.0.19",
+ "toml 1.1.4+spec-1.1.0",
+]
 
 [[package]]
 name = "fm-plugin-runtime"
 version = "0.1.0"
+dependencies = [
+ "fm-plugin-api",
+ "serde",
+ "tempfile",
+ "thiserror 2.0.19",
+]
 
 [[package]]
 name = "fm-search"

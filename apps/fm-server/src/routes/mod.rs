@@ -6,6 +6,7 @@ pub(crate) mod directory;
 pub(crate) mod events;
 pub(crate) mod health;
 pub(crate) mod operation;
+pub(crate) mod plugin;
 pub(crate) mod runtime;
 pub(crate) mod settings;
 pub(crate) mod workspace;

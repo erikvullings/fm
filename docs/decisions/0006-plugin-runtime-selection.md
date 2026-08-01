@@ -10,8 +10,10 @@ filesystem methods... directly to JavaScript/plugins").
 
 ## Decision
 `fm-plugin-api` defines a narrow, versioned ABI (the operations and data a plugin may use), and
-`fm-plugin-runtime` hosts plugin execution behind that ABI rather than granting plugins a native
-dynamic-library surface or an unrestricted scripting environment. Sample plugins
+`fm-plugin-runtime` hosts the first proof of concept in a restricted Lua runtime behind that ABI
+rather than granting plugins a native dynamic-library surface or an unrestricted scripting
+environment. Wasmtime plus the WebAssembly Component Model is the distributable migration target.
+Sample plugins
 (`plugins/sample-copy-markdown-path`, `plugins/sample-file-age-column`) are built only against the
 published `fm-plugin-api` surface, so the ABI's real usability is exercised by first-party
 examples before third parties depend on it.

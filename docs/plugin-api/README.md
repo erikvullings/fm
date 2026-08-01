@@ -1,8 +1,32 @@
 # Plugin API reference
 
-Placeholder. This directory will document the `fm-plugin-api` ABI that plugins are built
-against (see ADR [0006](../decisions/0006-plugin-runtime-selection.md)): the operations and
-data a plugin may access, versioning, and how to build a plugin against the sample plugins in
-`plugins/`.
+Plugins declare a versioned `plugin.toml`. API version `1` supports only action contributions
+(which also supply context-menu and command-palette entries), custom columns, and metadata
+extraction. Plugins cannot inject JavaScript or arbitrary WebView UI.
 
-Filled in when the plugin runtime work lands (see `TASKS/` for the plugin-related tasks).
+```toml
+id = "example.copy-path"
+name = "Copy Path"
+version = "0.1.0"
+api_version = "1"
+description = "Copies a selected path"
+entrypoint = "plugin.lua"
+
+[permissions]
+selected_entry_metadata = true
+clipboard_write = true
+
+[contributions]
+actions = true
+```
+
+Every permission defaults to denied. The explicit keys are `selected_entry_metadata`,
+`selected_entry_content_read`, `filesystem_read` (root list), `filesystem_write` (root list),
+`clipboard_read`, `clipboard_write`, `network` (host allow-list), `process_spawn`,
+`notifications`, and `settings_storage`. Unknown keys and unsupported `api_version` values reject
+the manifest. Discovery leaves invalid manifests disabled and returns their diagnostic through the
+plugin listing rather than preventing startup.
+
+The initial runtime is restricted Lua. Wasmtime plus the WebAssembly Component Model remains the
+distributable target; no native Rust dynamic-library ABI is exposed. See ADR
+[0006](../decisions/0006-plugin-runtime-selection.md).

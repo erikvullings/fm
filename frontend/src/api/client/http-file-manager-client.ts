@@ -27,6 +27,7 @@ import { SseEventStream } from '../events/sse-event-stream';
 import {
   invokeAction as requestActionInvocation,
   listActions as requestActions,
+  listPlugins as requestPlugins,
   resolveOperationConflict as requestConflictResolution,
   listDirectory as requestDirectory,
   getEntryMetadata as requestEntryMetadata,
@@ -50,7 +51,7 @@ import type { ActionDescriptorDto } from '../generated/models/actionDescriptorDt
 import type { InvokeActionRequestDtoParameters } from '../generated/models/invokeActionRequestDtoParameters';
 import type { OperationDto } from '../generated/models/operationDto';
 import type { SettingsDto } from '../generated/models/settingsDto';
-import { type FileManagerClient, NotImplementedError } from './file-manager-client';
+import { type FileManagerClient } from './file-manager-client';
 
 /**
  * HTTP transport adapter, wrapping the Orval-generated client behind
@@ -65,10 +66,6 @@ import { type FileManagerClient, NotImplementedError } from './file-manager-clie
 export class HttpFileManagerClient implements FileManagerClient {
   private readonly eventStream = new SseEventStream();
   readonly connection = this.eventStream.status;
-  private notImplemented(methodName: string, taskNumber: string): never {
-    throw new NotImplementedError(`HttpFileManagerClient.${methodName}`, taskNumber);
-  }
-
   async getRuntimeCapabilities(signal?: AbortSignal): Promise<RuntimeCapabilities> {
     const response = await requestRuntimeCapabilities(
       signal !== undefined ? { signal } : undefined,
@@ -284,8 +281,17 @@ export class HttpFileManagerClient implements FileManagerClient {
     };
   }
 
-  listPlugins(_signal?: AbortSignal): Promise<PluginDescriptor[]> {
-    return this.notImplemented('listPlugins', '0053');
+  async listPlugins(signal?: AbortSignal): Promise<PluginDescriptor[]> {
+    const response = await requestPlugins(signal === undefined ? undefined : { signal });
+    if (response.status !== 200) throw new Error(`Unexpected listPlugins response status: ${response.status}`);
+    return response.data.map((plugin) => ({
+      id: plugin.id,
+      name: plugin.name,
+      version: plugin.version,
+      description: plugin.description,
+      enabled: plugin.enabled,
+      ...(plugin.diagnostic == null ? {} : { diagnostic: plugin.diagnostic }),
+    }));
   }
 
   async subscribe(listener: (event: BackendEvent) => void): Promise<Unsubscribe> {

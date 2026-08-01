@@ -20,6 +20,7 @@ fm-application = { path = "crates/fm-application" }
 fm-domain = { path = "crates/fm-domain" }
 fm-events = { path = "crates/fm-events" }
 fm-operations = { path = "crates/fm-operations" }
+fm-plugin-runtime = { path = "crates/fm-plugin-runtime" }
 fm-settings = { path = "crates/fm-settings" }
 fm-transport-dto = { path = "crates/fm-transport-dto" }
 fm-vfs = { path = "crates/fm-vfs" }
@@ -67,6 +68,7 @@ utoipa = { version = "5.5.0", features = ["chrono", "uuid"] }
 utoipa-axum = "0.2.0"
 utoipa-swagger-ui = { version = "9.0.2", features = ["axum"] }
 uuid = { version = "1.24.0", features = ["serde", "v4", "v5"] }
+toml = "1.0.6"
 
 # `anyhow` is reserved for executables in `apps/`; libraries use `thiserror`.
 # This is enforced by the architecture fitness test in `fm-test-support`.

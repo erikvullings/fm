@@ -9,9 +9,9 @@ use fm_domain::OperationId;
 use fm_transport_dto::{
     ActionDescriptorDto, ActionResultDto, ApplicationErrorDto, CreateWorkspaceRequestDto,
     DirectorySnapshotDto, EntryMetadataDto, EntryMetadataRequest, InvokeActionRequestDto,
-    ListDirectoryRequest, NavigateRequest, OperationDto, ResolveOperationConflictRequestDto,
-    RuntimeCapabilitiesDto, SettingsDto, StartOperationRequestDto, WorkspaceCommandDto,
-    WorkspaceDto, WorkspaceSummaryDto,
+    ListDirectoryRequest, NavigateRequest, OperationDto, PluginDescriptorDto,
+    ResolveOperationConflictRequestDto, RuntimeCapabilitiesDto, SettingsDto,
+    StartOperationRequestDto, WorkspaceCommandDto, WorkspaceDto, WorkspaceSummaryDto,
 };
 
 use crate::{AppState, event_stream::EventSubscriptionRegistry};
@@ -284,4 +284,34 @@ pub(crate) fn invoke_action(
         .service
         .invoke_action(action_id, request, idempotency_key)
         .map_err(|e| e.into_dto(Uuid::new_v4()))
+}
+
+/// Lists plugins through the shared discovery service.
+#[tauri::command]
+pub(crate) fn list_plugins(state: State<'_, AppState>) -> Vec<PluginDescriptorDto> {
+    state.service.list_plugins()
+}
+
+/// Persists plugin enablement through the shared service.
+#[tauri::command]
+pub(crate) fn enable_plugin(
+    state: State<'_, AppState>,
+    plugin_id: String,
+) -> Result<(), ApplicationErrorDto> {
+    state
+        .service
+        .set_plugin_enabled(plugin_id, true)
+        .map_err(|error| error.into_dto(Uuid::new_v4()))
+}
+
+/// Persists plugin disablement through the shared service.
+#[tauri::command]
+pub(crate) fn disable_plugin(
+    state: State<'_, AppState>,
+    plugin_id: String,
+) -> Result<(), ApplicationErrorDto> {
+    state
+        .service
+        .set_plugin_enabled(plugin_id, false)
+        .map_err(|error| error.into_dto(Uuid::new_v4()))
 }

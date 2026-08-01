@@ -8,5 +8,7 @@ export interface PluginDescriptor {
   id: PluginId;
   name: string;
   version: string;
+  description: string;
   enabled: boolean;
+  diagnostic?: string;
 }
