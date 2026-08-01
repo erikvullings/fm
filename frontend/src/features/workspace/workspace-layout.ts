@@ -1,6 +1,7 @@
 import m, { type FactoryComponent, type Vnode } from 'mithril';
-
+import { dispatchKeybinding, type KeybindingRuntime } from '../../keybindings/dispatcher';
 import type {
+  ActionDescriptor,
   EntryId,
   EntrySummary,
   LoadingState,
@@ -30,6 +31,9 @@ export interface WorkspacePaneContent {
   readonly metadata: EntryMetadataView;
   readonly cursorIndex?: number;
   readonly platform: SelectionPlatform;
+  readonly keybindingRuntime?: KeybindingRuntime;
+  readonly actions?: readonly ActionDescriptor[];
+  readonly keybindingOverrides?: Readonly<Record<string, string>>;
   readonly onNavigate: (path: string) => void | Promise<void>;
   readonly onBack: () => void | Promise<void>;
   readonly onForward: () => void | Promise<void>;
@@ -180,7 +184,25 @@ export const WorkspaceLayoutView: FactoryComponent<WorkspaceLayoutViewAttrs> = (
         onremove: () => paneElements.delete(paneId),
         onclick: () => focusAndActivate(attrs, paneId),
         onkeydown: (event: KeyboardEvent) => {
-          if (event.key !== 'Tab') {
+          if (
+            event.target instanceof HTMLInputElement ||
+            event.target instanceof HTMLTextAreaElement ||
+            event.target instanceof HTMLSelectElement ||
+            (event.target instanceof HTMLElement && event.target.isContentEditable)
+          ) {
+            return;
+          }
+          const actionId = dispatchKeybinding(
+            event,
+            {
+              scope: 'table',
+              platform: content.platform,
+              runtime: content.keybindingRuntime ?? 'browser',
+            },
+            content.actions ?? [],
+            content.keybindingOverrides ?? {},
+          );
+          if (actionId !== 'core.switchPane') {
             return;
           }
           event.preventDefault();
@@ -207,6 +229,13 @@ export const WorkspaceLayoutView: FactoryComponent<WorkspaceLayoutViewAttrs> = (
         metadata: content.metadata,
         active,
         platform: content.platform,
+        ...(content.keybindingRuntime === undefined
+          ? {}
+          : { keybindingRuntime: content.keybindingRuntime }),
+        ...(content.actions === undefined ? {} : { actions: content.actions }),
+        ...(content.keybindingOverrides === undefined
+          ? {}
+          : { keybindingOverrides: content.keybindingOverrides }),
         canNavigateBack: tab.canNavigateBack,
         canNavigateForward: tab.canNavigateForward,
         ...(content.cursorIndex === undefined ? {} : { cursorIndex: content.cursorIndex }),

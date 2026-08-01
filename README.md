@@ -29,7 +29,8 @@ The cursor also drives a cancellable lazy metadata summary, while typed size/dat
 settings keep table and summary formatting consistent.
 Per-pane selection is keyed by stable entry IDs and remains independent of the keyboard cursor.
 Arrow, page, edge, range, toggle, select-all, pane-switching, open and parent bindings are handled
-through typed semantic commands, with host-platform modifiers and type-to-select. While a prefix is
+through the action-registry keybinding dispatcher, with settings overrides, host-platform modifiers
+and type-to-select. While a prefix is
 active it appears behind a divider at the right of the pane footer, highlights the first matching
 in-word occurrence in every matching name, and constrains keyboard cursor movement to those
 matches. Backspace edits the prefix, Escape clears it and the selection, and an unmatched prefix

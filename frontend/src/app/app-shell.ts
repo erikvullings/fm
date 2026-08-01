@@ -54,7 +54,14 @@ import {
   WorkspaceLayoutView,
   type WorkspacePaneContent,
 } from '../features/workspace/workspace-layout';
+import {
+  dispatchKeybinding,
+  getLiveBindings,
+  hasPrimaryModifier,
+  type KeybindingRuntime,
+} from '../keybindings/dispatcher';
 import type {
+  ActionDescriptor,
   BackendEvent,
   DirectoryDelta,
   EntryId,
@@ -95,6 +102,8 @@ const DEFAULT_THEME: Theme = 'auto';
 export const AppShell: FactoryComponent<AppShellAttrs> = () => {
   let theme: Theme = DEFAULT_THEME;
   let currentSettings: Settings | undefined;
+  let registeredActions: readonly ActionDescriptor[] = [];
+  let keybindingRuntime: KeybindingRuntime = 'browser';
   let loadedEntryFormatSettings: EntryFormatSettings = DEFAULT_ENTRY_FORMAT_SETTINGS;
   let workspace: WorkspaceProjection | undefined;
   let workspaceError: string | undefined;
@@ -351,12 +360,18 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     );
   }
 
-  function isPrimaryModifier(event: KeyboardEvent): boolean {
-    return platform === 'macos' ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey;
-  }
-
   function handleGlobalKeydown(event: KeyboardEvent): void {
-    if (!isEditableTarget(event.target) && isPrimaryModifier(event) && !event.altKey) {
+    const dispatchedAction = dispatchKeybinding(
+      event,
+      {
+        scope: isEditableTarget(event.target) ? 'pathInput' : 'table',
+        platform,
+        runtime: keybindingRuntime,
+      },
+      registeredActions,
+      currentSettings?.keybindings ?? {},
+    );
+    if (!isEditableTarget(event.target) && hasPrimaryModifier(event, platform) && !event.altKey) {
       const key = event.key.toLowerCase();
       const sources = selectedLocations();
       if ((key === 'c' || key === 'x') && sources.length > 0) {
@@ -411,7 +426,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
         return;
       }
     }
-    if (event.key === 'F5') {
+    if (dispatchedAction === 'core.copy') {
       const active = activeDirectory();
       const selection = active === undefined ? undefined : selections.get(active.paneId);
       const directory = active === undefined ? undefined : directories.get(active.paneId);
@@ -433,7 +448,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       }
       return;
     }
-    if (event.key === 'F6') {
+    if (dispatchedAction === 'core.move') {
       const active = activeDirectory();
       const selection = active === undefined ? undefined : selections.get(active.paneId);
       const directory = active === undefined ? undefined : directories.get(active.paneId);
@@ -454,7 +469,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       }
       return;
     }
-    if (event.key === 'Delete' && event.shiftKey) {
+    if (dispatchedAction === 'core.delete') {
       const active = activeDirectory();
       const selection = active === undefined ? undefined : selections.get(active.paneId);
       const directory = active === undefined ? undefined : directories.get(active.paneId);
@@ -473,7 +488,11 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       }
       return;
     }
-    if (event.key === 'F7' && !createDirectoryOpen && activeDirectory() !== undefined) {
+    if (
+      dispatchedAction === 'core.createDirectory' &&
+      !createDirectoryOpen &&
+      activeDirectory() !== undefined
+    ) {
       event.preventDefault();
       createDirectoryOpen = true;
       m.redraw();
@@ -605,6 +624,9 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       formatSettings: entryFormatSettings,
       metadata: metadataViews.get(paneId) ?? { state: 'idle' },
       platform,
+      keybindingRuntime,
+      actions: registeredActions,
+      keybindingOverrides: currentSettings?.keybindings ?? {},
       ...(cursorIndex === undefined || cursorIndex < 0 ? {} : { cursorIndex }),
       onNavigate: async (path) => {
         if (tab !== undefined) {
@@ -667,6 +689,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
   return {
     oninit: ({ attrs }) => {
       attrsClient = attrs.client;
+      keybindingRuntime = attrs.runtime === 'http' ? 'browser' : 'desktop';
       document.addEventListener('keydown', handleGlobalKeydown);
       appState = applyAppPatches(
         createInitialAppState(attrs.runtime),
@@ -702,6 +725,13 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       ThemeManager.setUseLocalStorage(false);
       ThemeManager.initialize(theme);
       void loadSettings(attrs.client);
+      void attrs.client
+        .listActions()
+        .then((actions) => {
+          registeredActions = actions;
+          m.redraw();
+        })
+        .catch(() => undefined);
       void loadWorkspace(attrs.client);
       void Promise.resolve()
         .then(() => attrs.client.listOperations())
@@ -909,13 +939,21 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
               });
           },
         }),
-        m('.fm-function-key-bar', [
-          m('span', 'F2 Rename'),
-          m('span', 'F5 Copy'),
-          m('span', 'F6 Move'),
-          m('span', 'F7 New folder'),
-          m('span', 'F8 Delete'),
-        ]),
+        m(
+          '.fm-function-key-bar',
+          getLiveBindings(registeredActions, currentSettings?.keybindings ?? {}, {
+            scope: 'table',
+            platform,
+            runtime: attrs.runtime === 'http' ? 'browser' : 'desktop',
+          })
+            .filter((binding) => /^F(?:2|5|6|7|8)$/u.test(binding.shortcut))
+            .map((binding) =>
+              m(
+                'span',
+                `${binding.shortcut} ${registeredActions.find((action) => action.id === binding.actionId)?.title ?? binding.actionId}`,
+              ),
+            ),
+        ),
       ]);
     },
   };

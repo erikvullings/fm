@@ -1,6 +1,13 @@
 import m, { type FactoryComponent, type VnodeDOM } from 'mithril';
 import { editIcon } from '../../components/icons';
-import type { EntryId, EntrySummary, LoadingState, SortDescriptor } from '../../models';
+import { dispatchKeybinding, type KeybindingRuntime } from '../../keybindings/dispatcher';
+import type {
+  ActionDescriptor,
+  EntryId,
+  EntrySummary,
+  LoadingState,
+  SortDescriptor,
+} from '../../models';
 import { DirectoryTable, entryArraySource } from '../directory-table/directory-table';
 import {
   DEFAULT_ENTRY_FORMAT_SETTINGS,
@@ -11,7 +18,6 @@ import {
 import type { EntryMetadataView } from '../entry-metadata/entry-metadata-loader';
 import { validateDirectoryName } from '../operations/create-directory-dialog';
 import {
-  interpretSelectionKey,
   reduceTypeahead,
   type SelectionPlatform,
   type TypeaheadState,
@@ -41,6 +47,9 @@ export interface PaneAttrs {
   readonly active: boolean;
   readonly cursorIndex?: number;
   readonly platform: SelectionPlatform;
+  readonly keybindingRuntime?: KeybindingRuntime;
+  readonly actions?: readonly ActionDescriptor[];
+  readonly keybindingOverrides?: Readonly<Record<string, string>>;
   readonly canNavigateBack: boolean;
   readonly canNavigateForward: boolean;
   readonly onNavigate: (path: string) => void | Promise<void>;
@@ -53,6 +62,15 @@ export interface PaneAttrs {
   readonly onLoadNextPage: () => void | Promise<void>;
   readonly onSortChange: (sort: readonly SortDescriptor[]) => void;
   readonly onRename: (entry: EntrySummary, name: string) => void | Promise<void>;
+}
+
+function isEditableTarget(target: EventTarget | null): boolean {
+  return (
+    target instanceof HTMLInputElement ||
+    target instanceof HTMLTextAreaElement ||
+    target instanceof HTMLSelectElement ||
+    (target instanceof HTMLElement && target.isContentEditable)
+  );
 }
 
 function posixSegments(path: string): readonly BreadcrumbSegment[] {
@@ -286,7 +304,18 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
           'data-active': String(attrs.active),
           tabindex: -1,
           onkeydown: (event: KeyboardEvent) => {
-            if (event.key === 'F2') {
+            if (isEditableTarget(event.target)) return;
+            const actionId = dispatchKeybinding(
+              event,
+              {
+                scope: 'table',
+                platform: attrs.platform,
+                runtime: attrs.keybindingRuntime ?? 'browser',
+              },
+              attrs.actions ?? [],
+              attrs.keybindingOverrides ?? {},
+            );
+            if (actionId === 'core.rename') {
               event.preventDefault();
               beginRename(attrs);
               return;
@@ -310,13 +339,38 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
               m.redraw();
               return;
             }
-            if (event.key.toLowerCase() === 'l' && (event.ctrlKey || event.metaKey)) {
+            if (actionId === 'core.focusLocation') {
               event.preventDefault();
               beginEditing(attrs.path);
               return;
             }
-            const command = interpretSelectionKey(event, attrs.platform);
-            if (command?.type === 'switchPane') {
+            const command =
+              actionId === 'core.moveCursorUp'
+                ? { type: 'moveCursor' as const, offset: -1 as const }
+                : actionId === 'core.moveCursorDown'
+                  ? { type: 'moveCursor' as const, offset: 1 as const }
+                  : actionId === 'core.moveCursorPageUp'
+                    ? { type: 'moveCursorByPage' as const, pages: -1 as const }
+                    : actionId === 'core.moveCursorPageDown'
+                      ? { type: 'moveCursorByPage' as const, pages: 1 as const }
+                      : actionId === 'core.moveCursorFirst'
+                        ? { type: 'moveCursorTo' as const, edge: 'first' as const }
+                        : actionId === 'core.moveCursorLast'
+                          ? { type: 'moveCursorTo' as const, edge: 'last' as const }
+                          : actionId === 'core.extendSelectionUp'
+                            ? { type: 'extendRange' as const, offset: -1 as const }
+                            : actionId === 'core.extendSelectionDown'
+                              ? { type: 'extendRange' as const, offset: 1 as const }
+                              : actionId === 'core.toggleSelection'
+                                ? { type: 'toggleCursorSelection' as const }
+                                : actionId === 'core.selectAll'
+                                  ? { type: 'selectAll' as const }
+                                  : actionId === 'core.open'
+                                    ? { type: 'open' as const }
+                                    : actionId === 'core.parent'
+                                      ? { type: 'parent' as const }
+                                      : undefined;
+            if (actionId === 'core.switchPane') {
               return;
             }
             if (command?.type === 'open' && attrs.cursorIndex !== undefined) {

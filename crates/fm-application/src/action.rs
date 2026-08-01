@@ -114,6 +114,14 @@ fn key(key: &str) -> KeyChord {
     }
 }
 
+fn primary(key: &str) -> KeyChord {
+    KeyChord {
+        key: key.to_owned(),
+        ctrl: true,
+        ..KeyChord::default()
+    }
+}
+
 /// Core actions named by spec §18, plus the selection/navigation ids
 /// reserved by task 0028's frontend keybinding table.
 ///
@@ -129,6 +137,27 @@ fn core_actions() -> Vec<ActionDescriptor> {
             "fileOperations",
             vec![key("Enter")],
             ActionContextRequirements::unimplemented(),
+        ),
+        core_action(
+            "core.parent",
+            "Parent Directory",
+            "navigation",
+            vec![key("Backspace")],
+            ActionContextRequirements::none(),
+        ),
+        core_action(
+            "core.switchPane",
+            "Switch Pane",
+            "navigation",
+            vec![
+                key("Tab"),
+                KeyChord {
+                    key: "Tab".to_owned(),
+                    shift: true,
+                    ..KeyChord::default()
+                },
+            ],
+            ActionContextRequirements::none(),
         ),
         core_action(
             "core.openWith",
@@ -162,7 +191,7 @@ fn core_actions() -> Vec<ActionDescriptor> {
             "core.delete",
             "Delete",
             "fileOperations",
-            vec![key("F8")],
+            vec![key("F8"), key("Delete")],
             ActionContextRequirements::selection(),
         ),
         core_action(
@@ -171,6 +200,41 @@ fn core_actions() -> Vec<ActionDescriptor> {
             "fileOperations",
             vec![key("F7")],
             ActionContextRequirements::none(),
+        ),
+        core_action(
+            "core.palette",
+            "Command Palette",
+            "navigation",
+            vec![primary("p")],
+            ActionContextRequirements::unimplemented(),
+        ),
+        core_action(
+            "core.focusLocation",
+            "Focus Location",
+            "navigation",
+            vec![primary("l")],
+            ActionContextRequirements::none(),
+        ),
+        core_action(
+            "core.quickFilter",
+            "Quick Filter",
+            "navigation",
+            vec![primary("f")],
+            ActionContextRequirements::unimplemented(),
+        ),
+        core_action(
+            "core.newTab",
+            "New Tab",
+            "navigation",
+            vec![primary("t")],
+            ActionContextRequirements::unimplemented(),
+        ),
+        core_action(
+            "core.closeTab",
+            "Close Tab",
+            "navigation",
+            vec![primary("w")],
+            ActionContextRequirements::unimplemented(),
         ),
         core_action(
             "core.openTerminal",
@@ -206,26 +270,66 @@ fn core_actions() -> Vec<ActionDescriptor> {
 /// only carries their metadata for menus and the command palette.
 fn selection_actions() -> Vec<ActionDescriptor> {
     [
-        ("core.moveCursorUp", "Move Cursor Up"),
-        ("core.moveCursorDown", "Move Cursor Down"),
-        ("core.moveCursorPageUp", "Move Cursor Page Up"),
-        ("core.moveCursorPageDown", "Move Cursor Page Down"),
-        ("core.moveCursorFirst", "Move Cursor to First"),
-        ("core.moveCursorLast", "Move Cursor to Last"),
-        ("core.extendSelectionUp", "Extend Selection Up"),
-        ("core.extendSelectionDown", "Extend Selection Down"),
-        ("core.toggleSelection", "Toggle Selection"),
-        ("core.selectAll", "Select All"),
-        ("core.invertSelection", "Invert Selection"),
-        ("core.clearSelection", "Clear Selection"),
+        ("core.moveCursorUp", "Move Cursor Up", vec![key("ArrowUp")]),
+        (
+            "core.moveCursorDown",
+            "Move Cursor Down",
+            vec![key("ArrowDown")],
+        ),
+        (
+            "core.moveCursorPageUp",
+            "Move Cursor Page Up",
+            vec![key("PageUp")],
+        ),
+        (
+            "core.moveCursorPageDown",
+            "Move Cursor Page Down",
+            vec![key("PageDown")],
+        ),
+        (
+            "core.moveCursorFirst",
+            "Move Cursor to First",
+            vec![key("Home")],
+        ),
+        (
+            "core.moveCursorLast",
+            "Move Cursor to Last",
+            vec![key("End")],
+        ),
+        (
+            "core.extendSelectionUp",
+            "Extend Selection Up",
+            vec![KeyChord {
+                key: "ArrowUp".to_owned(),
+                shift: true,
+                ..KeyChord::default()
+            }],
+        ),
+        (
+            "core.extendSelectionDown",
+            "Extend Selection Down",
+            vec![KeyChord {
+                key: "ArrowDown".to_owned(),
+                shift: true,
+                ..KeyChord::default()
+            }],
+        ),
+        ("core.toggleSelection", "Toggle Selection", vec![key(" ")]),
+        ("core.selectAll", "Select All", vec![primary("a")]),
+        ("core.invertSelection", "Invert Selection", Vec::new()),
+        (
+            "core.clearSelection",
+            "Clear Selection",
+            vec![key("Escape")],
+        ),
     ]
     .into_iter()
-    .map(|(id, title)| {
+    .map(|(id, title, shortcuts)| {
         core_action(
             id,
             title,
             "selection",
-            Vec::new(),
+            shortcuts,
             ActionContextRequirements::none(),
         )
     })
@@ -257,12 +361,19 @@ mod tests {
 
         for expected in [
             "core.open",
+            "core.parent",
+            "core.switchPane",
             "core.openWith",
             "core.copy",
             "core.move",
             "core.rename",
             "core.delete",
             "core.createDirectory",
+            "core.palette",
+            "core.focusLocation",
+            "core.quickFilter",
+            "core.newTab",
+            "core.closeTab",
             "core.openTerminal",
             "core.copyPath",
             "core.copyRelativePath",

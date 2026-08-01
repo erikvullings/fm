@@ -1,7 +1,7 @@
 import m from 'mithril';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { EntryId, EntrySummary } from '../../models';
+import type { ActionDescriptor, EntryId, EntrySummary } from '../../models';
 import { breadcrumbSegments, Pane, type PaneAttrs } from './pane';
 
 let root: HTMLElement;
@@ -29,6 +29,42 @@ const entries: readonly EntrySummary[] = [
   },
 ];
 
+const keybindingActions = [
+  { id: 'core.rename', title: 'Rename', defaultShortcuts: [{ key: 'F2' }] },
+  {
+    id: 'core.focusLocation',
+    title: 'Focus location',
+    defaultShortcuts: [{ key: 'L', ctrl: true }],
+  },
+  { id: 'core.open', title: 'Open', defaultShortcuts: [{ key: 'ENTER' }] },
+  { id: 'core.parent', title: 'Parent directory', defaultShortcuts: [{ key: 'BACKSPACE' }] },
+  { id: 'core.moveCursorDown', title: 'Move down', defaultShortcuts: [{ key: 'ARROWDOWN' }] },
+  { id: 'core.moveCursorUp', title: 'Move up', defaultShortcuts: [{ key: 'ARROWUP' }] },
+  { id: 'core.moveCursorPageDown', title: 'Page down', defaultShortcuts: [{ key: 'PAGEDOWN' }] },
+  { id: 'core.moveCursorPageUp', title: 'Page up', defaultShortcuts: [{ key: 'PAGEUP' }] },
+  { id: 'core.moveCursorFirst', title: 'First', defaultShortcuts: [{ key: 'HOME' }] },
+  { id: 'core.moveCursorLast', title: 'Last', defaultShortcuts: [{ key: 'END' }] },
+  {
+    id: 'core.extendSelectionDown',
+    title: 'Extend down',
+    defaultShortcuts: [{ key: 'ARROWDOWN', shift: true }],
+  },
+  {
+    id: 'core.extendSelectionUp',
+    title: 'Extend up',
+    defaultShortcuts: [{ key: 'ARROWUP', shift: true }],
+  },
+  { id: 'core.toggleSelection', title: 'Toggle selection', defaultShortcuts: [{ key: ' ' }] },
+  { id: 'core.selectAll', title: 'Select all', defaultShortcuts: [{ key: 'A', ctrl: true }] },
+].map(
+  (action): ActionDescriptor => ({
+    category: 'test',
+    contextRequirements: {},
+    source: { kind: 'core' },
+    ...action,
+  }),
+);
+
 function attrs(overrides: Partial<PaneAttrs> = {}): PaneAttrs {
   return {
     path: '/home/erik',
@@ -42,6 +78,9 @@ function attrs(overrides: Partial<PaneAttrs> = {}): PaneAttrs {
     cutEntryIds: new Set<EntryId>(),
     active: true,
     platform: 'linux',
+    keybindingRuntime: 'desktop',
+    actions: keybindingActions,
+    keybindingOverrides: {},
     canNavigateBack: true,
     canNavigateForward: true,
     onBack: vi.fn(),

@@ -95,7 +95,33 @@ describe('MockFileManagerClient API', () => {
     expect(capabilities.runtime).toBe('mock');
     expect(workspace.id).toBe('mock-workspace');
     expect(metadata.entryId).toBe('mock:///日本語.txt');
-    expect(actions.map((action) => action.id)).toEqual(['core.refresh']);
+    expect(actions.map((action) => action.id)).toEqual([
+      'core.refresh',
+      'core.rename',
+      'core.copy',
+      'core.move',
+      'core.createDirectory',
+      'core.delete',
+      'core.palette',
+      'core.focusLocation',
+      'core.quickFilter',
+      'core.newTab',
+      'core.closeTab',
+      'core.open',
+      'core.parent',
+      'core.switchPane',
+      'core.moveCursorUp',
+      'core.moveCursorDown',
+      'core.moveCursorPageUp',
+      'core.moveCursorPageDown',
+      'core.moveCursorFirst',
+      'core.moveCursorLast',
+      'core.extendSelectionUp',
+      'core.extendSelectionDown',
+      'core.toggleSelection',
+      'core.selectAll',
+      'core.clearSelection',
+    ]);
     expect(plugins.map((plugin) => plugin.id)).toEqual(['mock.archive']);
     expect(actionResult).toEqual({ actionId: 'core.refresh', invoked: true });
   });

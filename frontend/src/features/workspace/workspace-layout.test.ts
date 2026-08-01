@@ -1,7 +1,7 @@
 import m from 'mithril';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { EntryId, PaneId, WorkspaceProjection } from '../../models';
+import type { ActionDescriptor, EntryId, PaneId, WorkspaceProjection } from '../../models';
 import {
   constrainSplitRatio,
   WorkspaceLayoutView,
@@ -9,6 +9,21 @@ import {
 } from './workspace-layout';
 
 let root: HTMLElement;
+
+const keybindingActions = [
+  {
+    id: 'core.switchPane',
+    title: 'Switch pane',
+    defaultShortcuts: [{ key: 'TAB' }, { key: 'TAB', shift: true }],
+  },
+].map(
+  (action): ActionDescriptor => ({
+    category: 'test',
+    contextRequirements: {},
+    source: { kind: 'core' },
+    ...action,
+  }),
+);
 
 function projection(): WorkspaceProjection {
   const emptyView = {
@@ -79,6 +94,9 @@ function attrs(overrides: Partial<WorkspaceLayoutViewAttrs> = {}): WorkspaceLayo
       sort: [{ columnId: 'core.name', direction: 'ascending' }],
       metadata: { state: 'idle' },
       platform: 'linux',
+      keybindingRuntime: 'desktop',
+      actions: keybindingActions,
+      keybindingOverrides: {},
       onNavigate: vi.fn(),
       onBack: vi.fn(),
       onForward: vi.fn(),

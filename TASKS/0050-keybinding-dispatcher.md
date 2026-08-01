@@ -1,9 +1,9 @@
 # 0050 Configurable keybinding dispatcher
 
-Status: open
+Status: done
 Priority: high
 Owner: unassigned
-Agent: unassigned
+Agent: Codex
 Area: frontend
 Depends on: 0049, 0030
 
@@ -34,7 +34,8 @@ system"), §29 (platform modifiers) and §36 item 8.
 - Keybinding editing UI can be minimal for now; the settings round-trip is what matters.
 
 ## Agent Notes
-- Not started.
+- 2026-08-01 Codex: Added the pure registry-backed dispatcher, effective-binding/conflict/browser-availability APIs, and live function-key bar. Pane, workspace and application handlers now dispatch semantic actions while editable targets remain isolated from file actions. The core and mock action registries supply the §15 defaults; settings `keybindings` overrides replace those defaults.
+- 2026-08-01 Codex: Verified focused dispatcher/pane/workspace/AppShell tests, frontend typecheck, `cargo fmt --check`, action-registry tests, `pnpm run lint`, and the Rust workspace tests. Full frontend Vitest still has unrelated pre-existing failures in the hard-coded-colour check and HTTP operation fixture, plus the sandbox blocks the SSE proxy listener; the mock action-list expectation was updated for this task.
 - 2026-07-31 codex: This task is a prerequisite for 0083. Keep conflict detection, platform/browser
   availability and editable binding state behind reusable feature APIs so the settings editor can
   render them without duplicating dispatcher logic.
