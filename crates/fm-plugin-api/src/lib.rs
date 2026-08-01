@@ -181,6 +181,23 @@ pub struct ActionContribution {
     pub title: String,
     /// User-facing action description.
     pub description: String,
+    /// Whether the host must require exactly one selected entry before this
+    /// action is available (task 0055's `sample.copyMarkdownPath` and
+    /// similar single-entry actions).
+    #[serde(default)]
+    pub requires_single_selection: bool,
+}
+
+/// One selected entry's name and location, passed into an action invocation
+/// (task 0055). Distinct from the host's opaque `EntryId`: the caller already
+/// knows the current pane's selection details, so the host does not need its
+/// own entry-id resolution registry to invoke a plugin action.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SelectedEntryContext {
+    /// The entry's display name, e.g. `"report.pdf"`.
+    pub name: String,
+    /// The entry's location URI, e.g. `"file:///Users/erik/Documents/report.pdf"`.
+    pub uri: String,
 }
 
 /// Custom column declaration. Values are data, never JavaScript/UI code.
@@ -205,6 +222,8 @@ pub trait HostServices {
     fn selected_entry_metadata(&self) -> Result<(), PermissionDenied>;
     /// Posts a non-blocking notification only when permitted.
     fn notify(&self, message: &str) -> Result<(), PermissionDenied>;
+    /// Writes text to the system clipboard only when permitted.
+    fn clipboard_write(&self, text: &str) -> Result<(), PermissionDenied>;
 }
 
 #[cfg(test)]
@@ -264,5 +283,25 @@ actions = true
             .expect_err("omitted permission must be denied");
 
         assert_eq!(error.permission, Permission::ClipboardWrite);
+    }
+
+    #[test]
+    fn action_contribution_defaults_to_no_selection_requirement() {
+        let json = r#"{"id":"sample.action","title":"Sample","description":"An action"}"#;
+        let contribution: ActionContribution =
+            serde_json::from_str(json).expect("must deserialize without the new field");
+        assert!(!contribution.requires_single_selection);
+    }
+
+    #[test]
+    fn selected_entry_context_round_trips_through_serde_json() {
+        let entry = SelectedEntryContext {
+            name: "report.pdf".to_owned(),
+            uri: "file:///Users/erik/Documents/report.pdf".to_owned(),
+        };
+        let json = serde_json::to_string(&entry).expect("serialization must succeed");
+        let parsed: SelectedEntryContext =
+            serde_json::from_str(&json).expect("deserialization must succeed");
+        assert_eq!(entry, parsed);
     }
 }

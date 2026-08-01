@@ -9,6 +9,14 @@
 export interface ActionResultDto {
   /** The invoked action's id, echoed back for convenience. */
   actionId: string;
+  /**
+     * Text a plugin action asked the host to write to the clipboard, e.g.
+     * `sample.copyMarkdownPath` (spec §20). The caller performs the actual
+     * OS/browser clipboard write; the backend only authorizes and
+     * generates the content.
+     * @nullable
+     */
+  clipboardText?: string | null;
   /** Whether the action ran (always `true` on a non-error response). */
   invoked: boolean;
   /**

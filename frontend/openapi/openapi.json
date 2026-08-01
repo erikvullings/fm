@@ -139,6 +139,13 @@
             "description": "The invoked action's id, echoed back for convenience.",
             "type": "string"
           },
+          "clipboardText": {
+            "description": "Text a plugin action asked the host to write to the clipboard, e.g.\n`sample.copyMarkdownPath` (spec §20). The caller performs the actual\nOS/browser clipboard write; the backend only authorizes and\ngenerates the content.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "invoked": {
             "description": "Whether the action ran (always `true` on a non-error response).",
             "type": "boolean"

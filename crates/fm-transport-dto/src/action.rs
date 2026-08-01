@@ -218,6 +218,12 @@ pub struct ActionResultDto {
     /// The operation started on behalf of this action, for mutating actions.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub operation_id: Option<Uuid>,
+    /// Text a plugin action asked the host to write to the clipboard, e.g.
+    /// `sample.copyMarkdownPath` (spec §20). The caller performs the actual
+    /// OS/browser clipboard write; the backend only authorizes and
+    /// generates the content.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub clipboard_text: Option<String>,
 }
 
 #[cfg(test)]
@@ -345,8 +351,22 @@ mod tests {
             action_id: "core.selectAll".to_owned(),
             invoked: true,
             operation_id: None,
+            clipboard_text: None,
         };
         let json = serde_json::to_string(&dto).expect("serialization must succeed");
         assert!(!json.contains("operationId"));
+        assert!(!json.contains("clipboardText"));
+    }
+
+    #[test]
+    fn action_result_dto_includes_clipboard_text_when_present() {
+        let dto = ActionResultDto {
+            action_id: "sample.copyMarkdownPath".to_owned(),
+            invoked: true,
+            operation_id: None,
+            clipboard_text: Some("[report.pdf](file:///report.pdf)".to_owned()),
+        };
+        let json = serde_json::to_string(&dto).expect("serialization must succeed");
+        assert!(json.contains("\"clipboardText\":\"[report.pdf](file:///report.pdf)\""));
     }
 }

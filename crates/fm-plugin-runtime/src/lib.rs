@@ -7,11 +7,13 @@
 use std::collections::{BTreeMap, VecDeque};
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use fm_plugin_api::{ActionContribution, ColumnContribution, Permission, PluginManifest};
+use fm_plugin_api::{
+    ActionContribution, ColumnContribution, Permission, PluginManifest, SelectedEntryContext,
+};
 use mlua::{Error as LuaError, HookTriggers, Lua, LuaOptions, LuaSerdeExt, StdLib, Table, VmState};
 use serde::de::DeserializeOwned;
 use thiserror::Error;
@@ -29,6 +31,13 @@ pub struct PluginLogEntry {
     pub plugin_id: String,
     /// A safe, user-readable failure message.
     pub message: String,
+}
+
+/// The observable result of invoking one plugin action (task 0055).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct PluginActionOutcome {
+    /// Text the plugin asked the host to write to the clipboard, if any.
+    pub clipboard_text: Option<String>,
 }
 
 /// The reason a plugin call was isolated from the host application.
@@ -153,6 +162,36 @@ impl PluginRuntime {
         }
     }
 
+    /// Invokes one action contribution by id, giving its entrypoint's
+    /// `invoke` function access to the caller-supplied selection and the
+    /// permission-gated clipboard host call (task 0055).
+    ///
+    /// The caller (frontend or host adapter) already knows the active
+    /// pane's current selection, so `selection` is supplied directly rather
+    /// than resolved from an opaque entry-id registry.
+    pub fn invoke_action(
+        &self,
+        manifest: &PluginManifest,
+        directory: &Path,
+        action_id: &str,
+        selection: &[SelectedEntryContext],
+    ) -> Result<PluginActionOutcome, PluginRuntimeError> {
+        self.ensure_enabled(&manifest.id)?;
+        if !manifest.contributions.actions {
+            return Err(PluginRuntimeError::Execution {
+                plugin_id: manifest.id.clone(),
+                message: "plugin does not contribute actions".to_owned(),
+            });
+        }
+        match self.execute_invoke(manifest, directory, action_id, selection) {
+            Ok(outcome) => {
+                self.reset_failures(&manifest.id);
+                Ok(outcome)
+            }
+            Err(message) => Err(self.record_failure(&manifest.id, message)),
+        }
+    }
+
     /// Returns bounded retained diagnostics for a plugin.
     #[must_use]
     pub fn logs(&self, plugin_id: &str) -> Vec<PluginLogEntry> {
@@ -191,6 +230,55 @@ impl PluginRuntime {
     ) -> Result<Vec<T>, String> {
         let source = fs::read_to_string(directory.join(&manifest.entrypoint))
             .map_err(|error| format!("could not load entrypoint: {error}"))?;
+        let lua = self.new_sandboxed_lua()?;
+        install_host_services(&lua, manifest).map_err(|error| error.to_string())?;
+        let module: Table = lua
+            .load(&source)
+            .eval()
+            .map_err(|error| error.to_string())?;
+        let function = module
+            .get::<mlua::Function>(contribution)
+            .map_err(|error| format!("malformed plugin result: {error}"))?;
+        let value: mlua::Value = function.call(()).map_err(|error| error.to_string())?;
+        lua.from_value(value)
+            .map_err(|error| format!("malformed plugin result: {error}"))
+    }
+
+    fn execute_invoke(
+        &self,
+        manifest: &PluginManifest,
+        directory: &Path,
+        action_id: &str,
+        selection: &[SelectedEntryContext],
+    ) -> Result<PluginActionOutcome, String> {
+        let source = fs::read_to_string(directory.join(&manifest.entrypoint))
+            .map_err(|error| format!("could not load entrypoint: {error}"))?;
+        let lua = self.new_sandboxed_lua()?;
+        let clipboard_text = Arc::new(Mutex::new(None::<String>));
+        install_action_host_services(&lua, manifest, selection, Arc::clone(&clipboard_text))
+            .map_err(|error| error.to_string())?;
+        let module: Table = lua
+            .load(&source)
+            .eval()
+            .map_err(|error| error.to_string())?;
+        let function = module
+            .get::<mlua::Function>("invoke")
+            .map_err(|error| format!("malformed plugin result: {error}"))?;
+        function
+            .call::<()>(action_id.to_owned())
+            .map_err(|error| error.to_string())?;
+        Ok(PluginActionOutcome {
+            clipboard_text: clipboard_text
+                .lock()
+                .unwrap_or_else(|error| error.into_inner())
+                .clone(),
+        })
+    }
+
+    /// Creates a fresh VM containing only table, string, math and UTF-8
+    /// helpers, with the shared memory limit, timeout and instruction-budget
+    /// hook applied. Host services are installed separately by each caller.
+    fn new_sandboxed_lua(&self) -> Result<Lua, String> {
         let lua = Lua::new_with(
             StdLib::TABLE | StdLib::STRING | StdLib::MATH | StdLib::UTF8,
             LuaOptions::default(),
@@ -219,17 +307,7 @@ impl PluginRuntime {
             },
         )
         .map_err(|error| error.to_string())?;
-        install_host_services(&lua, manifest).map_err(|error| error.to_string())?;
-        let module: Table = lua
-            .load(&source)
-            .eval()
-            .map_err(|error| error.to_string())?;
-        let function = module
-            .get::<mlua::Function>(contribution)
-            .map_err(|error| format!("malformed plugin result: {error}"))?;
-        let value: mlua::Value = function.call(()).map_err(|error| error.to_string())?;
-        lua.from_value(value)
-            .map_err(|error| format!("malformed plugin result: {error}"))
+        Ok(lua)
     }
 
     fn ensure_enabled(&self, plugin_id: &str) -> Result<(), PluginRuntimeError> {
@@ -288,6 +366,52 @@ fn install_host_services(lua: &Lua, manifest: &PluginManifest) -> mlua::Result<(
             permissions
                 .require(Permission::SelectedEntryMetadata)
                 .map_err(|error| LuaError::RuntimeError(error.to_string()))
+        })?,
+    )?;
+    lua.globals().set("host", host)
+}
+
+/// Installs the host table used by action invocation (task 0055): unlike
+/// [`install_host_services`]'s declare-time permission check,
+/// `selected_entry_metadata` here returns the caller-supplied selection, and
+/// `clipboard_write` records its argument for the caller to read back after
+/// the call returns, gated by the same permission model.
+fn install_action_host_services(
+    lua: &Lua,
+    manifest: &PluginManifest,
+    selection: &[SelectedEntryContext],
+    clipboard_text: Arc<Mutex<Option<String>>>,
+) -> mlua::Result<()> {
+    let host = lua.create_table()?;
+    let metadata_permissions = manifest.permissions.clone();
+    let selection = selection.to_vec();
+    host.set(
+        "selected_entry_metadata",
+        lua.create_function(move |lua, ()| {
+            metadata_permissions
+                .require(Permission::SelectedEntryMetadata)
+                .map_err(|error| LuaError::RuntimeError(error.to_string()))?;
+            let entries = lua.create_table()?;
+            for (index, entry) in selection.iter().enumerate() {
+                let entry_table = lua.create_table()?;
+                entry_table.set("name", entry.name.clone())?;
+                entry_table.set("uri", entry.uri.clone())?;
+                entries.set(index + 1, entry_table)?;
+            }
+            Ok(entries)
+        })?,
+    )?;
+    let clipboard_permissions = manifest.permissions.clone();
+    host.set(
+        "clipboard_write",
+        lua.create_function(move |_, text: String| {
+            clipboard_permissions
+                .require(Permission::ClipboardWrite)
+                .map_err(|error| LuaError::RuntimeError(error.to_string()))?;
+            *clipboard_text
+                .lock()
+                .unwrap_or_else(|error| error.into_inner()) = Some(text);
+            Ok(())
         })?,
     )?;
     lua.globals().set("host", host)
@@ -571,5 +695,154 @@ mod tests {
         assert!(runtime.disabled_reason("example.plugin").is_some());
         runtime.reenable("example.plugin");
         assert!(runtime.disabled_reason("example.plugin").is_none());
+    }
+
+    fn manifest_with_clipboard_write() -> PluginManifest {
+        PluginManifest::parse(
+            "id='example.plugin'\nname='Example'\nversion='1'\napi_version='1'\ndescription='Example'\nentrypoint='plugin.lua'\n[permissions]\nselected_entry_metadata=true\nclipboard_write=true\n[contributions]\nactions=true",
+        )
+        .expect("valid manifest")
+    }
+
+    #[test]
+    fn invoke_action_writes_selected_entry_metadata_to_the_clipboard_when_permitted() {
+        let temporary = write_script(
+            "return { invoke = function(action_id) \
+                 local entries = host.selected_entry_metadata() \
+                 host.clipboard_write('[' .. entries[1].name .. '](' .. entries[1].uri .. ')') \
+             end }",
+        );
+        let selection = vec![SelectedEntryContext {
+            name: "report.pdf".to_owned(),
+            uri: "file:///Users/erik/Documents/report.pdf".to_owned(),
+        }];
+
+        let outcome = PluginRuntime::default()
+            .invoke_action(
+                &manifest_with_clipboard_write(),
+                temporary.path(),
+                "sample.copyMarkdownPath",
+                &selection,
+            )
+            .expect("invocation must succeed");
+
+        assert_eq!(
+            outcome.clipboard_text.as_deref(),
+            Some("[report.pdf](file:///Users/erik/Documents/report.pdf)")
+        );
+    }
+
+    #[test]
+    fn invoke_action_fails_visibly_without_the_clipboard_write_permission() {
+        let temporary = write_script(
+            "return { invoke = function(action_id) host.clipboard_write('denied') end }",
+        );
+        let manifest = manifest(); // no permissions declared
+
+        let error = PluginRuntime::default()
+            .invoke_action(&manifest, temporary.path(), "sample.copyMarkdownPath", &[])
+            .expect_err("clipboard write must be denied without the permission");
+
+        assert!(error.to_string().contains("permission denied"));
+    }
+
+    fn sample_copy_markdown_path_directory() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../plugins/sample-copy-markdown-path")
+    }
+
+    fn sample_copy_markdown_path_manifest() -> PluginManifest {
+        let source = fs::read_to_string(sample_copy_markdown_path_directory().join("plugin.toml"))
+            .expect("sample plugin manifest must exist");
+        PluginManifest::parse(&source).expect("sample plugin manifest must be valid")
+    }
+
+    #[test]
+    fn sample_copy_markdown_path_declares_a_single_selection_action() {
+        let manifest = sample_copy_markdown_path_manifest();
+
+        let actions = PluginRuntime::default()
+            .actions(&manifest, &sample_copy_markdown_path_directory())
+            .expect("actions must be declared");
+
+        assert_eq!(actions.len(), 1);
+        assert_eq!(actions[0].id, "sample.copyMarkdownPath");
+        assert!(actions[0].requires_single_selection);
+    }
+
+    #[test]
+    fn sample_copy_markdown_path_escapes_spaces_parentheses_and_unicode() {
+        let manifest = sample_copy_markdown_path_manifest();
+        let directory = sample_copy_markdown_path_directory();
+        let runtime = PluginRuntime::default();
+
+        let plain = runtime
+            .invoke_action(
+                &manifest,
+                &directory,
+                "sample.copyMarkdownPath",
+                &[SelectedEntryContext {
+                    name: "report.pdf".to_owned(),
+                    uri: "file:///Users/erik/Documents/report.pdf".to_owned(),
+                }],
+            )
+            .expect("invocation must succeed");
+        assert_eq!(
+            plain.clipboard_text.as_deref(),
+            Some("[report.pdf](file:///Users/erik/Documents/report.pdf)")
+        );
+
+        let spaced_and_parenthesized = runtime
+            .invoke_action(
+                &manifest,
+                &directory,
+                "sample.copyMarkdownPath",
+                &[SelectedEntryContext {
+                    name: "My File (2).txt".to_owned(),
+                    uri: "file:///Users/erik/Documents/My File (2).txt".to_owned(),
+                }],
+            )
+            .expect("invocation must succeed");
+        assert_eq!(
+            spaced_and_parenthesized.clipboard_text.as_deref(),
+            Some("[My File (2).txt](file:///Users/erik/Documents/My%20File%20%282%29.txt)")
+        );
+
+        let unicode = runtime
+            .invoke_action(
+                &manifest,
+                &directory,
+                "sample.copyMarkdownPath",
+                &[SelectedEntryContext {
+                    name: "résumé.pdf".to_owned(),
+                    uri: "file:///Users/erik/Documents/résumé.pdf".to_owned(),
+                }],
+            )
+            .expect("invocation must succeed");
+        assert_eq!(
+            unicode.clipboard_text.as_deref(),
+            Some("[résumé.pdf](file:///Users/erik/Documents/r%C3%A9sum%C3%A9.pdf)")
+        );
+    }
+
+    #[test]
+    fn sample_copy_markdown_path_fails_visibly_without_clipboard_write_permission() {
+        let source = fs::read_to_string(sample_copy_markdown_path_directory().join("plugin.toml"))
+            .expect("sample plugin manifest must exist")
+            .replace("clipboard_write = true", "clipboard_write = false");
+        let manifest = PluginManifest::parse(&source).expect("manifest must still be valid");
+
+        let error = PluginRuntime::default()
+            .invoke_action(
+                &manifest,
+                &sample_copy_markdown_path_directory(),
+                "sample.copyMarkdownPath",
+                &[SelectedEntryContext {
+                    name: "report.pdf".to_owned(),
+                    uri: "file:///Users/erik/Documents/report.pdf".to_owned(),
+                }],
+            )
+            .expect_err("clipboard write must be denied without the permission");
+
+        assert!(error.to_string().contains("permission denied"));
     }
 }

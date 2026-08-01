@@ -20,6 +20,7 @@ fm-application = { path = "crates/fm-application" }
 fm-domain = { path = "crates/fm-domain" }
 fm-events = { path = "crates/fm-events" }
 fm-operations = { path = "crates/fm-operations" }
+fm-plugin-api = { path = "crates/fm-plugin-api" }
 fm-plugin-runtime = { path = "crates/fm-plugin-runtime" }
 fm-settings = { path = "crates/fm-settings" }
 fm-transport-dto = { path = "crates/fm-transport-dto" }
@@ -35,7 +36,12 @@ chrono = { version = "0.4.45", features = ["serde"] }
 clap = { version = "4.6.4", features = ["derive", "env"] }
 dirs = "6.0.0"
 futures = "0.3.31"
-mlua = { version = "0.12.0", features = ["lua54", "vendored", "send", "serialize"] }
+mlua = { version = "0.12.0", features = [
+  "lua54",
+  "vendored",
+  "send",
+  "serialize",
+] }
 notify = "8.2.0"
 reqwest = { version = "0.13.4", default-features = false, features = [
   "json",

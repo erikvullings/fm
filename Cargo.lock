@@ -1072,6 +1072,7 @@ dependencies = [
  "fm-domain",
  "fm-events",
  "fm-operations",
+ "fm-plugin-api",
  "fm-plugin-runtime",
  "fm-settings",
  "fm-transport-dto",
@@ -1172,6 +1173,7 @@ name = "fm-plugin-api"
 version = "0.1.0"
 dependencies = [
  "serde",
+ "serde_json",
  "thiserror 2.0.19",
  "toml 1.1.4+spec-1.1.0",
 ]

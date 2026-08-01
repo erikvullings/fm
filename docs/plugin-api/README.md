@@ -34,9 +34,35 @@ distributable target; no native Rust dynamic-library ABI is exposed. See ADR
 ## Lua entrypoint contract and isolation
 
 An entrypoint returns a Lua table. When `contributions.actions = true`, its `actions` field must be
-a function returning an array of `{ id, title, description }` action tables. Enabled contributions
-are automatically exposed through the shared action registry, so the command palette and context
+a function returning an array of `{ id, title, description }` action tables. An action table may
+also set `requires_single_selection = true` to advertise that it only makes sense when exactly one
+entry is selected; the host derives the action's context requirements from this flag and
+re-validates them server-side before invoking the action, so the command palette and context menu
+disable/hide the action automatically when the requirement is not met. Enabled contributions are
+automatically exposed through the shared action registry, so the command palette and context
 menus receive them through their normal registry refresh.
+
+### Invoking actions: the `invoke` contract
+
+When an action fires, the host calls the entrypoint's `invoke(action_id)` function with the
+action's id as its sole argument. Two host calls are available while `invoke` runs, both
+permission-gated:
+
+- `host.selected_entry_metadata()` returns the caller-supplied selection as an array of
+  `{ name, uri }` tables (requires the `selected_entry_metadata` permission). The caller already
+  knows the current selection's name and file URI (from pane state), so this is the data it passed
+  in when invoking the action — the host does not resolve an opaque entry id back to metadata.
+- `host.clipboard_write(text)` stages `text` for the host to copy to the clipboard (requires the
+  `clipboard_write` permission). The actual OS/browser clipboard write is the caller's
+  responsibility (the backend cannot write to a browser client's clipboard); the host publishes a
+  success notification and returns `text` as `clipboardText` on the action result so the caller
+  can perform it. Calling this without the permission fails visibly with a `PermissionDenied`
+  error instead of silently no-op'ing.
+
+The sample plugin `plugins/sample-copy-markdown-path/` implements this contract: it declares
+`sample.copyMarkdownPath` with `requires_single_selection = true`, then builds a Markdown link
+`[name](uri)` from the selection, Markdown-escaping the name and percent-encoding the URI, before
+calling `host.clipboard_write`.
 
 Each call creates a fresh Lua state with only table, string, math, and UTF-8 libraries. `io`,
 `os`, `package`, `debug`, process launch, filesystem and network APIs are absent. The optional

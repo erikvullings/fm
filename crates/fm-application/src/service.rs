@@ -3,7 +3,7 @@
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicU64;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -21,6 +21,7 @@ use fm_operations::{
     ConflictResolution, ExecutionError, ExecutionOutcome, Operation, OperationExecutor,
     OperationPlan, OperationSnapshotObserver, PauseToken, PlanItem, Scheduler, SchedulerError,
 };
+use fm_plugin_api::{ActionContribution, PluginManifest, SelectedEntryContext};
 use fm_plugin_runtime::{PluginDiscovery, PluginRuntime};
 use fm_settings::{
     ConflictPolicy, DateFormat, DefaultPaneLayout, Settings, SettingsStore, SizeFormat, Theme,
@@ -694,34 +695,13 @@ impl FileManagerService {
     #[must_use]
     pub fn list_actions(&self) -> Vec<ActionDescriptorDto> {
         let mut actions = self.actions.list();
-        let enabled = self
-            .settings
-            .lock()
-            .unwrap_or_else(|error| error.into_inner())
-            .enabled_plugins
-            .clone();
-        for plugin in self.plugins.discover() {
-            let Some(manifest) = plugin.manifest else {
-                continue;
-            };
-            if !enabled.contains(&manifest.id) {
-                continue;
-            }
-            match self.plugin_runtime.actions(&manifest, &plugin.directory) {
-                Ok(contributions) => {
-                    actions.extend(contributions.into_iter().map(|action| ActionDescriptor {
-                        id: ActionId::new(action.id),
-                        title: action.title,
-                        description: Some(action.description),
-                        category: "plugin".to_owned(),
-                        default_shortcuts: Vec::new(),
-                        context_requirements: ActionContextRequirements::none(),
-                        parameter_schema: None,
-                        source: ActionSource::Plugin {
-                            plugin_id: PluginId::new(manifest.id.clone()),
-                        },
-                    }))
-                }
+        for (manifest, directory) in self.enabled_plugin_manifests() {
+            match self.plugin_runtime.actions(&manifest, &directory) {
+                Ok(contributions) => actions.extend(
+                    contributions
+                        .into_iter()
+                        .map(|action| plugin_action_descriptor(&manifest, action)),
+                ),
                 Err(error) => {
                     self.events.publish(
                         EventAudience::Global,
@@ -738,6 +718,98 @@ impl FileManagerService {
         }
         actions.sort_by(|left, right| left.id.cmp(&right.id));
         actions.into_iter().map(Into::into).collect()
+    }
+
+    /// Manifests and directories of every plugin that is both valid and
+    /// enabled (spec §18/§19). Shared by [`Self::list_actions`] and plugin
+    /// action dispatch in [`Self::invoke_action`] so both agree on which
+    /// plugins are eligible to contribute actions.
+    fn enabled_plugin_manifests(&self) -> Vec<(PluginManifest, PathBuf)> {
+        let enabled = self
+            .settings
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .enabled_plugins
+            .clone();
+        self.plugins
+            .discover()
+            .into_iter()
+            .filter_map(|plugin| {
+                let manifest = plugin.manifest?;
+                enabled
+                    .contains(&manifest.id)
+                    .then_some((manifest, plugin.directory))
+            })
+            .collect()
+    }
+
+    /// Finds an enabled plugin's action contribution by id, along with the
+    /// manifest and directory needed to invoke it (spec §18/§20).
+    fn find_plugin_action(
+        &self,
+        action_id: &ActionId,
+    ) -> Option<(PluginManifest, PathBuf, ActionDescriptor)> {
+        self.enabled_plugin_manifests()
+            .into_iter()
+            .find_map(|(manifest, directory)| {
+                let contributions = self.plugin_runtime.actions(&manifest, &directory).ok()?;
+                let action = contributions
+                    .into_iter()
+                    .find(|action| action.id == action_id.as_str())?;
+                let descriptor = plugin_action_descriptor(&manifest, action);
+                Some((manifest, directory, descriptor))
+            })
+    }
+
+    /// Runs a plugin's `invoke(action_id)` entrypoint with the caller-supplied
+    /// selection (spec §20). The caller (frontend) already knows the current
+    /// selection's name and file URI, so it is passed directly as invocation
+    /// parameters rather than requiring the backend to resolve an
+    /// [`fm_domain::EntryId`] back to metadata.
+    fn invoke_plugin_action(
+        &self,
+        action_id: &ActionId,
+        manifest: &PluginManifest,
+        directory: &Path,
+        parameters: Option<serde_json::Value>,
+    ) -> Result<ActionResultDto, ApplicationError> {
+        let selection = parameters
+            .map(serde_json::from_value::<PluginActionParametersDto>)
+            .transpose()
+            .map_err(|error| {
+                ApplicationError::InvalidRequest(format!("invalid action parameters: {error}"))
+            })?
+            .unwrap_or_default()
+            .selected_entries;
+
+        match self
+            .plugin_runtime
+            .invoke_action(manifest, directory, action_id.as_str(), &selection)
+        {
+            Ok(outcome) => {
+                if outcome.clipboard_text.is_some() {
+                    self.events.publish(
+                        EventAudience::Global,
+                        BackendEventPayload::NotificationCreated {
+                            notification: NotificationPayload {
+                                id: Uuid::new_v4().to_string(),
+                                level: NotificationLevelPayload::Info,
+                                message: "Copied to clipboard.".to_owned(),
+                            },
+                        },
+                    );
+                }
+                Ok(ActionResultDto {
+                    action_id: action_id.as_str().to_owned(),
+                    invoked: true,
+                    operation_id: None,
+                    clipboard_text: outcome.clipboard_text,
+                })
+            }
+            Err(error) => Err(ApplicationError::InvalidRequest(format!(
+                "plugin action {action_id:?} failed: {error}"
+            ))),
+        }
     }
 
     /// Lists discovered plugins, retaining malformed manifests as disabled records.
@@ -851,6 +923,19 @@ impl FileManagerService {
     ) -> Result<ActionResultDto, ApplicationError> {
         let action_id = ActionId::new(action_id);
         let context = request.context.into();
+
+        if let Some((manifest, directory, descriptor)) = self.find_plugin_action(&action_id) {
+            if !descriptor.context_requirements.is_satisfied_by(&context) {
+                return Err(ApplicationError::ActionUnavailable(action_id));
+            }
+            return self.invoke_plugin_action(
+                &action_id,
+                &manifest,
+                &directory,
+                request.parameters,
+            );
+        }
+
         self.actions.require_available(&action_id, &context)?;
 
         let Some(operation_type) = mutating_operation_kind(&action_id) else {
@@ -858,6 +943,7 @@ impl FileManagerService {
                 action_id: action_id.as_str().to_owned(),
                 invoked: true,
                 operation_id: None,
+                clipboard_text: None,
             });
         };
         let parameters = request.parameters.ok_or_else(|| {
@@ -875,6 +961,7 @@ impl FileManagerService {
             action_id: action_id.as_str().to_owned(),
             invoked: true,
             operation_id: Some(operation.id),
+            clipboard_text: None,
         })
     }
 
@@ -2365,6 +2452,42 @@ fn mutating_operation_kind(id: &ActionId) -> Option<OperationKindDto> {
     }
 }
 
+/// Builds an [`ActionDescriptor`] for a plugin's declared action contribution,
+/// deriving the context requirement from `requires_single_selection` (spec §18/§20).
+fn plugin_action_descriptor(
+    manifest: &PluginManifest,
+    action: ActionContribution,
+) -> ActionDescriptor {
+    let context_requirements = if action.requires_single_selection {
+        ActionContextRequirements::single_selection()
+    } else {
+        ActionContextRequirements::none()
+    };
+    ActionDescriptor {
+        id: ActionId::new(action.id),
+        title: action.title,
+        description: Some(action.description),
+        category: "plugin".to_owned(),
+        default_shortcuts: Vec::new(),
+        context_requirements,
+        parameter_schema: None,
+        source: ActionSource::Plugin {
+            plugin_id: PluginId::new(manifest.id.clone()),
+        },
+    }
+}
+
+/// Invocation parameters a caller supplies for a plugin action that needs
+/// the current selection's metadata, e.g. `sample.copyMarkdownPath` (spec §20).
+/// The frontend already has this data from pane state, so it is passed
+/// directly rather than requiring the backend to resolve an `EntryId`.
+#[derive(Debug, Default, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PluginActionParametersDto {
+    #[serde(default)]
+    selected_entries: Vec<SelectedEntryContext>,
+}
+
 fn operation_dto(operation: Operation, queue_position: Option<u64>) -> OperationDto {
     let result_summary = operation_result_summary(&operation);
     OperationDto {
@@ -2614,6 +2737,158 @@ mod tests {
             action.source,
             fm_transport_dto::ActionSourceDto::Plugin { .. }
         ));
+    }
+
+    fn write_copy_markdown_plugin(directory: &std::path::Path, clipboard_write: bool) {
+        std::fs::create_dir_all(directory).expect("plugin directory");
+        std::fs::write(
+            directory.join("plugin.toml"),
+            format!(
+                "id='example.copy-markdown'\nname='Copy Markdown'\nversion='1'\napi_version='1'\ndescription='Copies a markdown link'\nentrypoint='plugin.lua'\n[permissions]\nselected_entry_metadata=true\nclipboard_write={clipboard_write}\n[contributions]\nactions=true"
+            ),
+        )
+        .expect("manifest");
+        std::fs::write(
+            directory.join("plugin.lua"),
+            "return { actions = function() return {{ id = 'example.copy-markdown.copy', title = 'Copy Markdown', description = 'Copies a markdown link', requires_single_selection = true }} end, invoke = function(action_id) local entries = host.selected_entry_metadata() host.clipboard_write('[' .. entries[1].name .. '](' .. entries[1].uri .. ')') end }",
+        )
+        .expect("script");
+    }
+
+    #[test]
+    fn plugin_action_requiring_single_selection_reports_that_context_requirement() {
+        let (directory, service) = service();
+        write_copy_markdown_plugin(
+            &directory.path().join("settings/plugins/copy-markdown"),
+            true,
+        );
+        service
+            .set_plugin_enabled("example.copy-markdown".to_owned(), true)
+            .expect("enable plugin");
+
+        let action = service
+            .list_actions()
+            .into_iter()
+            .find(|action| action.id == "example.copy-markdown.copy")
+            .expect("plugin action");
+
+        assert!(action.context_requirements.requires_single_selection);
+    }
+
+    #[tokio::test]
+    async fn invoke_action_runs_a_plugin_action_and_publishes_a_clipboard_notification() {
+        let (directory, service) = service();
+        write_copy_markdown_plugin(
+            &directory.path().join("settings/plugins/copy-markdown"),
+            true,
+        );
+        service
+            .set_plugin_enabled("example.copy-markdown".to_owned(), true)
+            .expect("enable plugin");
+        let mut events = service
+            .event_bus()
+            .subscribe(SessionId::new("test"), [], Some(0));
+
+        let result = service
+            .invoke_action(
+                "example.copy-markdown.copy".to_owned(),
+                InvokeActionRequestDto {
+                    parameters: Some(serde_json::json!({
+                        "selectedEntries": [
+                            { "name": "report.pdf", "uri": "file:///Users/erik/Documents/report.pdf" }
+                        ]
+                    })),
+                    context: fm_transport_dto::ActionInvocationContextDto {
+                        selected_entry_ids: vec![uuid::Uuid::new_v4()],
+                        ..Default::default()
+                    },
+                },
+                None,
+            )
+            .expect("plugin action must be invoked");
+
+        assert!(result.invoked);
+        assert_eq!(
+            result.clipboard_text.as_deref(),
+            Some("[report.pdf](file:///Users/erik/Documents/report.pdf)")
+        );
+
+        let event = events.recv().await.expect("notification event");
+        assert!(matches!(
+            event,
+            SubscriptionEvent::Event(envelope)
+                if matches!(
+                    envelope.payload,
+                    BackendEventPayload::NotificationCreated {
+                        notification: NotificationPayload {
+                            level: NotificationLevelPayload::Info,
+                            ..
+                        }
+                    }
+                )
+        ));
+    }
+
+    #[test]
+    fn invoke_action_reports_a_visible_error_when_a_plugin_action_lacks_the_clipboard_write_permission()
+     {
+        let (directory, service) = service();
+        write_copy_markdown_plugin(
+            &directory.path().join("settings/plugins/copy-markdown"),
+            false,
+        );
+        service
+            .set_plugin_enabled("example.copy-markdown".to_owned(), true)
+            .expect("enable plugin");
+
+        let error = service
+            .invoke_action(
+                "example.copy-markdown.copy".to_owned(),
+                InvokeActionRequestDto {
+                    parameters: Some(serde_json::json!({
+                        "selectedEntries": [
+                            { "name": "report.pdf", "uri": "file:///Users/erik/Documents/report.pdf" }
+                        ]
+                    })),
+                    context: fm_transport_dto::ActionInvocationContextDto {
+                        selected_entry_ids: vec![uuid::Uuid::new_v4()],
+                        ..Default::default()
+                    },
+                },
+                None,
+            )
+            .expect_err("clipboard write must be denied without the permission");
+
+        assert_eq!(
+            error.code(),
+            fm_transport_dto::ApplicationErrorCode::InvalidRequest
+        );
+        assert!(error.to_string().contains("permission denied"));
+    }
+
+    #[test]
+    fn invoke_action_reports_unavailable_when_the_plugin_action_context_requirement_is_not_met() {
+        let (directory, service) = service();
+        write_copy_markdown_plugin(
+            &directory.path().join("settings/plugins/copy-markdown"),
+            true,
+        );
+        service
+            .set_plugin_enabled("example.copy-markdown".to_owned(), true)
+            .expect("enable plugin");
+
+        let error = service
+            .invoke_action(
+                "example.copy-markdown.copy".to_owned(),
+                InvokeActionRequestDto::default(),
+                None,
+            )
+            .expect_err("action requires exactly one selected entry");
+
+        assert_eq!(
+            error.code(),
+            fm_transport_dto::ApplicationErrorCode::ActionUnavailable
+        );
     }
 
     #[test]
