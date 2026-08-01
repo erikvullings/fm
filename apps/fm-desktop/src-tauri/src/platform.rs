@@ -14,10 +14,11 @@ use fm_platform::PlatformAdapter;
 
 /// Builds the platform adapter for the current desktop build target.
 ///
-/// macOS and Windows builds still get [`fm_platform::FallbackPlatformAdapter`]
-/// -delegating adapters (tasks 0059/0060 add real native integration); any
-/// other target falls back directly, since it has no native adapter crate at
-/// all.
+/// macOS builds get the real [`fm_platform_macos::MacosPlatformAdapter`]
+/// (task 0059); Windows builds still get a
+/// [`fm_platform::FallbackPlatformAdapter`]-delegating adapter (task 0060 adds
+/// real native integration there); any other target falls back directly,
+/// since it has no native adapter crate at all.
 #[must_use]
 pub(crate) fn build_platform_adapter() -> Arc<dyn PlatformAdapter> {
     #[cfg(target_os = "macos")]

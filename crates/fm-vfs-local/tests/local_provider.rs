@@ -649,3 +649,33 @@ async fn windows_hidden_attribute_and_directory_reparse_points_are_flagged() {
             .any(|entry| entry.name == "link" && entry.kind == EntryKind::Symlink)
     );
 }
+
+#[cfg(target_os = "macos")]
+#[tokio::test]
+async fn macos_application_bundles_are_listed_as_files_not_directories() {
+    let root = tempdir().expect("temporary directory");
+    let bundle = root.path().join("Example.app");
+    fs::create_dir_all(bundle.join("Contents")).expect("create bundle fixture");
+    fs::create_dir(root.path().join("Plain.app")).expect("create non-bundle .app fixture");
+    fs::create_dir(root.path().join("Plain")).expect("create plain directory fixture");
+    let location = Location::from_native_path(root.path()).expect("local location");
+
+    let page = LocalFileSystemProvider::new()
+        .list(&location, ListOptions::default(), CancellationToken::new())
+        .await
+        .expect("list directory");
+
+    let by_name = |name: &str| {
+        page.entries
+            .iter()
+            .find(|entry| entry.name == name)
+            .unwrap_or_else(|| panic!("missing entry {name}"))
+    };
+    assert_eq!(by_name("Example.app").kind, EntryKind::File);
+    assert_eq!(
+        by_name("Plain.app").kind,
+        EntryKind::Directory,
+        "a .app directory without a Contents subfolder is not a real bundle"
+    );
+    assert_eq!(by_name("Plain").kind, EntryKind::Directory);
+}

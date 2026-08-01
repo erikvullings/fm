@@ -2,6 +2,10 @@
 //!
 //! Directory entries are inspected without following symbolic links. macOS
 //! Finder aliases are not detected yet and are treated as regular files.
+//! macOS application bundles (`.app`) are reported as [`EntryKind::File`]
+//! rather than [`EntryKind::Directory`] (specification §23), so they behave
+//! as a single opaque item in listings; the underlying path is still a real
+//! directory and can be listed by navigating into it directly.
 
 use std::{
     collections::BTreeMap,
@@ -739,7 +743,11 @@ async fn summarize_entry(
     let kind = if is_link(&file_type, &metadata) {
         EntryKind::Symlink
     } else if file_type.is_dir() {
-        EntryKind::Directory
+        if is_macos_app_bundle(&name, &entry.path()).await {
+            EntryKind::File
+        } else {
+            EntryKind::Directory
+        }
     } else {
         EntryKind::File
     };
@@ -772,7 +780,11 @@ async fn summarize_path(path: &Path, location: &Location) -> Result<EntrySummary
     let kind = if is_link(&file_type, &metadata) {
         EntryKind::Symlink
     } else if file_type.is_dir() {
-        EntryKind::Directory
+        if is_macos_app_bundle(&name, path).await {
+            EntryKind::File
+        } else {
+            EntryKind::Directory
+        }
     } else {
         EntryKind::File
     };
@@ -850,6 +862,28 @@ fn is_link(file_type: &std::fs::FileType, metadata: &std::fs::Metadata) -> bool 
 #[cfg(not(windows))]
 fn is_link(file_type: &std::fs::FileType, _metadata: &std::fs::Metadata) -> bool {
     file_type.is_symlink()
+}
+
+/// Whether a directory is a macOS application bundle, shown as a single
+/// opaque item rather than an enterable directory (specification §23).
+///
+/// A directory qualifies when its name ends in `.app` and it contains a
+/// `Contents` subdirectory, matching Finder's own bundle heuristic closely
+/// enough for listing purposes without needing `NSBundle` (kept as a plain
+/// filesystem check here rather than routed through `fm-platform`: crate
+/// layering places `fm-vfs-local` and `fm-platform-macos` in the same layer,
+/// so `fm-vfs-local` may not depend on it).
+#[cfg(target_os = "macos")]
+async fn is_macos_app_bundle(name: &str, path: &Path) -> bool {
+    name.to_ascii_lowercase().ends_with(".app")
+        && tokio::fs::metadata(path.join("Contents"))
+            .await
+            .is_ok_and(|metadata| metadata.is_dir())
+}
+
+#[cfg(not(target_os = "macos"))]
+async fn is_macos_app_bundle(_name: &str, _path: &Path) -> bool {
+    false
 }
 
 fn decode_token(token: Option<&str>, location: &Location) -> Result<usize, VfsError> {
