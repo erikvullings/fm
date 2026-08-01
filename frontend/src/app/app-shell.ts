@@ -43,6 +43,7 @@ import {
 } from '../features/operations/operation-state';
 import { PermanentDeleteDialog } from '../features/operations/permanent-delete-dialog';
 import { isParentEntry, withParentEntry } from '../features/panes/parent-entry';
+import { PluginManagement } from '../features/plugin-management/plugin-management';
 import type { SelectionPlatform } from '../features/selection/keybindings';
 import {
   emptySelection,
@@ -78,6 +79,8 @@ import type {
   OperationConflict,
   PaneId,
   PluginDescriptor,
+  PluginId,
+  PluginLogEntry,
   Settings,
   SortDescriptor,
   WorkspaceLayout,
@@ -681,6 +684,14 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       applyDelta(payload.paneId, payload.delta);
       return;
     }
+    if (payload.type === 'plugin.changed') {
+      const changed = payload.plugin;
+      plugins = plugins.some((plugin) => plugin.id === changed.id)
+        ? plugins.map((plugin) => (plugin.id === changed.id ? { ...plugin, ...changed } : plugin))
+        : plugins;
+      m.redraw();
+      return;
+    }
     if ('revision' in payload && workspace !== undefined) {
       if (payload.revision <= workspace.revision) return;
       void attrsClient.getWorkspace(workspace.id).then(replaceWorkspace);
@@ -999,7 +1010,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
           ),
           m('details.fm-settings-disclosure', [
             m('summary.fm-settings-button', 'Settings'),
-            m('.fm-settings-editor', { role: 'dialog', 'aria-label': 'Appearance settings' }, [
+            m('.fm-settings-editor', { role: 'dialog', 'aria-label': 'Settings' }, [
               m('.fm-settings-editor-heading', [
                 m('strong', 'Appearance'),
                 m(
@@ -1019,6 +1030,14 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
                 theme,
                 showLabels: true,
                 onThemeChange: (next: Theme) => setTheme(attrs.client, next),
+              }),
+              m('.fm-settings-editor-heading', [m('strong', 'Plugins')]),
+              m(PluginManagement, {
+                plugins,
+                onToggle: (pluginId: PluginId, enabled: boolean) =>
+                  attrs.client.setPluginEnabled(pluginId, enabled),
+                onRequestLogs: (pluginId: PluginId): Promise<readonly PluginLogEntry[]> =>
+                  attrs.client.getPluginLogs(pluginId),
               }),
             ]),
           ]),

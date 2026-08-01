@@ -19,6 +19,7 @@ import type {
   OperationDto,
   OperationPageDto,
   PluginDescriptorDto,
+  PluginLogEntryDto,
   ResolveOperationConflictRequestDto,
   RuntimeCapabilitiesDto,
   SettingsDto,
@@ -808,6 +809,46 @@ export const enablePlugin = async (pluginId: string, options?: Parameters<typeof
   {
     ...options,
     method: 'POST'
+
+
+  }
+);}
+
+
+
+export type getPluginLogsResponse200 = {
+  data: PluginLogEntryDto[]
+  status: 200
+}
+
+export type getPluginLogsResponse404 = {
+  data: ApplicationErrorDto
+  status: 404
+}
+
+export type getPluginLogsResponseSuccess = (getPluginLogsResponse200) & {
+  headers: Headers;
+};
+export type getPluginLogsResponseError = (getPluginLogsResponse404) & {
+  headers: Headers;
+};
+
+export type getPluginLogsResponse = (getPluginLogsResponseSuccess | getPluginLogsResponseError)
+
+export const getGetPluginLogsUrl = (pluginId: string,) => {
+
+
+
+
+  return `/api/v1/plugins/${pluginId}/logs`
+}
+
+export const getPluginLogs = async (pluginId: string, options?: Parameters<typeof fetchMutator>[1]): Promise<getPluginLogsResponse> => {
+
+  return fetchMutator<getPluginLogsResponse>(getGetPluginLogsUrl(pluginId),
+  {
+    ...options,
+    method: 'GET'
 
 
   }

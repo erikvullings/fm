@@ -1606,6 +1606,10 @@
             "description": "User-facing name when available.",
             "type": "string"
           },
+          "permissions": {
+            "$ref": "#/components/schemas/PluginPermissionsDto",
+            "description": "Capabilities the manifest requests; ungranted capabilities are denied (spec §19)."
+          },
           "version": {
             "description": "Package version when available.",
             "type": "string"
@@ -1617,7 +1621,88 @@
           "version",
           "description",
           "enabled",
-          "columns"
+          "columns",
+          "permissions"
+        ],
+        "type": "object"
+      },
+      "PluginLogEntryDto": {
+        "description": "One bounded diagnostic log entry retained for a plugin (spec §19.4).",
+        "properties": {
+          "message": {
+            "description": "A safe, user-readable failure message.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "message"
+        ],
+        "type": "object"
+      },
+      "PluginPermissionsDto": {
+        "description": "The manifest-declared capability grants for one plugin (spec §19), mirroring\n`fm_plugin_api::PluginPermissions`. A field is denied when it is `false` or empty.",
+        "properties": {
+          "clipboardRead": {
+            "description": "Allows reading from the clipboard.",
+            "type": "boolean"
+          },
+          "clipboardWrite": {
+            "description": "Allows writing to the clipboard.",
+            "type": "boolean"
+          },
+          "filesystemRead": {
+            "description": "Roots the plugin may read from; denied when empty.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "filesystemWrite": {
+            "description": "Roots the plugin may write to; denied when empty.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "network": {
+            "description": "Network host allow-list; denied when empty.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "notifications": {
+            "description": "Allows non-blocking host notifications.",
+            "type": "boolean"
+          },
+          "processSpawn": {
+            "description": "Allows process spawning through a future restricted host service.",
+            "type": "boolean"
+          },
+          "selectedEntryContentRead": {
+            "description": "Allows bounded content reads for the current selection.",
+            "type": "boolean"
+          },
+          "selectedEntryMetadata": {
+            "description": "Allows metadata for the current selection.",
+            "type": "boolean"
+          },
+          "settingsStorage": {
+            "description": "Allows non-secret settings storage under the plugin's identifier.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "selectedEntryMetadata",
+          "selectedEntryContentRead",
+          "filesystemRead",
+          "filesystemWrite",
+          "clipboardRead",
+          "clipboardWrite",
+          "network",
+          "processSpawn",
+          "notifications",
+          "settingsStorage"
         ],
         "type": "object"
       },
@@ -3276,6 +3361,46 @@
         ],
         "responses": {
           "204": {
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationErrorDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/v1/plugins/{pluginId}/logs": {
+      "get": {
+        "operationId": "getPluginLogs",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "pluginId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PluginLogEntryDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
             "description": ""
           },
           "404": {

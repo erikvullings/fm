@@ -60,6 +60,7 @@ fn api_router() -> OpenApiRouter<AppState> {
         .routes(utoipa_axum::routes!(routes::plugin::list_plugins))
         .routes(utoipa_axum::routes!(routes::plugin::enable_plugin))
         .routes(utoipa_axum::routes!(routes::plugin::disable_plugin))
+        .routes(utoipa_axum::routes!(routes::plugin::get_plugin_logs))
         .routes(utoipa_axum::routes!(routes::workspace::create_workspace))
         .routes(utoipa_axum::routes!(routes::workspace::get_workspace))
         .routes(utoipa_axum::routes!(routes::workspace::delete_workspace))

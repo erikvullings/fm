@@ -12,6 +12,8 @@ import type {
   Operation,
   OperationId,
   PluginDescriptor,
+  PluginId,
+  PluginLogEntry,
   ResolveConflictRequest,
   RuntimeCapabilities,
   Settings,
@@ -102,6 +104,10 @@ export interface FileManagerClient {
   invokeAction(request: InvokeActionRequest, signal?: AbortSignal): Promise<ActionResult>;
 
   listPlugins(signal?: AbortSignal): Promise<PluginDescriptor[]>;
+
+  setPluginEnabled(pluginId: PluginId, enabled: boolean, signal?: AbortSignal): Promise<void>;
+
+  getPluginLogs(pluginId: PluginId, signal?: AbortSignal): Promise<PluginLogEntry[]>;
 
   subscribe(listener: (event: BackendEvent) => void): Promise<Unsubscribe>;
 

@@ -3,6 +3,7 @@
  * Run `pnpm api:generate` (or `pnpm api:check`) to regenerate.
  */
 import type { PluginColumnDto } from './pluginColumnDto';
+import type { PluginPermissionsDto } from './pluginPermissionsDto';
 
 /**
  * A discovered plugin, including disabled plugins with safe diagnostics.
@@ -23,6 +24,8 @@ export interface PluginDescriptorDto {
   id: string;
   /** User-facing name when available. */
   name: string;
+  /** Capabilities the manifest requests; ungranted capabilities are denied (spec §19). */
+  permissions: PluginPermissionsDto;
   /** Package version when available. */
   version: string;
 }

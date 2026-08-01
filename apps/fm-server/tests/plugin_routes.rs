@@ -31,3 +31,17 @@ async fn list_plugins_starts_empty_and_unknown_enablement_is_not_found() {
         .expect("enable missing plugin");
     assert_eq!(enable.status(), StatusCode::NOT_FOUND);
 }
+
+#[tokio::test]
+async fn plugin_logs_are_not_found_for_an_unknown_plugin() {
+    let server = common::TestServer::spawn().await;
+    let client = reqwest::Client::new();
+
+    let response = client
+        .get(format!("{}/api/v1/plugins/missing/logs", server.base_url))
+        .send()
+        .await
+        .expect("get plugin logs");
+
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+}

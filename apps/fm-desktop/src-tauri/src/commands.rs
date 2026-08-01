@@ -9,7 +9,7 @@ use fm_domain::OperationId;
 use fm_transport_dto::{
     ActionDescriptorDto, ActionResultDto, ApplicationErrorDto, CreateWorkspaceRequestDto,
     DirectorySnapshotDto, EntryMetadataDto, EntryMetadataRequest, InvokeActionRequestDto,
-    ListDirectoryRequest, NavigateRequest, OperationDto, PluginDescriptorDto,
+    ListDirectoryRequest, NavigateRequest, OperationDto, PluginDescriptorDto, PluginLogEntryDto,
     ResolveOperationConflictRequestDto, RuntimeCapabilitiesDto, SettingsDto,
     StartOperationRequestDto, WorkspaceCommandDto, WorkspaceDto, WorkspaceSummaryDto,
 };
@@ -313,5 +313,17 @@ pub(crate) fn disable_plugin(
     state
         .service
         .set_plugin_enabled(plugin_id, false)
+        .map_err(|error| error.into_dto(Uuid::new_v4()))
+}
+
+/// Returns one plugin's bounded diagnostic log through the shared service.
+#[tauri::command]
+pub(crate) fn get_plugin_logs(
+    state: State<'_, AppState>,
+    plugin_id: String,
+) -> Result<Vec<PluginLogEntryDto>, ApplicationErrorDto> {
+    state
+        .service
+        .plugin_logs(&plugin_id)
         .map_err(|error| error.into_dto(Uuid::new_v4()))
 }

@@ -36,7 +36,7 @@ pub use operation::{
     OperationStateDto, ResolveOperationConflictRequestDto, StartOperationRequestDto,
     SymlinkPolicyDto,
 };
-pub use plugin::{PluginColumnDto, PluginDescriptorDto};
+pub use plugin::{PluginColumnDto, PluginDescriptorDto, PluginLogEntryDto, PluginPermissionsDto};
 pub use requests::{EntryMetadataRequest, ListDirectoryRequest, NavigateRequest};
 pub use runtime::{PlatformKindDto, RuntimeCapabilitiesDto, RuntimeKindDto};
 pub use settings::{

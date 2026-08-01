@@ -16,6 +16,8 @@ import type {
   Operation,
   OperationId,
   PluginDescriptor,
+  PluginId,
+  PluginLogEntry,
   ResolveConflictRequest,
   RuntimeCapabilities,
   Settings,
@@ -68,7 +70,9 @@ export type MockClientMethod =
   | 'resolveConflict'
   | 'listActions'
   | 'invokeAction'
-  | 'listPlugins';
+  | 'listPlugins'
+  | 'setPluginEnabled'
+  | 'getPluginLogs';
 
 export interface MockFileManagerClientOptions {
   pageSize?: number;
@@ -177,6 +181,7 @@ export class MockFileManagerClient implements FileManagerClient {
   private readonly operations = new Map<OperationId, Operation>();
   private readonly navigationHistory = new Map<string, { back: Location[]; forward: Location[] }>();
   private readonly workspaces = new Map<WorkspaceId, WorkspaceProjection>();
+  private pluginState: PluginDescriptor[] = structuredClone(plugins);
   private settings: Settings = {
     schemaVersion: 2,
     theme: 'auto',
@@ -562,7 +567,27 @@ export class MockFileManagerClient implements FileManagerClient {
   }
 
   listPlugins(signal?: AbortSignal): Promise<PluginDescriptor[]> {
-    return this.perform('listPlugins', signal, () => structuredClone(plugins));
+    return this.perform('listPlugins', signal, () => structuredClone(this.pluginState));
+  }
+
+  setPluginEnabled(pluginId: PluginId, enabled: boolean, signal?: AbortSignal): Promise<void> {
+    return this.perform('setPluginEnabled', signal, () => {
+      if (!this.pluginState.some((plugin) => plugin.id === pluginId)) {
+        throw new MockClientError('pluginNotFound', `No mock plugin with id ${pluginId}`);
+      }
+      this.pluginState = this.pluginState.map((plugin) =>
+        plugin.id === pluginId ? { ...plugin, enabled } : plugin,
+      );
+    });
+  }
+
+  getPluginLogs(pluginId: PluginId, signal?: AbortSignal): Promise<PluginLogEntry[]> {
+    return this.perform('getPluginLogs', signal, () => {
+      if (!this.pluginState.some((plugin) => plugin.id === pluginId)) {
+        throw new MockClientError('pluginNotFound', `No mock plugin with id ${pluginId}`);
+      }
+      return [];
+    });
   }
 
   subscribe(listener: (event: BackendEvent) => void): Promise<Unsubscribe> {

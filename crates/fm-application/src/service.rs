@@ -16,12 +16,13 @@ use fm_domain::{
 };
 use fm_events::{
     BackendEventPayload, EventAudience, EventBus, NotificationLevelPayload, NotificationPayload,
+    PluginPayload,
 };
 use fm_operations::{
     ConflictResolution, ExecutionError, ExecutionOutcome, Operation, OperationExecutor,
     OperationPlan, OperationSnapshotObserver, PauseToken, PlanItem, Scheduler, SchedulerError,
 };
-use fm_plugin_api::{ActionContribution, PluginManifest, SelectedEntryContext};
+use fm_plugin_api::{ActionContribution, PluginManifest, PluginPermissions, SelectedEntryContext};
 use fm_plugin_runtime::{PluginDiscovery, PluginRuntime};
 use fm_settings::{
     ConflictPolicy, DateFormat, DefaultPaneLayout, Settings, SettingsStore, SizeFormat, Theme,
@@ -30,9 +31,10 @@ use fm_transport_dto::{
     ActionDescriptorDto, ActionResultDto, ConflictPolicyDto, ConflictResolutionDto, DateFormatDto,
     DefaultPaneLayoutDto, EntryMetadataRequest, InvokeActionRequestDto, ListDirectoryRequest,
     NavigateRequest, OperationConflictPolicyDto, OperationDto, OperationKindDto,
-    OperationProgressDto, OperationStateDto, PlatformKindDto, ResolveOperationConflictRequestDto,
-    RuntimeCapabilitiesDto, RuntimeKindDto, SettingsDto, SizeFormatDto, StartOperationRequestDto,
-    ThemeDto, WorkspaceCommandDto, WorkspaceDto, WorkspaceSummaryDto,
+    OperationProgressDto, OperationStateDto, PlatformKindDto, PluginLogEntryDto,
+    PluginPermissionsDto, ResolveOperationConflictRequestDto, RuntimeCapabilitiesDto,
+    RuntimeKindDto, SettingsDto, SizeFormatDto, StartOperationRequestDto, ThemeDto,
+    WorkspaceCommandDto, WorkspaceDto, WorkspaceSummaryDto,
 };
 use fm_vfs::{EntryRef, FileSystemProvider, ProviderCapabilities, ProviderRegistry};
 use fm_vfs_local::LocalFileSystemProvider;
@@ -867,6 +869,11 @@ impl FileManagerService {
                         Vec::new()
                     };
                 let runtime_diagnostic = self.plugin_runtime.disabled_reason(&id);
+                let permissions = plugin
+                    .manifest
+                    .as_ref()
+                    .map(|manifest| plugin_permissions_dto(&manifest.permissions))
+                    .unwrap_or_default();
                 fm_transport_dto::PluginDescriptorDto {
                     enabled: plugin.is_valid()
                         && enabled.contains(&id)
@@ -877,9 +884,30 @@ impl FileManagerService {
                     description,
                     diagnostic: plugin.diagnostic.or(runtime_diagnostic),
                     columns,
+                    permissions,
                 }
             })
             .collect()
+    }
+
+    /// Returns the bounded diagnostic log retained for one plugin (spec §19.4).
+    pub fn plugin_logs(&self, plugin_id: &str) -> Result<Vec<PluginLogEntryDto>, ApplicationError> {
+        let exists = self
+            .plugins
+            .discover()
+            .into_iter()
+            .any(|plugin| plugin.id() == plugin_id);
+        if !exists {
+            return Err(ApplicationError::NotFound);
+        }
+        Ok(self
+            .plugin_runtime
+            .logs(plugin_id)
+            .into_iter()
+            .map(|entry| PluginLogEntryDto {
+                message: entry.message,
+            })
+            .collect())
     }
 
     /// Persists a plugin enablement decision after confirming its manifest is valid.
@@ -888,14 +916,15 @@ impl FileManagerService {
         plugin_id: String,
         enabled: bool,
     ) -> Result<(), ApplicationError> {
-        let exists = self
+        let plugin = self
             .plugins
             .discover()
             .into_iter()
-            .any(|plugin| plugin.is_valid() && plugin.id() == plugin_id);
-        if !exists {
+            .find(|plugin| plugin.is_valid() && plugin.id() == plugin_id);
+        let Some(plugin) = plugin else {
             return Err(ApplicationError::NotFound);
-        }
+        };
+        let manifest = plugin.manifest.as_ref().expect("validated plugin has a manifest");
         let mut settings = self
             .settings
             .lock()
@@ -903,12 +932,24 @@ impl FileManagerService {
         settings.enabled_plugins.retain(|id| id != &plugin_id);
         if enabled {
             self.plugin_runtime.reenable(&plugin_id);
-            settings.enabled_plugins.push(plugin_id);
+            settings.enabled_plugins.push(plugin_id.clone());
             settings.enabled_plugins.sort();
         }
         self.settings_store
             .save(&settings)
-            .map_err(|_| ApplicationError::Internal)
+            .map_err(|_| ApplicationError::Internal)?;
+        self.events.publish(
+            EventAudience::Global,
+            BackendEventPayload::PluginChanged {
+                plugin: PluginPayload {
+                    id: PluginId::new(plugin_id),
+                    name: manifest.name.clone(),
+                    version: manifest.version.clone(),
+                    enabled,
+                },
+            },
+        );
+        Ok(())
     }
 
     /// Invokes a registered action, re-validating its context requirements
@@ -2452,6 +2493,30 @@ fn mutating_operation_kind(id: &ActionId) -> Option<OperationKindDto> {
     }
 }
 
+/// Projects a manifest's declared capability grants into the wire DTO (spec §19).
+fn plugin_permissions_dto(permissions: &PluginPermissions) -> PluginPermissionsDto {
+    PluginPermissionsDto {
+        selected_entry_metadata: permissions.selected_entry_metadata,
+        selected_entry_content_read: permissions.selected_entry_content_read,
+        filesystem_read: permissions
+            .filesystem_read
+            .iter()
+            .map(|path| path.to_string_lossy().into_owned())
+            .collect(),
+        filesystem_write: permissions
+            .filesystem_write
+            .iter()
+            .map(|path| path.to_string_lossy().into_owned())
+            .collect(),
+        clipboard_read: permissions.clipboard_read,
+        clipboard_write: permissions.clipboard_write,
+        network: permissions.network.clone(),
+        process_spawn: permissions.process_spawn,
+        notifications: permissions.notifications,
+        settings_storage: permissions.settings_storage,
+    }
+}
+
 /// Builds an [`ActionDescriptor`] for a plugin's declared action contribution,
 /// deriving the context requirement from `requires_single_selection` (spec §18/§20).
 fn plugin_action_descriptor(
@@ -2785,9 +2850,10 @@ mod tests {
         service
             .set_plugin_enabled("example.copy-markdown".to_owned(), true)
             .expect("enable plugin");
-        let mut events = service
-            .event_bus()
-            .subscribe(SessionId::new("test"), [], Some(0));
+        // `None` (rather than `Some(0)`) skips backlog replay, since this test
+        // only cares about the notification `invoke_action` publishes below and
+        // `set_plugin_enabled` above now also publishes a `plugin.changed` event.
+        let mut events = service.event_bus().subscribe(SessionId::new("test"), [], None);
 
         let result = service
             .invoke_action(
@@ -2920,6 +2986,121 @@ mod tests {
         assert_eq!(plugin.columns.len(), 1);
         assert_eq!(plugin.columns[0].id, "sample.fileAge");
         assert_eq!(plugin.columns[0].title, "Age");
+    }
+
+    #[test]
+    fn listed_plugins_project_declared_permissions_and_mark_ungranted_ones_denied() {
+        let (directory, service) = service();
+        let plugin = directory.path().join("settings/plugins/copy-markdown");
+        write_copy_markdown_plugin(&plugin, true);
+        service
+            .set_plugin_enabled("example.copy-markdown".to_owned(), true)
+            .expect("enable plugin");
+
+        let descriptor = service
+            .list_plugins()
+            .into_iter()
+            .find(|plugin| plugin.id == "example.copy-markdown")
+            .expect("plugin descriptor");
+
+        assert!(descriptor.permissions.selected_entry_metadata);
+        assert!(descriptor.permissions.clipboard_write);
+        assert!(!descriptor.permissions.clipboard_read, "clipboard_read was never granted");
+        assert!(
+            !descriptor.permissions.notifications,
+            "notifications was never granted"
+        );
+        assert!(descriptor.permissions.filesystem_read.is_empty());
+    }
+
+    #[test]
+    fn an_invalid_manifest_is_listed_with_its_validation_diagnostic() {
+        let (directory, service) = service();
+        let plugin = directory.path().join("settings/plugins/broken");
+        std::fs::create_dir_all(&plugin).expect("plugin directory");
+        std::fs::write(plugin.join("plugin.toml"), "id=''\n").expect("malformed manifest");
+
+        let descriptor = service
+            .list_plugins()
+            .into_iter()
+            .find(|plugin| plugin.id == "broken")
+            .expect("invalid plugin is still listed");
+
+        assert!(!descriptor.enabled);
+        assert!(descriptor.diagnostic.is_some());
+    }
+
+    #[test]
+    fn plugin_logs_reports_not_found_for_an_undiscovered_plugin() {
+        let (_directory, service) = service();
+
+        let error = service
+            .plugin_logs("unknown.plugin")
+            .expect_err("unknown plugin must be reported as not found");
+
+        assert_eq!(error.code(), fm_transport_dto::ApplicationErrorCode::NotFound);
+    }
+
+    #[test]
+    fn plugin_logs_returns_the_bounded_diagnostic_log_after_a_failure() {
+        let (directory, service) = service();
+        let plugin = directory.path().join("settings/plugins/copy-path");
+        std::fs::create_dir_all(&plugin).expect("plugin directory");
+        std::fs::write(
+            plugin.join("plugin.toml"),
+            "id='example.copy-path'\nname='Copy Path'\nversion='1'\napi_version='1'\ndescription='Copies a path'\nentrypoint='plugin.lua'\n[contributions]\nactions=true",
+        )
+        .expect("manifest");
+        std::fs::write(plugin.join("plugin.lua"), "return { actions = function() error('boom') end }")
+            .expect("script");
+        service
+            .set_plugin_enabled("example.copy-path".to_owned(), true)
+            .expect("enable plugin");
+
+        // Triggers the runtime failure that is recorded into the bounded log.
+        let _ = service.list_actions();
+
+        let logs = service
+            .plugin_logs("example.copy-path")
+            .expect("plugin is discovered");
+
+        assert_eq!(logs.len(), 1);
+        assert!(logs[0].message.contains("boom"));
+    }
+
+    #[tokio::test]
+    async fn enabling_a_plugin_publishes_a_plugin_changed_event() {
+        let (directory, service) = service();
+        let plugin = directory.path().join("settings/plugins/copy-path");
+        std::fs::create_dir_all(&plugin).expect("plugin directory");
+        std::fs::write(
+            plugin.join("plugin.toml"),
+            "id='example.copy-path'\nname='Copy Path'\nversion='1'\napi_version='1'\ndescription='Copies a path'\nentrypoint='plugin.lua'\n[contributions]\nactions=true",
+        )
+        .expect("manifest");
+        std::fs::write(
+            plugin.join("plugin.lua"),
+            "return { actions = function() return {} end }",
+        )
+        .expect("script");
+        let mut events = service
+            .event_bus()
+            .subscribe(SessionId::new("test"), [], Some(0));
+
+        service
+            .set_plugin_enabled("example.copy-path".to_owned(), true)
+            .expect("enable plugin");
+
+        let event = events.recv().await.expect("plugin.changed event");
+        let SubscriptionEvent::Event(envelope) = event else {
+            panic!("expected an event envelope");
+        };
+        let BackendEventPayload::PluginChanged { plugin } = envelope.payload else {
+            panic!("expected a PluginChanged payload");
+        };
+        assert_eq!(plugin.id.as_str(), "example.copy-path");
+        assert_eq!(plugin.name, "Copy Path");
+        assert!(plugin.enabled);
     }
 
     #[test]

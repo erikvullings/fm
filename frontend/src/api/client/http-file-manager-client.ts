@@ -12,6 +12,8 @@ import type {
   Operation,
   OperationId,
   PluginDescriptor,
+  PluginId,
+  PluginLogEntry,
   ResolveConflictRequest,
   RuntimeCapabilities,
   Settings,
@@ -36,6 +38,9 @@ import {
   resumeOperation as requestOperationResume,
   startOperation as requestOperationStart,
   listOperations as requestOperations,
+  disablePlugin as requestPluginDisable,
+  enablePlugin as requestPluginEnable,
+  getPluginLogs as requestPluginLogs,
   listPlugins as requestPlugins,
   getRuntimeCapabilities as requestRuntimeCapabilities,
   getSettings as requestSettings,
@@ -293,7 +298,42 @@ export class HttpFileManagerClient implements FileManagerClient {
       enabled: plugin.enabled,
       ...(plugin.diagnostic == null ? {} : { diagnostic: plugin.diagnostic }),
       ...(plugin.columns === undefined ? {} : { columns: plugin.columns }),
+      permissions: {
+        selectedEntryMetadata: plugin.permissions.selectedEntryMetadata,
+        selectedEntryContentRead: plugin.permissions.selectedEntryContentRead,
+        filesystemRead: plugin.permissions.filesystemRead,
+        filesystemWrite: plugin.permissions.filesystemWrite,
+        clipboardRead: plugin.permissions.clipboardRead,
+        clipboardWrite: plugin.permissions.clipboardWrite,
+        network: plugin.permissions.network,
+        processSpawn: plugin.permissions.processSpawn,
+        notifications: plugin.permissions.notifications,
+        settingsStorage: plugin.permissions.settingsStorage,
+      },
     }));
+  }
+
+  async setPluginEnabled(
+    pluginId: PluginId,
+    enabled: boolean,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    const options = signal === undefined ? undefined : { signal };
+    const response = enabled
+      ? await requestPluginEnable(pluginId, options)
+      : await requestPluginDisable(pluginId, options);
+    if (response.status !== 204)
+      throw new Error(`Unexpected setPluginEnabled response status: ${response.status}`);
+  }
+
+  async getPluginLogs(pluginId: PluginId, signal?: AbortSignal): Promise<PluginLogEntry[]> {
+    const response = await requestPluginLogs(
+      pluginId,
+      signal === undefined ? undefined : { signal },
+    );
+    if (response.status !== 200)
+      throw new Error(`Unexpected getPluginLogs response status: ${response.status}`);
+    return response.data.map((entry) => ({ message: entry.message }));
   }
 
   async subscribe(listener: (event: BackendEvent) => void): Promise<Unsubscribe> {

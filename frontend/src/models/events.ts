@@ -1,7 +1,7 @@
 import type { OperationId, PaneId, TabId, WorkspaceId } from './ids';
 import type { Location } from './location';
 import type { Operation, OperationProgress, OperationState } from './operation';
-import type { PluginDescriptor } from './plugin';
+import type { PluginSummary } from './plugin';
 import type { DirectoryDelta, DirectorySnapshot } from './snapshot';
 import type { DirectoryViewConfiguration, WorkspaceLayout } from './workspace';
 
@@ -83,7 +83,7 @@ export type BackendEventPayload =
       message: string;
       details?: Readonly<Record<string, unknown>>;
     }
-  | { type: 'plugin.changed'; plugin: PluginDescriptor }
+  | { type: 'plugin.changed'; plugin: PluginSummary }
   | { type: 'notification.created'; notification: BackendNotification };
 
 /** A backend event delivered identically over SSE and Tauri. */

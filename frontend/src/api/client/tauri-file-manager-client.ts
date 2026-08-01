@@ -14,6 +14,8 @@ import type {
   Operation,
   OperationId,
   PluginDescriptor,
+  PluginId,
+  PluginLogEntry,
   ResolveConflictRequest,
   RuntimeCapabilities,
   Settings,
@@ -156,6 +158,18 @@ export class TauriFileManagerClient implements FileManagerClient {
 
   listPlugins(_signal?: AbortSignal): Promise<PluginDescriptor[]> {
     return invoke<PluginDescriptor[]>('list_plugins');
+  }
+
+  async setPluginEnabled(
+    pluginId: PluginId,
+    enabled: boolean,
+    _signal?: AbortSignal,
+  ): Promise<void> {
+    await invoke(enabled ? 'enable_plugin' : 'disable_plugin', { pluginId });
+  }
+
+  getPluginLogs(pluginId: PluginId, _signal?: AbortSignal): Promise<PluginLogEntry[]> {
+    return invoke<PluginLogEntry[]>('get_plugin_logs', { pluginId });
   }
 
   /** TODO(0034): full EventBus → Tauri channel parity; connects the minimal skeleton for now. */

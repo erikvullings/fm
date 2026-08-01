@@ -1,0 +1,159 @@
+import m, { type FactoryComponent } from 'mithril';
+import { ModalPanel, Switch } from 'mithril-materialized';
+
+import type { PluginDescriptor, PluginId, PluginLogEntry, PluginPermissions } from '../../models';
+
+export interface PluginManagementAttrs {
+  readonly plugins: readonly PluginDescriptor[];
+  readonly onToggle: (pluginId: PluginId, enabled: boolean) => Promise<void>;
+  readonly onRequestLogs: (pluginId: PluginId) => Promise<readonly PluginLogEntry[]>;
+}
+
+type LogViewerState =
+  | { pluginId: PluginId; status: 'loading' }
+  | { pluginId: PluginId; status: 'loaded'; entries: readonly PluginLogEntry[] }
+  | { pluginId: PluginId; status: 'error'; message: string };
+
+const PERMISSION_LABELS: ReadonlyArray<{ key: keyof PluginPermissions; label: string }> = [
+  { key: 'selectedEntryMetadata', label: 'Selected entry metadata' },
+  { key: 'selectedEntryContentRead', label: 'Selected entry content' },
+  { key: 'filesystemRead', label: 'Filesystem read' },
+  { key: 'filesystemWrite', label: 'Filesystem write' },
+  { key: 'clipboardRead', label: 'Clipboard read' },
+  { key: 'clipboardWrite', label: 'Clipboard write' },
+  { key: 'network', label: 'Network' },
+  { key: 'processSpawn', label: 'Process spawn' },
+  { key: 'notifications', label: 'Notifications' },
+  { key: 'settingsStorage', label: 'Settings storage' },
+];
+
+function isGranted(permissions: PluginPermissions, key: keyof PluginPermissions): boolean {
+  const value = permissions[key];
+  return typeof value === 'boolean' ? value : value.length > 0;
+}
+
+function grantedDetail(
+  permissions: PluginPermissions,
+  key: keyof PluginPermissions,
+): string | undefined {
+  const value = permissions[key];
+  return Array.isArray(value) && value.length > 0 ? value.join(', ') : undefined;
+}
+
+function errorMessage(error: unknown, fallback: string): string {
+  return error instanceof Error ? error.message : fallback;
+}
+
+/** Dense, non-Materialize-card plugin list used by the settings panel (spec §19, task 0057). */
+export const PluginManagement: FactoryComponent<PluginManagementAttrs> = () => {
+  const toggleErrors: Partial<Record<PluginId, string>> = {};
+  let logViewer: LogViewerState | undefined;
+
+  function handleToggle(attrs: PluginManagementAttrs, pluginId: PluginId, enabled: boolean): void {
+    delete toggleErrors[pluginId];
+    attrs.onToggle(pluginId, enabled).catch((error: unknown) => {
+      toggleErrors[pluginId] = errorMessage(error, 'Failed to update the plugin.');
+      m.redraw();
+    });
+  }
+
+  function openLogs(attrs: PluginManagementAttrs, pluginId: PluginId): void {
+    logViewer = { pluginId, status: 'loading' };
+    attrs.onRequestLogs(pluginId).then(
+      (entries) => {
+        logViewer = { pluginId, status: 'loaded', entries };
+        m.redraw();
+      },
+      (error: unknown) => {
+        logViewer = {
+          pluginId,
+          status: 'error',
+          message: errorMessage(error, 'Failed to load the plugin log.'),
+        };
+        m.redraw();
+      },
+    );
+  }
+
+  function closeLogs(): void {
+    logViewer = undefined;
+  }
+
+  return {
+    view: ({ attrs }) => {
+      const viewedPlugin =
+        logViewer === undefined
+          ? undefined
+          : attrs.plugins.find((plugin) => plugin.id === logViewer?.pluginId);
+      return m('.fm-plugin-list', { 'aria-label': 'Plugins' }, [
+        attrs.plugins.length === 0
+          ? m('.fm-plugin-empty', 'No plugins discovered.')
+          : attrs.plugins.map((plugin) =>
+              m('article.fm-plugin-row', { 'data-plugin-id': plugin.id }, [
+                m('.fm-plugin-summary', [
+                  m('strong', plugin.name),
+                  m('span.fm-plugin-version', `v${plugin.version}`),
+                  m('span.fm-plugin-description', plugin.description),
+                  m(Switch, {
+                    className: 'fm-plugin-toggle',
+                    label: `${plugin.name} enabled`,
+                    checked: plugin.enabled,
+                    left: 'Off',
+                    right: 'On',
+                    onchange: (checked: boolean) => handleToggle(attrs, plugin.id, checked),
+                  }),
+                  m(
+                    'button.fm-plugin-view-log',
+                    { type: 'button', onclick: () => openLogs(attrs, plugin.id) },
+                    'View log',
+                  ),
+                ]),
+                plugin.diagnostic === undefined
+                  ? undefined
+                  : m('.fm-plugin-diagnostic', { role: 'alert' }, plugin.diagnostic),
+                toggleErrors[plugin.id] === undefined
+                  ? undefined
+                  : m('.fm-plugin-toggle-error', { role: 'alert' }, toggleErrors[plugin.id]),
+                plugin.permissions === undefined
+                  ? undefined
+                  : m(
+                      'ul.fm-plugin-permissions',
+                      { 'aria-label': `${plugin.name} permissions` },
+                      PERMISSION_LABELS.map(({ key, label }) => {
+                        const permissions = plugin.permissions as PluginPermissions;
+                        const granted = isGranted(permissions, key);
+                        const detail = grantedDetail(permissions, key);
+                        return m('li.fm-plugin-permission', { 'data-granted': String(granted) }, [
+                          m('span.fm-plugin-permission-state', granted ? '✓' : '✗'),
+                          m('span', detail === undefined ? label : `${label}: ${detail}`),
+                        ]);
+                      }),
+                    ),
+              ]),
+            ),
+        m(ModalPanel, {
+          title: viewedPlugin === undefined ? 'Plugin log' : `${viewedPlugin.name} log`,
+          description:
+            logViewer?.status === 'loading'
+              ? m('p', 'Loading…')
+              : logViewer?.status === 'error'
+                ? m('.fm-plugin-diagnostic', { role: 'alert' }, logViewer.message)
+                : logViewer?.status === 'loaded' && logViewer.entries.length === 0
+                  ? m('p', 'No diagnostics recorded.')
+                  : logViewer?.status === 'loaded'
+                    ? m(
+                        'ul.fm-plugin-log-entries',
+                        logViewer.entries.map((entry) => m('li', entry.message)),
+                      )
+                    : m('p', ''),
+          isOpen: logViewer !== undefined,
+          closeOnEsc: true,
+          onToggle: (open: boolean) => {
+            if (!open) closeLogs();
+          },
+          buttons: [{ label: 'Close', onclick: closeLogs }],
+        }),
+      ]);
+    },
+  };
+};

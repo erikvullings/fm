@@ -5,6 +5,18 @@
     "version": "1.0.0",
     "description": "Mock plugin with a sample column.",
     "enabled": true,
-    "columns": [{ "id": "sample.fileAge", "title": "Age" }]
+    "columns": [{ "id": "sample.fileAge", "title": "Age" }],
+    "permissions": {
+      "selectedEntryMetadata": true,
+      "selectedEntryContentRead": false,
+      "filesystemRead": [],
+      "filesystemWrite": [],
+      "clipboardRead": false,
+      "clipboardWrite": false,
+      "network": [],
+      "processSpawn": false,
+      "notifications": false,
+      "settingsStorage": false
+    }
   }
 ]

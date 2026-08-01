@@ -534,6 +534,37 @@ describe('AppShell', () => {
     expect(themeButton('Auto')).toBeInstanceOf(HTMLButtonElement);
   });
 
+  it('lists discovered plugins inside the settings editor', async () => {
+    const client = new MockFileManagerClient();
+    m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
+
+    openAppearanceSettings();
+
+    await vi.waitFor(() => expect(root.querySelector('.fm-plugin-row')).not.toBeNull());
+    expect(root.querySelector('.fm-plugin-row strong')?.textContent).toBe('Mock Archive');
+  });
+
+  it('applies a plugin.changed event to the plugins already listed', async () => {
+    const client = new MockFileManagerClient();
+    m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
+
+    openAppearanceSettings();
+    await vi.waitFor(() => expect(root.querySelector('.fm-plugin-row')).not.toBeNull());
+
+    client.emit({
+      eventId: 1,
+      timestamp: '2026-07-31T12:00:00Z',
+      payload: {
+        type: 'plugin.changed',
+        plugin: { id: 'mock.archive', name: 'Mock Archive', version: '1.0.0', enabled: false },
+      },
+    });
+    m.redraw.sync();
+
+    const checkbox = root.querySelector<HTMLInputElement>('.fm-plugin-row input[type="checkbox"]');
+    expect(checkbox?.checked).toBe(false);
+  });
+
   it('applies a theme change and keeps the switcher selection in step', () => {
     const setTheme = vi.spyOn(ThemeManager, 'setTheme');
 

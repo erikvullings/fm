@@ -18,6 +18,10 @@ const requestCancelOperation = vi.fn();
 const requestPauseOperation = vi.fn();
 const requestResumeOperation = vi.fn();
 const requestResolveOperationConflict = vi.fn();
+const requestListPlugins = vi.fn();
+const requestEnablePlugin = vi.fn();
+const requestDisablePlugin = vi.fn();
+const requestGetPluginLogs = vi.fn();
 
 vi.mock('../generated/file-manager-api', () => ({
   getRuntimeCapabilities: (...args: unknown[]) => getRuntimeCapabilities(...args),
@@ -36,6 +40,10 @@ vi.mock('../generated/file-manager-api', () => ({
   pauseOperation: (...args: unknown[]) => requestPauseOperation(...args),
   resumeOperation: (...args: unknown[]) => requestResumeOperation(...args),
   resolveOperationConflict: (...args: unknown[]) => requestResolveOperationConflict(...args),
+  listPlugins: (...args: unknown[]) => requestListPlugins(...args),
+  enablePlugin: (...args: unknown[]) => requestEnablePlugin(...args),
+  disablePlugin: (...args: unknown[]) => requestDisablePlugin(...args),
+  getPluginLogs: (...args: unknown[]) => requestGetPluginLogs(...args),
 }));
 
 const { HttpFileManagerClient } = await import('./http-file-manager-client');
@@ -83,6 +91,10 @@ afterEach(() => {
   requestPauseOperation.mockReset();
   requestResumeOperation.mockReset();
   requestResolveOperationConflict.mockReset();
+  requestListPlugins.mockReset();
+  requestEnablePlugin.mockReset();
+  requestDisablePlugin.mockReset();
+  requestGetPluginLogs.mockReset();
 });
 
 describe('HttpFileManagerClient', () => {
@@ -282,6 +294,85 @@ describe('HttpFileManagerClient', () => {
         { resolution: 'renameNew', applyToAllSimilar: true },
         undefined,
       );
+    });
+  });
+
+  describe('plugin methods', () => {
+    function fixturePermissions() {
+      return {
+        selectedEntryMetadata: true,
+        selectedEntryContentRead: false,
+        filesystemRead: [],
+        filesystemWrite: [],
+        clipboardRead: false,
+        clipboardWrite: true,
+        network: [],
+        processSpawn: false,
+        notifications: false,
+        settingsStorage: false,
+      };
+    }
+
+    it('maps discovered plugins including their permissions and diagnostics', async () => {
+      requestListPlugins.mockResolvedValue({
+        status: 200,
+        headers: new Headers(),
+        data: [
+          {
+            id: 'example.copy-markdown',
+            name: 'Copy Markdown',
+            version: '1.0.0',
+            description: 'Copies a markdown link',
+            enabled: true,
+            diagnostic: null,
+            columns: [],
+            permissions: fixturePermissions(),
+          },
+        ],
+      });
+      const client = new HttpFileManagerClient();
+
+      const plugins = await client.listPlugins();
+
+      expect(plugins).toEqual([
+        {
+          id: 'example.copy-markdown',
+          name: 'Copy Markdown',
+          version: '1.0.0',
+          description: 'Copies a markdown link',
+          enabled: true,
+          columns: [],
+          permissions: fixturePermissions(),
+        },
+      ]);
+    });
+
+    it('enables and disables a plugin through the matching generated endpoint', async () => {
+      requestEnablePlugin.mockResolvedValue({ status: 204, headers: new Headers() });
+      requestDisablePlugin.mockResolvedValue({ status: 204, headers: new Headers() });
+      const controller = new AbortController();
+      const client = new HttpFileManagerClient();
+
+      await client.setPluginEnabled('example.copy-markdown', true, controller.signal);
+      await client.setPluginEnabled('example.copy-markdown', false, controller.signal);
+
+      const options = expect.objectContaining({ signal: controller.signal });
+      expect(requestEnablePlugin).toHaveBeenCalledWith('example.copy-markdown', options);
+      expect(requestDisablePlugin).toHaveBeenCalledWith('example.copy-markdown', options);
+    });
+
+    it('fetches a plugin bounded diagnostic log', async () => {
+      requestGetPluginLogs.mockResolvedValue({
+        status: 200,
+        headers: new Headers(),
+        data: [{ message: 'plugin execution timed out' }],
+      });
+      const client = new HttpFileManagerClient();
+
+      await expect(client.getPluginLogs('example.copy-markdown')).resolves.toEqual([
+        { message: 'plugin execution timed out' },
+      ]);
+      expect(requestGetPluginLogs).toHaveBeenCalledWith('example.copy-markdown', undefined);
     });
   });
 });

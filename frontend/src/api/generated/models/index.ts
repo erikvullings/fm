@@ -60,6 +60,8 @@ export * from './persistedFilterDto';
 export * from './platformKindDto';
 export * from './pluginColumnDto';
 export * from './pluginDescriptorDto';
+export * from './pluginLogEntryDto';
+export * from './pluginPermissionsDto';
 export * from './quickFilterPatchDto';
 export * from './resolveOperationConflictRequestDto';
 export * from './runtimeCapabilitiesDto';
