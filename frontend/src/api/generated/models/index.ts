@@ -58,6 +58,7 @@ export * from './paneStateDto';
 export * from './permissionsInfoDto';
 export * from './persistedFilterDto';
 export * from './platformKindDto';
+export * from './pluginColumnDto';
 export * from './pluginDescriptorDto';
 export * from './quickFilterPatchDto';
 export * from './resolveOperationConflictRequestDto';

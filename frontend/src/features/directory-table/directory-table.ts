@@ -7,6 +7,7 @@ import {
   formatEntrySize,
 } from '../entry-formatting/entry-formatting';
 import { isParentEntry } from '../panes/parent-entry';
+import { fileAgeColumn } from '../plugin-columns/file-age-column';
 import { calculateVisibleWindow, scrollOffsetForIndex } from './windowing';
 import './directory-table.css';
 
@@ -43,6 +44,8 @@ export interface DirectoryTableAttrs {
   readonly sort?: readonly SortDescriptor[];
   readonly onSortChange?: (sort: readonly SortDescriptor[]) => void;
   readonly formatSettings?: EntryFormatSettings;
+  /** Enabled declarative plugin columns, already validated by the host. */
+  readonly pluginColumns?: readonly DirectoryColumnDescriptor[];
   readonly onCursorChange?: (index: number) => void;
   readonly onActivate?: (index: number) => void;
   readonly onRetry?: () => void;
@@ -82,18 +85,19 @@ function rowId(entryId: EntryId): string {
   return `fm-directory-row-${(hash >>> 0).toString(36)}`;
 }
 
-interface DirectoryColumn {
-  readonly id: 'core.name' | 'core.extension' | 'core.size' | 'core.modified';
+export interface DirectoryColumnDescriptor {
+  readonly id: string;
   readonly label: string;
   readonly cellClass: string;
   render(
     entry: EntrySummary,
     nameMatchPrefix?: string,
     formatSettings?: EntryFormatSettings,
+    now?: number,
   ): m.Children;
 }
 
-const INITIAL_COLUMNS: readonly DirectoryColumn[] = [
+const INITIAL_COLUMNS: readonly DirectoryColumnDescriptor[] = [
   {
     id: 'core.name',
     label: 'Name',
@@ -152,6 +156,15 @@ const INITIAL_COLUMNS: readonly DirectoryColumn[] = [
   },
 ];
 
+/** Safe host-side rendering for the sample plugin's data-only contribution. */
+export const SAMPLE_FILE_AGE_COLUMN: DirectoryColumnDescriptor = {
+  id: fileAgeColumn.id,
+  label: fileAgeColumn.title,
+  cellClass: 'fm-directory-file-age',
+  render: (entry, _nameMatchPrefix, _formatSettings, now = Date.now()) =>
+    isParentEntry(entry.id) ? '' : fileAgeColumn.display(entry.modifiedAt, now),
+};
+
 function stateView(attrs: DirectoryTableAttrs, rowHeight: number): m.Children | undefined {
   if (attrs.state.type === 'loading') {
     if ((attrs.source?.length ?? 0) > 0) {
@@ -191,7 +204,7 @@ function stateView(attrs: DirectoryTableAttrs, rowHeight: number): m.Children | 
 }
 
 function nextSort(
-  columnId: DirectoryColumn['id'],
+  columnId: string,
   sort: readonly SortDescriptor[] | undefined,
 ): readonly SortDescriptor[] {
   const active = sort?.[0];
@@ -207,10 +220,11 @@ function nextSort(
 }
 
 function headerView(attrs: DirectoryTableAttrs): m.Children {
+  const columns = [...INITIAL_COLUMNS, ...(attrs.pluginColumns ?? [])];
   return m(
     '.fm-directory-header',
-    { role: 'row' },
-    INITIAL_COLUMNS.map((column) =>
+    { role: 'row', style: { gridTemplateColumns: gridTemplate(columns.length) } },
+    columns.map((column) =>
       m(
         `button.fm-directory-cell.${column.cellClass}`,
         {
@@ -254,6 +268,11 @@ function headerView(attrs: DirectoryTableAttrs): m.Children {
   );
 }
 
+function gridTemplate(columnCount: number): string {
+  const core = 'minmax(12rem, 1fr) minmax(6rem, 0.25fr) minmax(6rem, 0.2fr) minmax(10rem, 0.35fr)';
+  return `${core}${' minmax(5rem, 0.2fr)'.repeat(Math.max(0, columnCount - INITIAL_COLUMNS.length))}`;
+}
+
 /**
  * Fixed-row virtualized directory grid. It mounts only the visible window and
  * accepts random-access sources so million-entry fixtures remain lazy.
@@ -263,6 +282,7 @@ export const DirectoryTable: FactoryComponent<DirectoryTableAttrs> = () => {
   let rowHeight = DEFAULT_ROW_HEIGHT;
   let scrollTop = 0;
   let previousCursorIndex: number | undefined;
+  let refreshTimer: ReturnType<typeof setInterval> | undefined;
 
   function syncCursor(attrs: DirectoryTableAttrs): void {
     if (
@@ -296,8 +316,14 @@ export const DirectoryTable: FactoryComponent<DirectoryTableAttrs> = () => {
     oncreate: (vnode: VnodeDOM<DirectoryTableAttrs>) => {
       element = vnode.dom as HTMLElement;
       rowHeight = readRowHeight(element);
+      if (vnode.attrs.pluginColumns?.some((column) => column.id === fileAgeColumn.id) === true) {
+        refreshTimer = setInterval(() => m.redraw(), fileAgeColumn.refreshIntervalMs);
+      }
       syncCursor(vnode.attrs);
       m.redraw();
+    },
+    onremove: () => {
+      if (refreshTimer !== undefined) clearInterval(refreshTimer);
     },
     onbeforeupdate: (vnode: VnodeDOM<DirectoryTableAttrs>) => {
       syncCursor(vnode.attrs);
@@ -322,6 +348,8 @@ export const DirectoryTable: FactoryComponent<DirectoryTableAttrs> = () => {
               overscan: attrs.overscan ?? DEFAULT_OVERSCAN,
             });
       const rows: m.Children[] = [];
+      const columns = [...INITIAL_COLUMNS, ...(attrs.pluginColumns ?? [])];
+      const now = Date.now();
       if (source !== undefined && window !== undefined && state === undefined) {
         for (let index = window.start; index < window.end; index += 1) {
           const entry = source.entryAt(index);
@@ -354,9 +382,10 @@ export const DirectoryTable: FactoryComponent<DirectoryTableAttrs> = () => {
                 ].join(' '),
                 style: {
                   transform: `translateY(${window.offsetTop + (index - window.start) * rowHeight}px)`,
+                  gridTemplateColumns: gridTemplate(columns.length),
                 },
               },
-              INITIAL_COLUMNS.map((column) =>
+              columns.map((column) =>
                 m(
                   `.fm-directory-cell.${column.cellClass}`,
                   { key: column.id, role: 'gridcell' },
@@ -390,7 +419,7 @@ export const DirectoryTable: FactoryComponent<DirectoryTableAttrs> = () => {
                           ? undefined
                           : m('.fm-inline-rename-error', { role: 'alert' }, attrs.renameError),
                       ]
-                    : column.render(entry, attrs.nameMatchPrefix, attrs.formatSettings),
+                    : column.render(entry, attrs.nameMatchPrefix, attrs.formatSettings, now),
                 ),
               ),
             ),
@@ -405,7 +434,7 @@ export const DirectoryTable: FactoryComponent<DirectoryTableAttrs> = () => {
           tabindex: 0,
           'aria-label': attrs.label ?? 'Directory contents',
           'aria-rowcount': (source?.length ?? 0) + 1,
-          'aria-colcount': INITIAL_COLUMNS.length,
+          'aria-colcount': columns.length,
           'aria-activedescendant': cursorEntry === undefined ? undefined : rowId(cursorEntry.id),
           'aria-busy': attrs.state.type === 'loading' ? 'true' : undefined,
           'data-active': attrs.active ? 'true' : 'false',

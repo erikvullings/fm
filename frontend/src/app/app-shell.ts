@@ -17,6 +17,7 @@ import {
   menuActionsForContext,
 } from '../features/commands/availability';
 import { ContextMenu as DirectoryContextMenu } from '../features/commands/context-menu';
+import { SAMPLE_FILE_AGE_COLUMN } from '../features/directory-table/directory-table';
 import {
   DEFAULT_ENTRY_FORMAT_SETTINGS,
   type EntryFormatSettings,
@@ -76,6 +77,7 @@ import type {
   Location,
   OperationConflict,
   PaneId,
+  PluginDescriptor,
   Settings,
   SortDescriptor,
   WorkspaceLayout,
@@ -110,6 +112,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
   let theme: Theme = DEFAULT_THEME;
   let currentSettings: Settings | undefined;
   let registeredActions: readonly ActionDescriptor[] = [];
+  let plugins: readonly PluginDescriptor[] = [];
   let keybindingRuntime: KeybindingRuntime = 'browser';
   let loadedEntryFormatSettings: EntryFormatSettings = DEFAULT_ENTRY_FORMAT_SETTINGS;
   let workspace: WorkspaceProjection | undefined;
@@ -189,6 +192,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       'core.extension': 'extension',
       'core.size': 'size',
       'core.modified': 'modified',
+      'sample.fileAge': 'modified',
     };
     const column = columns[descriptor.columnId];
     return column === undefined ? [] : [{ column, direction: descriptor.direction }];
@@ -202,6 +206,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       'core.extension': 'Extension',
       'core.size': 'Size',
       'core.modified': 'Modified',
+      'sample.fileAge': 'Age',
     };
     return `${labels[descriptor.columnId] ?? descriptor.columnId} ${descriptor.direction}`;
   }
@@ -770,6 +775,14 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       sortLabel: sortLabel(effectiveSort(tab?.view.sort ?? [])),
       sort: effectiveSort(tab?.view.sort ?? []),
       formatSettings: entryFormatSettings,
+      pluginColumns:
+        plugins.some(
+          (plugin) =>
+            plugin.enabled && plugin.columns?.some((column) => column.id === 'sample.fileAge'),
+        ) &&
+        tab?.view.columns.some((column) => column.columnId === 'sample.fileAge' && column.visible)
+          ? [SAMPLE_FILE_AGE_COLUMN]
+          : [],
       metadata: metadataViews.get(paneId) ?? { state: 'idle' },
       platform,
       keybindingRuntime,
@@ -878,6 +891,13 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
         .listActions()
         .then((actions) => {
           registeredActions = actions;
+          m.redraw();
+        })
+        .catch(() => undefined);
+      void attrs.client
+        .listPlugins()
+        .then((listed) => {
+          plugins = listed;
           m.redraw();
         })
         .catch(() => undefined);

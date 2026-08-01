@@ -8,7 +8,11 @@ import type {
   LoadingState,
   SortDescriptor,
 } from '../../models';
-import { DirectoryTable, entryArraySource } from '../directory-table/directory-table';
+import {
+  type DirectoryColumnDescriptor,
+  DirectoryTable,
+  entryArraySource,
+} from '../directory-table/directory-table';
 import {
   DEFAULT_ENTRY_FORMAT_SETTINGS,
   type EntryFormatSettings,
@@ -41,6 +45,7 @@ export interface PaneAttrs {
   readonly sortLabel: string;
   readonly sort: readonly SortDescriptor[];
   readonly formatSettings?: EntryFormatSettings;
+  readonly pluginColumns?: readonly DirectoryColumnDescriptor[];
   readonly metadata: EntryMetadataView;
   readonly selectedEntryIds: ReadonlySet<EntryId>;
   readonly cutEntryIds: ReadonlySet<EntryId>;
@@ -528,6 +533,7 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
             cutEntryIds: attrs.cutEntryIds,
             active: attrs.active,
             sort: attrs.sort,
+            ...(attrs.pluginColumns === undefined ? {} : { pluginColumns: attrs.pluginColumns }),
             ...(attrs.formatSettings === undefined ? {} : { formatSettings: attrs.formatSettings }),
             label: `${attrs.tabTitle} directory`,
             ...(renamingEntry === undefined ? {} : { renamingEntryId: renamingEntry.id }),

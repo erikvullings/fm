@@ -11,8 +11,9 @@ use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
-use fm_plugin_api::{ActionContribution, Permission, PluginManifest};
+use fm_plugin_api::{ActionContribution, ColumnContribution, Permission, PluginManifest};
 use mlua::{Error as LuaError, HookTriggers, Lua, LuaOptions, LuaSerdeExt, StdLib, Table, VmState};
+use serde::de::DeserializeOwned;
 use thiserror::Error;
 
 const DEFAULT_TIMEOUT: Duration = Duration::from_millis(100);
@@ -123,11 +124,30 @@ impl PluginRuntime {
         if !manifest.contributions.actions {
             return Ok(Vec::new());
         }
-        let result = self.execute_actions(manifest, directory);
+        let result = self.execute_contribution(manifest, directory, "actions");
         match result {
             Ok(actions) => {
                 self.reset_failures(&manifest.id);
                 Ok(actions)
+            }
+            Err(message) => Err(self.record_failure(&manifest.id, message)),
+        }
+    }
+
+    /// Executes declared data-only custom column declarations from one plugin.
+    pub fn columns(
+        &self,
+        manifest: &PluginManifest,
+        directory: &Path,
+    ) -> Result<Vec<ColumnContribution>, PluginRuntimeError> {
+        self.ensure_enabled(&manifest.id)?;
+        if !manifest.contributions.columns {
+            return Ok(Vec::new());
+        }
+        match self.execute_contribution(manifest, directory, "columns") {
+            Ok(columns) => {
+                self.reset_failures(&manifest.id);
+                Ok(columns)
             }
             Err(message) => Err(self.record_failure(&manifest.id, message)),
         }
@@ -163,11 +183,12 @@ impl PluginRuntime {
             .cloned()
     }
 
-    fn execute_actions(
+    fn execute_contribution<T: DeserializeOwned>(
         &self,
         manifest: &PluginManifest,
         directory: &Path,
-    ) -> Result<Vec<ActionContribution>, String> {
+        contribution: &str,
+    ) -> Result<Vec<T>, String> {
         let source = fs::read_to_string(directory.join(&manifest.entrypoint))
             .map_err(|error| format!("could not load entrypoint: {error}"))?;
         let lua = Lua::new_with(
@@ -204,7 +225,7 @@ impl PluginRuntime {
             .eval()
             .map_err(|error| error.to_string())?;
         let function = module
-            .get::<mlua::Function>("actions")
+            .get::<mlua::Function>(contribution)
             .map_err(|error| format!("malformed plugin result: {error}"))?;
         let value: mlua::Value = function.call(()).map_err(|error| error.to_string())?;
         lua.from_value(value)
@@ -308,7 +329,7 @@ impl DiscoveredPlugin {
 /// Discovers plugin manifests without allowing one malformed plugin to abort startup.
 #[derive(Debug, Clone)]
 pub struct PluginDiscovery {
-    directory: PathBuf,
+    directories: Vec<PathBuf>,
 }
 
 impl PluginDiscovery {
@@ -316,13 +337,26 @@ impl PluginDiscovery {
     #[must_use]
     pub fn new(directory: impl Into<PathBuf>) -> Self {
         Self {
-            directory: directory.into(),
+            directories: vec![directory.into()],
         }
+    }
+
+    /// Adds a read-only bundled plugin directory after the user plugin directory.
+    #[must_use]
+    pub fn with_bundled_directory(mut self, directory: impl Into<PathBuf>) -> Self {
+        self.directories.push(directory.into());
+        self
     }
 
     /// Returns valid and disabled plugin records in deterministic directory order.
     pub fn discover(&self) -> Vec<DiscoveredPlugin> {
-        discover_plugins(&self.directory)
+        let mut plugins = self
+            .directories
+            .iter()
+            .flat_map(|directory| discover_plugins(directory))
+            .collect::<Vec<_>>();
+        plugins.sort_by_key(DiscoveredPlugin::id);
+        plugins
     }
 }
 
@@ -419,6 +453,42 @@ mod tests {
 
         assert_eq!(actions.len(), 1);
         assert_eq!(actions[0].id, "example.copy-path.copy");
+    }
+
+    #[test]
+    fn executes_a_plugin_column_declaration_in_the_restricted_lua_runtime() {
+        let temporary = tempfile::tempdir().expect("temporary directory");
+        fs::write(
+            temporary.path().join("plugin.lua"),
+            "return { columns = function() return {{ id = 'sample.fileAge', title = 'Age' }} end }",
+        )
+        .expect("script");
+        let manifest = PluginManifest::parse(
+            "id='sample.file-age'\nname='File Age'\nversion='1'\napi_version='1'\ndescription='Shows file age'\nentrypoint='plugin.lua'\n[contributions]\ncolumns=true",
+        )
+        .expect("manifest");
+
+        let columns = PluginRuntime::default()
+            .columns(&manifest, temporary.path())
+            .expect("columns");
+
+        assert_eq!(columns[0].id, "sample.fileAge");
+    }
+
+    #[test]
+    fn isolates_malformed_plugin_column_data() {
+        let temporary =
+            write_script("return { columns = function() return 'not a column list' end }");
+        let manifest = PluginManifest::parse(
+            "id='example.columns'\nname='Columns'\nversion='1'\napi_version='1'\ndescription='Columns'\nentrypoint='plugin.lua'\n[contributions]\ncolumns=true",
+        )
+        .expect("manifest");
+
+        let error = PluginRuntime::default()
+            .columns(&manifest, temporary.path())
+            .expect_err("malformed columns");
+
+        assert!(error.to_string().contains("malformed plugin result"));
     }
 
     fn manifest() -> PluginManifest {

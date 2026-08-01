@@ -304,7 +304,10 @@ impl FileManagerService {
             events: events.clone(),
             settings_store,
             settings: Mutex::new(loaded.settings),
-            plugins: PluginDiscovery::new(settings_directory.join("plugins")),
+            plugins: PluginDiscovery::new(settings_directory.join("plugins"))
+                .with_bundled_directory(
+                    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../plugins"),
+                ),
             plugin_runtime: PluginRuntime::default(),
             operations: Scheduler::new(operation_concurrency, events)
                 .with_observer(operation_observer),
@@ -761,6 +764,36 @@ impl FileManagerService {
                         )
                     },
                 );
+                let columns =
+                    if plugin.is_valid() && enabled.contains(&id) {
+                        match plugin.manifest.as_ref().map(|manifest| {
+                            self.plugin_runtime.columns(manifest, &plugin.directory)
+                        }) {
+                            Some(Ok(columns)) => columns
+                                .into_iter()
+                                .map(|column| fm_transport_dto::PluginColumnDto {
+                                    id: column.id,
+                                    title: column.title,
+                                })
+                                .collect(),
+                            Some(Err(error)) => {
+                                self.events.publish(
+                                    EventAudience::Global,
+                                    BackendEventPayload::NotificationCreated {
+                                        notification: NotificationPayload {
+                                            id: Uuid::new_v4().to_string(),
+                                            level: NotificationLevelPayload::Warning,
+                                            message: format!("Plugin {id} was isolated: {error}"),
+                                        },
+                                    },
+                                );
+                                Vec::new()
+                            }
+                            None => Vec::new(),
+                        }
+                    } else {
+                        Vec::new()
+                    };
                 let runtime_diagnostic = self.plugin_runtime.disabled_reason(&id);
                 fm_transport_dto::PluginDescriptorDto {
                     enabled: plugin.is_valid()
@@ -771,6 +804,7 @@ impl FileManagerService {
                     version,
                     description,
                     diagnostic: plugin.diagnostic.or(runtime_diagnostic),
+                    columns,
                 }
             })
             .collect()
@@ -2580,6 +2614,37 @@ mod tests {
             action.source,
             fm_transport_dto::ActionSourceDto::Plugin { .. }
         ));
+    }
+
+    #[test]
+    fn enabled_plugin_columns_are_exposed_as_declarative_descriptors() {
+        let (directory, service) = service();
+        let plugin = directory.path().join("settings/plugins/file-age");
+        std::fs::create_dir_all(&plugin).expect("plugin directory");
+        std::fs::write(
+            plugin.join("plugin.toml"),
+            "id='example.file-age'\nname='File Age'\nversion='1'\napi_version='1'\ndescription='Shows file age'\nentrypoint='plugin.lua'\n[contributions]\ncolumns=true",
+        )
+        .expect("manifest");
+        std::fs::write(
+            plugin.join("plugin.lua"),
+            "return { columns = function() return {{ id = 'sample.fileAge', title = 'Age' }} end }",
+        )
+        .expect("script");
+        service
+            .set_plugin_enabled("example.file-age".to_owned(), true)
+            .expect("enable plugin");
+
+        let plugin = service
+            .list_plugins()
+            .into_iter()
+            .find(|plugin| plugin.id == "example.file-age")
+            .expect("plugin descriptor");
+
+        assert!(plugin.enabled);
+        assert_eq!(plugin.columns.len(), 1);
+        assert_eq!(plugin.columns[0].id, "sample.fileAge");
+        assert_eq!(plugin.columns[0].title, "Age");
     }
 
     #[test]

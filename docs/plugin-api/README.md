@@ -45,3 +45,10 @@ Each call creates a fresh Lua state with only table, string, math, and UTF-8 lib
 the plugin id, create a non-blocking warning notification, and cannot crash the host. Three
 consecutive failures auto-disable a plugin; enabling it again clears that automatic disablement.
 The runtime keeps the newest 100 diagnostics per plugin for the diagnostics view.
+
+When `contributions.columns = true`, the entrypoint's `columns` field must be a
+function returning `{ id, title }` declarations. Column declarations are data only;
+the host owns rendering and maps the `sample.fileAge` sample to its compact age
+formatter and raw modification-timestamp sort key. This uses no per-row filesystem
+calls. A failed or timed-out column declaration is omitted from the plugin listing,
+so its table cells remain empty and the directory table continues working.

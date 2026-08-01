@@ -27,7 +27,6 @@ import { SseEventStream } from '../events/sse-event-stream';
 import {
   invokeAction as requestActionInvocation,
   listActions as requestActions,
-  listPlugins as requestPlugins,
   resolveOperationConflict as requestConflictResolution,
   listDirectory as requestDirectory,
   getEntryMetadata as requestEntryMetadata,
@@ -37,6 +36,7 @@ import {
   resumeOperation as requestOperationResume,
   startOperation as requestOperationStart,
   listOperations as requestOperations,
+  listPlugins as requestPlugins,
   getRuntimeCapabilities as requestRuntimeCapabilities,
   getSettings as requestSettings,
   updateSettings as requestSettingsUpdate,
@@ -51,7 +51,7 @@ import type { ActionDescriptorDto } from '../generated/models/actionDescriptorDt
 import type { InvokeActionRequestDtoParameters } from '../generated/models/invokeActionRequestDtoParameters';
 import type { OperationDto } from '../generated/models/operationDto';
 import type { SettingsDto } from '../generated/models/settingsDto';
-import { type FileManagerClient } from './file-manager-client';
+import type { FileManagerClient } from './file-manager-client';
 
 /**
  * HTTP transport adapter, wrapping the Orval-generated client behind
@@ -283,7 +283,8 @@ export class HttpFileManagerClient implements FileManagerClient {
 
   async listPlugins(signal?: AbortSignal): Promise<PluginDescriptor[]> {
     const response = await requestPlugins(signal === undefined ? undefined : { signal });
-    if (response.status !== 200) throw new Error(`Unexpected listPlugins response status: ${response.status}`);
+    if (response.status !== 200)
+      throw new Error(`Unexpected listPlugins response status: ${response.status}`);
     return response.data.map((plugin) => ({
       id: plugin.id,
       name: plugin.name,
@@ -291,6 +292,7 @@ export class HttpFileManagerClient implements FileManagerClient {
       description: plugin.description,
       enabled: plugin.enabled,
       ...(plugin.diagnostic == null ? {} : { diagnostic: plugin.diagnostic }),
+      ...(plugin.columns === undefined ? {} : { columns: plugin.columns }),
     }));
   }
 

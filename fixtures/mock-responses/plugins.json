@@ -3,6 +3,8 @@
     "id": "mock.archive",
     "name": "Mock Archive",
     "version": "1.0.0",
-    "enabled": true
+    "description": "Mock plugin with a sample column.",
+    "enabled": true,
+    "columns": [{ "id": "sample.fileAge", "title": "Age" }]
   }
 ]

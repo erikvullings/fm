@@ -4,7 +4,11 @@ import m from 'mithril';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { createGeneratedDirectory } from '../../api/client/mock-directory-generator';
-import { type DirectoryEntrySource, DirectoryTable } from './directory-table';
+import {
+  type DirectoryEntrySource,
+  DirectoryTable,
+  SAMPLE_FILE_AGE_COLUMN,
+} from './directory-table';
 
 interface RenderingMeasurements {
   readonly averageScrollRedrawMs: number;
@@ -28,7 +32,10 @@ afterEach(() => {
   }
 });
 
-function measureRendering(iterations: number): RenderingMeasurements {
+function measureRendering(
+  iterations: number,
+  pluginColumns: readonly (typeof SAMPLE_FILE_AGE_COLUMN)[] = [],
+): RenderingMeasurements {
   root = document.createElement('div');
   document.body.appendChild(root);
   let cursorIndex = 0;
@@ -39,6 +46,7 @@ function measureRendering(iterations: number): RenderingMeasurements {
         source,
         cursorIndex,
         viewportHeight: 600,
+        pluginColumns,
       }),
   });
   const grid = root.querySelector<HTMLElement>('[role="grid"]');
@@ -71,6 +79,14 @@ function measureRendering(iterations: number): RenderingMeasurements {
 describe('DirectoryTable rendering benchmark', () => {
   it('measures responsive scrolling and cursor redraws with one million lazy entries', () => {
     const measurements = measureRendering(20);
+
+    expect(measurements.mountedRows).toBeLessThanOrEqual(30);
+    expect(measurements.averageScrollRedrawMs).toBeLessThan(100);
+    expect(measurements.averageCursorRedrawMs).toBeLessThan(100);
+  });
+
+  it('keeps the file-age column within the same scrolling budget', () => {
+    const measurements = measureRendering(20, [SAMPLE_FILE_AGE_COLUMN]);
 
     expect(measurements.mountedRows).toBeLessThanOrEqual(30);
     expect(measurements.averageScrollRedrawMs).toBeLessThan(100);

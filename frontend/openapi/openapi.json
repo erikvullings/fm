@@ -1548,9 +1548,34 @@
         ],
         "type": "string"
       },
+      "PluginColumnDto": {
+        "description": "A declarative custom column made available by an enabled plugin.",
+        "properties": {
+          "id": {
+            "description": "Plugin-namespaced column identifier.",
+            "type": "string"
+          },
+          "title": {
+            "description": "User-facing column label.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title"
+        ],
+        "type": "object"
+      },
       "PluginDescriptorDto": {
         "description": "A discovered plugin, including disabled plugins with safe diagnostics.",
         "properties": {
+          "columns": {
+            "description": "Data-only column declarations that the host can render safely.",
+            "items": {
+              "$ref": "#/components/schemas/PluginColumnDto"
+            },
+            "type": "array"
+          },
           "description": {
             "description": "Manifest description when available.",
             "type": "string"
@@ -1584,7 +1609,8 @@
           "name",
           "version",
           "description",
-          "enabled"
+          "enabled",
+          "columns"
         ],
         "type": "object"
       },

@@ -1,6 +1,6 @@
 # 0056 Sample plugin: File Age column
 
-Status: open
+Status: done
 Priority: medium
 Owner: unassigned
 Agent: unassigned
@@ -30,4 +30,11 @@ registration and the separation of sort value from display value.
 - Column values must be computed from already-available metadata; no extra filesystem calls per row.
 
 ## Agent Notes
-- Not started.
+- 2026-08-01 Codex: Added the bundled `sample-file-age-column` Lua declaration and a typed,
+  data-only plugin-column transport path. The host renders compact age values from loaded metadata,
+  sorts `sample.fileAge` by raw modification timestamp, and refreshes at a one-minute cadence.
+  Visibility follows the persisted workspace column configuration. Plugin declaration errors are
+  isolated and omit their cells without interrupting the table. Verified targeted frontend tests
+  (30), plugin/runtime/application Rust tests, strict frontend typechecking, the directory-table
+  benchmark with the column enabled, and the full `pnpm test` suite. Repository lint reports only
+  three existing Biome warnings in unrelated files.

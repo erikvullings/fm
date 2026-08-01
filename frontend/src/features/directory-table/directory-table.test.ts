@@ -3,7 +3,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createGeneratedDirectory } from '../../api/client/mock-directory-generator';
 import type { EntrySummary } from '../../models';
-import { DirectoryTable, type DirectoryTableAttrs, entryArraySource } from './directory-table';
+import {
+  DirectoryTable,
+  type DirectoryTableAttrs,
+  entryArraySource,
+  SAMPLE_FILE_AGE_COLUMN,
+} from './directory-table';
 
 let root: HTMLElement;
 
@@ -79,6 +84,20 @@ describe('DirectoryTable states', () => {
 });
 
 describe('DirectoryTable rows', () => {
+  it('renders a declarative file-age column alongside core columns', () => {
+    mount({
+      state: { type: 'loaded' },
+      source: entryArraySource([
+        entry({ modifiedAt: new Date(Date.now() - 3_600_000).toISOString() }),
+      ]),
+      pluginColumns: [SAMPLE_FILE_AGE_COLUMN],
+    });
+
+    expect(root.querySelector('[role="grid"]')?.getAttribute('aria-colcount')).toBe('5');
+    expect(root.querySelector('[data-column-id="sample.fileAge"]')?.textContent).toContain('Age');
+    expect(root.querySelectorAll('.fm-directory-file-age').item(1)?.textContent).toBe('1h');
+  });
+
   it('activates sortable headers by click and keyboard and indicates the active direction', () => {
     const onSortChange = vi.fn();
     mount({

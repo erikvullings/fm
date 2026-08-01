@@ -10,6 +10,7 @@ import type {
   WorkspaceLayout,
   WorkspaceProjection,
 } from '../../models';
+import type { DirectoryColumnDescriptor } from '../directory-table/directory-table';
 import type { EntryFormatSettings } from '../entry-formatting/entry-formatting';
 import type { EntryMetadataView } from '../entry-metadata/entry-metadata-loader';
 import { Pane } from '../panes/pane';
@@ -28,6 +29,7 @@ export interface WorkspacePaneContent {
   readonly sortLabel: string;
   readonly sort: readonly SortDescriptor[];
   readonly formatSettings?: EntryFormatSettings;
+  readonly pluginColumns?: readonly DirectoryColumnDescriptor[];
   readonly metadata: EntryMetadataView;
   readonly cursorIndex?: number;
   readonly platform: SelectionPlatform;
@@ -227,6 +229,7 @@ export const WorkspaceLayoutView: FactoryComponent<WorkspaceLayoutViewAttrs> = (
         sortLabel: content.sortLabel,
         sort: content.sort,
         ...(content.formatSettings === undefined ? {} : { formatSettings: content.formatSettings }),
+        ...(content.pluginColumns === undefined ? {} : { pluginColumns: content.pluginColumns }),
         metadata: content.metadata,
         active,
         platform: content.platform,
