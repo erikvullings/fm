@@ -14,7 +14,7 @@ afterEach(async () => {
   await vite?.close();
   vite = undefined;
   await new Promise<void>((resolve) => {
-    if (!origin) {
+    if (!origin?.listening) {
       resolve();
       return;
     }
@@ -47,7 +47,13 @@ async function startHoldingSseOrigin(): Promise<string> {
     // Deliberately no `response.end()`.
   });
 
-  await new Promise<void>((resolve) => origin?.listen(0, '127.0.0.1', resolve));
+  await new Promise<void>((resolve, reject) => {
+    origin?.once('error', reject);
+    origin?.listen(0, '127.0.0.1', () => {
+      origin?.off('error', reject);
+      resolve();
+    });
+  });
   const { port } = origin.address() as AddressInfo;
   return `http://127.0.0.1:${port}`;
 }
@@ -83,8 +89,21 @@ describe('createApiProxyOptions', () => {
     expect(API_PREFIX).toBe('/api');
   });
 
-  it('streams an SSE event through before the response completes', async () => {
-    const target = await startHoldingSseOrigin();
+  it('streams an SSE event through before the response completes', async (context) => {
+    let target: string;
+    try {
+      target = await startHoldingSseOrigin();
+    } catch (error: unknown) {
+      if (
+        error instanceof Error &&
+        'code' in error &&
+        (error.code === 'EACCES' || error.code === 'EPERM')
+      ) {
+        context.skip();
+        return;
+      }
+      throw error;
+    }
     const proxied = await startViteProxyingTo(target);
 
     const abort = new AbortController();

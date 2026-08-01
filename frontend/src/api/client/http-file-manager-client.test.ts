@@ -241,7 +241,11 @@ describe('HttpFileManagerClient', () => {
     });
 
     it('lists operations and forwards cancellation to every lifecycle request', async () => {
-      requestListOperations.mockResolvedValue({ status: 200, data: [], headers: new Headers() });
+      requestListOperations.mockResolvedValue({
+        status: 200,
+        data: { operations: [] },
+        headers: new Headers(),
+      });
       requestCancelOperation.mockResolvedValue({ status: 204, headers: new Headers() });
       requestPauseOperation.mockResolvedValue({ status: 204, headers: new Headers() });
       requestResumeOperation.mockResolvedValue({ status: 204, headers: new Headers() });
@@ -254,7 +258,7 @@ describe('HttpFileManagerClient', () => {
       await client.resumeOperation('operation-1', controller.signal);
 
       const options = expect.objectContaining({ signal: controller.signal });
-      expect(requestListOperations).toHaveBeenCalledWith(options);
+      expect(requestListOperations).toHaveBeenCalledWith(undefined, options);
       expect(requestCancelOperation).toHaveBeenCalledWith('operation-1', options);
       expect(requestPauseOperation).toHaveBeenCalledWith('operation-1', options);
       expect(requestResumeOperation).toHaveBeenCalledWith('operation-1', options);
