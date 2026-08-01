@@ -8,8 +8,11 @@ license.workspace = true
 
 [dependencies]
 fm-plugin-api = { path = "../fm-plugin-api" }
+mlua.workspace = true
 serde.workspace = true
+serde_json.workspace = true
 thiserror.workspace = true
+tracing.workspace = true
 
 [lints]
 workspace = true

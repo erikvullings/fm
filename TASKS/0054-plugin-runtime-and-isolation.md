@@ -1,6 +1,6 @@
 # 0054 Plugin runtime with error isolation
 
-Status: open
+Status: done
 Priority: medium
 Owner: unassigned
 Agent: unassigned
@@ -32,4 +32,16 @@ Depends on: 0053
 - Column contributions must degrade to an empty cell, never block row rendering (0056).
 
 ## Agent Notes
-- Not started.
+- 2026-08-01 Codex: Implemented `fm-plugin-runtime` as a restricted vendored Lua 5.4 runtime
+  using the versioned `fm-plugin-api` manifest and contribution types. Every action-contribution
+  call receives a fresh VM with filesystem, process, network, package, debug and OS libraries
+  absent; the sole current host service checks its declared permission. Calls have 100 ms, 100,000
+  instruction, and 4 MiB limits; failures are traced with `plugin_id`, retained in a per-plugin
+  100-entry diagnostic ring, shown as a non-blocking event notification, and never escape into
+  the host. Three consecutive failures auto-disable a plugin; manual enable re-enables it.
+  Enabled Lua action contributions are projected into the existing shared action registry, which
+  supplies the palette and context menus. Documented the Lua entrypoint contract and Wasmtime
+  Component Model migration target. Verified 7 runtime tests (panic, timeout, permission denial,
+  malformed data, logs, auto-disable/re-enable, and normal contribution) and 1 application
+  projection test; full affected-package suites passed (7 runtime and 91 application unit tests),
+  along with `cargo fmt --all --check`, `cargo check`, and strict Clippy for both packages.

@@ -30,3 +30,18 @@ plugin listing rather than preventing startup.
 The initial runtime is restricted Lua. Wasmtime plus the WebAssembly Component Model remains the
 distributable target; no native Rust dynamic-library ABI is exposed. See ADR
 [0006](../decisions/0006-plugin-runtime-selection.md).
+
+## Lua entrypoint contract and isolation
+
+An entrypoint returns a Lua table. When `contributions.actions = true`, its `actions` field must be
+a function returning an array of `{ id, title, description }` action tables. Enabled contributions
+are automatically exposed through the shared action registry, so the command palette and context
+menus receive them through their normal registry refresh.
+
+Each call creates a fresh Lua state with only table, string, math, and UTF-8 libraries. `io`,
+`os`, `package`, `debug`, process launch, filesystem and network APIs are absent. The optional
+`host.selected_entry_metadata()` call is explicitly permission-checked. Calls are bounded by a
+100 ms timeout, 100,000 instruction budget, and 4 MiB Lua memory limit. Failures are logged under
+the plugin id, create a non-blocking warning notification, and cannot crash the host. Three
+consecutive failures auto-disable a plugin; enabling it again clears that automatic disablement.
+The runtime keeps the newest 100 diagnostics per plugin for the diagnostics view.

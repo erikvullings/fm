@@ -10,7 +10,10 @@ use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use fm_domain::OperationId;
-use fm_domain::{ActionId, DirectorySnapshot, EntryKind, EntryMetadata, Location};
+use fm_domain::{
+    ActionContextRequirements, ActionDescriptor, ActionId, ActionSource, DirectorySnapshot,
+    EntryKind, EntryMetadata, Location, PluginId,
+};
 use fm_events::{
     BackendEventPayload, EventAudience, EventBus, NotificationLevelPayload, NotificationPayload,
 };
@@ -18,7 +21,7 @@ use fm_operations::{
     ConflictResolution, ExecutionError, ExecutionOutcome, Operation, OperationExecutor,
     OperationPlan, OperationSnapshotObserver, PauseToken, PlanItem, Scheduler, SchedulerError,
 };
-use fm_plugin_runtime::PluginDiscovery;
+use fm_plugin_runtime::{PluginDiscovery, PluginRuntime};
 use fm_settings::{
     ConflictPolicy, DateFormat, DefaultPaneLayout, Settings, SettingsStore, SizeFormat, Theme,
 };
@@ -61,6 +64,7 @@ pub struct FileManagerService {
     settings_store: SettingsStore,
     settings: Mutex<Settings>,
     plugins: PluginDiscovery,
+    plugin_runtime: PluginRuntime,
     operations: Scheduler,
     operation_history: Arc<OperationHistory>,
     operation_idempotency: Mutex<HashMap<String, OperationId>>,
@@ -301,6 +305,7 @@ impl FileManagerService {
             settings_store,
             settings: Mutex::new(loaded.settings),
             plugins: PluginDiscovery::new(settings_directory.join("plugins")),
+            plugin_runtime: PluginRuntime::default(),
             operations: Scheduler::new(operation_concurrency, events)
                 .with_observer(operation_observer),
             operation_history,
@@ -685,7 +690,51 @@ impl FileManagerService {
     /// Lists every registered action (spec §18).
     #[must_use]
     pub fn list_actions(&self) -> Vec<ActionDescriptorDto> {
-        self.actions.list().into_iter().map(Into::into).collect()
+        let mut actions = self.actions.list();
+        let enabled = self
+            .settings
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .enabled_plugins
+            .clone();
+        for plugin in self.plugins.discover() {
+            let Some(manifest) = plugin.manifest else {
+                continue;
+            };
+            if !enabled.contains(&manifest.id) {
+                continue;
+            }
+            match self.plugin_runtime.actions(&manifest, &plugin.directory) {
+                Ok(contributions) => {
+                    actions.extend(contributions.into_iter().map(|action| ActionDescriptor {
+                        id: ActionId::new(action.id),
+                        title: action.title,
+                        description: Some(action.description),
+                        category: "plugin".to_owned(),
+                        default_shortcuts: Vec::new(),
+                        context_requirements: ActionContextRequirements::none(),
+                        parameter_schema: None,
+                        source: ActionSource::Plugin {
+                            plugin_id: PluginId::new(manifest.id.clone()),
+                        },
+                    }))
+                }
+                Err(error) => {
+                    self.events.publish(
+                        EventAudience::Global,
+                        BackendEventPayload::NotificationCreated {
+                            notification: NotificationPayload {
+                                id: Uuid::new_v4().to_string(),
+                                level: NotificationLevelPayload::Warning,
+                                message: format!("Plugin {} was isolated: {error}", manifest.id),
+                            },
+                        },
+                    );
+                }
+            }
+        }
+        actions.sort_by(|left, right| left.id.cmp(&right.id));
+        actions.into_iter().map(Into::into).collect()
     }
 
     /// Lists discovered plugins, retaining malformed manifests as disabled records.
@@ -712,13 +761,16 @@ impl FileManagerService {
                         )
                     },
                 );
+                let runtime_diagnostic = self.plugin_runtime.disabled_reason(&id);
                 fm_transport_dto::PluginDescriptorDto {
-                    enabled: plugin.is_valid() && enabled.contains(&id),
+                    enabled: plugin.is_valid()
+                        && enabled.contains(&id)
+                        && runtime_diagnostic.is_none(),
                     id,
                     name,
                     version,
                     description,
-                    diagnostic: plugin.diagnostic,
+                    diagnostic: plugin.diagnostic.or(runtime_diagnostic),
                 }
             })
             .collect()
@@ -744,6 +796,7 @@ impl FileManagerService {
             .unwrap_or_else(|error| error.into_inner());
         settings.enabled_plugins.retain(|id| id != &plugin_id);
         if enabled {
+            self.plugin_runtime.reenable(&plugin_id);
             settings.enabled_plugins.push(plugin_id);
             settings.enabled_plugins.sort();
         }
@@ -2495,6 +2548,38 @@ mod tests {
             dir.path().join("settings"),
         );
         (dir, service)
+    }
+
+    #[test]
+    fn enabled_plugin_actions_are_projected_into_the_shared_action_registry() {
+        let (directory, service) = service();
+        let plugin = directory.path().join("settings/plugins/copy-path");
+        std::fs::create_dir_all(&plugin).expect("plugin directory");
+        std::fs::write(
+            plugin.join("plugin.toml"),
+            "id='example.copy-path'\nname='Copy Path'\nversion='1'\napi_version='1'\ndescription='Copies a path'\nentrypoint='plugin.lua'\n[contributions]\nactions=true",
+        )
+        .expect("manifest");
+        std::fs::write(
+            plugin.join("plugin.lua"),
+            "return { actions = function() return {{ id = 'example.copy-path.copy', title = 'Copy Path', description = 'Copies the selected path' }} end }",
+        )
+        .expect("script");
+        service
+            .set_plugin_enabled("example.copy-path".to_owned(), true)
+            .expect("enable plugin");
+
+        let action = service
+            .list_actions()
+            .into_iter()
+            .find(|action| action.id == "example.copy-path.copy")
+            .expect("plugin action");
+
+        assert_eq!(action.title, "Copy Path");
+        assert!(matches!(
+            action.source,
+            fm_transport_dto::ActionSourceDto::Plugin { .. }
+        ));
     }
 
     #[test]

@@ -39,7 +39,10 @@ navigates to the parent without entering the selectable file set.
 Ctrl/Cmd+P opens a custom, keyboard-first command palette over the already-loaded action registry.
 It fuzzy-filters action titles, ids and categories, ranks matches and recently used commands, shows
 shortcuts and availability reasons, prompts for schema-defined parameters, and returns focus to its
-previous target when closed.
+previous target when closed. Enabled plugin actions use that same registry, so they automatically
+appear in the palette and context menus. Plugins currently run in a restricted Lua sandbox with
+resource limits and per-plugin bounded diagnostics; Lua failures create non-blocking warnings and
+are auto-disabled after repeated failures. See [`docs/plugin-api/README.md`](docs/plugin-api/README.md).
 The main window loads its authoritative workspace projection through the shared client and renders
 the recursive pane layout with a draggable, minimum-width splitter. Pane clicks and Tab traversal
 move visible focus through semantic workspace commands; divider changes are sent as debounced
