@@ -1,4 +1,4 @@
-import type { ActionId, PluginId } from './ids';
+import type { ActionId, EntryId, OperationId, PaneId, PluginId } from './ids';
 
 /** A keyboard shortcut assigned to an action (spec §18). */
 export interface KeyChord {
@@ -19,6 +19,18 @@ export type ActionSource = { kind: 'core' } | { kind: 'plugin'; pluginId: Plugin
 export type ActionContextRequirements = Record<string, unknown>;
 
 /**
+ * Typed context supplied with an action invocation: the active pane, the
+ * current selection, and the cursor entry (spec §18). The backend
+ * re-validates `ActionContextRequirements` against this rather than trusting
+ * the frontend's own advisory availability evaluation.
+ */
+export interface ActionInvocationContext {
+  paneId?: PaneId;
+  selectedEntryIds?: EntryId[];
+  cursorEntryId?: EntryId;
+}
+
+/**
  * Describes an invokable action (spec §18). No backend DTO exists yet
  * (actions land in task 0052); fields mirror the domain `ActionDescriptor`
  * struct until then.
@@ -34,5 +46,9 @@ export interface ActionDescriptor {
   source: ActionSource;
 }
 
-/** Left opaque until task 0052 defines the concrete result payload. */
-export type ActionResult = Record<string, unknown>;
+/** Result of invoking one action (spec §18). */
+export interface ActionResult {
+  actionId: ActionId;
+  invoked: boolean;
+  operationId?: OperationId;
+}

@@ -5,6 +5,7 @@
 //! `utoipa`). Every type here is a plain, serializable data type — behaviour
 //! (parsing, VFS access, application services) lives in higher layers.
 
+pub mod action;
 pub mod entry;
 pub mod ids;
 pub mod location;
@@ -12,6 +13,9 @@ pub mod snapshot;
 pub mod workspace;
 pub mod workspace_command;
 
+pub use action::{
+    ActionContextRequirements, ActionDescriptor, ActionInvocationContext, ActionSource, KeyChord,
+};
 pub use entry::{
     ArchiveInfo, EntryKind, EntryMetadata, EntrySummary, ImageDimensions, MediaMetadata,
     OwnershipInfo, PermissionsInfo,

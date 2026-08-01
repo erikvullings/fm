@@ -7,10 +7,11 @@ use uuid::Uuid;
 
 use fm_domain::OperationId;
 use fm_transport_dto::{
-    ApplicationErrorDto, CreateWorkspaceRequestDto, DirectorySnapshotDto, EntryMetadataDto,
-    EntryMetadataRequest, ListDirectoryRequest, NavigateRequest, OperationDto,
-    ResolveOperationConflictRequestDto, RuntimeCapabilitiesDto, SettingsDto,
-    StartOperationRequestDto, WorkspaceCommandDto, WorkspaceDto, WorkspaceSummaryDto,
+    ActionDescriptorDto, ActionResultDto, ApplicationErrorDto, CreateWorkspaceRequestDto,
+    DirectorySnapshotDto, EntryMetadataDto, EntryMetadataRequest, InvokeActionRequestDto,
+    ListDirectoryRequest, NavigateRequest, OperationDto, ResolveOperationConflictRequestDto,
+    RuntimeCapabilitiesDto, SettingsDto, StartOperationRequestDto, WorkspaceCommandDto,
+    WorkspaceDto, WorkspaceSummaryDto,
 };
 
 use crate::{AppState, event_stream::EventSubscriptionRegistry};
@@ -262,5 +263,25 @@ pub(crate) fn resolve_operation_conflict(
     state
         .service
         .resolve_operation_conflict(OperationId::from(operation_id), request)
+        .map_err(|e| e.into_dto(Uuid::new_v4()))
+}
+
+/// Lists the registered actions through the same service method as REST.
+#[tauri::command]
+pub(crate) fn list_actions(state: State<'_, AppState>) -> Vec<ActionDescriptorDto> {
+    state.service.list_actions()
+}
+
+/// Invokes a registered action through the same service method as REST.
+#[tauri::command]
+pub(crate) fn invoke_action(
+    state: State<'_, AppState>,
+    action_id: String,
+    request: InvokeActionRequestDto,
+    idempotency_key: Option<String>,
+) -> Result<ActionResultDto, ApplicationErrorDto> {
+    state
+        .service
+        .invoke_action(action_id, request, idempotency_key)
         .map_err(|e| e.into_dto(Uuid::new_v4()))
 }

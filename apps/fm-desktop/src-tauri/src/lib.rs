@@ -77,6 +77,8 @@ pub fn run() {
             commands::pause_operation,
             commands::resume_operation,
             commands::resolve_operation_conflict,
+            commands::list_actions,
+            commands::invoke_action,
         ])
         .run(build_context())
         .expect("error while running the Tauri application");
@@ -128,6 +130,8 @@ mod tests {
                 commands::pause_operation,
                 commands::resume_operation,
                 commands::resolve_operation_conflict,
+                commands::list_actions,
+                commands::invoke_action,
             ])
             // Uses the app's real `tauri.conf.json` config (same as `run()`)
             // rather than `mock_context(noop_assets())`'s empty default config,

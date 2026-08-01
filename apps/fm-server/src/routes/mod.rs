@@ -1,6 +1,7 @@
 //! Route handlers, kept thin: they only map request -> service call -> DTO
 //! (spec §3 rule 2).
 
+pub(crate) mod action;
 pub(crate) mod directory;
 pub(crate) mod events;
 pub(crate) mod health;

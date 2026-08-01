@@ -3,6 +3,12 @@
  * Run `pnpm api:generate` (or `pnpm api:check`) to regenerate.
  */
 
+export * from './actionContextRequirementsDto';
+export * from './actionDescriptorDto';
+export * from './actionDescriptorDtoParameterSchema';
+export * from './actionInvocationContextDto';
+export * from './actionResultDto';
+export * from './actionSourceDto';
 export * from './applicationErrorCode';
 export * from './applicationErrorDto';
 export * from './applicationErrorDtoDetails';
@@ -28,6 +34,9 @@ export * from './entrySummaryDto';
 export * from './healthDto';
 export * from './healthStatusDto';
 export * from './imageDimensionsDto';
+export * from './invokeActionRequestDto';
+export * from './invokeActionRequestDtoParameters';
+export * from './keyChordDto';
 export * from './listDirectoryRequest';
 export * from './listOperationsParams';
 export * from './loadingStateDto';

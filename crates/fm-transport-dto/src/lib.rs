@@ -5,6 +5,7 @@
 //! one crate is what lets the Tauri commands and the REST endpoints stay
 //! byte-for-byte compatible.
 
+pub mod action;
 pub mod entry;
 pub mod error;
 pub mod health;
@@ -17,6 +18,10 @@ pub mod snapshot;
 pub mod workspace;
 pub mod workspace_command;
 
+pub use action::{
+    ActionContextRequirementsDto, ActionDescriptorDto, ActionInvocationContextDto, ActionResultDto,
+    ActionSourceDto, InvokeActionRequestDto, KeyChordDto,
+};
 pub use entry::{
     ArchiveInfoDto, EntryKindDto, EntryMetadataDto, EntrySummaryDto, ImageDimensionsDto,
     MediaMetadataDto, OwnershipInfoDto, PermissionsInfoDto,

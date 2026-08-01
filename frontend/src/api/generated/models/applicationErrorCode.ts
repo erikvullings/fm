@@ -20,5 +20,7 @@ export const ApplicationErrorCode = {
   providerUnavailable: 'providerUnavailable',
   operationCancelled: 'operationCancelled',
   workspaceRevisionConflict: 'workspaceRevisionConflict',
+  actionNotFound: 'actionNotFound',
+  actionUnavailable: 'actionUnavailable',
   internal: 'internal',
 } as const;

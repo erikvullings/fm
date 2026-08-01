@@ -1,4 +1,5 @@
 import type { SortDescriptorDto } from '../api/generated/models/sortDescriptorDto';
+import type { ActionInvocationContext } from './action';
 import type { ActionId, EntryId, OperationId, PaneId } from './ids';
 import type { Location } from './location';
 import type { ConflictPolicy, OperationKind } from './operation';
@@ -72,4 +73,5 @@ export interface ResolveConflictRequest {
 export interface InvokeActionRequest {
   actionId: ActionId;
   parameters?: unknown;
+  context: ActionInvocationContext;
 }

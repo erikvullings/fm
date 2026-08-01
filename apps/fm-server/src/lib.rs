@@ -55,6 +55,8 @@ fn api_router() -> OpenApiRouter<AppState> {
         .routes(utoipa_axum::routes!(
             routes::operation::resolve_operation_conflict
         ))
+        .routes(utoipa_axum::routes!(routes::action::list_actions))
+        .routes(utoipa_axum::routes!(routes::action::invoke_action))
         .routes(utoipa_axum::routes!(routes::workspace::create_workspace))
         .routes(utoipa_axum::routes!(routes::workspace::get_workspace))
         .routes(utoipa_axum::routes!(routes::workspace::delete_workspace))

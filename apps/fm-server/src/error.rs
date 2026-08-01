@@ -57,6 +57,8 @@ fn status_for(error: &ApplicationError) -> StatusCode {
         ApplicationError::ProviderUnavailable => StatusCode::SERVICE_UNAVAILABLE,
         ApplicationError::OperationCancelled => StatusCode::CONFLICT,
         ApplicationError::WorkspaceRevisionConflict { .. } => StatusCode::CONFLICT,
+        ApplicationError::ActionNotFound(_) => StatusCode::NOT_FOUND,
+        ApplicationError::ActionUnavailable(_) => StatusCode::CONFLICT,
         ApplicationError::Internal => StatusCode::INTERNAL_SERVER_ERROR,
     }
 }

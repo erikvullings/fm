@@ -90,7 +90,7 @@ describe('MockFileManagerClient API', () => {
     });
     const actions = await client.listActions();
     const plugins = await client.listPlugins();
-    const actionResult = await client.invokeAction({ actionId: 'core.refresh' });
+    const actionResult = await client.invokeAction({ actionId: 'core.refresh', context: {} });
 
     expect(capabilities.runtime).toBe('mock');
     expect(workspace.id).toBe('mock-workspace');

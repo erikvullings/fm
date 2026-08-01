@@ -25,6 +25,8 @@ import type {
 import { workspaceProjectionFromDto } from '../../models/workspace';
 import { SseEventStream } from '../events/sse-event-stream';
 import {
+  invokeAction as requestActionInvocation,
+  listActions as requestActions,
   resolveOperationConflict as requestConflictResolution,
   listDirectory as requestDirectory,
   getEntryMetadata as requestEntryMetadata,
@@ -44,6 +46,8 @@ import {
   openWorkspace as requestWorkspaceOpen,
   listWorkspaces as requestWorkspaces,
 } from '../generated/file-manager-api';
+import type { ActionDescriptorDto } from '../generated/models/actionDescriptorDto';
+import type { InvokeActionRequestDtoParameters } from '../generated/models/invokeActionRequestDtoParameters';
 import type { OperationDto } from '../generated/models/operationDto';
 import type { SettingsDto } from '../generated/models/settingsDto';
 import { type FileManagerClient, NotImplementedError } from './file-manager-client';
@@ -255,12 +259,29 @@ export class HttpFileManagerClient implements FileManagerClient {
       throw new Error(`Unexpected resolveConflict response status: ${response.status}`);
   }
 
-  listActions(_signal?: AbortSignal): Promise<ActionDescriptor[]> {
-    return this.notImplemented('listActions', '0049');
+  listActions(signal?: AbortSignal): Promise<ActionDescriptor[]> {
+    return requestActions(signal === undefined ? undefined : { signal }).then((response) =>
+      response.data.map(actionFromDto),
+    );
   }
 
-  invokeAction(_request: InvokeActionRequest, _signal?: AbortSignal): Promise<ActionResult> {
-    return this.notImplemented('invokeAction', '0049');
+  async invokeAction(request: InvokeActionRequest, signal?: AbortSignal): Promise<ActionResult> {
+    const response = await requestActionInvocation(
+      request.actionId,
+      {
+        parameters: (request.parameters ?? null) as InvokeActionRequestDtoParameters,
+        context: request.context,
+      },
+      signal === undefined ? undefined : { signal },
+    );
+    if (response.status !== 200) {
+      throw new Error(`Unexpected invokeAction response status: ${response.status}`);
+    }
+    return {
+      actionId: response.data.actionId,
+      invoked: response.data.invoked,
+      ...(response.data.operationId == null ? {} : { operationId: response.data.operationId }),
+    };
   }
 
   listPlugins(_signal?: AbortSignal): Promise<PluginDescriptor[]> {
@@ -305,6 +326,22 @@ function operationFromDto(dto: OperationDto): Operation {
     ...(dto.completedAt == null ? {} : { completedAt: dto.completedAt }),
     ...(dto.queuePosition == null ? {} : { queuePosition: dto.queuePosition }),
     ...(dto.resultSummary == null ? {} : { result: { message: dto.resultSummary } }),
+  };
+}
+
+function actionFromDto(dto: ActionDescriptorDto): ActionDescriptor {
+  return {
+    id: dto.id,
+    title: dto.title,
+    ...(dto.description == null ? {} : { description: dto.description }),
+    category: dto.category,
+    defaultShortcuts: dto.defaultShortcuts ?? [],
+    contextRequirements: { ...dto.contextRequirements },
+    ...(dto.parameterSchema == null ? {} : { parameterSchema: dto.parameterSchema }),
+    source:
+      dto.source.kind === 'plugin'
+        ? { kind: 'plugin', pluginId: dto.source.pluginId }
+        : { kind: 'core' },
   };
 }
 

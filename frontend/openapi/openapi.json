@@ -1,6 +1,203 @@
 {
   "components": {
     "schemas": {
+      "ActionContextRequirementsDto": {
+        "description": "Predicates the backend re-validates before invoking an action (spec §18).",
+        "properties": {
+          "featureAvailable": {
+            "description": "Whether the action's feature is implemented yet.",
+            "type": "boolean"
+          },
+          "requiresSelection": {
+            "description": "At least one entry must be selected.",
+            "type": "boolean"
+          },
+          "requiresSingleSelection": {
+            "description": "Exactly one entry must be selected.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "featureAvailable",
+          "requiresSelection",
+          "requiresSingleSelection"
+        ],
+        "type": "object"
+      },
+      "ActionDescriptorDto": {
+        "description": "Describes one invokable action (spec §18).",
+        "example": {
+          "category": "fileOperations",
+          "contextRequirements": {
+            "featureAvailable": true,
+            "requiresSelection": true,
+            "requiresSingleSelection": true
+          },
+          "defaultShortcuts": [
+            {
+              "alt": false,
+              "ctrl": false,
+              "key": "F2",
+              "meta": false,
+              "shift": false
+            }
+          ],
+          "description": null,
+          "id": "core.rename",
+          "parameterSchema": null,
+          "source": {
+            "kind": "core"
+          },
+          "title": "Rename"
+        },
+        "properties": {
+          "category": {
+            "description": "Grouping used by menus and the command palette.",
+            "type": "string"
+          },
+          "contextRequirements": {
+            "$ref": "#/components/schemas/ActionContextRequirementsDto",
+            "description": "Predicates the backend re-validates before invoking this action."
+          },
+          "defaultShortcuts": {
+            "description": "Default keyboard shortcuts, before user overrides.",
+            "items": {
+              "$ref": "#/components/schemas/KeyChordDto"
+            },
+            "type": "array"
+          },
+          "description": {
+            "description": "Longer, optional user-facing description.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "description": "Stable action identifier, e.g. `\"core.copy\"`.",
+            "type": "string"
+          },
+          "parameterSchema": {
+            "description": "Optional JSON schema describing `InvokeActionRequest.parameters`.",
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "source": {
+            "$ref": "#/components/schemas/ActionSourceDto",
+            "description": "Whether this is a core action or contributed by a plugin."
+          },
+          "title": {
+            "description": "Short, user-facing label.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "category",
+          "contextRequirements",
+          "source"
+        ],
+        "type": "object"
+      },
+      "ActionInvocationContextDto": {
+        "description": "Typed context supplied with an action invocation: the active pane, the\ncurrent selection, and the cursor entry (spec §18). The backend\nre-validates `ActionContextRequirements` against this rather than trusting\nthe frontend's own advisory availability evaluation.",
+        "properties": {
+          "cursorEntryId": {
+            "description": "The entry under the keyboard cursor, if any.",
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "paneId": {
+            "description": "The pane the action was invoked from, if any.",
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "selectedEntryIds": {
+            "description": "Currently selected entries in that pane.",
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "ActionResultDto": {
+        "description": "Result of invoking one action (spec §18).",
+        "properties": {
+          "actionId": {
+            "description": "The invoked action's id, echoed back for convenience.",
+            "type": "string"
+          },
+          "invoked": {
+            "description": "Whether the action ran (always `true` on a non-error response).",
+            "type": "boolean"
+          },
+          "operationId": {
+            "description": "The operation started on behalf of this action, for mutating actions.",
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "actionId",
+          "invoked"
+        ],
+        "type": "object"
+      },
+      "ActionSourceDto": {
+        "description": "Whether an action is built in or contributed by a plugin (spec §18, §19).",
+        "oneOf": [
+          {
+            "description": "Registered by the application itself.",
+            "properties": {
+              "kind": {
+                "enum": [
+                  "core"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind"
+            ],
+            "type": "object"
+          },
+          {
+            "description": "Contributed by an enabled plugin.",
+            "properties": {
+              "kind": {
+                "enum": [
+                  "plugin"
+                ],
+                "type": "string"
+              },
+              "pluginId": {
+                "description": "The contributing plugin's stable id.\n\nExplicit rename: utoipa's `ToSchema` derive does not honour the\ncontainer's `rename_all_fields`/`rename_all` for struct-like enum\nvariant fields, so without this the generated OpenAPI schema (and\nthe Orval client built from it) would advertise `plugin_id`\nwhile the actual wire JSON (governed by serde) is `pluginId`.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "pluginId",
+              "kind"
+            ],
+            "type": "object"
+          }
+        ]
+      },
       "ApplicationErrorCode": {
         "description": "A closed set of machine-readable error codes.\n\nCodes are stable and additive: existing variants are never renamed or\nremoved, only appended to.",
         "enum": [
@@ -11,6 +208,8 @@
           "providerUnavailable",
           "operationCancelled",
           "workspaceRevisionConflict",
+          "actionNotFound",
+          "actionUnavailable",
           "internal"
         ],
         "type": "string"
@@ -643,6 +842,52 @@
         "required": [
           "width",
           "height"
+        ],
+        "type": "object"
+      },
+      "InvokeActionRequestDto": {
+        "description": "Requests invocation of a registered action, identified by the\n`actionId` path parameter (spec §18).",
+        "properties": {
+          "context": {
+            "$ref": "#/components/schemas/ActionInvocationContextDto",
+            "description": "The invoking pane, selection and cursor entry."
+          },
+          "parameters": {
+            "description": "Action-specific parameters. For mutating actions this deserializes as\na [`crate::StartOperationRequestDto`] (its `type` field is ignored and\noverridden by the invoked action id).",
+            "type": [
+              "object",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "KeyChordDto": {
+        "description": "A keyboard shortcut assigned to an action (spec §18).",
+        "properties": {
+          "alt": {
+            "description": "Alt/Option key.",
+            "type": "boolean"
+          },
+          "ctrl": {
+            "description": "Control key (the Windows/Linux primary modifier).",
+            "type": "boolean"
+          },
+          "key": {
+            "description": "The non-modifier key, e.g. `\"c\"` or `\"F2\"`.",
+            "type": "string"
+          },
+          "meta": {
+            "description": "Command/Meta key (the macOS primary modifier).",
+            "type": "boolean"
+          },
+          "shift": {
+            "description": "Shift key.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "key"
         ],
         "type": "object"
       },
@@ -2256,6 +2501,93 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/v1/actions": {
+      "get": {
+        "operationId": "listActions",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ActionDescriptorDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/v1/actions/{actionId}/invoke": {
+      "post": {
+        "operationId": "invokeAction",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "actionId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InvokeActionRequestDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActionResultDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationErrorDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationErrorDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationErrorDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        }
+      }
+    },
     "/api/v1/directories/list": {
       "post": {
         "operationId": "listDirectory",

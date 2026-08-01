@@ -10,7 +10,7 @@ use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use fm_domain::OperationId;
-use fm_domain::{DirectorySnapshot, EntryKind, EntryMetadata, Location};
+use fm_domain::{ActionId, DirectorySnapshot, EntryKind, EntryMetadata, Location};
 use fm_events::{
     BackendEventPayload, EventAudience, EventBus, NotificationLevelPayload, NotificationPayload,
 };
@@ -22,12 +22,12 @@ use fm_settings::{
     ConflictPolicy, DateFormat, DefaultPaneLayout, Settings, SettingsStore, SizeFormat, Theme,
 };
 use fm_transport_dto::{
-    ConflictPolicyDto, ConflictResolutionDto, DateFormatDto, DefaultPaneLayoutDto,
-    EntryMetadataRequest, ListDirectoryRequest, NavigateRequest, OperationConflictPolicyDto,
-    OperationDto, OperationKindDto, OperationProgressDto, OperationStateDto, PlatformKindDto,
-    ResolveOperationConflictRequestDto, RuntimeCapabilitiesDto, RuntimeKindDto, SettingsDto,
-    SizeFormatDto, StartOperationRequestDto, ThemeDto, WorkspaceCommandDto, WorkspaceDto,
-    WorkspaceSummaryDto,
+    ActionDescriptorDto, ActionResultDto, ConflictPolicyDto, ConflictResolutionDto, DateFormatDto,
+    DefaultPaneLayoutDto, EntryMetadataRequest, InvokeActionRequestDto, ListDirectoryRequest,
+    NavigateRequest, OperationConflictPolicyDto, OperationDto, OperationKindDto,
+    OperationProgressDto, OperationStateDto, PlatformKindDto, ResolveOperationConflictRequestDto,
+    RuntimeCapabilitiesDto, RuntimeKindDto, SettingsDto, SizeFormatDto, StartOperationRequestDto,
+    ThemeDto, WorkspaceCommandDto, WorkspaceDto, WorkspaceSummaryDto,
 };
 use fm_vfs::{EntryRef, FileSystemProvider, ProviderCapabilities, ProviderRegistry};
 use fm_vfs_local::LocalFileSystemProvider;
@@ -36,6 +36,7 @@ use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 use crate::DirectoryService;
+use crate::action::ActionRegistry;
 use crate::error::ApplicationError;
 use crate::workspace::{JsonFileWorkspaceRepository, WorkspaceService, WorkspaceSummary};
 
@@ -63,6 +64,7 @@ pub struct FileManagerService {
     operation_idempotency: Mutex<HashMap<String, OperationId>>,
     force_cross_volume_moves: AtomicBool,
     audit_log_path: PathBuf,
+    actions: ActionRegistry,
 }
 
 const OPERATION_HISTORY_FILE_NAME: &str = "operation-history.json";
@@ -302,6 +304,7 @@ impl FileManagerService {
             operation_idempotency: Mutex::new(HashMap::new()),
             force_cross_volume_moves: AtomicBool::new(false),
             audit_log_path: settings_directory.join("audit.jsonl"),
+            actions: ActionRegistry::with_core_actions(),
         }
     }
 
@@ -674,6 +677,51 @@ impl FileManagerService {
         self.operations
             .resolve_conflict(id, resolution, request.apply_to_all_similar)
             .map_err(map_scheduler_error)
+    }
+
+    /// Lists every registered action (spec §18).
+    #[must_use]
+    pub fn list_actions(&self) -> Vec<ActionDescriptorDto> {
+        self.actions.list().into_iter().map(Into::into).collect()
+    }
+
+    /// Invokes a registered action, re-validating its context requirements
+    /// server-side and delegating file-mutating actions to the operation
+    /// engine (spec §18). Never panics: an unknown or unavailable action is
+    /// reported as a typed [`ApplicationError`].
+    pub fn invoke_action(
+        &self,
+        action_id: String,
+        request: InvokeActionRequestDto,
+        idempotency_key: Option<String>,
+    ) -> Result<ActionResultDto, ApplicationError> {
+        let action_id = ActionId::new(action_id);
+        let context = request.context.into();
+        self.actions.require_available(&action_id, &context)?;
+
+        let Some(operation_type) = mutating_operation_kind(&action_id) else {
+            return Ok(ActionResultDto {
+                action_id: action_id.as_str().to_owned(),
+                invoked: true,
+                operation_id: None,
+            });
+        };
+        let parameters = request.parameters.ok_or_else(|| {
+            ApplicationError::InvalidRequest(format!(
+                "action {action_id:?} requires parameters describing the operation"
+            ))
+        })?;
+        let mut operation_request: StartOperationRequestDto = serde_json::from_value(parameters)
+            .map_err(|error| {
+                ApplicationError::InvalidRequest(format!("invalid action parameters: {error}"))
+            })?;
+        operation_request.operation_type = operation_type;
+        let operation = self.start_operation(operation_request, idempotency_key)?;
+        Ok(ActionResultDto {
+            action_id: action_id.as_str().to_owned(),
+            invoked: true,
+            operation_id: Some(operation.id),
+        })
     }
 
     /// Returns the current application-wide settings.
@@ -2149,6 +2197,20 @@ const fn conflict_policy(
     }
 }
 
+/// Maps a mutating action id to the operation kind it delegates to, or
+/// `None` for actions with no backing operation (unimplemented actions, and
+/// the frontend-only selection/navigation actions reserved by task 0028).
+fn mutating_operation_kind(id: &ActionId) -> Option<OperationKindDto> {
+    match id.as_str() {
+        "core.copy" => Some(OperationKindDto::Copy),
+        "core.move" => Some(OperationKindDto::Move),
+        "core.rename" => Some(OperationKindDto::Rename),
+        "core.delete" => Some(OperationKindDto::Delete),
+        "core.createDirectory" => Some(OperationKindDto::CreateDirectory),
+        _ => None,
+    }
+}
+
 fn operation_dto(operation: Operation, queue_position: Option<u64>) -> OperationDto {
     let result_summary = operation_result_summary(&operation);
     OperationDto {
@@ -2473,6 +2535,152 @@ mod tests {
         assert!(!capabilities.plugins);
         assert!(!capabilities.server_administration);
         assert!(capabilities.clipboard);
+    }
+
+    #[test]
+    fn list_actions_includes_every_core_and_reserved_action_id() {
+        let (_dir, service) = service();
+        let ids: Vec<String> = service
+            .list_actions()
+            .into_iter()
+            .map(|action| action.id)
+            .collect();
+
+        for expected in ["core.copy", "core.rename", "core.selectAll", "core.open"] {
+            assert!(ids.iter().any(|id| id == expected), "missing {expected}");
+        }
+    }
+
+    #[test]
+    fn invoke_action_reports_an_unknown_action_without_panicking() {
+        let (_dir, service) = service();
+        let error = service
+            .invoke_action(
+                "does.not.exist".to_owned(),
+                InvokeActionRequestDto::default(),
+                None,
+            )
+            .expect_err("an unregistered action must be reported, not panic");
+        assert_eq!(
+            error,
+            ApplicationError::ActionNotFound(fm_domain::ActionId::new("does.not.exist"))
+        );
+    }
+
+    #[test]
+    fn invoke_action_reports_unavailable_for_a_feature_without_a_backend_implementation() {
+        let (_dir, service) = service();
+        let error = service
+            .invoke_action(
+                "core.open".to_owned(),
+                InvokeActionRequestDto::default(),
+                None,
+            )
+            .expect_err("core.open has no backend feature yet");
+        assert_eq!(
+            error,
+            ApplicationError::ActionUnavailable(fm_domain::ActionId::new("core.open"))
+        );
+    }
+
+    #[test]
+    fn invoke_action_reports_unavailable_when_context_requirements_are_not_met() {
+        let (_dir, service) = service();
+        let error = service
+            .invoke_action(
+                "core.rename".to_owned(),
+                InvokeActionRequestDto::default(),
+                None,
+            )
+            .expect_err("rename requires exactly one selected entry");
+        assert_eq!(
+            error,
+            ApplicationError::ActionUnavailable(fm_domain::ActionId::new("core.rename"))
+        );
+    }
+
+    #[test]
+    fn invoke_action_returns_invoked_without_an_operation_for_non_mutating_actions() {
+        let (_dir, service) = service();
+        let result = service
+            .invoke_action(
+                "core.selectAll".to_owned(),
+                InvokeActionRequestDto::default(),
+                None,
+            )
+            .expect("core.selectAll has no context requirements");
+        assert_eq!(result.action_id, "core.selectAll");
+        assert!(result.invoked);
+        assert!(result.operation_id.is_none());
+    }
+
+    #[tokio::test]
+    async fn invoke_action_delegates_create_directory_to_the_operation_engine() {
+        let (dir, service) = service();
+        let parent = dir.path().join("parent");
+        fs::create_dir_all(&parent).expect("must create parent directory");
+        let destination = fm_transport_dto::LocationDto {
+            provider_id: "local".to_owned(),
+            uri: format!("file://{}", parent.display()),
+        };
+        let parameters = serde_json::to_value(StartOperationRequestDto {
+            operation_type: OperationKindDto::CreateDirectory,
+            sources: Vec::new(),
+            destination: Some(destination),
+            conflict_policy: OperationConflictPolicyDto::Ask,
+            name: Some("child".to_owned()),
+            create_intermediate_directories: false,
+            symlink_policy: fm_transport_dto::SymlinkPolicyDto::default(),
+            permanent_delete_confirmed: false,
+            override_read_only: false,
+        })
+        .expect("must serialize the operation request");
+
+        let result = service
+            .invoke_action(
+                "core.createDirectory".to_owned(),
+                InvokeActionRequestDto {
+                    parameters: Some(parameters),
+                    context: fm_transport_dto::ActionInvocationContextDto::default(),
+                },
+                None,
+            )
+            .expect("createDirectory has no context requirements");
+
+        assert!(result.invoked);
+        let operation_id = result
+            .operation_id
+            .expect("a mutating action must return an operation id");
+        let operation = loop {
+            let current = service
+                .get_operation(OperationId::from(operation_id))
+                .expect("the started operation must be retrievable");
+            if matches!(
+                current.state,
+                OperationStateDto::Completed | OperationStateDto::Failed
+            ) {
+                break current;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        };
+        assert_eq!(operation.state, OperationStateDto::Completed);
+        assert!(parent.join("child").is_dir());
+    }
+
+    #[test]
+    fn invoke_action_reports_invalid_request_when_mutating_action_parameters_are_missing() {
+        let (_dir, service) = service();
+        let error = service
+            .invoke_action(
+                "core.createDirectory".to_owned(),
+                InvokeActionRequestDto::default(),
+                None,
+            )
+            .expect_err("createDirectory requires parameters");
+        assert_eq!(
+            error.code(),
+            fm_transport_dto::ApplicationErrorCode::InvalidRequest
+        );
     }
 
     #[test]

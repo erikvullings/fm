@@ -1,5 +1,6 @@
 //! Application-level errors shared by every host (specification §7, §8).
 
+use fm_domain::ActionId;
 use fm_transport_dto::{ApplicationErrorCode, ApplicationErrorDto};
 use fm_vfs::VfsError;
 use uuid::Uuid;
@@ -42,6 +43,14 @@ pub enum ApplicationError {
         /// The revision actually stored.
         actual_revision: u64,
     },
+    /// No action is registered with this id (spec §18).
+    #[error("unknown action {0:?}")]
+    ActionNotFound(ActionId),
+    /// The action is registered but not currently invokable, either because
+    /// its feature is not implemented yet or its context requirements are
+    /// not met by the caller's invocation context (spec §18).
+    #[error("action {0:?} is not currently available")]
+    ActionUnavailable(ActionId),
     /// An unexpected, unclassified failure occurred.
     #[error("internal error")]
     Internal,
@@ -60,6 +69,8 @@ impl ApplicationError {
             Self::WorkspaceRevisionConflict { .. } => {
                 ApplicationErrorCode::WorkspaceRevisionConflict
             }
+            Self::ActionNotFound(_) => ApplicationErrorCode::ActionNotFound,
+            Self::ActionUnavailable(_) => ApplicationErrorCode::ActionUnavailable,
             Self::Internal => ApplicationErrorCode::Internal,
         }
     }
@@ -77,6 +88,9 @@ impl ApplicationError {
                 "expectedRevision": expected_revision,
                 "actualRevision": actual_revision,
             })),
+            Self::ActionNotFound(action_id) | Self::ActionUnavailable(action_id) => {
+                Some(serde_json::json!({ "actionId": action_id.as_str() }))
+            }
             _ => None,
         };
         ApplicationErrorDto {
@@ -178,6 +192,14 @@ mod tests {
                 },
                 ApplicationErrorCode::WorkspaceRevisionConflict,
             ),
+            (
+                ApplicationError::ActionNotFound(ActionId::new("core.missing")),
+                ApplicationErrorCode::ActionNotFound,
+            ),
+            (
+                ApplicationError::ActionUnavailable(ActionId::new("core.rename")),
+                ApplicationErrorCode::ActionUnavailable,
+            ),
             (ApplicationError::Internal, ApplicationErrorCode::Internal),
         ];
 
@@ -217,6 +239,16 @@ mod tests {
         assert_eq!(details["workspaceId"], workspace_id.to_string());
         assert_eq!(details["expectedRevision"], 14);
         assert_eq!(details["actualRevision"], 16);
+    }
+
+    #[test]
+    fn action_not_found_into_dto_carries_the_action_id_in_details() {
+        let dto = ApplicationError::ActionNotFound(ActionId::new("core.missing"))
+            .into_dto(Uuid::new_v4());
+
+        assert_eq!(dto.code, ApplicationErrorCode::ActionNotFound);
+        let details = dto.details.expect("details must be present");
+        assert_eq!(details["actionId"], "core.missing");
     }
 
     #[test]

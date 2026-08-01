@@ -26,6 +26,10 @@ pub enum ApplicationErrorCode {
     /// A workspace mutation's `expected_revision` no longer matches the
     /// stored revision (spec §5.3.10).
     WorkspaceRevisionConflict,
+    /// No action is registered with the requested id (spec §18).
+    ActionNotFound,
+    /// The action is registered but not currently invokable (spec §18).
+    ActionUnavailable,
     /// An unexpected, unclassified failure occurred.
     Internal,
 }
@@ -107,6 +111,8 @@ mod tests {
             ApplicationErrorCode::ProviderUnavailable,
             ApplicationErrorCode::OperationCancelled,
             ApplicationErrorCode::WorkspaceRevisionConflict,
+            ApplicationErrorCode::ActionNotFound,
+            ApplicationErrorCode::ActionUnavailable,
             ApplicationErrorCode::Internal,
         ] {
             let json = serde_json::to_string(&code).expect("serialization must succeed");
@@ -119,5 +125,19 @@ mod tests {
         let json = serde_json::to_string(&ApplicationErrorCode::WorkspaceRevisionConflict)
             .expect("serialization must succeed");
         assert_eq!(json, "\"workspaceRevisionConflict\"");
+    }
+
+    #[test]
+    fn action_error_codes_serialize_to_the_spec_18_strings() {
+        assert_eq!(
+            serde_json::to_string(&ApplicationErrorCode::ActionNotFound)
+                .expect("serialization must succeed"),
+            "\"actionNotFound\""
+        );
+        assert_eq!(
+            serde_json::to_string(&ApplicationErrorCode::ActionUnavailable)
+                .expect("serialization must succeed"),
+            "\"actionUnavailable\""
+        );
     }
 }

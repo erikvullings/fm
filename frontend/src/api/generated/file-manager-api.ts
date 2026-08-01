@@ -3,6 +3,8 @@
  * Run `pnpm api:generate` (or `pnpm api:check`) to regenerate.
  */
 import type {
+  ActionDescriptorDto,
+  ActionResultDto,
   ApplicationErrorDto,
   CreateWorkspaceRequestDto,
   DeleteWorkspaceParams,
@@ -10,6 +12,7 @@ import type {
   EntryMetadataDto,
   EntryMetadataRequest,
   HealthDto,
+  InvokeActionRequestDto,
   ListDirectoryRequest,
   ListOperationsParams,
   NavigateRequest,
@@ -25,6 +28,90 @@ import type {
 } from './models';
 
 import { fetchMutator } from '../fetch-mutator';
+
+export type listActionsResponse200 = {
+  data: ActionDescriptorDto[]
+  status: 200
+}
+
+export type listActionsResponseSuccess = (listActionsResponse200) & {
+  headers: Headers;
+};
+;
+
+export type listActionsResponse = (listActionsResponseSuccess)
+
+export const getListActionsUrl = () => {
+
+
+
+
+  return `/api/v1/actions`
+}
+
+export const listActions = async ( options?: Parameters<typeof fetchMutator>[1]): Promise<listActionsResponse> => {
+
+  return fetchMutator<listActionsResponse>(getListActionsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+export type invokeActionResponse200 = {
+  data: ActionResultDto
+  status: 200
+}
+
+export type invokeActionResponse400 = {
+  data: ApplicationErrorDto
+  status: 400
+}
+
+export type invokeActionResponse404 = {
+  data: ApplicationErrorDto
+  status: 404
+}
+
+export type invokeActionResponse409 = {
+  data: ApplicationErrorDto
+  status: 409
+}
+
+export type invokeActionResponseSuccess = (invokeActionResponse200) & {
+  headers: Headers;
+};
+export type invokeActionResponseError = (invokeActionResponse400 | invokeActionResponse404 | invokeActionResponse409) & {
+  headers: Headers;
+};
+
+export type invokeActionResponse = (invokeActionResponseSuccess | invokeActionResponseError)
+
+export const getInvokeActionUrl = (actionId: string,) => {
+
+
+
+
+  return `/api/v1/actions/${actionId}/invoke`
+}
+
+export const invokeAction = async (actionId: string,
+    invokeActionRequestDto: InvokeActionRequestDto, options?: Parameters<typeof fetchMutator>[1]): Promise<invokeActionResponse> => {
+
+  return fetchMutator<invokeActionResponse>(getInvokeActionUrl(actionId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(invokeActionRequestDto)
+  }
+);}
+
+
 
 export type listDirectoryResponse200 = {
   data: DirectorySnapshotDto

@@ -148,11 +148,14 @@ export class TauriFileManagerClient implements FileManagerClient {
   }
 
   listActions(_signal?: AbortSignal): Promise<ActionDescriptor[]> {
-    return this.notImplemented('listActions', '0049');
+    return invoke<ActionDescriptor[]>('list_actions');
   }
 
-  invokeAction(_request: InvokeActionRequest, _signal?: AbortSignal): Promise<ActionResult> {
-    return this.notImplemented('invokeAction', '0049');
+  invokeAction(request: InvokeActionRequest, _signal?: AbortSignal): Promise<ActionResult> {
+    return invoke<ActionResult>('invoke_action', {
+      actionId: request.actionId,
+      request: { parameters: request.parameters, context: request.context },
+    });
   }
 
   listPlugins(_signal?: AbortSignal): Promise<PluginDescriptor[]> {
