@@ -93,6 +93,7 @@ function attrs(overrides: Partial<PaneAttrs> = {}): PaneAttrs {
     onSortChange: vi.fn(),
     onNavigate: vi.fn(),
     onRename: vi.fn(),
+    onContextMenu: vi.fn(),
     ...overrides,
   };
 }

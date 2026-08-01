@@ -1,6 +1,6 @@
 # 0052 Context menus and context-sensitive action availability
 
-Status: open
+Status: done
 Priority: medium
 Owner: unassigned
 Agent: unassigned
@@ -28,4 +28,13 @@ same registry) and §33 step 8.
 - Native menus (macOS/Windows menu bar) are task 0059/0060; this is the in-window context menu.
 
 ## Agent Notes
-- Not started.
+- Implemented a pure, shared command-availability evaluator for the command palette, function-key
+  bar, and in-window context menu. The menu supports pointer and keyboard invocation, selected-entry
+  and empty-location composition, disabled unavailable entries, and focus restoration.
+- Added `core.paste` and `core.refresh` to the application registry and aligned the mock registry.
+  Paste and create-directory operations retain the pane/location where the menu was opened; the
+  operation endpoint remains the authoritative backend validation boundary.
+- `Open Terminal Here` is displayed but disabled when the host/runtime reports no terminal support;
+  native terminal integration remains unavailable in the current mock/browser capability set.
+- Verified with `pnpm run lint` and `pnpm test` (including 276 passing frontend tests and one
+  existing skipped test).

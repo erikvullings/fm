@@ -307,6 +307,45 @@ body {
   font: inherit;
 }
 
+.fm-context-menu-backdrop {
+  position: fixed;
+  z-index: 90;
+  inset: 0;
+}
+
+.fm-context-menu {
+  position: fixed;
+  display: grid;
+  min-width: 12rem;
+  max-width: min(20rem, calc(100vw - 1rem));
+  overflow: hidden;
+  border: 1px solid var(--fm-border);
+  border-radius: var(--fm-radius);
+  padding: 0.25rem;
+  background: var(--mm-card-background);
+  box-shadow: var(--fm-shadow);
+}
+
+.fm-context-menu-item {
+  border: 0;
+  border-radius: 2px;
+  padding: 0.45rem 0.75rem;
+  background: transparent;
+  color: var(--fm-text);
+  font: inherit;
+  text-align: left;
+}
+
+.fm-context-menu-item:hover:not(:disabled),
+.fm-context-menu-item:focus-visible {
+  outline: 0;
+  background: var(--mm-dropdown-hover);
+}
+
+.fm-context-menu-item:disabled {
+  color: var(--fm-text-muted);
+}
+
 .fm-operation-centre {
   border-top: 1px solid var(--fm-border);
   color: var(--fm-text-muted);

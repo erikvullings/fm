@@ -2546,7 +2546,15 @@ mod tests {
             .map(|action| action.id)
             .collect();
 
-        for expected in ["core.copy", "core.rename", "core.selectAll", "core.open"] {
+        for expected in [
+            "core.copy",
+            "core.rename",
+            "core.selectAll",
+            "core.open",
+            "core.paste",
+            "core.refresh",
+            "core.openTerminal",
+        ] {
             assert!(ids.iter().any(|id| id == expected), "missing {expected}");
         }
     }

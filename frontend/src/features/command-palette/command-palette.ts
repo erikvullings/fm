@@ -1,6 +1,7 @@
 import m, { type FactoryComponent } from 'mithril';
 
 import type { ActionDescriptor, ActionInvocationContext, KeyChord } from '../../models';
+import { availableActions, type CommandAvailabilityContext } from '../commands/availability';
 
 export interface PaletteAction {
   readonly action: ActionDescriptor;
@@ -13,6 +14,7 @@ export interface CommandPaletteAttrs {
   readonly actions: readonly ActionDescriptor[];
   readonly recency: ReadonlyMap<string, number>;
   readonly context: ActionInvocationContext;
+  readonly availabilityContext: CommandAvailabilityContext;
   readonly onClose: () => void;
   readonly onInvoke: (action: ActionDescriptor, parameters?: unknown) => void;
 }
@@ -52,40 +54,25 @@ function actionScore(action: ActionDescriptor, query: string): number | undefine
     );
 }
 
-function unavailableReason(
-  action: ActionDescriptor,
-  selectedEntryIds: readonly string[],
-): string | undefined {
-  const requirements = action.contextRequirements;
-  if (requirements.featureAvailable === false) return 'Not available yet';
-  if (requirements.requiresSingleSelection && selectedEntryIds.length !== 1) {
-    return 'Select exactly one item';
-  }
-  if (requirements.requiresSelection && selectedEntryIds.length === 0)
-    return 'Select an item first';
-  return undefined;
-}
-
 /** Filters registry actions by fuzzy title/id/category match and orders by match quality then use. */
 export function filterPaletteActions(
   actions: readonly ActionDescriptor[],
   query: string,
   recency: ReadonlyMap<string, number>,
-  selectedEntryIds: readonly string[],
+  context: CommandAvailabilityContext,
 ): readonly PaletteAction[] {
   const normalizedQuery = query.replaceAll(/\s+/gu, '').toLowerCase();
-  return actions
+  return availableActions(actions, context)
     .flatMap((action) => {
-      const score = actionScore(action, normalizedQuery);
+      const score = actionScore(action.action, normalizedQuery);
       if (score === undefined) return [];
-      const reason = unavailableReason(action, selectedEntryIds);
       return [
         {
-          action,
+          action: action.action,
           score,
-          recency: recency.get(action.id) ?? 0,
-          available: reason === undefined,
-          unavailableReason: reason,
+          recency: recency.get(action.action.id) ?? 0,
+          available: action.available,
+          ...(action.reason === undefined ? {} : { unavailableReason: action.reason }),
         },
       ];
     })
@@ -161,7 +148,7 @@ export const CommandPalette: FactoryComponent<CommandPaletteAttrs> = () => {
         attrs.actions,
         query,
         attrs.recency,
-        attrs.context.selectedEntryIds ?? [],
+        attrs.availabilityContext,
       );
       activeIndex = Math.min(activeIndex, Math.max(items.length - 1, 0));
       const active = items[activeIndex];

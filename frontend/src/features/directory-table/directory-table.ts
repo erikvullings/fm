@@ -53,6 +53,7 @@ export interface DirectoryTableAttrs {
   readonly onRenameInput?: (value: string) => void;
   readonly onRenameCancel?: () => void;
   readonly onRenameCommit?: () => void;
+  readonly onContextMenu?: (index: number | undefined, x: number, y: number) => void;
 }
 
 function readRowHeight(element: HTMLElement): number {
@@ -340,6 +341,10 @@ export const DirectoryTable: FactoryComponent<DirectoryTableAttrs> = () => {
                 'aria-selected': selected ? 'true' : 'false',
                 'data-row-stripe': index % 2 === 1 ? 'alternate' : undefined,
                 onclick: () => attrs.onCursorChange?.(index),
+                oncontextmenu: (event: MouseEvent) => {
+                  event.preventDefault();
+                  attrs.onContextMenu?.(index, event.clientX, event.clientY);
+                },
                 ondblclick: () => attrs.onActivate?.(index),
                 class: [
                   entry.hidden ? 'fm-hidden-entry' : '',
@@ -411,6 +416,21 @@ export const DirectoryTable: FactoryComponent<DirectoryTableAttrs> = () => {
             if (target.scrollTop + target.clientHeight >= target.scrollHeight - rowHeight) {
               attrs.onEndReached?.();
             }
+          },
+          oncontextmenu: (event: MouseEvent) => {
+            if (
+              !(event.target instanceof Element) ||
+              event.target.closest('.fm-directory-row') === null
+            ) {
+              event.preventDefault();
+              attrs.onContextMenu?.(undefined, event.clientX, event.clientY);
+            }
+          },
+          onkeydown: (event: KeyboardEvent) => {
+            if (event.key !== 'ContextMenu' && !(event.shiftKey && event.key === 'F10')) return;
+            event.preventDefault();
+            const bounds = (event.currentTarget as HTMLElement).getBoundingClientRect();
+            attrs.onContextMenu?.(attrs.cursorIndex, bounds.left + 12, bounds.top + 12);
           },
         },
         [

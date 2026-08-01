@@ -44,6 +44,7 @@ export interface WorkspacePaneContent {
   readonly onLoadNextPage: () => void | Promise<void>;
   readonly onSortChange: (sort: readonly SortDescriptor[]) => void;
   readonly onRename: (entry: EntrySummary, name: string) => void | Promise<void>;
+  readonly onContextMenu?: (entries: readonly EntrySummary[], x: number, y: number) => void;
 }
 
 /** Inputs for the recursive workspace layout renderer. */
@@ -249,6 +250,7 @@ export const WorkspaceLayoutView: FactoryComponent<WorkspaceLayoutViewAttrs> = (
         onLoadNextPage: content.onLoadNextPage,
         onSortChange: content.onSortChange,
         onRename: content.onRename,
+        onContextMenu: content.onContextMenu ?? (() => undefined),
       }),
     );
   }

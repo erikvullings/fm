@@ -12,6 +12,12 @@ import {
 } from '../features/clipboard/clipboard';
 import { CommandPalette } from '../features/command-palette/command-palette';
 import {
+  type CommandAvailabilityContext,
+  evaluateActionAvailability,
+  menuActionsForContext,
+} from '../features/commands/availability';
+import { ContextMenu as DirectoryContextMenu } from '../features/commands/context-menu';
+import {
   DEFAULT_ENTRY_FORMAT_SETTINGS,
   type EntryFormatSettings,
 } from '../features/entry-formatting/entry-formatting';
@@ -109,8 +115,18 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
   let workspace: WorkspaceProjection | undefined;
   let workspaceError: string | undefined;
   let createDirectoryOpen = false;
+  let createDirectoryLocation: Location | undefined;
   let commandPaletteOpen = false;
   let commandPaletteError: string | undefined;
+  let openTerminalSupported = false;
+  let contextMenu:
+    | {
+        readonly paneId: PaneId;
+        readonly entries: readonly EntrySummary[];
+        readonly x: number;
+        readonly y: number;
+      }
+    | undefined;
   const commandPaletteRecency = new Map<string, number>();
   let pendingCreatedLocation: string | undefined;
   const directories = new Map<PaneId, PaneDirectoryView>();
@@ -246,6 +262,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     try {
       const capabilities = await client.getRuntimeCapabilities(workspaceRequest.signal);
       platform = capabilities.platform;
+      openTerminalSupported = capabilities.openTerminal;
       const summaries = await client.listWorkspaces(workspaceRequest.signal);
       const loaded =
         summaries[0] === undefined
@@ -367,9 +384,39 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     };
   }
 
-  function invokePaletteAction(action: ActionDescriptor, parameters?: unknown): void {
+  function commandAvailabilityContext(
+    selectedEntries?: readonly EntrySummary[],
+    paneId?: PaneId,
+  ): CommandAvailabilityContext {
+    const active = activeDirectory();
+    const effectivePaneId = paneId ?? active?.paneId;
+    const effectiveEntries =
+      selectedEntries ??
+      (effectivePaneId === undefined
+        ? []
+        : (directories
+            .get(effectivePaneId)
+            ?.entries.filter(
+              (entry) =>
+                selections.get(effectivePaneId)?.selectedEntryIds.includes(entry.id) === true,
+            ) ?? []));
+    const directory = effectivePaneId === undefined ? undefined : directories.get(effectivePaneId);
+    return {
+      selectedEntries: effectiveEntries,
+      locationWritable: directory?.writable === true,
+      clipboardHasEntries: clipboard().locations.length > 0,
+      openTerminalSupported,
+    };
+  }
+
+  function invokePaletteAction(
+    action: ActionDescriptor,
+    parameters?: unknown,
+    context = actionContext(),
+  ): void {
     if (action.id === 'core.palette') return;
     if (action.id === 'core.createDirectory') {
+      createDirectoryLocation = undefined;
       createDirectoryOpen = true;
       return;
     }
@@ -377,7 +424,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       .invokeAction({
         actionId: action.id,
         ...(parameters === undefined ? {} : { parameters }),
-        context: actionContext(),
+        context,
       })
       .then(() => {
         commandPaletteRecency.set(action.id, Date.now());
@@ -387,6 +434,61 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
         commandPaletteError = error instanceof Error ? error.message : 'Unable to run command.';
         m.redraw();
       });
+  }
+
+  function openContextMenu(
+    paneId: PaneId,
+    entries: readonly EntrySummary[],
+    x: number,
+    y: number,
+  ): void {
+    contextMenu = { paneId, entries, x, y };
+    m.redraw();
+  }
+
+  function invokeContextMenuAction(actionId: string): void {
+    const menu = contextMenu;
+    if (menu === undefined) return;
+    const action = registeredActions.find((candidate) => candidate.id === actionId);
+    const directory = directories.get(menu.paneId);
+    if (action === undefined || directory === undefined) return;
+    if (
+      !evaluateActionAvailability(action, commandAvailabilityContext(menu.entries, menu.paneId))
+        .available
+    ) {
+      return;
+    }
+    if (action.id === 'core.createDirectory') {
+      createDirectoryLocation = directory.location;
+      createDirectoryOpen = true;
+      return;
+    }
+    if (action.id === 'core.refresh') {
+      void navigation.load(menu.paneId);
+      return;
+    }
+    if (action.id === 'core.paste') {
+      const currentClipboard = clipboard();
+      const mode = currentClipboard.mode;
+      if (mode === undefined || directory.location === undefined) return;
+      void attrsClient
+        .startOperation({
+          type: mode,
+          sources: currentClipboard.locations,
+          destination: directory.location,
+          conflictPolicy: 'ask',
+        })
+        .then(() => {
+          if (mode === 'move') replaceClipboard(clearClipboard(currentClipboard));
+          m.redraw();
+        });
+      return;
+    }
+    invokePaletteAction(action, undefined, {
+      paneId: menu.paneId,
+      selectedEntryIds: menu.entries.map((entry) => entry.id),
+      ...(menu.entries[0] === undefined ? {} : { cursorEntryId: menu.entries[0].id }),
+    });
   }
 
   function isEditableTarget(target: EventTarget | null): boolean {
@@ -729,6 +831,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
           conflictPolicy: 'ask',
         });
       },
+      onContextMenu: (entries, x, y) => openContextMenu(paneId, entries, x, y),
     };
   }
 
@@ -926,10 +1029,27 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
           actions: registeredActions,
           recency: commandPaletteRecency,
           context: actionContext(),
+          availabilityContext: commandAvailabilityContext(),
           onClose: () => {
             commandPaletteOpen = false;
           },
           onInvoke: invokePaletteAction,
+        }),
+        m(DirectoryContextMenu, {
+          open: contextMenu !== undefined,
+          x: contextMenu?.x ?? 0,
+          y: contextMenu?.y ?? 0,
+          actions:
+            contextMenu === undefined
+              ? []
+              : menuActionsForContext(
+                  registeredActions,
+                  commandAvailabilityContext(contextMenu.entries, contextMenu.paneId),
+                ),
+          onClose: () => {
+            contextMenu = undefined;
+          },
+          onInvoke: invokeContextMenuAction,
         }),
         m(OperationCentre, {
           state: operations,
@@ -953,17 +1073,19 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
           open: createDirectoryOpen,
           onCancel: () => {
             createDirectoryOpen = false;
+            createDirectoryLocation = undefined;
           },
           onConfirm: (name: string) => {
-            const active = activeDirectory();
-            if (active === undefined) return;
+            const location = createDirectoryLocation ?? activeDirectory()?.location;
+            if (location === undefined) return;
             createDirectoryOpen = false;
-            pendingCreatedLocation = `${active.location.uri.replace(/\/$/u, '')}/${encodeURIComponent(name)}`;
+            createDirectoryLocation = undefined;
+            pendingCreatedLocation = `${location.uri.replace(/\/$/u, '')}/${encodeURIComponent(name)}`;
             void attrs.client
               .startOperation({
                 type: 'createDirectory',
                 sources: [],
-                destination: active.location,
+                destination: location,
                 conflictPolicy: 'ask',
                 name,
                 createIntermediateDirectories: false,
@@ -1017,12 +1139,17 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
             runtime: attrs.runtime === 'http' ? 'browser' : 'desktop',
           })
             .filter((binding) => /^F(?:2|5|6|7|8)$/u.test(binding.shortcut))
-            .map((binding) =>
-              m(
-                'span',
-                `${binding.shortcut} ${registeredActions.find((action) => action.id === binding.actionId)?.title ?? binding.actionId}`,
-              ),
-            ),
+            .flatMap((binding) => {
+              const action = registeredActions.find(
+                (candidate) => candidate.id === binding.actionId,
+              );
+              if (
+                action === undefined ||
+                !evaluateActionAvailability(action, commandAvailabilityContext()).available
+              )
+                return [];
+              return [m('span', `${binding.shortcut} ${action.title}`)];
+            }),
         ),
       ]);
     },

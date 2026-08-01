@@ -30,15 +30,22 @@ const actions: readonly ActionDescriptor[] = [
   },
 ];
 
+const availabilityContext = {
+  selectedEntries: [],
+  locationWritable: true,
+  clipboardHasEntries: false,
+  openTerminalSupported: false,
+};
+
 describe('command palette filtering', () => {
   it('fuzzy-matches titles, ids, and categories', () => {
-    expect(filterPaletteActions(actions, 'nfd', new Map(), [])).toMatchObject([
+    expect(filterPaletteActions(actions, 'nfd', new Map(), availabilityContext)).toMatchObject([
       { action: { id: 'core.createDirectory' }, available: true },
     ]);
-    expect(filterPaletteActions(actions, 'copy path', new Map(), [])).toMatchObject([
-      { action: { id: 'core.copyPath' } },
-    ]);
-    expect(filterPaletteActions(actions, 'file op', new Map(), [])).toMatchObject([
+    expect(
+      filterPaletteActions(actions, 'copy path', new Map(), availabilityContext),
+    ).toMatchObject([{ action: { id: 'core.copyPath' } }]);
+    expect(filterPaletteActions(actions, 'file op', new Map(), availabilityContext)).toMatchObject([
       { action: { id: 'core.createDirectory' } },
     ]);
   });
@@ -46,14 +53,20 @@ describe('command palette filtering', () => {
   it('ranks stronger fuzzy matches before recently used weaker matches', () => {
     const recent = new Map([['core.copyPath', 200]]);
 
-    expect(filterPaletteActions(actions, 'op', recent, []).map(({ action }) => action.id)).toEqual([
-      'core.copyPath',
-      'core.createDirectory',
-    ]);
+    expect(
+      filterPaletteActions(actions, 'op', recent, availabilityContext).map(
+        ({ action }) => action.id,
+      ),
+    ).toEqual(['core.copyPath', 'core.createDirectory']);
   });
 
   it('uses recency as a tie-breaker and never makes unavailable actions invocable', () => {
-    const results = filterPaletteActions(actions, '', new Map([['core.copyPath', 100]]), []);
+    const results = filterPaletteActions(
+      actions,
+      '',
+      new Map([['core.copyPath', 100]]),
+      availabilityContext,
+    );
 
     expect(results.map(({ action }) => action.id)).toEqual([
       'core.copyPath',
@@ -79,6 +92,8 @@ describe('command palette filtering', () => {
       }),
     );
 
-    expect(filterPaletteActions(manyActions, 'cmd', new Map(), [])).toHaveLength(400);
+    expect(filterPaletteActions(manyActions, 'cmd', new Map(), availabilityContext)).toHaveLength(
+      400,
+    );
   });
 });

@@ -178,6 +178,26 @@ describe('DirectoryTable rows', () => {
     expect(onActivate).toHaveBeenCalledWith(0);
   });
 
+  it('reports pointer and keyboard context-menu requests for the current row', () => {
+    const onContextMenu = vi.fn();
+    mount({
+      state: { type: 'loaded' },
+      source: entryArraySource([entry()]),
+      cursorIndex: 0,
+      onContextMenu,
+    });
+
+    root
+      .querySelector<HTMLElement>('.fm-directory-row')
+      ?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 40, clientY: 50 }));
+    root
+      .querySelector<HTMLElement>('[role="grid"]')
+      ?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ContextMenu', bubbles: true }));
+
+    expect(onContextMenu.mock.calls[0]).toEqual([0, 40, 50]);
+    expect(onContextMenu.mock.calls[1]?.[0]).toBe(0);
+  });
+
   it('fills its container when no explicit viewport height is supplied', () => {
     mount({ state: { type: 'loaded' }, source: entryArraySource([entry()]) });
 

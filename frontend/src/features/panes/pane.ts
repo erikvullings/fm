@@ -62,6 +62,7 @@ export interface PaneAttrs {
   readonly onLoadNextPage: () => void | Promise<void>;
   readonly onSortChange: (sort: readonly SortDescriptor[]) => void;
   readonly onRename: (entry: EntrySummary, name: string) => void | Promise<void>;
+  readonly onContextMenu: (entries: readonly EntrySummary[], x: number, y: number) => void;
 }
 
 function isEditableTarget(target: EventTarget | null): boolean {
@@ -556,6 +557,25 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
               if (entry !== undefined) {
                 void attrs.onOpenEntry(entry);
               }
+            },
+            onContextMenu: (index, x, y) => {
+              const target = index === undefined ? undefined : attrs.entries[index];
+              if (
+                target !== undefined &&
+                !isParentEntry(target.id) &&
+                !attrs.selectedEntryIds.has(target.id)
+              ) {
+                attrs.onSelectionAction({ type: 'selectOnly', entryId: target.id });
+                attrs.onContextMenu([target], x, y);
+                return;
+              }
+              attrs.onContextMenu(
+                attrs.entries.filter(
+                  (entry) => !isParentEntry(entry.id) && attrs.selectedEntryIds.has(entry.id),
+                ),
+                x,
+                y,
+              );
             },
             onSortChange: attrs.onSortChange,
             ...(attrs.cursorIndex === undefined ? {} : { cursorIndex: attrs.cursorIndex }),

@@ -202,6 +202,20 @@ fn core_actions() -> Vec<ActionDescriptor> {
             ActionContextRequirements::none(),
         ),
         core_action(
+            "core.paste",
+            "Paste",
+            "fileOperations",
+            Vec::new(),
+            ActionContextRequirements::none(),
+        ),
+        core_action(
+            "core.refresh",
+            "Refresh",
+            "navigation",
+            vec![primary("r")],
+            ActionContextRequirements::none(),
+        ),
+        core_action(
             "core.palette",
             "Command Palette",
             "navigation",
