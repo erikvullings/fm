@@ -6,7 +6,9 @@ import type {
   EntrySummary,
   LoadingState,
   PaneId,
+  PaneProjection,
   SortDescriptor,
+  TabId,
   WorkspaceLayout,
   WorkspaceProjection,
 } from '../../models';
@@ -63,6 +65,9 @@ export interface WorkspaceLayoutViewAttrs {
   readonly paneContent: (paneId: PaneId) => WorkspacePaneContent;
   readonly onActivatePane: (paneId: PaneId) => void;
   readonly onUpdateLayout: (layout: WorkspaceLayout) => void;
+  readonly onSelectTab: (paneId: PaneId, tabId: TabId) => void;
+  readonly onCloseTab: (paneId: PaneId, tabId: TabId) => void;
+  readonly onNewTab: (paneId: PaneId) => void;
 }
 
 /** Clamps a horizontal split so both children retain a usable minimum width. */
@@ -103,6 +108,22 @@ export const WorkspaceLayoutView: FactoryComponent<WorkspaceLayoutViewAttrs> = (
   let sourceLayout: WorkspaceLayout | undefined;
   let persistenceTimer: ReturnType<typeof setTimeout> | undefined;
   let stopDragging: (() => void) | undefined;
+  /** Frontend-only tab order overrides for drag-reorder; no backend command persists this. */
+  const tabOrderOverrides = new Map<PaneId, readonly TabId[]>();
+
+  /** Resolves the override for a pane's tab order, discarding it if the tab set has changed. */
+  function resolvedTabOrder(pane: PaneProjection): readonly TabId[] {
+    const override = tabOrderOverrides.get(pane.id);
+    if (
+      override !== undefined &&
+      override.length === pane.tabOrder.length &&
+      override.every((id) => pane.tabOrder.includes(id))
+    ) {
+      return override;
+    }
+    tabOrderOverrides.delete(pane.id);
+    return pane.tabOrder;
+  }
 
   function replaceSplit(
     layout: WorkspaceLayout,
@@ -230,6 +251,22 @@ export const WorkspaceLayoutView: FactoryComponent<WorkspaceLayoutViewAttrs> = (
       m(Pane, {
         path: pathFromUri(tab.location.uri),
         tabTitle: tab.title,
+        tabs: resolvedTabOrder(pane).map((tabId) => {
+          const paneTab = pane.tabsById[tabId];
+          return {
+            id: tabId,
+            title: paneTab?.title ?? '',
+            path: paneTab === undefined ? '' : pathFromUri(paneTab.location.uri),
+          };
+        }),
+        activeTabId: pane.activeTabId,
+        onSelectTab: (tabId) => attrs.onSelectTab(paneId, tabId),
+        onCloseTab: (tabId) => attrs.onCloseTab(paneId, tabId),
+        onNewTab: () => attrs.onNewTab(paneId),
+        onReorderTabs: (order) => {
+          tabOrderOverrides.set(paneId, order);
+          m.redraw();
+        },
         state: content.state,
         entries: content.entries,
         selectedEntryIds: content.selectedEntryIds,

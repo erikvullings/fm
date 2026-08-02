@@ -833,3 +833,194 @@ describe('AppShell', () => {
     expect(reopenedPane?.querySelectorAll('.fm-directory-row')).toHaveLength(2);
   });
 });
+
+describe('tabs per pane (task 0069)', () => {
+  function activePane(): HTMLElement | null {
+    return root.querySelector<HTMLElement>('[data-active="true"] > .fm-pane');
+  }
+
+  function closeLastTabDialog(): HTMLElement | undefined {
+    return [...root.querySelectorAll<HTMLElement>('[role="dialog"]')].find((dialog) =>
+      dialog.textContent?.includes('only tab'),
+    );
+  }
+
+  it('opens a new tab in the active pane at its current location with Ctrl+T', async () => {
+    const client = new MockFileManagerClient();
+    const dispatchWorkspaceCommand = vi.spyOn(client, 'dispatchWorkspaceCommand');
+    m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
+    await vi.waitFor(() => expect(root.textContent).toContain('Documents'));
+    expect(activePane()?.querySelectorAll('[role="tab"]')).toHaveLength(1);
+
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 't', ctrlKey: true, bubbles: true }),
+    );
+
+    await vi.waitFor(() => expect(dispatchWorkspaceCommand).toHaveBeenCalledOnce());
+    expect(dispatchWorkspaceCommand.mock.calls[0]?.[0]).toMatchObject({
+      type: 'addTab',
+      paneId: 'left',
+      location: { uri: 'mock:///' },
+    });
+    await vi.waitFor(() => expect(activePane()?.querySelectorAll('[role="tab"]')).toHaveLength(2));
+  });
+
+  it('closes the active tab with Ctrl+W directly when another tab remains', async () => {
+    const client = new MockFileManagerClient();
+    m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
+    await vi.waitFor(() => expect(root.textContent).toContain('Documents'));
+
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 't', ctrlKey: true, bubbles: true }),
+    );
+    await vi.waitFor(() => expect(activePane()?.querySelectorAll('[role="tab"]')).toHaveLength(2));
+
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'w', ctrlKey: true, bubbles: true }),
+    );
+
+    await vi.waitFor(() => expect(activePane()?.querySelectorAll('[role="tab"]')).toHaveLength(1));
+    expect(closeLastTabDialog()?.getAttribute('aria-hidden')).toBe('true');
+  });
+
+  it('gates closing a pane down to zero tabs behind confirmation with Ctrl+W', async () => {
+    const client = new MockFileManagerClient();
+    const dispatchWorkspaceCommand = vi.spyOn(client, 'dispatchWorkspaceCommand');
+    m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
+    await vi.waitFor(() => expect(root.textContent).toContain('Documents'));
+    expect(activePane()?.querySelectorAll('[role="tab"]')).toHaveLength(1);
+
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'w', ctrlKey: true, bubbles: true }),
+    );
+    m.redraw.sync();
+
+    expect(closeLastTabDialog()?.getAttribute('aria-hidden')).toBe('false');
+    expect(dispatchWorkspaceCommand).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'closeTab' }),
+      undefined,
+    );
+
+    [...(closeLastTabDialog()?.querySelectorAll('button') ?? [])]
+      .find((button) => button.textContent === 'Close tab')
+      ?.click();
+
+    await vi.waitFor(() =>
+      expect(dispatchWorkspaceCommand).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'closeTab', paneId: 'left' }),
+        undefined,
+      ),
+    );
+  });
+
+  it('cancelling the close-last-tab dialog leaves the tab open', async () => {
+    const client = new MockFileManagerClient();
+    const dispatchWorkspaceCommand = vi.spyOn(client, 'dispatchWorkspaceCommand');
+    m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
+    await vi.waitFor(() => expect(root.textContent).toContain('Documents'));
+
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'w', ctrlKey: true, bubbles: true }),
+    );
+    m.redraw.sync();
+    [...(closeLastTabDialog()?.querySelectorAll('button') ?? [])]
+      .find((button) => button.textContent === 'Cancel')
+      ?.click();
+    m.redraw.sync();
+
+    expect(closeLastTabDialog()?.getAttribute('aria-hidden')).toBe('true');
+    expect(dispatchWorkspaceCommand).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'closeTab' }),
+      undefined,
+    );
+  });
+
+  it('cycles tabs with Ctrl+Tab / Ctrl+Shift+Tab and jumps to a tab with Ctrl+2', async () => {
+    const client = new MockFileManagerClient();
+    const dispatchWorkspaceCommand = vi.spyOn(client, 'dispatchWorkspaceCommand');
+    m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
+    await vi.waitFor(() => expect(root.textContent).toContain('Documents'));
+
+    function selectedTabIndex(): number {
+      return [...(activePane()?.querySelectorAll<HTMLElement>('[role="tab"]') ?? [])].findIndex(
+        (tab) => tab.getAttribute('aria-selected') === 'true',
+      );
+    }
+
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 't', ctrlKey: true, bubbles: true }),
+    );
+    await vi.waitFor(() => expect(activePane()?.querySelectorAll('[role="tab"]')).toHaveLength(2));
+    await vi.waitFor(() => expect(selectedTabIndex()).toBe(1));
+    dispatchWorkspaceCommand.mockClear();
+
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Tab', ctrlKey: true, bubbles: true }),
+    );
+    await vi.waitFor(() =>
+      expect(dispatchWorkspaceCommand).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'activateTab', paneId: 'left' }),
+        undefined,
+      ),
+    );
+    await vi.waitFor(() => expect(selectedTabIndex()).toBe(0));
+
+    dispatchWorkspaceCommand.mockClear();
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Tab', ctrlKey: true, shiftKey: true, bubbles: true }),
+    );
+    await vi.waitFor(() =>
+      expect(dispatchWorkspaceCommand).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'activateTab', paneId: 'left' }),
+        undefined,
+      ),
+    );
+    await vi.waitFor(() => expect(selectedTabIndex()).toBe(1));
+
+    dispatchWorkspaceCommand.mockClear();
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: '1', ctrlKey: true, bubbles: true }),
+    );
+    await vi.waitFor(() =>
+      expect(dispatchWorkspaceCommand).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'activateTab', paneId: 'left' }),
+        undefined,
+      ),
+    );
+    await vi.waitFor(() => expect(selectedTabIndex()).toBe(0));
+  });
+
+  it('reopens the most recently closed tab with Ctrl+Shift+T', async () => {
+    const client = new MockFileManagerClient();
+    const dispatchWorkspaceCommand = vi.spyOn(client, 'dispatchWorkspaceCommand');
+    m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
+    await vi.waitFor(() => expect(root.textContent).toContain('Documents'));
+
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 't', ctrlKey: true, bubbles: true }),
+    );
+    await vi.waitFor(() => expect(activePane()?.querySelectorAll('[role="tab"]')).toHaveLength(2));
+
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'w', ctrlKey: true, bubbles: true }),
+    );
+    await vi.waitFor(() => expect(activePane()?.querySelectorAll('[role="tab"]')).toHaveLength(1));
+    dispatchWorkspaceCommand.mockClear();
+
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 't', ctrlKey: true, shiftKey: true, bubbles: true }),
+    );
+
+    await vi.waitFor(() =>
+      expect(dispatchWorkspaceCommand).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'addTab',
+          paneId: 'left',
+          location: { providerId: 'file', uri: 'mock:///' },
+        }),
+        undefined,
+      ),
+    );
+    await vi.waitFor(() => expect(activePane()?.querySelectorAll('[role="tab"]')).toHaveLength(2));
+  });
+});

@@ -21,7 +21,7 @@ export interface BindingConflict {
   readonly actionIds: readonly ActionId[];
 }
 
-const BROWSER_RESERVED = new Set(['CTRL+P', 'CTRL+W']);
+const BROWSER_RESERVED = new Set(['CTRL+P', 'CTRL+W', 'CTRL+T']);
 
 function chordFromText(value: string): KeyChord | undefined {
   const parts = value

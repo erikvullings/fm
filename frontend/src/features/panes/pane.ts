@@ -7,6 +7,7 @@ import type {
   EntrySummary,
   LoadingState,
   SortDescriptor,
+  TabId,
 } from '../../models';
 import {
   type DirectoryColumnDescriptor,
@@ -29,6 +30,7 @@ import {
 } from '../selection/keybindings';
 import type { SelectionAction } from '../selection/selection';
 import { isParentEntry } from './parent-entry';
+import { reorderedTabIds } from './tab-navigation';
 import './pane.css';
 
 /** A cumulative, clickable part of a filesystem path. */
@@ -37,10 +39,24 @@ export interface BreadcrumbSegment {
   readonly path: string;
 }
 
+/** One entry in a pane's tab strip (spec §37). */
+export interface PaneTab {
+  readonly id: TabId;
+  readonly title: string;
+  /** Full path shown as the tab's tooltip. */
+  readonly path: string;
+}
+
 /** Inputs for the presentation-only pane surface. */
 export interface PaneAttrs {
   readonly path: string;
   readonly tabTitle: string;
+  readonly tabs: readonly PaneTab[];
+  readonly activeTabId: TabId;
+  readonly onSelectTab: (tabId: TabId) => void;
+  readonly onCloseTab: (tabId: TabId) => void;
+  readonly onNewTab: () => void;
+  readonly onReorderTabs: (order: readonly TabId[]) => void;
   readonly state: LoadingState;
   readonly entries: readonly EntrySummary[];
   readonly sortLabel: string;
@@ -175,6 +191,7 @@ function sizeLabel(bytes: number): string {
 export const Pane: FactoryComponent<PaneAttrs> = () => {
   let editing = false;
   let draftPath = '';
+  let draggedTabId: TabId | undefined;
   let pathError: string | undefined;
   let inputElement: HTMLInputElement | undefined;
   let typeahead: TypeaheadState | undefined;
@@ -474,15 +491,80 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
         },
         [
           m('.fm-pane-tabs', { role: 'tablist', 'aria-label': 'Pane tabs' }, [
+            ...attrs.tabs.map((tab) =>
+              m(
+                '.fm-pane-tab',
+                {
+                  key: tab.id,
+                  role: 'tab',
+                  tabindex: 0,
+                  draggable: true,
+                  title: tab.path,
+                  'aria-selected': tab.id === attrs.activeTabId ? 'true' : 'false',
+                  onclick: () => attrs.onSelectTab(tab.id),
+                  onkeydown: (event: KeyboardEvent) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault();
+                      attrs.onSelectTab(tab.id);
+                    }
+                  },
+                  ondragstart: (event: DragEvent) => {
+                    draggedTabId = tab.id;
+                    event.dataTransfer?.setData('text/plain', tab.id);
+                  },
+                  ondragover: (event: DragEvent) => {
+                    event.preventDefault();
+                  },
+                  ondrop: (event: DragEvent) => {
+                    event.preventDefault();
+                    const sourceId =
+                      draggedTabId ?? (event.dataTransfer?.getData('text/plain') as TabId | '');
+                    draggedTabId = undefined;
+                    if (sourceId !== undefined && sourceId !== '' && sourceId !== tab.id) {
+                      attrs.onReorderTabs(
+                        reorderedTabIds(
+                          attrs.tabs.map((candidate) => candidate.id),
+                          sourceId,
+                          tab.id,
+                        ),
+                      );
+                    }
+                  },
+                  ondragend: () => {
+                    draggedTabId = undefined;
+                  },
+                },
+                [
+                  m('span.fm-pane-tab-title', tab.title),
+                  m(
+                    'button.fm-pane-tab-close',
+                    {
+                      type: 'button',
+                      'aria-label': `Close ${tab.title}`,
+                      onclick: (event: MouseEvent) => {
+                        event.stopPropagation();
+                        attrs.onCloseTab(tab.id);
+                      },
+                    },
+                    '×',
+                  ),
+                ],
+              ),
+            ),
             m(
-              'button.fm-pane-tab',
-              { type: 'button', role: 'tab', 'aria-selected': 'true' },
-              attrs.tabTitle,
+              'button.fm-pane-tab-new',
+              {
+                key: '__new-tab__',
+                type: 'button',
+                'aria-label': 'New tab',
+                onclick: () => attrs.onNewTab(),
+              },
+              '+',
             ),
           ]),
           editing
             ? m('.fm-path-editor', [
-                m('input.fm-path-input', {
+                m('input[type=text].fm-path-input', {
                   value: draftPath,
                   'aria-label': 'Path',
                   'aria-invalid': pathError === undefined ? undefined : 'true',

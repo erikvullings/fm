@@ -25,6 +25,14 @@ const actions: readonly ActionDescriptor[] = [
     contextRequirements: {},
     source: { kind: 'core' },
   },
+  {
+    id: 'core.newTab',
+    title: 'New tab',
+    category: 'navigation',
+    defaultShortcuts: [{ key: 't', ctrl: true }],
+    contextRequirements: {},
+    source: { kind: 'core' },
+  },
 ];
 
 const table: KeybindingContext = { scope: 'table', platform: 'windows', runtime: 'desktop' };
@@ -93,6 +101,18 @@ describe('keybinding dispatcher', () => {
     ).toBe(false);
     expect(
       getLiveBindings(actions, {}, table).find((binding) => binding.actionId === 'core.palette')
+        ?.available,
+    ).toBe(true);
+  });
+
+  it('reserves Ctrl+T for the browser tab shortcut too (task 0069 core.newTab)', () => {
+    expect(
+      getLiveBindings(actions, {}, { ...table, runtime: 'browser' }).find(
+        (binding) => binding.actionId === 'core.newTab',
+      )?.available,
+    ).toBe(false);
+    expect(
+      getLiveBindings(actions, {}, table).find((binding) => binding.actionId === 'core.newTab')
         ?.available,
     ).toBe(true);
   });

@@ -6,6 +6,7 @@ import type {
   LoadingState,
   Location,
   PaneId,
+  TabId,
   WorkspaceCommand,
   WorkspaceProjection,
 } from '../../models';
@@ -33,7 +34,7 @@ export interface NavigationControllerOptions {
   readonly client: NavigationClient;
   readonly getWorkspace: () => WorkspaceProjection | undefined;
   readonly replaceWorkspace: (workspace: WorkspaceProjection) => void;
-  readonly updatePane: (paneId: PaneId, view: PaneDirectoryView) => void;
+  readonly updatePane: (paneId: PaneId, tabId: TabId, view: PaneDirectoryView) => void;
 }
 
 /** Public navigation operations consumed by pane and workspace input handlers. */
@@ -45,6 +46,8 @@ export interface NavigationController {
   forward(paneId: PaneId): Promise<void>;
   retry(paneId: PaneId): Promise<void>;
   loadNextPage(paneId: PaneId): Promise<void>;
+  /** Cancels a specific tab's in-flight request, e.g. because it just became hidden. */
+  abort(paneId: PaneId, tabId: TabId): void;
   dispose(): void;
 }
 
@@ -79,38 +82,46 @@ export function parentLocation(location: Location): Location {
   }
 }
 
-/** Coordinates workspace history and cancellable directory requests per pane. */
+/** Isolates cancellable requests and cached views per tab, not merely per pane. */
+function tabKey(paneId: PaneId, tabId: TabId): string {
+  return `${paneId}:${tabId}`;
+}
+
+/** Coordinates workspace history and cancellable directory requests per (pane, tab). */
 export function createNavigationController(
   options: NavigationControllerOptions,
 ): NavigationController {
-  const activeRequests = new Map<PaneId, ActiveRequest>();
-  const paneViews = new Map<PaneId, PaneDirectoryView>();
+  const activeRequests = new Map<string, ActiveRequest>();
+  const paneViews = new Map<string, PaneDirectoryView>();
 
-  function begin(paneId: PaneId): ActiveRequest {
-    activeRequests.get(paneId)?.controller.abort();
+  function begin(paneId: PaneId, tabId: TabId): ActiveRequest {
+    const key = tabKey(paneId, tabId);
+    activeRequests.get(key)?.controller.abort();
     const request = {
       id: crypto.randomUUID(),
       controller: new AbortController(),
     };
-    activeRequests.set(paneId, request);
+    activeRequests.set(key, request);
     return request;
   }
 
-  function isCurrent(paneId: PaneId, request: ActiveRequest): boolean {
-    return activeRequests.get(paneId)?.id === request.id && !request.controller.signal.aborted;
+  function isCurrent(paneId: PaneId, tabId: TabId, request: ActiveRequest): boolean {
+    const key = tabKey(paneId, tabId);
+    return activeRequests.get(key)?.id === request.id && !request.controller.signal.aborted;
   }
 
-  function publish(paneId: PaneId, view: PaneDirectoryView): void {
-    paneViews.set(paneId, view);
-    options.updatePane(paneId, view);
+  function publish(paneId: PaneId, tabId: TabId, view: PaneDirectoryView): void {
+    paneViews.set(tabKey(paneId, tabId), view);
+    options.updatePane(paneId, tabId, view);
   }
 
   function loadingView(
     paneId: PaneId,
+    tabId: TabId,
     request: ActiveRequest,
     fallbackLocation: Location,
   ): PaneDirectoryView {
-    const current = paneViews.get(paneId);
+    const current = paneViews.get(tabKey(paneId, tabId));
     return {
       state: { type: 'loading' },
       entries: current?.entries ?? [],
@@ -165,19 +176,19 @@ export function createNavigationController(
     if (workspace === undefined || tab === undefined) {
       return;
     }
-    const request = begin(paneId);
-    publish(paneId, loadingView(paneId, request, tab.location));
+    const request = begin(paneId, tab.id);
+    publish(paneId, tab.id, loadingView(paneId, tab.id, request, tab.location));
     try {
       const snapshot = await options.client.listDirectory(
         requestFor(workspace, paneId, request.id, tab.location),
         request.controller.signal,
       );
-      if (isCurrent(paneId, request) && snapshot.requestId === request.id) {
-        publish(paneId, viewFromSnapshot(snapshot));
+      if (isCurrent(paneId, tab.id, request) && snapshot.requestId === request.id) {
+        publish(paneId, tab.id, viewFromSnapshot(snapshot));
       }
     } catch (error: unknown) {
-      if (isCurrent(paneId, request)) {
-        publish(paneId, {
+      if (isCurrent(paneId, tab.id, request)) {
+        publish(paneId, tab.id, {
           state: { type: 'error', message: errorMessage(error) },
           entries: [],
           location: tab.location,
@@ -205,8 +216,8 @@ export function createNavigationController(
     ) {
       return;
     }
-    const request = begin(paneId);
-    publish(paneId, loadingView(paneId, request, location ?? tab.location));
+    const request = begin(paneId, tab.id);
+    publish(paneId, tab.id, loadingView(paneId, tab.id, request, location ?? tab.location));
     const command: WorkspaceCommand = {
       type: 'navigateTab',
       workspaceId: workspace.id,
@@ -221,7 +232,7 @@ export function createNavigationController(
         command,
         request.controller.signal,
       );
-      if (!isCurrent(paneId, request)) {
+      if (!isCurrent(paneId, tab.id, request)) {
         return;
       }
       options.replaceWorkspace(updated);
@@ -238,12 +249,12 @@ export function createNavigationController(
         },
         request.controller.signal,
       );
-      if (isCurrent(paneId, request) && snapshot.requestId === request.id) {
-        publish(paneId, viewFromSnapshot(snapshot));
+      if (isCurrent(paneId, tab.id, request) && snapshot.requestId === request.id) {
+        publish(paneId, tab.id, viewFromSnapshot(snapshot));
       }
     } catch (error: unknown) {
-      if (isCurrent(paneId, request)) {
-        publish(paneId, {
+      if (isCurrent(paneId, tab.id, request)) {
+        publish(paneId, tab.id, {
           state: { type: 'error', message: errorMessage(error) },
           entries: [],
           location: location ?? tab.location,
@@ -273,33 +284,42 @@ export function createNavigationController(
     retry: load,
     loadNextPage: async (paneId) => {
       const workspace = options.getWorkspace();
-      const current = paneViews.get(paneId);
+      const tab = workspace === undefined ? undefined : activeTab(workspace, paneId);
+      const current = tab === undefined ? undefined : paneViews.get(tabKey(paneId, tab.id));
       if (
         workspace === undefined ||
+        tab === undefined ||
         current?.location === undefined ||
         !current.hasMore ||
         current.continuationToken === undefined
       ) {
         return;
       }
-      const request = begin(paneId);
+      const request = begin(paneId, tab.id);
       try {
         const snapshot = await options.client.listDirectory(
           requestFor(workspace, paneId, request.id, current.location, current.continuationToken),
           request.controller.signal,
         );
-        if (isCurrent(paneId, request) && snapshot.requestId === request.id) {
-          publish(paneId, viewFromSnapshot(snapshot, [...current.entries, ...snapshot.entries]));
+        if (isCurrent(paneId, tab.id, request) && snapshot.requestId === request.id) {
+          publish(
+            paneId,
+            tab.id,
+            viewFromSnapshot(snapshot, [...current.entries, ...snapshot.entries]),
+          );
         }
       } catch (error: unknown) {
-        if (isCurrent(paneId, request)) {
-          publish(paneId, {
+        if (isCurrent(paneId, tab.id, request)) {
+          publish(paneId, tab.id, {
             ...current,
             state: { type: 'error', message: errorMessage(error) },
             requestId: request.id,
           });
         }
       }
+    },
+    abort: (paneId, tabId) => {
+      activeRequests.get(tabKey(paneId, tabId))?.controller.abort();
     },
     dispose: () => {
       for (const request of activeRequests.values()) {

@@ -1,8 +1,8 @@
 import m from 'mithril';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { ActionDescriptor, EntryId, EntrySummary } from '../../models';
-import { breadcrumbSegments, Pane, type PaneAttrs } from './pane';
+import type { ActionDescriptor, EntryId, EntrySummary, TabId } from '../../models';
+import { breadcrumbSegments, Pane, type PaneAttrs, type PaneTab } from './pane';
 
 let root: HTMLElement;
 
@@ -65,10 +65,20 @@ const keybindingActions = [
   }),
 );
 
+const defaultTabs: readonly PaneTab[] = [
+  { id: 'tab-1' as TabId, title: 'erik', path: '/home/erik' },
+];
+
 function attrs(overrides: Partial<PaneAttrs> = {}): PaneAttrs {
   return {
     path: '/home/erik',
     tabTitle: 'erik',
+    tabs: defaultTabs,
+    activeTabId: 'tab-1' as TabId,
+    onSelectTab: vi.fn(),
+    onCloseTab: vi.fn(),
+    onNewTab: vi.fn(),
+    onReorderTabs: vi.fn(),
     state: { type: 'loaded' },
     entries,
     sortLabel: 'Name ascending',
@@ -607,5 +617,57 @@ describe('Pane navigation input', () => {
 
     expect(onBack).toHaveBeenCalledTimes(2);
     expect(onForward).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('Pane tab strip', () => {
+  const tabs: readonly PaneTab[] = [
+    { id: 'tab-1' as TabId, title: 'erik', path: '/home/erik' },
+    { id: 'tab-2' as TabId, title: 'downloads', path: '/home/erik/downloads' },
+  ];
+
+  it('renders every tab, marking only the active one selected', () => {
+    mount(attrs({ tabs, activeTabId: 'tab-2' as TabId }));
+
+    const tabElements = root.querySelectorAll<HTMLElement>('[role="tab"]');
+    expect(tabElements).toHaveLength(2);
+    expect(tabElements[0]?.getAttribute('aria-selected')).toBe('false');
+    expect(tabElements[1]?.getAttribute('aria-selected')).toBe('true');
+    expect(tabElements[0]?.textContent).toContain('erik');
+  });
+
+  it('selects a tab on click and creates a new tab from the trailing button', () => {
+    const onSelectTab = vi.fn();
+    const onNewTab = vi.fn();
+    mount(attrs({ tabs, activeTabId: 'tab-1' as TabId, onSelectTab, onNewTab }));
+
+    root.querySelectorAll<HTMLElement>('[role="tab"]')[1]?.click();
+    expect(onSelectTab).toHaveBeenCalledWith('tab-2');
+
+    root.querySelector<HTMLElement>('.fm-pane-tab-new')?.click();
+    expect(onNewTab).toHaveBeenCalledOnce();
+  });
+
+  it('closes a tab from its close button without also selecting it', () => {
+    const onSelectTab = vi.fn();
+    const onCloseTab = vi.fn();
+    mount(attrs({ tabs, activeTabId: 'tab-1' as TabId, onSelectTab, onCloseTab }));
+
+    root.querySelectorAll<HTMLElement>('.fm-pane-tab-close')[1]?.click();
+
+    expect(onCloseTab).toHaveBeenCalledWith('tab-2');
+    expect(onSelectTab).not.toHaveBeenCalled();
+  });
+
+  it('reorders tabs by dragging one onto another', () => {
+    const onReorderTabs = vi.fn();
+    mount(attrs({ tabs, activeTabId: 'tab-1' as TabId, onReorderTabs }));
+
+    const tabElements = root.querySelectorAll<HTMLElement>('[role="tab"]');
+    tabElements[1]?.dispatchEvent(new Event('dragstart', { bubbles: true }));
+    tabElements[0]?.dispatchEvent(new Event('dragover', { bubbles: true, cancelable: true }));
+    tabElements[0]?.dispatchEvent(new Event('drop', { bubbles: true, cancelable: true }));
+
+    expect(onReorderTabs).toHaveBeenCalledWith(['tab-2', 'tab-1']);
   });
 });

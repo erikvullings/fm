@@ -42,7 +42,9 @@ import {
   transitionOperationState,
 } from '../features/operations/operation-state';
 import { PermanentDeleteDialog } from '../features/operations/permanent-delete-dialog';
+import { CloseLastTabDialog } from '../features/panes/close-last-tab-dialog';
 import { isParentEntry, withParentEntry } from '../features/panes/parent-entry';
+import { cycledTabIndex, tabIdForJump } from '../features/panes/tab-navigation';
 import { PluginManagement } from '../features/plugin-management/plugin-management';
 import { filterEntries, hiddenSelectedEntryCount } from '../features/quick-filter/quick-filter';
 import type { SelectionPlatform } from '../features/selection/keybindings';
@@ -85,6 +87,7 @@ import type {
   PluginLogEntry,
   Settings,
   SortDescriptor,
+  TabId,
   TabProjection,
   WorkspaceLayout,
   WorkspaceProjection,
@@ -138,31 +141,41 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     | undefined;
   const commandPaletteRecency = new Map<string, number>();
   let pendingCreatedLocation: string | undefined;
-  const directories = new Map<PaneId, PaneDirectoryView>();
-  const selections = new Map<PaneId, SelectionState>();
-  const metadataLoaders = new Map<PaneId, EntryMetadataLoader>();
-  const metadataViews = new Map<PaneId, EntryMetadataView>();
+  /**
+   * Every per-tab runtime cache below is keyed by a composite `${paneId}:${tabId}`
+   * string (see {@link tabKey}) rather than by `PaneId` alone, so switching tabs
+   * never bleeds one tab's directory/selection/sort/filter state into another's
+   * (spec §37).
+   */
+  const directories = new Map<string, PaneDirectoryView>();
+  const selections = new Map<string, SelectionState>();
+  const metadataLoaders = new Map<string, EntryMetadataLoader>();
+  const metadataViews = new Map<string, EntryMetadataView>();
   const sortedEntries = new Map<
-    PaneId,
+    string,
     {
       readonly input: readonly EntrySummary[];
       readonly key: string;
       readonly entries: readonly EntrySummary[];
     }
   >();
-  const sortRequests = new Map<PaneId, object>();
+  const sortRequests = new Map<string, object>();
   /** Live, uncommitted-per-keystroke quick-filter text; committed to the tab's view on blur/close. */
-  const quickFilterDrafts = new Map<PaneId, string>();
+  const quickFilterDrafts = new Map<string, string>();
   /** Whether the inline quick-filter box is shown for a pane, independent of a persisted query. */
-  const quickFilterOpen = new Map<PaneId, boolean>();
+  const quickFilterOpen = new Map<string, boolean>();
   const filteredEntries = new Map<
-    PaneId,
+    string,
     {
       readonly input: readonly EntrySummary[];
       readonly query: string;
       readonly entries: readonly EntrySummary[];
     }
   >();
+  /** Last tab closed per pane (depth 1), for `core.reopenClosedTab`; restores the location only. */
+  const closedTabStacks = new Map<PaneId, TabProjection>();
+  /** Pending confirmation for closing a pane's only remaining tab (spec §37). */
+  let closeTabConfirmation: { readonly paneId: PaneId; readonly tabId: TabId } | undefined;
   let platform: SelectionPlatform = 'unknown';
   let workspaceRequest: AbortController | undefined;
   let unsubscribeEvents: (() => void) | undefined;
@@ -202,6 +215,17 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     return sort.length === 0 ? DEFAULT_SORT : sort;
   }
 
+  /** Composes the per-tab cache key every runtime-state Map above is keyed by. */
+  function tabKey(paneId: PaneId, tabId: TabId): string {
+    return `${paneId}:${tabId}`;
+  }
+
+  /** The composite key for whichever tab is currently active in `paneId`. */
+  function activeTabKey(paneId: PaneId): string {
+    const pane = workspace?.panesById[paneId];
+    return tabKey(paneId, pane?.activeTabId ?? '');
+  }
+
   function frontendSort(sort: readonly SortDescriptor[]): SortModel {
     const descriptor = sort[0];
     if (descriptor === undefined) return [];
@@ -230,28 +254,28 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
   }
 
   function entriesSortedFor(
-    paneId: PaneId,
+    key: string,
     entries: readonly EntrySummary[],
     sort: readonly SortDescriptor[],
     foldersFirst: boolean,
   ): readonly EntrySummary[] {
-    const key = JSON.stringify([sort, foldersFirst]);
-    const cached = sortedEntries.get(paneId);
-    if (cached?.input === entries && cached.key === key) {
+    const cacheKey = JSON.stringify([sort, foldersFirst]);
+    const cached = sortedEntries.get(key);
+    if (cached?.input === entries && cached.key === cacheKey) {
       return cached.entries;
     }
     const model = frontendSort(sort);
     if (entries.length < 10_000) {
       const sorted = sortEntries(entries, model, foldersFirst);
-      sortedEntries.set(paneId, { input: entries, key, entries: sorted });
+      sortedEntries.set(key, { input: entries, key: cacheKey, entries: sorted });
       return sorted;
     }
     const request = {};
-    sortRequests.set(paneId, request);
+    sortRequests.set(key, request);
     void sortEntriesResponsive(entries, model, foldersFirst).then((sorted) => {
-      if (sortRequests.get(paneId) === request) {
-        sortedEntries.set(paneId, { input: entries, key, entries: sorted });
-        sortRequests.delete(paneId);
+      if (sortRequests.get(key) === request) {
+        sortedEntries.set(key, { input: entries, key: cacheKey, entries: sorted });
+        sortRequests.delete(key);
         m.redraw();
       }
     });
@@ -259,38 +283,38 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
   }
 
   function entriesFilteredFor(
-    paneId: PaneId,
+    key: string,
     entries: readonly EntrySummary[],
     query: string,
   ): readonly EntrySummary[] {
-    const cached = filteredEntries.get(paneId);
+    const cached = filteredEntries.get(key);
     if (cached?.input === entries && cached.query === query) {
       return cached.entries;
     }
     const filtered = filterEntries(entries, query);
-    filteredEntries.set(paneId, { input: entries, query, entries: filtered });
+    filteredEntries.set(key, { input: entries, query, entries: filtered });
     return filtered;
   }
 
-  function quickFilterQueryFor(paneId: PaneId, tab: TabProjection | undefined): string {
-    return quickFilterDrafts.get(paneId) ?? tab?.view.quickFilter?.query ?? '';
+  function quickFilterQueryFor(key: string, tab: TabProjection | undefined): string {
+    return quickFilterDrafts.get(key) ?? tab?.view.quickFilter?.query ?? '';
   }
 
-  function quickFilterOpenFor(paneId: PaneId, tab: TabProjection | undefined): boolean {
-    return quickFilterOpen.get(paneId) === true || (tab?.view.quickFilter ?? null) !== null;
+  function quickFilterOpenFor(key: string, tab: TabProjection | undefined): boolean {
+    return quickFilterOpen.get(key) === true || (tab?.view.quickFilter ?? null) !== null;
   }
 
-  function metadataLoader(client: FileManagerClient, paneId: PaneId): EntryMetadataLoader {
-    const existing = metadataLoaders.get(paneId);
+  function metadataLoader(client: FileManagerClient, key: string): EntryMetadataLoader {
+    const existing = metadataLoaders.get(key);
     if (existing !== undefined) return existing;
     const loader = createEntryMetadataLoader({
       client,
       update: (view) => {
-        metadataViews.set(paneId, view);
+        metadataViews.set(key, view);
         m.redraw();
       },
     });
-    metadataLoaders.set(paneId, loader);
+    metadataLoaders.set(key, loader);
     return loader;
   }
 
@@ -301,6 +325,22 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
   }
 
   let navigation: NavigationController;
+
+  /** Clears every per-tab runtime cache for a closed tab, cancelling its in-flight request. */
+  function clearTabState(paneId: PaneId, tabId: TabId): void {
+    const key = tabKey(paneId, tabId);
+    navigation.abort(paneId, tabId);
+    directories.delete(key);
+    selections.delete(key);
+    metadataLoaders.get(key)?.dispose();
+    metadataLoaders.delete(key);
+    metadataViews.delete(key);
+    sortedEntries.delete(key);
+    sortRequests.delete(key);
+    quickFilterDrafts.delete(key);
+    quickFilterOpen.delete(key);
+    filteredEntries.delete(key);
+  }
 
   async function loadWorkspace(client: FileManagerClient): Promise<void> {
     workspaceRequest = new AbortController();
@@ -334,7 +374,8 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
   }
 
   function applyDelta(paneId: PaneId, delta: DirectoryDelta): void {
-    const current = directories.get(paneId);
+    const key = activeTabKey(paneId);
+    const current = directories.get(key);
     const revision = delta.type === 'reset' ? delta.snapshot.revision : delta.revision;
     if (current === undefined || current.revision === undefined) {
       refetchAffectedPanes(paneId);
@@ -346,7 +387,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       return;
     }
     if (delta.type === 'reset') {
-      directories.set(paneId, {
+      directories.set(key, {
         state: delta.snapshot.loadingState,
         entries: delta.snapshot.entries,
         location: delta.snapshot.location,
@@ -374,12 +415,12 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       byId.delete(entry.id);
       return [next];
     });
-    directories.set(paneId, { ...current, revision, entries: [...ordered, ...byId.values()] });
+    directories.set(key, { ...current, revision, entries: [...ordered, ...byId.values()] });
     if (delta.type === 'entriesAdded' && pendingCreatedLocation !== undefined) {
       const created = delta.entries.find((entry) => entry.location.uri === pendingCreatedLocation);
       if (created !== undefined) {
         selections.set(
-          paneId,
+          key,
           reduceSelection(emptySelection, { type: 'selectOnly', entryId: created.id }, [
             created.id,
           ]),
@@ -392,7 +433,8 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
 
   function activeDirectory(): { paneId: PaneId; location: Location } | undefined {
     const paneId = workspace?.activePaneId;
-    const location = paneId === undefined ? undefined : directories.get(paneId)?.location;
+    const location =
+      paneId === undefined ? undefined : directories.get(activeTabKey(paneId))?.location;
     return paneId === undefined || location === undefined ? undefined : { paneId, location };
   }
 
@@ -408,8 +450,10 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
 
   function selectedLocations(): readonly Location[] {
     const active = activeDirectory();
-    const directory = active === undefined ? undefined : directories.get(active.paneId);
-    const selection = active === undefined ? undefined : selections.get(active.paneId);
+    const directory =
+      active === undefined ? undefined : directories.get(activeTabKey(active.paneId));
+    const selection =
+      active === undefined ? undefined : selections.get(activeTabKey(active.paneId));
     return (
       directory?.entries
         .filter((entry) => selection?.selectedEntryIds.includes(entry.id) === true)
@@ -419,7 +463,8 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
 
   function actionContext() {
     const active = activeDirectory();
-    const selection = active === undefined ? undefined : selections.get(active.paneId);
+    const selection =
+      active === undefined ? undefined : selections.get(activeTabKey(active.paneId));
     return {
       ...(active === undefined ? {} : { paneId: active.paneId }),
       ...(selection === undefined || selection.selectedEntryIds.length === 0
@@ -435,17 +480,17 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
   ): CommandAvailabilityContext {
     const active = activeDirectory();
     const effectivePaneId = paneId ?? active?.paneId;
+    const effectiveKey = effectivePaneId === undefined ? undefined : activeTabKey(effectivePaneId);
     const effectiveEntries =
       selectedEntries ??
-      (effectivePaneId === undefined
+      (effectiveKey === undefined
         ? []
         : (directories
-            .get(effectivePaneId)
+            .get(effectiveKey)
             ?.entries.filter(
-              (entry) =>
-                selections.get(effectivePaneId)?.selectedEntryIds.includes(entry.id) === true,
+              (entry) => selections.get(effectiveKey)?.selectedEntryIds.includes(entry.id) === true,
             ) ?? []));
-    const directory = effectivePaneId === undefined ? undefined : directories.get(effectivePaneId);
+    const directory = effectiveKey === undefined ? undefined : directories.get(effectiveKey);
     return {
       selectedEntries: effectiveEntries,
       locationWritable: directory?.writable === true,
@@ -514,7 +559,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       return;
     }
     const paneId = context.paneId;
-    const directory = paneId === undefined ? undefined : directories.get(paneId);
+    const directory = paneId === undefined ? undefined : directories.get(activeTabKey(paneId));
     const selectedEntries =
       directory === undefined
         ? []
@@ -538,7 +583,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     const menu = contextMenu;
     if (menu === undefined) return;
     const action = registeredActions.find((candidate) => candidate.id === actionId);
-    const directory = directories.get(menu.paneId);
+    const directory = directories.get(activeTabKey(menu.paneId));
     if (action === undefined || directory === undefined) return;
     if (
       !evaluateActionAvailability(action, commandAvailabilityContext(menu.entries, menu.paneId))
@@ -624,7 +669,8 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       if (key === 'v') {
         event.preventDefault();
         const active = activeDirectory();
-        const directory = active === undefined ? undefined : directories.get(active.paneId);
+        const directory =
+          active === undefined ? undefined : directories.get(activeTabKey(active.paneId));
         const currentClipboard = clipboard();
         const target =
           active === undefined || directory === undefined
@@ -661,17 +707,29 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
           });
         return;
       }
+      if (key >= '1' && key <= '9') {
+        const active = activeDirectory();
+        if (active !== undefined) {
+          event.preventDefault();
+          jumpToTab(attrsClient, active.paneId, Number(key));
+        }
+        return;
+      }
     }
     if (dispatchedAction === 'core.copy') {
       const active = activeDirectory();
-      const selection = active === undefined ? undefined : selections.get(active.paneId);
-      const directory = active === undefined ? undefined : directories.get(active.paneId);
+      const selection =
+        active === undefined ? undefined : selections.get(activeTabKey(active.paneId));
+      const directory =
+        active === undefined ? undefined : directories.get(activeTabKey(active.paneId));
       const selected = directory?.entries.filter(
         (entry) => selection?.selectedEntryIds.includes(entry.id) === true && entry.kind === 'file',
       );
       const otherPaneId = workspace?.paneOrder.find((paneId) => paneId !== active?.paneId);
       const destination =
-        otherPaneId === undefined ? undefined : directories.get(otherPaneId)?.location;
+        otherPaneId === undefined
+          ? undefined
+          : directories.get(activeTabKey(otherPaneId))?.location;
       const source = selected?.length === 1 ? selected[0] : undefined;
       if (source !== undefined && destination !== undefined) {
         event.preventDefault();
@@ -686,14 +744,18 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     }
     if (dispatchedAction === 'core.move') {
       const active = activeDirectory();
-      const selection = active === undefined ? undefined : selections.get(active.paneId);
-      const directory = active === undefined ? undefined : directories.get(active.paneId);
+      const selection =
+        active === undefined ? undefined : selections.get(activeTabKey(active.paneId));
+      const directory =
+        active === undefined ? undefined : directories.get(activeTabKey(active.paneId));
       const selected = directory?.entries.filter(
         (entry) => selection?.selectedEntryIds.includes(entry.id) === true,
       );
       const otherPaneId = workspace?.paneOrder.find((paneId) => paneId !== active?.paneId);
       const destination =
-        otherPaneId === undefined ? undefined : directories.get(otherPaneId)?.location;
+        otherPaneId === undefined
+          ? undefined
+          : directories.get(activeTabKey(otherPaneId))?.location;
       if (selected !== undefined && selected.length > 0 && destination !== undefined) {
         event.preventDefault();
         void attrsClient.startOperation({
@@ -707,8 +769,10 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     }
     if (dispatchedAction === 'core.delete') {
       const active = activeDirectory();
-      const selection = active === undefined ? undefined : selections.get(active.paneId);
-      const directory = active === undefined ? undefined : directories.get(active.paneId);
+      const selection =
+        active === undefined ? undefined : selections.get(activeTabKey(active.paneId));
+      const directory =
+        active === undefined ? undefined : directories.get(activeTabKey(active.paneId));
       const selected = directory?.entries.filter(
         (entry) => selection?.selectedEntryIds.includes(entry.id) === true,
       );
@@ -738,13 +802,42 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       const active = activeDirectory();
       if (active === undefined) return;
       event.preventDefault();
-      quickFilterOpen.set(active.paneId, true);
-      if (!quickFilterDrafts.has(active.paneId)) {
+      const key = activeTabKey(active.paneId);
+      quickFilterOpen.set(key, true);
+      if (!quickFilterDrafts.has(key)) {
         const pane = workspace?.panesById[active.paneId];
         const tab = pane?.tabsById[pane.activeTabId];
-        quickFilterDrafts.set(active.paneId, tab?.view.quickFilter?.query ?? '');
+        quickFilterDrafts.set(key, tab?.view.quickFilter?.query ?? '');
       }
       m.redraw();
+      return;
+    }
+    if (dispatchedAction === 'core.newTab') {
+      const active = activeDirectory();
+      if (active === undefined) return;
+      event.preventDefault();
+      openTab(attrsClient, active.paneId);
+      return;
+    }
+    if (dispatchedAction === 'core.closeTab') {
+      if (workspace === undefined) return;
+      const paneId = workspace.activePaneId;
+      const pane = workspace.panesById[paneId];
+      if (pane === undefined) return;
+      event.preventDefault();
+      requestCloseTab(attrsClient, paneId, pane.activeTabId);
+      return;
+    }
+    if (dispatchedAction === 'core.nextTab' || dispatchedAction === 'core.previousTab') {
+      if (workspace === undefined) return;
+      event.preventDefault();
+      cycleTab(attrsClient, workspace.activePaneId, dispatchedAction === 'core.nextTab' ? 1 : -1);
+      return;
+    }
+    if (dispatchedAction === 'core.reopenClosedTab') {
+      if (workspace === undefined) return;
+      event.preventDefault();
+      reopenClosedTab(attrsClient, workspace.activePaneId);
     }
   }
 
@@ -768,7 +861,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       return;
     }
     if (payload.type === 'directory.snapshot') {
-      const current = directories.get(payload.snapshot.paneId);
+      const current = directories.get(activeTabKey(payload.snapshot.paneId));
       if (current?.revision !== undefined && payload.snapshot.revision <= current.revision) return;
       applyDelta(payload.snapshot.paneId, { type: 'reset', snapshot: payload.snapshot });
       return;
@@ -830,6 +923,132 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     ).catch(() => undefined);
   }
 
+  /** Opens a new tab in `paneId`, starting at the pane's currently active location. */
+  function openTab(client: FileManagerClient, paneId: PaneId): void {
+    if (workspace === undefined) return;
+    const pane = workspace.panesById[paneId];
+    const activeTab = pane?.tabsById[pane.activeTabId];
+    if (activeTab === undefined) return;
+    void dispatchWorkspaceCommand(
+      client,
+      {
+        type: 'addTab',
+        workspaceId: workspace.id,
+        paneId,
+        location: activeTab.location,
+        expectedRevision: workspace.revision,
+      },
+      (next) => {
+        replaceWorkspace(next);
+        void navigation.load(paneId);
+      },
+    ).catch(() => undefined);
+  }
+
+  /** Switches `paneId`'s active tab, cancelling any in-flight request for the tab being hidden. */
+  function activateTab(client: FileManagerClient, paneId: PaneId, tabId: TabId): void {
+    if (workspace === undefined) return;
+    const pane = workspace.panesById[paneId];
+    if (pane === undefined || pane.activeTabId === tabId) return;
+    const previousTabId = pane.activeTabId;
+    void dispatchWorkspaceCommand(
+      client,
+      {
+        type: 'activateTab',
+        workspaceId: workspace.id,
+        paneId,
+        tabId,
+        expectedRevision: workspace.revision,
+      },
+      (next) => {
+        replaceWorkspace(next);
+        navigation.abort(paneId, previousTabId);
+        void navigation.load(paneId);
+      },
+    ).catch(() => undefined);
+  }
+
+  /**
+   * Closes `tabId` in `paneId` (spec §37). The backend picks whichever tab
+   * becomes active next (and replaces a pane's last tab with a fresh one at
+   * the home directory rather than leaving an empty pane) — the frontend
+   * just clears the closed tab's caches and trusts the returned projection.
+   */
+  function performCloseTab(client: FileManagerClient, paneId: PaneId, tabId: TabId): void {
+    if (workspace === undefined) return;
+    const closedTab = workspace.panesById[paneId]?.tabsById[tabId];
+    if (closedTab !== undefined) closedTabStacks.set(paneId, closedTab);
+    void dispatchWorkspaceCommand(
+      client,
+      {
+        type: 'closeTab',
+        workspaceId: workspace.id,
+        paneId,
+        tabId,
+        expectedRevision: workspace.revision,
+      },
+      (next) => {
+        clearTabState(paneId, tabId);
+        replaceWorkspace(next);
+        void navigation.load(paneId);
+      },
+    ).catch(() => undefined);
+  }
+
+  /**
+   * Gates closing a pane's only remaining tab behind confirmation (spec
+   * §37) — the backend would otherwise silently replace it with a blank
+   * tab, which is surprising without warning.
+   */
+  function requestCloseTab(client: FileManagerClient, paneId: PaneId, tabId: TabId): void {
+    const pane = workspace?.panesById[paneId];
+    if (pane === undefined) return;
+    if (pane.tabOrder.length <= 1) {
+      closeTabConfirmation = { paneId, tabId };
+      m.redraw();
+      return;
+    }
+    performCloseTab(client, paneId, tabId);
+  }
+
+  /** Reopens the most recently closed tab in `paneId` (depth 1), restoring its location only. */
+  function reopenClosedTab(client: FileManagerClient, paneId: PaneId): void {
+    const closed = closedTabStacks.get(paneId);
+    if (workspace === undefined || closed === undefined) return;
+    closedTabStacks.delete(paneId);
+    void dispatchWorkspaceCommand(
+      client,
+      {
+        type: 'addTab',
+        workspaceId: workspace.id,
+        paneId,
+        location: closed.location,
+        expectedRevision: workspace.revision,
+      },
+      (next) => {
+        replaceWorkspace(next);
+        void navigation.load(paneId);
+      },
+    ).catch(() => undefined);
+  }
+
+  /** Activates the next/previous tab in `paneId`, wrapping around at the ends. */
+  function cycleTab(client: FileManagerClient, paneId: PaneId, direction: 1 | -1): void {
+    const pane = workspace?.panesById[paneId];
+    if (pane === undefined) return;
+    const currentIndex = pane.tabOrder.indexOf(pane.activeTabId);
+    const nextTabId = pane.tabOrder[cycledTabIndex(currentIndex, pane.tabOrder.length, direction)];
+    if (nextTabId !== undefined) activateTab(client, paneId, nextTabId);
+  }
+
+  /** Activates the `oneBasedIndex`-th tab in `paneId`, if one exists (Ctrl+1-9 jump). */
+  function jumpToTab(client: FileManagerClient, paneId: PaneId, oneBasedIndex: number): void {
+    const pane = workspace?.panesById[paneId];
+    if (pane === undefined) return;
+    const tabId = tabIdForJump(pane.tabOrder, oneBasedIndex);
+    if (tabId !== undefined) activateTab(client, paneId, tabId);
+  }
+
   function setTheme(client: FileManagerClient, next: Theme): void {
     theme = next;
     ThemeManager.setTheme(next);
@@ -845,25 +1064,26 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     entryFormatSettings: EntryFormatSettings,
     paneId: PaneId,
   ): WorkspacePaneContent {
-    const directory = directories.get(paneId) ?? {
+    const pane = workspace?.panesById[paneId];
+    const tab = pane?.tabsById[pane.activeTabId];
+    const key = tab === undefined ? undefined : tabKey(paneId, tab.id);
+    const directory = (key === undefined ? undefined : directories.get(key)) ?? {
       state: { type: 'idle' } as const,
       entries: [],
       hasMore: false,
     };
-    const pane = workspace?.panesById[paneId];
-    const tab = pane?.tabsById[pane.activeTabId];
-    const selection = selections.get(paneId) ?? emptySelection;
+    const selection = (key === undefined ? undefined : selections.get(key)) ?? emptySelection;
     const sorted =
-      tab === undefined
+      tab === undefined || key === undefined
         ? directory.entries
         : entriesSortedFor(
-            paneId,
+            key,
             directory.entries,
             effectiveSort(tab.view.sort),
             tab.view.foldersFirst,
           );
-    const quickFilterQuery = quickFilterQueryFor(paneId, tab);
-    const filtered = entriesFilteredFor(paneId, sorted, quickFilterQuery);
+    const quickFilterQuery = key === undefined ? '' : quickFilterQueryFor(key, tab);
+    const filtered = key === undefined ? sorted : entriesFilteredFor(key, sorted, quickFilterQuery);
     const entries =
       tab === undefined ? filtered : withParentEntry(pathFromUri(tab.location.uri), filtered);
     const entryIds = entries.map((entry) => entry.id);
@@ -883,7 +1103,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       sort: effectiveSort(tab?.view.sort ?? []),
       totalEntryCount: directory.entries.length,
       hiddenSelectedCount: hiddenSelectedEntryCount(directory.entries, filtered, selectedEntryIds),
-      filterOpen: quickFilterOpenFor(paneId, tab),
+      filterOpen: key === undefined ? false : quickFilterOpenFor(key, tab),
       filterQuery: quickFilterQuery,
       formatSettings: entryFormatSettings,
       pluginColumns:
@@ -894,7 +1114,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
         tab?.view.columns.some((column) => column.columnId === 'sample.fileAge' && column.visible)
           ? [SAMPLE_FILE_AGE_COLUMN]
           : [],
-      metadata: metadataViews.get(paneId) ?? { state: 'idle' },
+      metadata: (key === undefined ? undefined : metadataViews.get(key)) ?? { state: 'idle' },
       platform,
       keybindingRuntime,
       actions: registeredActions,
@@ -919,14 +1139,15 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
                 { paneId, selectedEntryIds: [entry.id], cursorEntryId: entry.id },
               ),
       onSelectionAction: (action: SelectionAction) => {
+        if (key === undefined) return;
         const orderedEntryIds =
           action.type === 'selectAll' || action.type === 'invert'
             ? directory.entries.map((entry) => entry.id)
             : entryIds;
         const next = reduceSelection(selection, action, orderedEntryIds);
-        selections.set(paneId, next);
+        selections.set(key, next);
         const cursorEntry = entries.find((entry) => entry.id === next.cursorEntryId);
-        void metadataLoader(client, paneId).select(
+        void metadataLoader(client, key).select(
           cursorEntry === undefined || isParentEntry(cursorEntry.id) ? undefined : cursorEntry,
         );
         m.redraw();
@@ -949,11 +1170,13 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
         ).catch(() => undefined);
       },
       onFilterQueryChange: (query) => {
-        quickFilterDrafts.set(paneId, query);
+        if (key === undefined) return;
+        quickFilterDrafts.set(key, query);
         m.redraw();
       },
       onFilterCommit: () => {
-        const draft = quickFilterDrafts.get(paneId);
+        if (key === undefined) return;
+        const draft = quickFilterDrafts.get(key);
         if (workspace === undefined || tab === undefined || draft === undefined) return;
         const committed = tab.view.quickFilter?.query ?? '';
         if (draft === committed) return;
@@ -974,8 +1197,10 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
         ).catch(() => undefined);
       },
       onFilterClose: () => {
-        quickFilterOpen.set(paneId, false);
-        quickFilterDrafts.delete(paneId);
+        if (key !== undefined) {
+          quickFilterOpen.set(key, false);
+          quickFilterDrafts.delete(key);
+        }
         if (workspace !== undefined && tab !== undefined && tab.view.quickFilter != null) {
           void dispatchWorkspaceCommand(
             client,
@@ -1020,22 +1245,23 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
         client: attrs.client,
         getWorkspace: () => workspace,
         replaceWorkspace: (next) => replaceWorkspace(next),
-        updatePane: (paneId, view) => {
-          const previous = directories.get(paneId);
-          directories.set(paneId, view);
+        updatePane: (paneId, tabId, view) => {
+          const key = tabKey(paneId, tabId);
+          const previous = directories.get(key);
+          directories.set(key, view);
           if (view.entries.length === 0) {
-            selections.set(paneId, emptySelection);
-            void metadataLoader(attrs.client, paneId).select(undefined);
+            selections.set(key, emptySelection);
+            void metadataLoader(attrs.client, key).select(undefined);
           } else if (
-            selections.get(paneId)?.cursorEntryId === undefined ||
+            selections.get(key)?.cursorEntryId === undefined ||
             previous?.location?.uri !== view.location?.uri
           ) {
             const firstEntry = view.entries[0];
-            selections.set(paneId, {
+            selections.set(key, {
               selectedEntryIds: [],
               ...(firstEntry === undefined ? {} : { cursorEntryId: firstEntry.id }),
             });
-            void metadataLoader(attrs.client, paneId).select(firstEntry);
+            void metadataLoader(attrs.client, key).select(firstEntry);
           }
           m.redraw();
         },
@@ -1203,6 +1429,9 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
                   ),
                 onActivatePane: (paneId) => activatePane(attrs.client, paneId),
                 onUpdateLayout: (layout) => updateLayout(attrs.client, layout),
+                onSelectTab: (paneId, tabId) => activateTab(attrs.client, paneId, tabId),
+                onCloseTab: (paneId, tabId) => requestCloseTab(attrs.client, paneId, tabId),
+                onNewTab: (paneId) => openTab(attrs.client, paneId),
               }),
         ]),
         clipboardMessage === undefined
@@ -1316,6 +1545,19 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
                   m.redraw();
                 }
               });
+          },
+        }),
+        m(CloseLastTabDialog, {
+          open: closeTabConfirmation !== undefined,
+          onConfirm: () => {
+            const confirmation = closeTabConfirmation;
+            closeTabConfirmation = undefined;
+            if (confirmation !== undefined) {
+              performCloseTab(attrs.client, confirmation.paneId, confirmation.tabId);
+            }
+          },
+          onCancel: () => {
+            closeTabConfirmation = undefined;
           },
         }),
         m(

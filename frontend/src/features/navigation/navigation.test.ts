@@ -43,6 +43,51 @@ function workspace(uri = 'file:///home/erik'): WorkspaceProjection {
   };
 }
 
+/** Two independent tabs in one pane, `active` selecting which one is currently shown. */
+function workspaceWithTwoTabs(active: 'tab-a' | 'tab-b' = 'tab-a'): WorkspaceProjection {
+  const emptyView = {
+    sort: [],
+    columns: [],
+    showHidden: false,
+    foldersFirst: true,
+    quickFilter: null,
+  };
+  return {
+    id: 'workspace',
+    name: 'Workspace',
+    revision: 1,
+    layout: { type: 'pane', paneId: 'left' },
+    paneOrder: ['left'],
+    panesById: {
+      left: {
+        id: 'left',
+        tabOrder: ['tab-a', 'tab-b'],
+        activeTabId: active,
+        tabsById: {
+          'tab-a': {
+            id: 'tab-a',
+            title: 'a',
+            location: { providerId: 'local', uri: 'file:///a' },
+            canNavigateBack: false,
+            canNavigateForward: false,
+            view: emptyView,
+          },
+          'tab-b': {
+            id: 'tab-b',
+            title: 'b',
+            location: { providerId: 'local', uri: 'file:///b' },
+            canNavigateBack: false,
+            canNavigateForward: false,
+            view: emptyView,
+          },
+        },
+      },
+    },
+    activePaneId: 'left',
+    operationCentre: { visible: false, height: 240 },
+  };
+}
+
 function snapshot(
   requestId: string,
   uri: string,
@@ -130,7 +175,7 @@ describe('navigation controller', () => {
       client: context.client,
       getWorkspace: context.getWorkspace,
       replaceWorkspace: context.replaceWorkspace,
-      updatePane: (_paneId, view) => context.views.push(view),
+      updatePane: (_paneId, _tabId, view) => context.views.push(view),
     });
 
     const loading = controller.load('left');
@@ -154,7 +199,7 @@ describe('navigation controller', () => {
       client: context.client,
       getWorkspace: context.getWorkspace,
       replaceWorkspace: context.replaceWorkspace,
-      updatePane: (_paneId, view) => context.views.push(view),
+      updatePane: (_paneId, _tabId, view) => context.views.push(view),
     });
 
     const firstLoad = controller.load('left');
@@ -186,7 +231,7 @@ describe('navigation controller', () => {
       client: context.client,
       getWorkspace: context.getWorkspace,
       replaceWorkspace: context.replaceWorkspace,
-      updatePane: (_paneId, view) => context.views.push(view),
+      updatePane: (_paneId, _tabId, view) => context.views.push(view),
     });
 
     await controller.load('left');
@@ -209,7 +254,7 @@ describe('navigation controller', () => {
       client: context.client,
       getWorkspace: context.getWorkspace,
       replaceWorkspace: context.replaceWorkspace,
-      updatePane: (_paneId, view) => context.views.push(view),
+      updatePane: (_paneId, _tabId, view) => context.views.push(view),
     });
 
     await controller.navigate('left', {
@@ -239,7 +284,7 @@ describe('navigation controller', () => {
       client: context.client,
       getWorkspace: context.getWorkspace,
       replaceWorkspace: context.replaceWorkspace,
-      updatePane: (_paneId, view) => context.views.push(view),
+      updatePane: (_paneId, _tabId, view) => context.views.push(view),
     });
 
     await controller.back('left');
@@ -263,7 +308,7 @@ describe('navigation controller', () => {
       client: context.client,
       getWorkspace: context.getWorkspace,
       replaceWorkspace: context.replaceWorkspace,
-      updatePane: (_paneId, view) => context.views.push(view),
+      updatePane: (_paneId, _tabId, view) => context.views.push(view),
     });
 
     await controller.parent('left');
@@ -283,7 +328,7 @@ describe('navigation controller', () => {
       client: context.client,
       getWorkspace: context.getWorkspace,
       replaceWorkspace: context.replaceWorkspace,
-      updatePane: (_paneId, view) => context.views.push(view),
+      updatePane: (_paneId, _tabId, view) => context.views.push(view),
     });
 
     const older = controller.load('left');
@@ -316,7 +361,7 @@ describe('navigation controller', () => {
       client: context.client,
       getWorkspace: context.getWorkspace,
       replaceWorkspace: context.replaceWorkspace,
-      updatePane: (_paneId, view) => context.views.push(view),
+      updatePane: (_paneId, _tabId, view) => context.views.push(view),
     });
 
     await controller.load('left');
@@ -331,5 +376,60 @@ describe('navigation controller', () => {
     expect(vi.mocked(context.client.listDirectory).mock.calls[1]?.[0]).toEqual(
       expect.objectContaining({ continuationToken: 'next' }),
     );
+  });
+});
+
+describe('per-tab isolation', () => {
+  it('keys cached views by (pane, tab) so switching tabs never bleeds state', async () => {
+    const context = setup(workspaceWithTwoTabs('tab-a'));
+    vi.mocked(context.client.listDirectory).mockImplementation(async (request) =>
+      snapshot(request.requestId, request.location.uri, [
+        request.location.uri === 'file:///a' ? 'a-entry' : 'b-entry',
+      ]),
+    );
+    const updates: Array<{ paneId: string; tabId: string; view: PaneDirectoryView }> = [];
+    const controller = createNavigationController({
+      client: context.client,
+      getWorkspace: context.getWorkspace,
+      replaceWorkspace: context.replaceWorkspace,
+      updatePane: (paneId, tabId, view) => updates.push({ paneId, tabId, view }),
+    });
+
+    await controller.load('left');
+    expect(updates.at(-1)?.tabId).toBe('tab-a');
+    expect(updates.at(-1)?.view.entries[0]?.name).toBe('a-entry');
+
+    context.replaceWorkspace(workspaceWithTwoTabs('tab-b'));
+    await controller.load('left');
+    expect(updates.at(-1)?.tabId).toBe('tab-b');
+    expect(updates.at(-1)?.view.entries[0]?.name).toBe('b-entry');
+
+    // tab-a's own publish from earlier is untouched by tab-b's later load.
+    expect(updates.filter((update) => update.tabId === 'tab-a').at(-1)?.view.entries[0]?.name).toBe(
+      'a-entry',
+    );
+  });
+
+  it('abort() cancels one tab in flight without touching its sibling', async () => {
+    const context = setup(workspaceWithTwoTabs('tab-a'));
+    const pending = deferred<DirectorySnapshot>();
+    vi.mocked(context.client.listDirectory).mockReturnValueOnce(pending.promise);
+    const controller = createNavigationController({
+      client: context.client,
+      getWorkspace: context.getWorkspace,
+      replaceWorkspace: context.replaceWorkspace,
+      updatePane: (_paneId, _tabId, view) => context.views.push(view),
+    });
+
+    const loading = controller.load('left');
+    const signal = vi.mocked(context.client.listDirectory).mock.calls[0]?.[1];
+
+    controller.abort('left', 'tab-a');
+    expect(signal?.aborted).toBe(true);
+
+    pending.resolve(snapshot('irrelevant', 'file:///a', ['a-entry']));
+    await loading;
+
+    expect(context.views.at(-1)?.state).toEqual({ type: 'loading' });
   });
 });

@@ -290,14 +290,49 @@ fn core_actions(capabilities: PlatformCapabilities) -> Vec<ActionDescriptor> {
             "New Tab",
             "navigation",
             vec![primary("t")],
-            ActionContextRequirements::unimplemented(),
+            ActionContextRequirements::none(),
         ),
         core_action(
             "core.closeTab",
             "Close Tab",
             "navigation",
             vec![primary("w")],
-            ActionContextRequirements::unimplemented(),
+            ActionContextRequirements::none(),
+        ),
+        core_action(
+            "core.nextTab",
+            "Next Tab",
+            "navigation",
+            vec![KeyChord {
+                key: "Tab".to_owned(),
+                ctrl: true,
+                ..KeyChord::default()
+            }],
+            ActionContextRequirements::none(),
+        ),
+        core_action(
+            "core.previousTab",
+            "Previous Tab",
+            "navigation",
+            vec![KeyChord {
+                key: "Tab".to_owned(),
+                ctrl: true,
+                shift: true,
+                ..KeyChord::default()
+            }],
+            ActionContextRequirements::none(),
+        ),
+        core_action(
+            "core.reopenClosedTab",
+            "Reopen Closed Tab",
+            "navigation",
+            vec![KeyChord {
+                key: "T".to_owned(),
+                ctrl: true,
+                shift: true,
+                ..KeyChord::default()
+            }],
+            ActionContextRequirements::none(),
         ),
         core_action(
             "core.openTerminal",
@@ -438,6 +473,9 @@ mod tests {
             "core.quickFilter",
             "core.newTab",
             "core.closeTab",
+            "core.nextTab",
+            "core.previousTab",
+            "core.reopenClosedTab",
             "core.openTerminal",
             "core.copyPath",
             "core.copyRelativePath",

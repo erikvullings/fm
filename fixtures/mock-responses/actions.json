@@ -11,6 +11,9 @@
   { "id": "core.quickFilter", "title": "Quick filter", "category": "navigation", "defaultShortcuts": [{ "key": "f", "ctrl": true }], "contextRequirements": {}, "source": { "kind": "core" } },
   { "id": "core.newTab", "title": "New tab", "category": "navigation", "defaultShortcuts": [{ "key": "t", "ctrl": true }], "contextRequirements": {}, "source": { "kind": "core" } },
   { "id": "core.closeTab", "title": "Close tab", "category": "navigation", "defaultShortcuts": [{ "key": "w", "ctrl": true }], "contextRequirements": {}, "source": { "kind": "core" } }
+  ,{ "id": "core.nextTab", "title": "Next tab", "category": "navigation", "defaultShortcuts": [{ "key": "Tab", "ctrl": true }], "contextRequirements": {}, "source": { "kind": "core" } }
+  ,{ "id": "core.previousTab", "title": "Previous tab", "category": "navigation", "defaultShortcuts": [{ "key": "Tab", "ctrl": true, "shift": true }], "contextRequirements": {}, "source": { "kind": "core" } }
+  ,{ "id": "core.reopenClosedTab", "title": "Reopen closed tab", "category": "navigation", "defaultShortcuts": [{ "key": "T", "ctrl": true, "shift": true }], "contextRequirements": {}, "source": { "kind": "core" } }
   ,{ "id": "core.open", "title": "Open", "category": "navigation", "defaultShortcuts": [{ "key": "Enter" }], "contextRequirements": {}, "source": { "kind": "core" } }
   ,{ "id": "core.openWith", "title": "Open With…", "category": "fileOperations", "defaultShortcuts": [], "contextRequirements": {}, "source": { "kind": "core" } }
   ,{ "id": "core.revealInSystemFileManager", "title": "Reveal in File Manager", "category": "fileOperations", "defaultShortcuts": [], "contextRequirements": {}, "source": { "kind": "core" } }

@@ -117,6 +117,9 @@ function attrs(overrides: Partial<WorkspaceLayoutViewAttrs> = {}): WorkspaceLayo
     }),
     onActivatePane: vi.fn(),
     onUpdateLayout: vi.fn(),
+    onSelectTab: vi.fn(),
+    onCloseTab: vi.fn(),
+    onNewTab: vi.fn(),
     ...overrides,
   };
 }
@@ -190,6 +193,61 @@ describe('WorkspaceLayoutView keyboard navigation', () => {
 
     expect(root.querySelectorAll('.fm-workspace-pane')).toHaveLength(3);
     expect(onActivatePane).toHaveBeenCalledExactlyOnceWith('right');
+  });
+});
+
+describe('tab strip wiring', () => {
+  it('forwards tab select/close/new callbacks scoped to the owning pane', () => {
+    const onSelectTab = vi.fn();
+    const onCloseTab = vi.fn();
+    const onNewTab = vi.fn();
+    mount(attrs({ onSelectTab, onCloseTab, onNewTab }));
+
+    const rightPane = root.querySelector<HTMLElement>('[data-pane-id="right"]');
+    rightPane?.querySelector<HTMLElement>('[role="tab"]')?.click();
+    rightPane?.querySelector<HTMLElement>('.fm-pane-tab-close')?.click();
+    rightPane?.querySelector<HTMLElement>('.fm-pane-tab-new')?.click();
+
+    expect(onSelectTab).toHaveBeenCalledExactlyOnceWith('right', 'right-tab');
+    expect(onCloseTab).toHaveBeenCalledExactlyOnceWith('right', 'right-tab');
+    expect(onNewTab).toHaveBeenCalledExactlyOnceWith('right');
+  });
+
+  it('keeps a drag-reordered tab order local until the backend tab set changes', () => {
+    const twoTabs = projection();
+    const leftPane = twoTabs.panesById.left;
+    if (leftPane === undefined) throw new Error('left pane missing');
+    twoTabs.panesById.left = {
+      ...leftPane,
+      tabOrder: ['left-tab', 'left-tab-2'],
+      tabsById: {
+        ...leftPane.tabsById,
+        'left-tab-2': {
+          id: 'left-tab-2',
+          title: 'Second',
+          location: { providerId: 'local', uri: 'file:///second' },
+          canNavigateBack: false,
+          canNavigateForward: false,
+          view: leftPane.tabsById['left-tab']?.view as never,
+        },
+      },
+    };
+    mount(attrs({ workspace: twoTabs }));
+
+    const leftPaneElement = root.querySelector<HTMLElement>('[data-pane-id="left"]');
+    const tabTitles = (): (string | undefined)[] =>
+      [...(leftPaneElement?.querySelectorAll<HTMLElement>('[role="tab"]') ?? [])].map(
+        (element) => element.querySelector('.fm-pane-tab-title')?.textContent ?? undefined,
+      );
+    expect(tabTitles()).toEqual(['Home', 'Second']);
+
+    const tabs = leftPaneElement?.querySelectorAll<HTMLElement>('[role="tab"]');
+    tabs?.[1]?.dispatchEvent(new Event('dragstart', { bubbles: true }));
+    tabs?.[0]?.dispatchEvent(new Event('dragover', { bubbles: true, cancelable: true }));
+    tabs?.[0]?.dispatchEvent(new Event('drop', { bubbles: true, cancelable: true }));
+    m.redraw.sync();
+
+    expect(tabTitles()).toEqual(['Second', 'Home']);
   });
 });
 
