@@ -1,3 +1,4 @@
+import type { EntrySummary } from './entry';
 import type { OperationId, PaneId, TabId, WorkspaceId } from './ids';
 import type { Location } from './location';
 import type { Operation, OperationProgress, OperationState } from './operation';
@@ -84,7 +85,14 @@ export type BackendEventPayload =
       details?: Readonly<Record<string, unknown>>;
     }
   | { type: 'plugin.changed'; plugin: PluginSummary }
-  | { type: 'notification.created'; notification: BackendNotification };
+  | { type: 'notification.created'; notification: BackendNotification }
+  | {
+      type: 'search.resultsBatch';
+      searchId: string;
+      entries: EntrySummary[];
+      isComplete: boolean;
+      warningsCount: number;
+    };
 
 /** A backend event delivered identically over SSE and Tauri. */
 export type BackendEvent = EventEnvelope<BackendEventPayload>;

@@ -74,6 +74,8 @@ export * from './sortDescriptorDto';
 export * from './sortDirectionDto';
 export * from './splitAxisDto';
 export * from './startOperationRequestDto';
+export * from './startSearchRequestDto';
+export * from './startSearchResponseDto';
 export * from './symlinkPolicyDto';
 export * from './tabStateDto';
 export * from './themeDto';

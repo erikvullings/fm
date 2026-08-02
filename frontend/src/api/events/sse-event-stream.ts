@@ -31,9 +31,14 @@ const EVENT_TYPES = [
   'operation.failed',
   'plugin.changed',
   'notification.created',
+  'search.resultsBatch',
 ] as const;
 
-const HIGH_FREQUENCY_TYPES = new Set<string>(['operation.progress', 'directory.delta']);
+const HIGH_FREQUENCY_TYPES = new Set<string>([
+  'operation.progress',
+  'directory.delta',
+  'search.resultsBatch',
+]);
 
 interface EventSourceLike extends EventTarget {
   close(): void;

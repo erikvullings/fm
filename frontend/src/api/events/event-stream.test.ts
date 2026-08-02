@@ -62,6 +62,22 @@ describe('parseBackendEvent', () => {
     expect(parseBackendEvent({ payload: { type: 'runtime.ready' } })).toBeUndefined();
     expect(parseBackendEvent(null)).toBeUndefined();
   });
+
+  it('recognises a search.resultsBatch event (task 0068) instead of dropping it as unknown', () => {
+    const searchEvent = {
+      eventId: 1044,
+      timestamp: '2026-08-02T12:00:00Z',
+      payload: {
+        type: 'search.resultsBatch',
+        searchId: '11111111-1111-4111-8111-111111111111',
+        entries: [],
+        isComplete: true,
+        warningsCount: 0,
+      },
+    };
+
+    expect(parseBackendEvent(searchEvent)).toEqual(searchEvent);
+  });
 });
 
 describe('type safety', () => {

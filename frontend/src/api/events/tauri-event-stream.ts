@@ -9,7 +9,11 @@ import {
   parseBackendEvent,
 } from './event-stream';
 
-const HIGH_FREQUENCY_TYPES = new Set<string>(['operation.progress', 'directory.delta']);
+const HIGH_FREQUENCY_TYPES = new Set<string>([
+  'operation.progress',
+  'directory.delta',
+  'search.resultsBatch',
+]);
 
 export interface TauriChannelLike<T> {
   onmessage: (message: T) => void;

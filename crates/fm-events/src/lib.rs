@@ -18,6 +18,7 @@ use fm_domain::{
     PaneId, PluginId, ProviderId, TabId, WorkspaceId,
 };
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 pub use bus::{
     DEFAULT_EVENT_BUS_CAPACITY, EventAudience, EventBus, EventSubscription, SessionId,
@@ -728,6 +729,24 @@ pub enum BackendEventPayload {
         /// Created notification.
         notification: NotificationPayload,
     },
+    /// A batch of streamed recursive-search results is available (spec §24,
+    /// §28, task 0068).
+    ///
+    /// Scoped by `search_id` rather than `pane_id`: a search runs
+    /// independently of whether any pane currently has its
+    /// `search://local/{searchId}` location open.
+    #[serde(rename = "search.resultsBatch")]
+    SearchResultsBatch {
+        /// The search this batch belongs to.
+        search_id: Uuid,
+        /// Newly discovered entries since the previous batch.
+        entries: Vec<EntrySummaryPayload>,
+        /// Whether the backend has stopped producing further batches for
+        /// this search (either finished or cancelled).
+        is_complete: bool,
+        /// Cumulative count of unreadable directories skipped so far.
+        warnings_count: u32,
+    },
 }
 
 impl BackendEventPayload {
@@ -758,6 +777,7 @@ impl BackendEventPayload {
             Self::OperationFailed { .. } => "operation.failed",
             Self::PluginChanged { .. } => "plugin.changed",
             Self::NotificationCreated { .. } => "notification.created",
+            Self::SearchResultsBatch { .. } => "search.resultsBatch",
         }
     }
 
@@ -779,6 +799,7 @@ mod tests {
     use chrono::{TimeZone, Utc};
     use fm_domain::{OperationId, PaneId, PluginId, ProviderId, TabId, WorkspaceId};
     use serde_json::json;
+    use uuid::Uuid;
 
     use super::{
         BackendEventPayload, ColumnConfigurationPayload, ConflictPolicyPayload,
@@ -1024,6 +1045,7 @@ mod tests {
                 "operation.failed",
                 "plugin.changed",
                 "notification.created",
+                "search.resultsBatch",
             ]
         );
     }
@@ -1193,6 +1215,13 @@ mod tests {
                         level: NotificationLevelPayload::Info,
                         message: "Done".to_owned(),
                     },
+                },
+                Self::SearchResultsBatch {
+                    search_id: Uuid::from_str(OPERATION_ID)
+                        .expect("fixture operation id must be valid"),
+                    entries: vec![],
+                    is_complete: true,
+                    warnings_count: 0,
                 },
             ]
         }

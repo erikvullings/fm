@@ -25,6 +25,7 @@ use fm_operations::{
 use fm_platform::{FallbackPlatformAdapter, PlatformAdapter, PlatformCapabilities};
 use fm_plugin_api::{ActionContribution, PluginManifest, PluginPermissions, SelectedEntryContext};
 use fm_plugin_runtime::{PluginDiscovery, PluginRuntime};
+use fm_search::{SearchEngine, SearchFileSystemProvider, SearchResultsStore};
 use fm_settings::{
     ConflictPolicy, DateFormat, DefaultPaneLayout, Settings, SettingsStore, SizeFormat, Theme,
 };
@@ -34,8 +35,8 @@ use fm_transport_dto::{
     NavigateRequest, OperationConflictPolicyDto, OperationDto, OperationKindDto,
     OperationProgressDto, OperationStateDto, PlatformKindDto, PluginLogEntryDto,
     PluginPermissionsDto, ResolveOperationConflictRequestDto, RuntimeCapabilitiesDto,
-    RuntimeKindDto, SettingsDto, SizeFormatDto, StartOperationRequestDto, ThemeDto,
-    WorkspaceCommandDto, WorkspaceDto, WorkspaceSummaryDto,
+    RuntimeKindDto, SettingsDto, SizeFormatDto, StartOperationRequestDto, StartSearchRequestDto,
+    StartSearchResponseDto, ThemeDto, WorkspaceCommandDto, WorkspaceDto, WorkspaceSummaryDto,
 };
 use fm_vfs::{EntryRef, FileSystemProvider, ProviderCapabilities, ProviderRegistry};
 use fm_vfs_local::LocalFileSystemProvider;
@@ -76,6 +77,7 @@ pub struct FileManagerService {
     force_cross_volume_moves: AtomicBool,
     audit_log_path: PathBuf,
     actions: ActionRegistry,
+    search: SearchEngine,
 }
 
 const OPERATION_HISTORY_FILE_NAME: &str = "operation-history.json";
@@ -299,6 +301,10 @@ impl FileManagerService {
         let settings_directory = settings_directory.into();
         let mut providers = ProviderRegistry::new();
         providers.register(Arc::new(LocalFileSystemProvider));
+        let search_store = Arc::new(SearchResultsStore::new());
+        providers.register(Arc::new(SearchFileSystemProvider::new(Arc::clone(
+            &search_store,
+        ))));
         let settings_store = SettingsStore::new(&settings_directory);
         let loaded = settings_store
             .load()
@@ -328,6 +334,7 @@ impl FileManagerService {
             directories: directories.clone(),
         });
         let platform_capabilities = platform.capabilities();
+        let search = SearchEngine::new(search_store, events.clone());
         Self {
             runtime,
             platform,
@@ -351,6 +358,7 @@ impl FileManagerService {
             force_cross_volume_moves: AtomicBool::new(false),
             audit_log_path: settings_directory.join("audit.jsonl"),
             actions: ActionRegistry::with_core_actions(platform_capabilities),
+            search,
         }
     }
 
@@ -1166,6 +1174,35 @@ impl FileManagerService {
         request: EntryMetadataRequest,
     ) -> Result<EntryMetadata, ApplicationError> {
         self.directories.metadata(request).await
+    }
+
+    /// Starts a cancellable recursive filename search over one or more
+    /// roots, streaming matches to `request.workspace_id` over the event
+    /// bus as they are found (spec §24, task 0068).
+    pub fn start_search(
+        &self,
+        request: StartSearchRequestDto,
+    ) -> Result<StartSearchResponseDto, ApplicationError> {
+        let roots: Vec<Location> = request.roots.into_iter().map(Into::into).collect();
+        let (search_id, location) = self
+            .search
+            .start(
+                roots,
+                request.query,
+                EventAudience::Workspace(request.workspace_id.into()),
+            )
+            .map_err(|error| ApplicationError::InvalidRequest(error.to_string()))?;
+        Ok(StartSearchResponseDto {
+            search_id,
+            location: location.into(),
+        })
+    }
+
+    /// Cancels a running search, stopping its traversal promptly.
+    pub fn cancel_search(&self, search_id: Uuid) -> Result<(), ApplicationError> {
+        self.search
+            .cancel(search_id)
+            .map_err(|_| ApplicationError::NotFound)
     }
 
     /// Reports which capabilities are available for the current runtime and

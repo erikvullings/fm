@@ -24,6 +24,8 @@ import type {
   RuntimeCapabilitiesDto,
   SettingsDto,
   StartOperationRequestDto,
+  StartSearchRequestDto,
+  StartSearchResponseDto,
   WorkspaceCommandDto,
   WorkspaceDto,
   WorkspaceSummaryDto
@@ -885,6 +887,86 @@ export const getRuntimeCapabilities = async ( options?: Parameters<typeof fetchM
   {
     ...options,
     method: 'GET'
+
+
+  }
+);}
+
+
+
+export type startSearchResponse201 = {
+  data: StartSearchResponseDto
+  status: 201
+}
+
+export type startSearchResponse400 = {
+  data: ApplicationErrorDto
+  status: 400
+}
+
+export type startSearchResponseSuccess = (startSearchResponse201) & {
+  headers: Headers;
+};
+export type startSearchResponseError = (startSearchResponse400) & {
+  headers: Headers;
+};
+
+export type startSearchResponse = (startSearchResponseSuccess | startSearchResponseError)
+
+export const getStartSearchUrl = () => {
+
+
+
+
+  return `/api/v1/search`
+}
+
+export const startSearch = async (startSearchRequestDto: StartSearchRequestDto, options?: Parameters<typeof fetchMutator>[1]): Promise<startSearchResponse> => {
+
+  return fetchMutator<startSearchResponse>(getStartSearchUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(startSearchRequestDto)
+  }
+);}
+
+
+
+export type cancelSearchResponse204 = {
+  data: void
+  status: 204
+}
+
+export type cancelSearchResponse404 = {
+  data: ApplicationErrorDto
+  status: 404
+}
+
+export type cancelSearchResponseSuccess = (cancelSearchResponse204) & {
+  headers: Headers;
+};
+export type cancelSearchResponseError = (cancelSearchResponse404) & {
+  headers: Headers;
+};
+
+export type cancelSearchResponse = (cancelSearchResponseSuccess | cancelSearchResponseError)
+
+export const getCancelSearchUrl = (searchId: string,) => {
+
+
+
+
+  return `/api/v1/search/${searchId}/cancel`
+}
+
+export const cancelSearch = async (searchId: string, options?: Parameters<typeof fetchMutator>[1]): Promise<cancelSearchResponse> => {
+
+  return fetchMutator<cancelSearchResponse>(getCancelSearchUrl(searchId),
+  {
+    ...options,
+    method: 'POST'
 
 
   }

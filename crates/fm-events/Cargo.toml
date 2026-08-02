@@ -12,6 +12,7 @@ fm-domain.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tokio = { workspace = true, features = ["sync"] }
+uuid.workspace = true
 
 [lints]
 workspace = true

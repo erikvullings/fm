@@ -14,9 +14,11 @@ fn parses_local_uri_and_rejects_reserved_and_unknown_providers() {
         Location::parse("archive:///tmp/example.zip!/docs"),
         Err(LocationError::UnsupportedProvider("archive".to_owned()))
     );
+    let search = Location::parse("search://local/11111111-1111-4111-8111-111111111111").unwrap();
+    assert_eq!(search.provider_id, ProviderId::new("search"));
     assert_eq!(
         Location::parse("search://local?query=report"),
-        Err(LocationError::UnsupportedProvider("search".to_owned()))
+        Err(LocationError::InvalidUri)
     );
     assert_eq!(
         Location::parse("sftp://example.test/home"),
@@ -53,6 +55,30 @@ fn validates_provider_and_rejects_invalid_segments() {
         Location::parse("file:///tmp/CON.txt"),
         Err(LocationError::ReservedWindowsName("CON.txt".to_owned()))
     );
+}
+
+#[test]
+fn search_locations_parse_but_reject_file_specific_operations() {
+    let location = Location::parse("search://local/11111111-1111-4111-8111-111111111111").unwrap();
+    assert_eq!(location.provider_id, ProviderId::new("search"));
+
+    assert_eq!(
+        Location::parse("search://local/"),
+        Err(LocationError::InvalidUri)
+    );
+    assert_eq!(
+        Location::parse("search://other/11111111-1111-4111-8111-111111111111"),
+        Err(LocationError::InvalidUri)
+    );
+    assert_eq!(
+        Location::parse("search://local/one/two"),
+        Err(LocationError::InvalidUri)
+    );
+
+    assert!(location.to_native_path().is_err());
+    assert!(location.join("child").is_err());
+    assert!(location.name().is_err());
+    assert!(location.parent().is_err());
 }
 
 #[test]

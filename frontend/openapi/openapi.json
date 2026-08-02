@@ -2077,6 +2077,69 @@
         ],
         "type": "object"
       },
+      "StartSearchRequestDto": {
+        "description": "Starts a new recursive, cancellable filename search\n(`POST /api/v1/search`).",
+        "example": {
+          "query": "report*.pdf",
+          "roots": [
+            {
+              "providerId": "local",
+              "uri": "file:///Users/erik/Documents"
+            }
+          ],
+          "workspaceId": "7136d9bc-90f1-4c67-8527-9d30683167ec"
+        },
+        "properties": {
+          "query": {
+            "description": "Plain filename query. Matched as a case-insensitive substring unless\nit contains `*` or `?`, in which case it is treated as a glob\npattern; size/date/type filters and content search are not yet\nsupported (spec §24).",
+            "type": "string"
+          },
+          "roots": {
+            "description": "One or more roots to search recursively.",
+            "items": {
+              "$ref": "#/components/schemas/LocationDto"
+            },
+            "type": "array"
+          },
+          "workspaceId": {
+            "description": "Workspace that owns the search and receives its result-batch events.",
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "workspaceId",
+          "roots",
+          "query"
+        ],
+        "type": "object"
+      },
+      "StartSearchResponseDto": {
+        "description": "Identifies a started search and its virtual result location.",
+        "example": {
+          "location": {
+            "providerId": "search",
+            "uri": "search://local/5b1b6b1e-9b1b-4b1b-8b1b-1b1b1b1b1b1b"
+          },
+          "searchId": "5b1b6b1e-9b1b-4b1b-8b1b-1b1b1b1b1b1b"
+        },
+        "properties": {
+          "location": {
+            "$ref": "#/components/schemas/LocationDto",
+            "description": "The virtual `search://local/{searchId}` location that lists this\nsearch's streamed results; opening it in a pane renders results\nthrough the existing directory table unchanged (spec §24)."
+          },
+          "searchId": {
+            "description": "The started search's identifier, used to cancel it.",
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "searchId",
+          "location"
+        ],
+        "type": "object"
+      },
       "SymlinkPolicyDto": {
         "description": "Controls recursive-copy handling of symbolic links.",
         "enum": [
@@ -3433,6 +3496,74 @@
           }
         },
         "summary": "Reports the capabilities available for the current runtime and platform."
+      }
+    },
+    "/api/v1/search": {
+      "post": {
+        "operationId": "startSearch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StartSearchRequestDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StartSearchResponseDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationErrorDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/v1/search/{searchId}/cancel": {
+      "post": {
+        "operationId": "cancelSearch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "searchId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationErrorDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        }
       }
     },
     "/api/v1/settings": {

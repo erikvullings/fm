@@ -8,6 +8,7 @@ pub(crate) mod health;
 pub(crate) mod operation;
 pub(crate) mod plugin;
 pub(crate) mod runtime;
+pub(crate) mod search;
 pub(crate) mod settings;
 pub(crate) mod workspace;
 

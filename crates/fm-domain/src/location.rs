@@ -3,6 +3,13 @@
 //! Local filesystem locations use stable `file:` URIs while the owning
 //! provider is identified as `local`. Path operations decode and re-encode
 //! complete segments so callers never need to concatenate URI strings.
+//!
+//! `search://local/{searchId}` locations (spec §24, task 0068) address a
+//! virtual, provider-owned result set rather than a native path. They parse
+//! and carry a `provider_id` of `search`, but deliberately do not support
+//! [`Location::to_native_path`], [`Location::join`], [`Location::name`] or
+//! [`Location::parent`] (all `file:`-specific); the search provider builds
+//! and interprets these URIs directly instead.
 
 use std::path::{Path, PathBuf};
 
@@ -13,7 +20,11 @@ use crate::ids::ProviderId;
 
 const LOCAL_PROVIDER: &str = "local";
 const LOCAL_SCHEME: &str = "file";
-const RESERVED_SCHEMES: &[&str] = &["archive", "search", "sftp"];
+const SEARCH_PROVIDER: &str = "search";
+const SEARCH_SCHEME: &str = "search";
+const SEARCH_AUTHORITY: &str = "local";
+/// Schemes named by the specification but not yet backed by a provider.
+const RESERVED_SCHEMES: &[&str] = &["archive", "sftp"];
 
 /// A provider-neutral pointer to a location.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -92,6 +103,10 @@ impl Location {
     /// Parses and validates a provider-neutral URI.
     pub fn parse(uri: &str) -> Result<Self, LocationError> {
         let scheme = parse_scheme(uri)?;
+        if scheme == SEARCH_SCHEME {
+            validate_search_uri(uri)?;
+            return Ok(Self::new(ProviderId::new(SEARCH_PROVIDER), uri));
+        }
         if RESERVED_SCHEMES.contains(&scheme) {
             return Err(LocationError::UnsupportedProvider(scheme.to_owned()));
         }
@@ -290,11 +305,34 @@ fn parse_scheme(uri: &str) -> Result<&str, LocationError> {
 fn provider_for_scheme(scheme: &str) -> Result<&'static str, LocationError> {
     match scheme {
         LOCAL_SCHEME => Ok(LOCAL_PROVIDER),
+        SEARCH_SCHEME => Ok(SEARCH_PROVIDER),
         scheme if RESERVED_SCHEMES.contains(&scheme) => {
             Err(LocationError::UnsupportedProvider(scheme.to_owned()))
         }
         _ => Err(LocationError::UnknownProvider(scheme.to_owned())),
     }
+}
+
+/// Validates the `search://local/{searchId}` shape (spec §24, task 0068).
+///
+/// Search locations are deliberately not routed through [`ParsedFileUri`]:
+/// they address a virtual, provider-owned result set rather than a native
+/// path, so segment decoding, percent-encoding and native-path conversion
+/// never apply to them.
+fn validate_search_uri(uri: &str) -> Result<(), LocationError> {
+    let remainder = uri
+        .strip_prefix("search://")
+        .ok_or(LocationError::InvalidUri)?;
+    let mut segments = remainder.split('/');
+    let authority = segments.next().unwrap_or_default();
+    if authority != SEARCH_AUTHORITY {
+        return Err(LocationError::InvalidUri);
+    }
+    let search_id = segments.next().ok_or(LocationError::InvalidUri)?;
+    if search_id.is_empty() || segments.next().is_some() {
+        return Err(LocationError::InvalidUri);
+    }
+    Ok(())
 }
 
 fn validate_name(name: &str) -> Result<(), LocationError> {

@@ -25,6 +25,7 @@ fm-platform-macos = { path = "crates/fm-platform-macos" }
 fm-platform-windows = { path = "crates/fm-platform-windows" }
 fm-plugin-api = { path = "crates/fm-plugin-api" }
 fm-plugin-runtime = { path = "crates/fm-plugin-runtime" }
+fm-search = { path = "crates/fm-search" }
 fm-settings = { path = "crates/fm-settings" }
 fm-transport-dto = { path = "crates/fm-transport-dto" }
 fm-vfs = { path = "crates/fm-vfs" }
@@ -82,6 +83,7 @@ utoipa-axum = "0.2.0"
 utoipa-swagger-ui = { version = "9.0.2", features = ["axum"] }
 uuid = { version = "1.24.0", features = ["serde", "v4", "v5"] }
 toml = "1.0.6"
+walkdir = "2.5.0"
 
 # `anyhow` is reserved for executables in `apps/`; libraries use `thiserror`.
 # This is enforced by the architecture fitness test in `fm-test-support`.

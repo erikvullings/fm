@@ -14,6 +14,7 @@ pub mod operation;
 pub mod plugin;
 pub mod requests;
 pub mod runtime;
+pub mod search;
 pub mod settings;
 pub mod snapshot;
 pub mod workspace;
@@ -39,6 +40,7 @@ pub use operation::{
 pub use plugin::{PluginColumnDto, PluginDescriptorDto, PluginLogEntryDto, PluginPermissionsDto};
 pub use requests::{EntryMetadataRequest, ListDirectoryRequest, NavigateRequest};
 pub use runtime::{PlatformKindDto, RuntimeCapabilitiesDto, RuntimeKindDto};
+pub use search::{StartSearchRequestDto, StartSearchResponseDto};
 pub use settings::{
     ConflictPolicyDto, DateFormatDto, DefaultPaneLayoutDto, SettingsDto, SizeFormatDto, ThemeDto,
 };

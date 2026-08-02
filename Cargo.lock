@@ -1075,6 +1075,7 @@ dependencies = [
  "fm-platform",
  "fm-plugin-api",
  "fm-plugin-runtime",
+ "fm-search",
  "fm-settings",
  "fm-transport-dto",
  "fm-vfs",
@@ -1138,6 +1139,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+ "uuid",
 ]
 
 [[package]]
@@ -1212,6 +1214,19 @@ dependencies = [
 [[package]]
 name = "fm-search"
 version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "fm-domain",
+ "fm-events",
+ "fm-vfs",
+ "tempfile",
+ "thiserror 2.0.19",
+ "tokio",
+ "tokio-util",
+ "uuid",
+ "walkdir",
+]
 
 [[package]]
 name = "fm-server"

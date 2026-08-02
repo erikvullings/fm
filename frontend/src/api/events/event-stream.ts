@@ -106,6 +106,7 @@ const KNOWN_EVENT_TYPES = new Set([
   'operation.failed',
   'plugin.changed',
   'notification.created',
+  'search.resultsBatch',
 ]);
 const loggedUnknownEventTypes = new Set<string>();
 

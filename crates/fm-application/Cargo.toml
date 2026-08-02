@@ -16,6 +16,7 @@ fm-operations.workspace = true
 fm-platform.workspace = true
 fm-plugin-api.workspace = true
 fm-plugin-runtime.workspace = true
+fm-search.workspace = true
 fm-settings.workspace = true
 fm-transport-dto.workspace = true
 fm-vfs.workspace = true
