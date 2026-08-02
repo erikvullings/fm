@@ -85,7 +85,7 @@
   display: block;
 }
 
-.fm-path-editor > input.fm-path-input {
+.fm-path-editor > input[type="text"]:not(.browser-default).fm-path-input {
   box-sizing: border-box;
   flex: 1;
   min-width: 0;
@@ -96,8 +96,8 @@
   font-weight: normal;
   line-height: inherit;
   margin: 0;
-  border-bottom: 0 !important;
-  box-shadow: none !important;
+  border-bottom: 0;
+  box-shadow: none;
   height: 22px;
 }
 

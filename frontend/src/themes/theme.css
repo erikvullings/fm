@@ -224,7 +224,7 @@ body {
   box-shadow: var(--fm-shadow);
 }
 
-.fm-command-palette-input {
+input[type="text"].fm-command-palette-input {
   box-sizing: border-box;
   width: 100%;
   border: 0;
