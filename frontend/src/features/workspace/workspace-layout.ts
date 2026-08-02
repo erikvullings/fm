@@ -28,6 +28,11 @@ export interface WorkspacePaneContent {
   readonly cutEntryIds: ReadonlySet<EntryId>;
   readonly sortLabel: string;
   readonly sort: readonly SortDescriptor[];
+  readonly hasMore?: boolean;
+  readonly totalEntryCount: number;
+  readonly hiddenSelectedCount: number;
+  readonly filterOpen: boolean;
+  readonly filterQuery: string;
   readonly formatSettings?: EntryFormatSettings;
   readonly pluginColumns?: readonly DirectoryColumnDescriptor[];
   readonly metadata: EntryMetadataView;
@@ -45,6 +50,9 @@ export interface WorkspacePaneContent {
   readonly onRetry: () => void | Promise<void>;
   readonly onLoadNextPage: () => void | Promise<void>;
   readonly onSortChange: (sort: readonly SortDescriptor[]) => void;
+  readonly onFilterQueryChange: (query: string) => void;
+  readonly onFilterCommit: () => void;
+  readonly onFilterClose: () => void;
   readonly onRename: (entry: EntrySummary, name: string) => void | Promise<void>;
   readonly onContextMenu?: (entries: readonly EntrySummary[], x: number, y: number) => void;
 }
@@ -228,6 +236,11 @@ export const WorkspaceLayoutView: FactoryComponent<WorkspaceLayoutViewAttrs> = (
         cutEntryIds: content.cutEntryIds,
         sortLabel: content.sortLabel,
         sort: content.sort,
+        ...(content.hasMore === undefined ? {} : { hasMore: content.hasMore }),
+        totalEntryCount: content.totalEntryCount,
+        hiddenSelectedCount: content.hiddenSelectedCount,
+        filterOpen: content.filterOpen,
+        filterQuery: content.filterQuery,
         ...(content.formatSettings === undefined ? {} : { formatSettings: content.formatSettings }),
         ...(content.pluginColumns === undefined ? {} : { pluginColumns: content.pluginColumns }),
         metadata: content.metadata,
@@ -252,6 +265,9 @@ export const WorkspaceLayoutView: FactoryComponent<WorkspaceLayoutViewAttrs> = (
         onRetry: content.onRetry,
         onLoadNextPage: content.onLoadNextPage,
         onSortChange: content.onSortChange,
+        onFilterQueryChange: content.onFilterQueryChange,
+        onFilterCommit: content.onFilterCommit,
+        onFilterClose: content.onFilterClose,
         onRename: content.onRename,
         onContextMenu: content.onContextMenu ?? (() => undefined),
       }),

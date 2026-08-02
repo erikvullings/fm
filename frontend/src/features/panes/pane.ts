@@ -21,6 +21,7 @@ import {
 } from '../entry-formatting/entry-formatting';
 import type { EntryMetadataView } from '../entry-metadata/entry-metadata-loader';
 import { validateDirectoryName } from '../operations/create-directory-dialog';
+import { QuickFilterInput } from '../quick-filter/quick-filter-input';
 import {
   reduceTypeahead,
   type SelectionPlatform,
@@ -57,6 +58,17 @@ export interface PaneAttrs {
   readonly keybindingOverrides?: Readonly<Record<string, string>>;
   readonly canNavigateBack: boolean;
   readonly canNavigateForward: boolean;
+  /** Whether the loaded directory has more unfetched pages (spec-required paging clarity). */
+  readonly hasMore?: boolean;
+  /** Total loaded ordinary entries before filtering, for the "N of M shown" status. */
+  readonly totalEntryCount: number;
+  /** Selected entries hidden by the active filter (still selected, just not rendered). */
+  readonly hiddenSelectedCount: number;
+  readonly filterOpen: boolean;
+  readonly filterQuery: string;
+  readonly onFilterQueryChange: (query: string) => void;
+  readonly onFilterCommit: () => void;
+  readonly onFilterClose: () => void;
   readonly onNavigate: (path: string) => void | Promise<void>;
   readonly onBack: () => void | Promise<void>;
   readonly onForward: () => void | Promise<void>;
@@ -526,6 +538,14 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
                   ? undefined
                   : m('.fm-path-error', { role: 'alert' }, pathError),
               ]),
+          attrs.filterOpen
+            ? m(QuickFilterInput, {
+                query: attrs.filterQuery,
+                onQueryChange: attrs.onFilterQueryChange,
+                onCommit: attrs.onFilterCommit,
+                onClose: attrs.onFilterClose,
+              })
+            : undefined,
           m(DirectoryTable, {
             state: attrs.state,
             source: entryArraySource(attrs.entries),
@@ -633,9 +653,18 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
           m('.fm-pane-status', { role: 'status' }, [
             m(
               'span',
-              `${ordinaryEntries.length} ${ordinaryEntries.length === 1 ? 'entry' : 'entries'}`,
+              attrs.filterQuery.trim() === ''
+                ? `${ordinaryEntries.length} ${ordinaryEntries.length === 1 ? 'entry' : 'entries'}`
+                : `${ordinaryEntries.length} of ${attrs.totalEntryCount} shown${
+                    attrs.hasMore === true ? ' (more available)' : ''
+                  }`,
             ),
-            m('span', `${selectedCount} selected`),
+            m(
+              'span',
+              attrs.hiddenSelectedCount > 0
+                ? `${selectedCount} selected (${attrs.hiddenSelectedCount} hidden by filter)`
+                : `${selectedCount} selected`,
+            ),
             m('span', `${sizeLabel(totalSelectedSize)} selected`),
             m('span', `Sort: ${attrs.sortLabel}`),
             typeahead === undefined

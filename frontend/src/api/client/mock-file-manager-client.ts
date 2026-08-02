@@ -440,8 +440,19 @@ export class MockFileManagerClient implements FileManagerClient {
                     view: {
                       ...tab.view,
                       ...Object.fromEntries(
-                        Object.entries(command.patch).filter(([, value]) => value !== null),
+                        Object.entries(command.patch).filter(
+                          ([key, value]) => key !== 'quickFilter' && value !== null,
+                        ),
                       ),
+                      ...(command.patch.quickFilter === undefined
+                        ? {}
+                        : {
+                            quickFilter:
+                              command.patch.quickFilter === null ||
+                              command.patch.quickFilter.type === 'clear'
+                                ? null
+                                : command.patch.quickFilter.filter,
+                          }),
                     },
                   }
                 : tab;

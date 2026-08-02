@@ -739,4 +739,97 @@ describe('AppShell', () => {
       ),
     );
   });
+
+  it('opens the quick filter with Ctrl+F, filters the active pane live, and closes with Escape (task 0067)', async () => {
+    mountShell('mock');
+    await vi.waitFor(() => expect(root.textContent).toContain('Documents'));
+    const activePane = root.querySelector<HTMLElement>('[data-active="true"] > .fm-pane');
+    const totalRows = activePane?.querySelectorAll('.fm-directory-row').length ?? 0;
+    expect(totalRows).toBeGreaterThan(0);
+
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'f', ctrlKey: true, bubbles: true }),
+    );
+    m.redraw.sync();
+
+    const filterInput = activePane?.querySelector<HTMLInputElement>('.fm-quick-filter-input');
+    expect(filterInput).not.toBeNull();
+    expect(document.activeElement).toBe(filterInput);
+    if (!filterInput) throw new Error('quick filter input missing');
+
+    filterInput.value = 'doc';
+    filterInput.dispatchEvent(new InputEvent('input', { bubbles: true }));
+    m.redraw.sync();
+
+    expect(activePane?.querySelectorAll('.fm-directory-row')).toHaveLength(2);
+    expect(activePane?.querySelector('.fm-pane-status')?.textContent).toContain(
+      `2 of ${totalRows} shown`,
+    );
+
+    filterInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    m.redraw.sync();
+
+    expect(activePane?.querySelector('.fm-quick-filter-input')).toBeNull();
+    expect(activePane?.querySelectorAll('.fm-directory-row')).toHaveLength(totalRows);
+  });
+
+  it('does nothing harmful when Ctrl+F repeats or an editable target already has focus (task 0067)', async () => {
+    mountShell('mock');
+    await vi.waitFor(() => expect(root.textContent).toContain('Documents'));
+    const activePane = root.querySelector<HTMLElement>('[data-active="true"] > .fm-pane');
+
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'f', ctrlKey: true, bubbles: true }),
+    );
+    m.redraw.sync();
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'f', ctrlKey: true, bubbles: true }),
+    );
+    m.redraw.sync();
+    expect(activePane?.querySelectorAll('.fm-quick-filter-input')).toHaveLength(1);
+
+    const editButton = activePane?.querySelector<HTMLElement>('.fm-breadcrumb-edit-target');
+    editButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    m.redraw.sync();
+    const pathInput = activePane?.querySelector<HTMLInputElement>('.fm-path-input');
+    pathInput?.focus();
+    pathInput?.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'f', ctrlKey: true, bubbles: true }),
+    );
+    m.redraw.sync();
+
+    expect(document.activeElement).toBe(pathInput);
+  });
+
+  it('persists the committed quick-filter query and restores it when the filter box reopens (task 0067)', async () => {
+    const client = new MockFileManagerClient();
+    m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
+    await vi.waitFor(() => expect(root.textContent).toContain('Documents'));
+    const activePane = root.querySelector<HTMLElement>('[data-active="true"] > .fm-pane');
+
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'f', ctrlKey: true, bubbles: true }),
+    );
+    m.redraw.sync();
+    const filterInput = activePane?.querySelector<HTMLInputElement>('.fm-quick-filter-input');
+    if (!filterInput) throw new Error('quick filter input missing');
+    filterInput.value = 'doc';
+    filterInput.dispatchEvent(new InputEvent('input', { bubbles: true }));
+    filterInput.dispatchEvent(new FocusEvent('blur', { bubbles: true }));
+    m.redraw.sync();
+
+    const workspaceId = (await client.listWorkspaces())[0]?.id ?? '';
+    await vi.waitFor(async () => {
+      const workspace = await client.getWorkspace(workspaceId);
+      const pane = workspace.panesById[workspace.activePaneId];
+      const tab = pane?.tabsById[pane.activeTabId];
+      expect(tab?.view.quickFilter).toEqual({ query: 'doc' });
+    });
+
+    m.mount(root, null);
+    m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
+    await vi.waitFor(() => expect(root.textContent).toContain('Documents'));
+    const reopenedPane = root.querySelector<HTMLElement>('[data-active="true"] > .fm-pane');
+    expect(reopenedPane?.querySelectorAll('.fm-directory-row')).toHaveLength(2);
+  });
 });

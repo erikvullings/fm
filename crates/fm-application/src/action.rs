@@ -283,7 +283,7 @@ fn core_actions(capabilities: PlatformCapabilities) -> Vec<ActionDescriptor> {
             "Quick Filter",
             "navigation",
             vec![primary("f")],
-            ActionContextRequirements::unimplemented(),
+            ActionContextRequirements::none(),
         ),
         core_action(
             "core.newTab",

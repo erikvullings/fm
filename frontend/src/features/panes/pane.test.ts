@@ -83,6 +83,13 @@ function attrs(overrides: Partial<PaneAttrs> = {}): PaneAttrs {
     keybindingOverrides: {},
     canNavigateBack: true,
     canNavigateForward: true,
+    totalEntryCount: entries.length,
+    hiddenSelectedCount: 0,
+    filterOpen: false,
+    filterQuery: '',
+    onFilterQueryChange: vi.fn(),
+    onFilterCommit: vi.fn(),
+    onFilterClose: vi.fn(),
     onBack: vi.fn(),
     onForward: vi.fn(),
     onParent: vi.fn(),
@@ -285,6 +292,82 @@ describe('Pane status bar', () => {
     expect(summary).toContain('1 KiB');
     expect(summary).toContain('Owner: erik');
     expect(summary).toContain('Permissions: read, write');
+  });
+});
+
+describe('Pane quick filter', () => {
+  it('renders the inline filter box only when open, focused and controlled', () => {
+    mount(attrs({ filterOpen: false }));
+    expect(root.querySelector('.fm-quick-filter-input')).toBeNull();
+
+    mount(attrs({ filterOpen: true, filterQuery: 'one' }));
+    const input = root.querySelector<HTMLInputElement>('.fm-quick-filter-input');
+    expect(input?.value).toBe('one');
+    expect(document.activeElement).toBe(input);
+  });
+
+  it('reports typed input, commit and close through the matching callbacks', () => {
+    const onFilterQueryChange = vi.fn();
+    const onFilterCommit = vi.fn();
+    const onFilterClose = vi.fn();
+    mount(
+      attrs({
+        filterOpen: true,
+        onFilterQueryChange,
+        onFilterCommit,
+        onFilterClose,
+      }),
+    );
+    const input = root.querySelector<HTMLInputElement>('.fm-quick-filter-input');
+    if (input === null) throw new Error('quick filter input missing');
+
+    input.value = 'on';
+    input.dispatchEvent(new InputEvent('input', { bubbles: true }));
+    expect(onFilterQueryChange).toHaveBeenCalledWith('on');
+
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    expect(onFilterCommit).toHaveBeenCalledOnce();
+
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(onFilterClose).toHaveBeenCalledOnce();
+
+    input.dispatchEvent(new FocusEvent('blur', { bubbles: true }));
+    expect(onFilterCommit).toHaveBeenCalledTimes(2);
+  });
+
+  it('shows "N of M shown", the paging note, and reverts to the plain count when cleared', () => {
+    mount(
+      attrs({
+        filterOpen: true,
+        filterQuery: 'one',
+        entries: [entries[0] as EntrySummary],
+        totalEntryCount: 2,
+        hasMore: true,
+      }),
+    );
+    expect(root.querySelector('.fm-pane-status')?.textContent).toContain(
+      '1 of 2 shown (more available)',
+    );
+
+    mount(attrs({ filterOpen: false, filterQuery: '' }));
+    expect(root.querySelector('.fm-pane-status')?.textContent).toContain('2 entries');
+  });
+
+  it('reports hidden-but-selected entries alongside the plain selected count', () => {
+    mount(
+      attrs({
+        selectedEntryIds: new Set<EntryId>(['one', 'two'] as EntryId[]),
+        hiddenSelectedCount: 1,
+      }),
+    );
+    expect(root.querySelector('.fm-pane-status')?.textContent).toContain(
+      '2 selected (1 hidden by filter)',
+    );
+
+    mount(attrs({ selectedEntryIds: new Set<EntryId>(['one'] as EntryId[]) }));
+    const status = root.querySelector('.fm-pane-status')?.textContent;
+    expect(status).toContain('1 selected');
+    expect(status).not.toContain('hidden by filter');
   });
 });
 

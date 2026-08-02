@@ -44,6 +44,7 @@ import {
 import { PermanentDeleteDialog } from '../features/operations/permanent-delete-dialog';
 import { isParentEntry, withParentEntry } from '../features/panes/parent-entry';
 import { PluginManagement } from '../features/plugin-management/plugin-management';
+import { filterEntries, hiddenSelectedEntryCount } from '../features/quick-filter/quick-filter';
 import type { SelectionPlatform } from '../features/selection/keybindings';
 import {
   emptySelection,
@@ -84,6 +85,7 @@ import type {
   PluginLogEntry,
   Settings,
   SortDescriptor,
+  TabProjection,
   WorkspaceLayout,
   WorkspaceProjection,
 } from '../models';
@@ -149,6 +151,18 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     }
   >();
   const sortRequests = new Map<PaneId, object>();
+  /** Live, uncommitted-per-keystroke quick-filter text; committed to the tab's view on blur/close. */
+  const quickFilterDrafts = new Map<PaneId, string>();
+  /** Whether the inline quick-filter box is shown for a pane, independent of a persisted query. */
+  const quickFilterOpen = new Map<PaneId, boolean>();
+  const filteredEntries = new Map<
+    PaneId,
+    {
+      readonly input: readonly EntrySummary[];
+      readonly query: string;
+      readonly entries: readonly EntrySummary[];
+    }
+  >();
   let platform: SelectionPlatform = 'unknown';
   let workspaceRequest: AbortController | undefined;
   let unsubscribeEvents: (() => void) | undefined;
@@ -242,6 +256,28 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       }
     });
     return cached?.entries ?? entries;
+  }
+
+  function entriesFilteredFor(
+    paneId: PaneId,
+    entries: readonly EntrySummary[],
+    query: string,
+  ): readonly EntrySummary[] {
+    const cached = filteredEntries.get(paneId);
+    if (cached?.input === entries && cached.query === query) {
+      return cached.entries;
+    }
+    const filtered = filterEntries(entries, query);
+    filteredEntries.set(paneId, { input: entries, query, entries: filtered });
+    return filtered;
+  }
+
+  function quickFilterQueryFor(paneId: PaneId, tab: TabProjection | undefined): string {
+    return quickFilterDrafts.get(paneId) ?? tab?.view.quickFilter?.query ?? '';
+  }
+
+  function quickFilterOpenFor(paneId: PaneId, tab: TabProjection | undefined): boolean {
+    return quickFilterOpen.get(paneId) === true || (tab?.view.quickFilter ?? null) !== null;
   }
 
   function metadataLoader(client: FileManagerClient, paneId: PaneId): EntryMetadataLoader {
@@ -696,6 +732,19 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       event.preventDefault();
       createDirectoryOpen = true;
       m.redraw();
+      return;
+    }
+    if (dispatchedAction === 'core.quickFilter') {
+      const active = activeDirectory();
+      if (active === undefined) return;
+      event.preventDefault();
+      quickFilterOpen.set(active.paneId, true);
+      if (!quickFilterDrafts.has(active.paneId)) {
+        const pane = workspace?.panesById[active.paneId];
+        const tab = pane?.tabsById[pane.activeTabId];
+        quickFilterDrafts.set(active.paneId, tab?.view.quickFilter?.query ?? '');
+      }
+      m.redraw();
     }
   }
 
@@ -813,15 +862,18 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
             effectiveSort(tab.view.sort),
             tab.view.foldersFirst,
           );
+    const quickFilterQuery = quickFilterQueryFor(paneId, tab);
+    const filtered = entriesFilteredFor(paneId, sorted, quickFilterQuery);
     const entries =
-      tab === undefined ? sorted : withParentEntry(pathFromUri(tab.location.uri), sorted);
+      tab === undefined ? filtered : withParentEntry(pathFromUri(tab.location.uri), filtered);
     const entryIds = entries.map((entry) => entry.id);
     const cursorIndex =
       selection.cursorEntryId === undefined ? undefined : entryIds.indexOf(selection.cursorEntryId);
+    const selectedEntryIds = new Set<EntryId>(selection.selectedEntryIds);
     return {
       ...directory,
       entries,
-      selectedEntryIds: new Set<EntryId>(selection.selectedEntryIds),
+      selectedEntryIds,
       cutEntryIds: new Set<EntryId>(
         directory.entries
           .filter((entry) => isCutLocation(clipboard(), entry.location))
@@ -829,6 +881,10 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       ),
       sortLabel: sortLabel(effectiveSort(tab?.view.sort ?? [])),
       sort: effectiveSort(tab?.view.sort ?? []),
+      totalEntryCount: directory.entries.length,
+      hiddenSelectedCount: hiddenSelectedEntryCount(directory.entries, filtered, selectedEntryIds),
+      filterOpen: quickFilterOpenFor(paneId, tab),
+      filterQuery: quickFilterQuery,
       formatSettings: entryFormatSettings,
       pluginColumns:
         plugins.some(
@@ -891,6 +947,50 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
           },
           replaceWorkspace,
         ).catch(() => undefined);
+      },
+      onFilterQueryChange: (query) => {
+        quickFilterDrafts.set(paneId, query);
+        m.redraw();
+      },
+      onFilterCommit: () => {
+        const draft = quickFilterDrafts.get(paneId);
+        if (workspace === undefined || tab === undefined || draft === undefined) return;
+        const committed = tab.view.quickFilter?.query ?? '';
+        if (draft === committed) return;
+        void dispatchWorkspaceCommand(
+          client,
+          {
+            type: 'updateView',
+            workspaceId: workspace.id,
+            paneId,
+            tabId: tab.id,
+            patch: {
+              quickFilter:
+                draft.trim() === '' ? { type: 'clear' } : { type: 'set', filter: { query: draft } },
+            },
+            expectedRevision: workspace.revision,
+          },
+          replaceWorkspace,
+        ).catch(() => undefined);
+      },
+      onFilterClose: () => {
+        quickFilterOpen.set(paneId, false);
+        quickFilterDrafts.delete(paneId);
+        if (workspace !== undefined && tab !== undefined && tab.view.quickFilter != null) {
+          void dispatchWorkspaceCommand(
+            client,
+            {
+              type: 'updateView',
+              workspaceId: workspace.id,
+              paneId,
+              tabId: tab.id,
+              patch: { quickFilter: { type: 'clear' } },
+              expectedRevision: workspace.revision,
+            },
+            replaceWorkspace,
+          ).catch(() => undefined);
+        }
+        m.redraw();
       },
       onRename: (entry, name) => {
         const active = activeDirectory();

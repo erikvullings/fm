@@ -1,0 +1,21 @@
+.fm-quick-filter {
+  display: flex;
+  align-items: center;
+  border-bottom: 1px solid var(--fm-border);
+  background: var(--fm-surface-elevated);
+}
+
+.fm-quick-filter-input {
+  width: 100%;
+  min-height: var(--fm-row-height);
+  padding: 0 0.75rem;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+}
+
+.fm-quick-filter-input:focus {
+  outline: 2px solid var(--fm-accent);
+  outline-offset: -2px;
+}
