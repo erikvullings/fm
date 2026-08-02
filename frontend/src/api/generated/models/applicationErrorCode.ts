@@ -22,5 +22,6 @@ export const ApplicationErrorCode = {
   workspaceRevisionConflict: 'workspaceRevisionConflict',
   actionNotFound: 'actionNotFound',
   actionUnavailable: 'actionUnavailable',
+  platformOperationFailed: 'platformOperationFailed',
   internal: 'internal',
 } as const;

@@ -64,8 +64,16 @@ pub trait PlatformAdapter: Send + Sync {
     }
 
     /// Opens a terminal at a location.
-    fn open_terminal(&self, path: &Path) -> Result<(), PlatformError> {
-        let _ = path;
+    ///
+    /// `command_override` is the configured terminal setting (specification
+    /// §26), e.g. an application or executable name; `None` means use this
+    /// adapter's sensible platform default (e.g. `Terminal` on macOS).
+    fn open_terminal(
+        &self,
+        path: &Path,
+        command_override: Option<&str>,
+    ) -> Result<(), PlatformError> {
+        let _ = (path, command_override);
         Err(PlatformError::Unsupported {
             capability: PlatformCapabilities::OPEN_TERMINAL,
         })

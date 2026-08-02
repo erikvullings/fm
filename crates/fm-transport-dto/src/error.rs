@@ -30,6 +30,10 @@ pub enum ApplicationErrorCode {
     ActionNotFound,
     /// The action is registered but not currently invokable (spec §18).
     ActionUnavailable,
+    /// A native platform operation (open/reveal/terminal) failed for a
+    /// reason safe to show the user, e.g. no default application or the
+    /// configured terminal was not found (spec §21, task 0061).
+    PlatformOperationFailed,
     /// An unexpected, unclassified failure occurred.
     Internal,
 }
@@ -113,6 +117,7 @@ mod tests {
             ApplicationErrorCode::WorkspaceRevisionConflict,
             ApplicationErrorCode::ActionNotFound,
             ApplicationErrorCode::ActionUnavailable,
+            ApplicationErrorCode::PlatformOperationFailed,
             ApplicationErrorCode::Internal,
         ] {
             let json = serde_json::to_string(&code).expect("serialization must succeed");
@@ -138,6 +143,15 @@ mod tests {
             serde_json::to_string(&ApplicationErrorCode::ActionUnavailable)
                 .expect("serialization must succeed"),
             "\"actionUnavailable\""
+        );
+    }
+
+    #[test]
+    fn platform_operation_failed_code_serializes_to_the_spec_18_string() {
+        assert_eq!(
+            serde_json::to_string(&ApplicationErrorCode::PlatformOperationFailed)
+                .expect("serialization must succeed"),
+            "\"platformOperationFailed\""
         );
     }
 }

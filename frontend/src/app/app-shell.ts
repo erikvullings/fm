@@ -71,6 +71,7 @@ import {
 } from '../keybindings/dispatcher';
 import type {
   ActionDescriptor,
+  ActionInvocationContext,
   BackendEvent,
   DirectoryDelta,
   EntryId,
@@ -417,6 +418,54 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     };
   }
 
+  /**
+   * `core.open`/`core.openWith`/`core.revealInSystemFileManager` act on a
+   * single entry and `core.openTerminal` acts on the current directory
+   * (task 0061); the backend cannot resolve an opaque `EntryId` back to a
+   * path itself (there is no server-side entry registry, mirroring plugin
+   * action invocation), so the frontend must supply the target as an
+   * explicit `{ uri }` parameter built from the already-loaded `Location`.
+   */
+  function platformActionParameters(
+    actionId: string,
+    selectedEntries: readonly EntrySummary[],
+    directoryLocation: Location | undefined,
+  ): { uri: string } | undefined {
+    if (
+      actionId === 'core.open' ||
+      actionId === 'core.openWith' ||
+      actionId === 'core.revealInSystemFileManager'
+    ) {
+      const entry = selectedEntries[0];
+      return entry === undefined ? undefined : { uri: entry.location.uri };
+    }
+    if (actionId === 'core.openTerminal') {
+      return directoryLocation === undefined ? undefined : { uri: directoryLocation.uri };
+    }
+    return undefined;
+  }
+
+  function invokeActionById(
+    actionId: string,
+    parameters: unknown,
+    context: ActionInvocationContext,
+  ): void {
+    void attrsClient
+      .invokeAction({
+        actionId,
+        ...(parameters === undefined ? {} : { parameters }),
+        context,
+      })
+      .then(() => {
+        commandPaletteRecency.set(actionId, Date.now());
+        m.redraw();
+      })
+      .catch((error: unknown) => {
+        commandPaletteError = error instanceof Error ? error.message : 'Unable to run command.';
+        m.redraw();
+      });
+  }
+
   function invokePaletteAction(
     action: ActionDescriptor,
     parameters?: unknown,
@@ -428,20 +477,15 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       createDirectoryOpen = true;
       return;
     }
-    void attrsClient
-      .invokeAction({
-        actionId: action.id,
-        ...(parameters === undefined ? {} : { parameters }),
-        context,
-      })
-      .then(() => {
-        commandPaletteRecency.set(action.id, Date.now());
-        m.redraw();
-      })
-      .catch((error: unknown) => {
-        commandPaletteError = error instanceof Error ? error.message : 'Unable to run command.';
-        m.redraw();
-      });
+    const paneId = context.paneId;
+    const directory = paneId === undefined ? undefined : directories.get(paneId);
+    const selectedEntries =
+      directory === undefined
+        ? []
+        : directory.entries.filter((entry) => context.selectedEntryIds?.includes(entry.id));
+    const effectiveParameters =
+      parameters ?? platformActionParameters(action.id, selectedEntries, directory?.location);
+    invokeActionById(action.id, effectiveParameters, context);
   }
 
   function openContextMenu(
@@ -813,7 +857,11 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
           ? navigation.parent(paneId)
           : entry.kind === 'directory'
             ? navigation.navigate(paneId, entry.location)
-            : undefined,
+            : invokeActionById(
+                'core.open',
+                { uri: entry.location.uri },
+                { paneId, selectedEntryIds: [entry.id], cursorEntryId: entry.id },
+              ),
       onSelectionAction: (action: SelectionAction) => {
         const orderedEntryIds =
           action.type === 'selectAll' || action.type === 'invert'

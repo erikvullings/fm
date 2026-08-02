@@ -55,8 +55,12 @@ impl PlatformAdapter for WindowsPlatformAdapter {
         self.fallback.open_with_default_application(path)
     }
 
-    fn open_terminal(&self, path: &Path) -> Result<(), PlatformError> {
-        self.fallback.open_terminal(path)
+    fn open_terminal(
+        &self,
+        path: &Path,
+        command_override: Option<&str>,
+    ) -> Result<(), PlatformError> {
+        self.fallback.open_terminal(path, command_override)
     }
 
     fn read_clipboard_file_references(&self) -> Result<Vec<PathBuf>, PlatformError> {
@@ -129,8 +133,8 @@ mod tests {
                 .to_string()
         );
         assert_eq!(
-            adapter.open_terminal(path).unwrap_err().to_string(),
-            fallback.open_terminal(path).unwrap_err().to_string()
+            adapter.open_terminal(path, None).unwrap_err().to_string(),
+            fallback.open_terminal(path, None).unwrap_err().to_string()
         );
         assert_eq!(
             adapter

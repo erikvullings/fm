@@ -617,4 +617,126 @@ describe('AppShell', () => {
     m.mount(second, null);
     second.remove();
   });
+
+  it('opens a file with core.open, passing its uri as a parameter (task 0061)', async () => {
+    const client = new MockFileManagerClient();
+    const invokeAction = vi.spyOn(client, 'invokeAction');
+    m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
+    await vi.waitFor(() => expect(root.textContent).toContain('日本語.txt'));
+
+    const fileRow = [...root.querySelectorAll<HTMLElement>('.fm-directory-row')].find((row) =>
+      row.textContent?.includes('日本語.txt'),
+    );
+    fileRow?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+    m.redraw.sync();
+
+    await vi.waitFor(() => expect(invokeAction).toHaveBeenCalledOnce());
+    expect(invokeAction).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actionId: 'core.open',
+        parameters: { uri: `mock:///${encodeURIComponent('日本語.txt')}` },
+      }),
+    );
+  });
+
+  it('reveals the selected entry via the context menu, passing its uri as a parameter (task 0061)', async () => {
+    const client = new MockFileManagerClient();
+    const invokeAction = vi.spyOn(client, 'invokeAction');
+    m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
+    await vi.waitFor(() => expect(root.textContent).toContain('日本語.txt'));
+
+    const fileRow = [...root.querySelectorAll<HTMLElement>('.fm-directory-row')].find((row) =>
+      row.textContent?.includes('日本語.txt'),
+    );
+    fileRow?.dispatchEvent(
+      new MouseEvent('contextmenu', { bubbles: true, clientX: 20, clientY: 20 }),
+    );
+    m.redraw.sync();
+
+    const revealButton = [
+      ...root.querySelectorAll<HTMLButtonElement>('.fm-context-menu-item'),
+    ].find((button) => button.textContent === 'Reveal in File Manager');
+    expect(revealButton).not.toBeUndefined();
+    revealButton?.click();
+    m.redraw.sync();
+
+    await vi.waitFor(() => expect(invokeAction).toHaveBeenCalledOnce());
+    expect(invokeAction).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actionId: 'core.revealInSystemFileManager',
+        parameters: { uri: `mock:///${encodeURIComponent('日本語.txt')}` },
+      }),
+    );
+  });
+
+  it('opens a terminal at the current directory via the context menu, passing its uri (task 0061)', async () => {
+    const client = new MockFileManagerClient();
+    vi.spyOn(client, 'getRuntimeCapabilities').mockResolvedValue({
+      clipboard: false,
+      nativeDragOut: false,
+      nativeFileIcons: false,
+      nativeMenus: false,
+      nativeThumbnails: false,
+      openTerminal: true,
+      platform: 'linux',
+      plugins: true,
+      revealInSystemFileManager: false,
+      runtime: 'mock',
+      serverAdministration: false,
+      systemTrash: false,
+    });
+    vi.spyOn(client, 'listActions').mockResolvedValue([
+      {
+        id: 'core.openTerminal',
+        title: 'Open Terminal Here',
+        category: 'tools',
+        defaultShortcuts: [],
+        contextRequirements: {},
+        source: { kind: 'core' },
+      },
+    ]);
+    const invokeAction = vi.spyOn(client, 'invokeAction');
+    m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
+    await vi.waitFor(() => expect(root.textContent).toContain('日本語.txt'));
+
+    const table = root.querySelector<HTMLElement>('.fm-directory-table');
+    table?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 5, clientY: 5 }));
+    m.redraw.sync();
+
+    const terminalButton = [
+      ...root.querySelectorAll<HTMLButtonElement>('.fm-context-menu-item'),
+    ].find((button) => button.textContent === 'Open Terminal Here');
+    expect(terminalButton).not.toBeUndefined();
+    terminalButton?.click();
+    m.redraw.sync();
+
+    await vi.waitFor(() => expect(invokeAction).toHaveBeenCalledOnce());
+    expect(invokeAction).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actionId: 'core.openTerminal',
+        parameters: { uri: 'mock:///' },
+      }),
+    );
+  });
+
+  it('surfaces a platform action failure as a visible, user-readable error (task 0061)', async () => {
+    const client = new MockFileManagerClient();
+    vi.spyOn(client, 'invokeAction').mockRejectedValue(
+      new Error('no default application is registered for this file type'),
+    );
+    m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
+    await vi.waitFor(() => expect(root.textContent).toContain('日本語.txt'));
+
+    const fileRow = [...root.querySelectorAll<HTMLElement>('.fm-directory-row')].find((row) =>
+      row.textContent?.includes('日本語.txt'),
+    );
+    fileRow?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+    m.redraw.sync();
+
+    await vi.waitFor(() =>
+      expect(root.querySelector('.fm-command-palette-error')?.textContent).toBe(
+        'no default application is registered for this file type',
+      ),
+    );
+  });
 });

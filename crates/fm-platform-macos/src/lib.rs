@@ -8,8 +8,11 @@
 //! §23/§35): thumbnails, macOS alias resolution (no capability flag exists
 //! for this in [`fm_platform::PlatformCapabilities`]; aliases are simply not
 //! resolved), Quick Look previews, Finder tags, extended attributes and
-//! drag-to-Finder (drag is task 0062). `open_with_default_application` and
-//! clipboard file references stay delegated to the fallback adapter.
+//! drag-to-Finder (drag is task 0062). Clipboard file references stay
+//! delegated to the fallback adapter. `open_with_default_application` (task
+//! 0061) shells out to `open <path>`; there is no distinct native "choose an
+//! application" picker wired up, so `core.openWith` currently behaves the
+//! same as `core.open` (documented gap, see task 0061 Agent Notes).
 
 #![cfg(target_os = "macos")]
 // Native AppKit/Foundation bindings are inherently FFI: `objc2` message sends
@@ -99,6 +102,7 @@ impl PlatformAdapter for MacosPlatformAdapter {
             | PlatformCapabilities::OPEN_TERMINAL
             | PlatformCapabilities::MOUNTED_VOLUMES
             | PlatformCapabilities::NATIVE_MENUS
+            | PlatformCapabilities::OPEN_WITH_DEFAULT_APPLICATION
     }
 
     fn file_icon(&self, path: &Path) -> Result<Vec<u8>, PlatformError> {
@@ -142,23 +146,40 @@ impl PlatformAdapter for MacosPlatformAdapter {
     }
 
     fn open_with_default_application(&self, path: &Path) -> Result<(), PlatformError> {
-        self.fallback.open_with_default_application(path)
-    }
-
-    fn open_terminal(&self, path: &Path) -> Result<(), PlatformError> {
         let status = std::process::Command::new("open")
-            .arg("-a")
-            .arg("Terminal")
             .arg(path)
             .status()
             .map_err(|error| PlatformError::Io {
-                message: format!("failed to launch Terminal: {error}"),
+                message: format!("failed to launch the default application: {error}"),
             })?;
         if status.success() {
             Ok(())
         } else {
             Err(PlatformError::Io {
-                message: format!("Terminal launch exited with {status}"),
+                message: format!("open exited with {status}"),
+            })
+        }
+    }
+
+    fn open_terminal(
+        &self,
+        path: &Path,
+        command_override: Option<&str>,
+    ) -> Result<(), PlatformError> {
+        let app = command_override.unwrap_or("Terminal");
+        let status = std::process::Command::new("open")
+            .arg("-a")
+            .arg(app)
+            .arg(path)
+            .status()
+            .map_err(|error| PlatformError::Io {
+                message: format!("failed to launch {app}: {error}"),
+            })?;
+        if status.success() {
+            Ok(())
+        } else {
+            Err(PlatformError::Io {
+                message: format!("{app} launch exited with {status}"),
             })
         }
     }
@@ -239,7 +260,6 @@ mod tests {
         }
         for unimplemented in [
             PlatformCapabilities::THUMBNAILS,
-            PlatformCapabilities::OPEN_WITH_DEFAULT_APPLICATION,
             PlatformCapabilities::CLIPBOARD_FILE_REFERENCES,
             PlatformCapabilities::NATIVE_DRAG_OUT,
         ] {
@@ -248,7 +268,7 @@ mod tests {
     }
 
     #[test]
-    fn thumbnail_open_with_default_application_and_clipboard_still_delegate_to_fallback() {
+    fn thumbnail_and_clipboard_still_delegate_to_fallback() {
         let adapter = MacosPlatformAdapter::new();
         let fallback = FallbackPlatformAdapter;
         let path = Path::new("/tmp/fm-platform-macos-test.txt");
@@ -256,16 +276,6 @@ mod tests {
         assert_eq!(
             adapter.thumbnail(path, 64).unwrap_err().to_string(),
             fallback.thumbnail(path, 64).unwrap_err().to_string()
-        );
-        assert_eq!(
-            adapter
-                .open_with_default_application(path)
-                .unwrap_err()
-                .to_string(),
-            fallback
-                .open_with_default_application(path)
-                .unwrap_err()
-                .to_string()
         );
         assert_eq!(
             adapter
@@ -393,5 +403,19 @@ mod tests {
                 vec!["-a".into(), "Terminal".into(), path.into()];
             assert_eq!(command, expected);
         }
+    }
+
+    #[test]
+    fn open_terminal_uses_the_command_override_as_the_open_dash_a_target() {
+        let dir = tempdir().expect("temp dir");
+
+        let error = MacosPlatformAdapter::new()
+            .open_terminal(dir.path(), Some("Definitely Not An Installed App"))
+            .expect_err("a bogus override app must fail, not silently open Terminal instead");
+        let message = error.to_string();
+        assert!(
+            message.contains("Definitely Not An Installed App"),
+            "error must name the overridden app, not the default: {message}"
+        );
     }
 }

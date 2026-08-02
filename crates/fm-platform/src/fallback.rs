@@ -64,7 +64,7 @@ mod tests {
             })
         ));
         assert!(matches!(
-            adapter.open_terminal(path),
+            adapter.open_terminal(path, None),
             Err(PlatformError::Unsupported {
                 capability: PlatformCapabilities::OPEN_TERMINAL
             })

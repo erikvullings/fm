@@ -217,6 +217,7 @@
           "workspaceRevisionConflict",
           "actionNotFound",
           "actionUnavailable",
+          "platformOperationFailed",
           "internal"
         ],
         "type": "string"

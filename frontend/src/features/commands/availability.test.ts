@@ -110,4 +110,23 @@ describe('command availability', () => {
       { action: actions[3], available: false, reason: 'Terminal is not supported by this host' },
     ]);
   });
+
+  it('includes core.revealInSystemFileManager in the selection-context menu (task 0061)', () => {
+    const actions = [
+      action('core.open', { requiresSingleSelection: true }),
+      action('core.revealInSystemFileManager', { requiresSingleSelection: true }),
+      action('core.createDirectory'),
+    ];
+
+    const menu = menuActionsForContext(actions, context({ selectedEntries: [entry('file')] }));
+
+    expect(menu.map((item) => item.action.id)).toEqual([
+      'core.open',
+      'core.revealInSystemFileManager',
+    ]);
+    expect(menu).toEqual([
+      { action: actions[0], available: true },
+      { action: actions[1], available: true },
+    ]);
+  });
 });

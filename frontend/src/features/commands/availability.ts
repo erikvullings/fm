@@ -24,6 +24,7 @@ const LOCATION_ACTION_IDS = new Set([
 const SELECTION_ACTION_IDS = new Set([
   'core.open',
   'core.openWith',
+  'core.revealInSystemFileManager',
   'core.copy',
   'core.move',
   'core.rename',

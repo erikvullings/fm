@@ -11,6 +11,7 @@ use fm_domain::{
     ActionContextRequirements, ActionDescriptor, ActionId, ActionInvocationContext, ActionSource,
     KeyChord,
 };
+use fm_platform::PlatformCapabilities;
 
 use crate::error::ApplicationError;
 
@@ -37,10 +38,19 @@ impl ActionRegistry {
 
     /// Creates a registry pre-populated with every core action (spec §18),
     /// plus the selection/navigation ids reserved by task 0028.
+    ///
+    /// `capabilities` is the injected [`fm_platform::PlatformAdapter`]'s
+    /// reported capabilities (task 0061): `core.open`, `core.openWith`,
+    /// `core.revealInSystemFileManager` and `core.openTerminal` derive their
+    /// `feature_available` from it, the same way
+    /// [`crate::FileManagerService::runtime_capabilities`] derives its DTO
+    /// (task 0058) - so browser/server mode (an empty
+    /// [`FallbackPlatformAdapter`](fm_platform::FallbackPlatformAdapter))
+    /// reports these actions unavailable, not merely hidden (spec §22).
     #[must_use]
-    pub fn with_core_actions() -> Self {
+    pub fn with_core_actions(capabilities: PlatformCapabilities) -> Self {
         let mut registry = Self::new();
-        for descriptor in core_actions() {
+        for descriptor in core_actions(capabilities) {
             registry
                 .register(descriptor)
                 .expect("core action ids must be unique");
@@ -122,21 +132,53 @@ fn primary(key: &str) -> KeyChord {
     }
 }
 
+/// Requires exactly one selected entry, like [`ActionContextRequirements::single_selection`],
+/// but with `feature_available` computed from the injected platform
+/// adapter's capabilities (task 0061) rather than hardcoded `true`.
+fn capability_gated_single_selection(feature_available: bool) -> ActionContextRequirements {
+    ActionContextRequirements {
+        feature_available,
+        requires_selection: true,
+        requires_single_selection: true,
+    }
+}
+
+/// No selection requirement, like [`ActionContextRequirements::none`], but
+/// with `feature_available` computed from the injected platform adapter's
+/// capabilities (task 0061) rather than hardcoded `true`.
+fn capability_gated_none(feature_available: bool) -> ActionContextRequirements {
+    ActionContextRequirements {
+        feature_available,
+        requires_selection: false,
+        requires_single_selection: false,
+    }
+}
+
 /// Core actions named by spec §18, plus the selection/navigation ids
 /// reserved by task 0028's frontend keybinding table.
 ///
-/// `core.open`, `core.openWith`, `core.openTerminal`, `core.copyPath` and
-/// `core.copyRelativePath` have no backend feature yet (tasks 0061 and the
-/// system-clipboard/relative-path work tracked alongside it), so they are
-/// registered as unavailable rather than omitted.
-fn core_actions() -> Vec<ActionDescriptor> {
+/// `core.open`, `core.openWith`, `core.revealInSystemFileManager` and
+/// `core.openTerminal` derive `feature_available` from `capabilities` (the
+/// injected [`fm_platform::PlatformAdapter`]'s reported capabilities, task
+/// 0061) rather than a permanent hardcoded value. `core.openWith` is tied to
+/// the same [`PlatformCapabilities::OPEN_WITH_DEFAULT_APPLICATION`] flag as
+/// `core.open`: no platform adapter exposes a distinct "choose application"
+/// binding yet, so it currently behaves identically to `core.open` (opens
+/// with the default application) - a documented gap, not silently
+/// over-claimed. `core.copyPath` and `core.copyRelativePath` have no backend
+/// feature yet (the system-clipboard/relative-path work tracked alongside
+/// this task), so they stay registered as permanently unavailable.
+fn core_actions(capabilities: PlatformCapabilities) -> Vec<ActionDescriptor> {
+    let open_available = capabilities.contains(PlatformCapabilities::OPEN_WITH_DEFAULT_APPLICATION);
+    let reveal_available = capabilities.contains(PlatformCapabilities::REVEAL_IN_FILE_MANAGER);
+    let open_terminal_available = capabilities.contains(PlatformCapabilities::OPEN_TERMINAL);
     vec![
         core_action(
             "core.open",
             "Open",
             "fileOperations",
             vec![key("Enter")],
-            ActionContextRequirements::unimplemented(),
+            capability_gated_single_selection(open_available),
         ),
         core_action(
             "core.parent",
@@ -164,7 +206,14 @@ fn core_actions() -> Vec<ActionDescriptor> {
             "Open With…",
             "fileOperations",
             Vec::new(),
-            ActionContextRequirements::unimplemented(),
+            capability_gated_single_selection(open_available),
+        ),
+        core_action(
+            "core.revealInSystemFileManager",
+            "Reveal in File Manager",
+            "fileOperations",
+            Vec::new(),
+            capability_gated_single_selection(reveal_available),
         ),
         core_action(
             "core.copy",
@@ -255,7 +304,7 @@ fn core_actions() -> Vec<ActionDescriptor> {
             "Open Terminal Here",
             "tools",
             Vec::new(),
-            ActionContextRequirements::unimplemented(),
+            capability_gated_none(open_terminal_available),
         ),
         core_action(
             "core.copyPath",
@@ -366,7 +415,7 @@ mod tests {
 
     #[test]
     fn with_core_actions_registers_every_required_and_reserved_id() {
-        let registry = ActionRegistry::with_core_actions();
+        let registry = ActionRegistry::with_core_actions(PlatformCapabilities::empty());
         let ids: Vec<String> = registry
             .list()
             .into_iter()
@@ -378,6 +427,7 @@ mod tests {
             "core.parent",
             "core.switchPane",
             "core.openWith",
+            "core.revealInSystemFileManager",
             "core.copy",
             "core.move",
             "core.rename",
@@ -410,21 +460,96 @@ mod tests {
 
     #[test]
     fn features_without_an_implementation_are_registered_as_unavailable() {
-        let registry = ActionRegistry::with_core_actions();
+        let registry = ActionRegistry::with_core_actions(PlatformCapabilities::empty());
         let context = ActionInvocationContext::default();
-        for id in [
-            "core.open",
-            "core.openWith",
-            "core.openTerminal",
-            "core.copyPath",
-            "core.copyRelativePath",
-        ] {
+        for id in ["core.copyPath", "core.copyRelativePath"] {
             let action_id = ActionId::new(id);
             let error = registry
                 .require_available(&action_id, &context)
                 .expect_err("unimplemented actions must report unavailable");
             assert_eq!(error, ApplicationError::ActionUnavailable(action_id));
         }
+    }
+
+    #[test]
+    fn capability_gated_actions_are_unavailable_when_the_adapter_reports_no_capabilities() {
+        let registry = ActionRegistry::with_core_actions(PlatformCapabilities::empty());
+        let mut context = ActionInvocationContext::default();
+        context.selected_entry_ids.push(fm_domain::EntryId::new());
+        for id in [
+            "core.open",
+            "core.openWith",
+            "core.revealInSystemFileManager",
+        ] {
+            let action_id = ActionId::new(id);
+            let error = registry
+                .require_available(&action_id, &context)
+                .expect_err("a capability-gated action must be unavailable without the capability");
+            assert_eq!(error, ApplicationError::ActionUnavailable(action_id));
+        }
+        let action_id = ActionId::new("core.openTerminal");
+        let error = registry
+            .require_available(&action_id, &ActionInvocationContext::default())
+            .expect_err("openTerminal must be unavailable without OPEN_TERMINAL");
+        assert_eq!(error, ApplicationError::ActionUnavailable(action_id));
+    }
+
+    #[test]
+    fn capability_gated_actions_are_available_when_the_adapter_reports_the_matching_capability() {
+        let registry = ActionRegistry::with_core_actions(
+            PlatformCapabilities::OPEN_WITH_DEFAULT_APPLICATION
+                | PlatformCapabilities::REVEAL_IN_FILE_MANAGER
+                | PlatformCapabilities::OPEN_TERMINAL,
+        );
+        let mut single_selection = ActionInvocationContext::default();
+        single_selection
+            .selected_entry_ids
+            .push(fm_domain::EntryId::new());
+        for id in [
+            "core.open",
+            "core.openWith",
+            "core.revealInSystemFileManager",
+        ] {
+            let action_id = ActionId::new(id);
+            registry
+                .require_available(&action_id, &single_selection)
+                .expect("the capability is granted and exactly one entry is selected");
+        }
+        registry
+            .require_available(
+                &ActionId::new("core.openTerminal"),
+                &ActionInvocationContext::default(),
+            )
+            .expect("openTerminal has no selection requirement");
+    }
+
+    #[test]
+    fn capability_gating_is_independent_per_action() {
+        // Only OPEN_TERMINAL is granted: core.open/openWith/reveal must stay
+        // unavailable even though *some* platform capability is present, so
+        // gating isn't accidentally coarse-grained to "any capability at all".
+        let registry = ActionRegistry::with_core_actions(PlatformCapabilities::OPEN_TERMINAL);
+        let mut single_selection = ActionInvocationContext::default();
+        single_selection
+            .selected_entry_ids
+            .push(fm_domain::EntryId::new());
+        for id in [
+            "core.open",
+            "core.openWith",
+            "core.revealInSystemFileManager",
+        ] {
+            let action_id = ActionId::new(id);
+            let error = registry
+                .require_available(&action_id, &single_selection)
+                .expect_err("must not be granted by an unrelated capability");
+            assert_eq!(error, ApplicationError::ActionUnavailable(action_id));
+        }
+        registry
+            .require_available(
+                &ActionId::new("core.openTerminal"),
+                &ActionInvocationContext::default(),
+            )
+            .expect("OPEN_TERMINAL was granted");
     }
 
     #[test]

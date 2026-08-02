@@ -327,6 +327,7 @@ impl FileManagerService {
             history: operation_history.clone(),
             directories: directories.clone(),
         });
+        let platform_capabilities = platform.capabilities();
         Self {
             runtime,
             platform,
@@ -349,7 +350,7 @@ impl FileManagerService {
             operation_idempotency: Mutex::new(HashMap::new()),
             force_cross_volume_moves: AtomicBool::new(false),
             audit_log_path: settings_directory.join("audit.jsonl"),
-            actions: ActionRegistry::with_core_actions(),
+            actions: ActionRegistry::with_core_actions(platform_capabilities),
         }
     }
 
@@ -955,7 +956,10 @@ impl FileManagerService {
         let Some(plugin) = plugin else {
             return Err(ApplicationError::NotFound);
         };
-        let manifest = plugin.manifest.as_ref().expect("validated plugin has a manifest");
+        let manifest = plugin
+            .manifest
+            .as_ref()
+            .expect("validated plugin has a manifest");
         let mut settings = self
             .settings
             .lock()
@@ -1010,6 +1014,10 @@ impl FileManagerService {
 
         self.actions.require_available(&action_id, &context)?;
 
+        if let Some(kind) = platform_action_kind(&action_id) {
+            return self.invoke_platform_action(&action_id, kind, request.parameters);
+        }
+
         let Some(operation_type) = mutating_operation_kind(&action_id) else {
             return Ok(ActionResultDto {
                 action_id: action_id.as_str().to_owned(),
@@ -1033,6 +1041,62 @@ impl FileManagerService {
             action_id: action_id.as_str().to_owned(),
             invoked: true,
             operation_id: Some(operation.id),
+            clipboard_text: None,
+        })
+    }
+
+    /// Dispatches `core.open`/`core.openWith`/`core.revealInSystemFileManager`/
+    /// `core.openTerminal` directly to the injected platform adapter (task
+    /// 0061), rather than through the operation engine.
+    ///
+    /// The backend cannot resolve an opaque [`fm_domain::EntryId`] back to a
+    /// path (there is no entry registry, mirroring plugin action invocation,
+    /// task 0055): the caller already holds the target's [`Location`] and
+    /// passes it explicitly as a `{ "uri": "file:///..." }` parameter. The
+    /// URI is parsed with [`Location::parse`]/[`Location::to_native_path`]
+    /// (never hand-built or shell-interpolated), so paths containing spaces,
+    /// quotes or Unicode round-trip safely.
+    fn invoke_platform_action(
+        &self,
+        action_id: &ActionId,
+        kind: PlatformActionKind,
+        parameters: Option<serde_json::Value>,
+    ) -> Result<ActionResultDto, ApplicationError> {
+        let uri = parameters
+            .as_ref()
+            .and_then(|value| value.get("uri"))
+            .and_then(serde_json::Value::as_str)
+            .ok_or_else(|| {
+                ApplicationError::InvalidRequest(format!(
+                    "action {action_id:?} requires a `uri` string parameter"
+                ))
+            })?;
+        let path = Location::parse(uri)
+            .and_then(|location| location.to_native_path())
+            .map_err(|error| {
+                ApplicationError::InvalidRequest(format!("invalid `uri` parameter: {error}"))
+            })?;
+
+        let result = match kind {
+            PlatformActionKind::Open => self.platform.open_with_default_application(&path),
+            PlatformActionKind::Reveal => self.platform.reveal_in_file_manager(&path),
+            PlatformActionKind::OpenTerminal => {
+                let command_override = self
+                    .settings
+                    .lock()
+                    .unwrap_or_else(|error| error.into_inner())
+                    .terminal_command
+                    .clone();
+                self.platform
+                    .open_terminal(&path, command_override.as_deref())
+            }
+        };
+        result.map_err(|error| map_platform_error(action_id, error))?;
+
+        Ok(ActionResultDto {
+            action_id: action_id.as_str().to_owned(),
+            invoked: true,
+            operation_id: None,
             clipboard_text: None,
         })
     }
@@ -2533,6 +2597,43 @@ fn mutating_operation_kind(id: &ActionId) -> Option<OperationKindDto> {
     }
 }
 
+/// Which platform adapter method an action dispatches to (task 0061).
+/// `core.openWith` shares [`PlatformActionKind::Open`] with `core.open`: no
+/// platform adapter exposes a distinct "choose application" binding yet (see
+/// `core_actions`'s doc comment in `action.rs`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PlatformActionKind {
+    Open,
+    Reveal,
+    OpenTerminal,
+}
+
+/// Maps an action id to the platform adapter operation it dispatches to
+/// (task 0061), or `None` for actions with no platform-adapter effect.
+fn platform_action_kind(id: &ActionId) -> Option<PlatformActionKind> {
+    match id.as_str() {
+        "core.open" | "core.openWith" => Some(PlatformActionKind::Open),
+        "core.revealInSystemFileManager" => Some(PlatformActionKind::Reveal),
+        "core.openTerminal" => Some(PlatformActionKind::OpenTerminal),
+        _ => None,
+    }
+}
+
+/// Maps a platform adapter failure to a user-readable application error
+/// (task 0061). An adapter reporting [`fm_platform::PlatformError::Unsupported`]
+/// despite the registry's capability check (e.g. a race between capability
+/// detection and invocation) is reported the same way as any other
+/// unavailable action; any other failure keeps its sanitized, user-readable
+/// message rather than a silent no-op or a generic "internal error".
+fn map_platform_error(action_id: &ActionId, error: fm_platform::PlatformError) -> ApplicationError {
+    match error {
+        fm_platform::PlatformError::Unsupported { .. } => {
+            ApplicationError::ActionUnavailable(action_id.clone())
+        }
+        other => ApplicationError::PlatformOperationFailed(other.to_string()),
+    }
+}
+
 /// Projects a manifest's declared capability grants into the wire DTO (spec §19).
 fn plugin_permissions_dto(permissions: &PluginPermissions) -> PluginPermissionsDto {
     PluginPermissionsDto {
@@ -2893,7 +2994,9 @@ mod tests {
         // `None` (rather than `Some(0)`) skips backlog replay, since this test
         // only cares about the notification `invoke_action` publishes below and
         // `set_plugin_enabled` above now also publishes a `plugin.changed` event.
-        let mut events = service.event_bus().subscribe(SessionId::new("test"), [], None);
+        let mut events = service
+            .event_bus()
+            .subscribe(SessionId::new("test"), [], None);
 
         let result = service
             .invoke_action(
@@ -3045,7 +3148,10 @@ mod tests {
 
         assert!(descriptor.permissions.selected_entry_metadata);
         assert!(descriptor.permissions.clipboard_write);
-        assert!(!descriptor.permissions.clipboard_read, "clipboard_read was never granted");
+        assert!(
+            !descriptor.permissions.clipboard_read,
+            "clipboard_read was never granted"
+        );
         assert!(
             !descriptor.permissions.notifications,
             "notifications was never granted"
@@ -3078,7 +3184,10 @@ mod tests {
             .plugin_logs("unknown.plugin")
             .expect_err("unknown plugin must be reported as not found");
 
-        assert_eq!(error.code(), fm_transport_dto::ApplicationErrorCode::NotFound);
+        assert_eq!(
+            error.code(),
+            fm_transport_dto::ApplicationErrorCode::NotFound
+        );
     }
 
     #[test]
@@ -3091,8 +3200,11 @@ mod tests {
             "id='example.copy-path'\nname='Copy Path'\nversion='1'\napi_version='1'\ndescription='Copies a path'\nentrypoint='plugin.lua'\n[contributions]\nactions=true",
         )
         .expect("manifest");
-        std::fs::write(plugin.join("plugin.lua"), "return { actions = function() error('boom') end }")
-            .expect("script");
+        std::fs::write(
+            plugin.join("plugin.lua"),
+            "return { actions = function() error('boom') end }",
+        )
+        .expect("script");
         service
             .set_plugin_enabled("example.copy-path".to_owned(), true)
             .expect("enable plugin");
@@ -3285,6 +3397,303 @@ mod tests {
         assert!(!capabilities.native_file_icons);
         assert!(!capabilities.native_thumbnails);
         assert!(!capabilities.reveal_in_system_file_manager);
+    }
+
+    /// A platform adapter test double that records every call it receives
+    /// (task 0061), so `invoke_action`'s platform dispatch can be asserted
+    /// end to end: which path was passed (verifying `Location`
+    /// parsing/round-tripping never mangles spaces, quotes or Unicode
+    /// instead of shell-interpolating a string), and what terminal command
+    /// override was forwarded from settings.
+    struct RecordingPlatformAdapter {
+        capabilities: PlatformCapabilities,
+        opened: Mutex<Vec<PathBuf>>,
+        revealed: Mutex<Vec<PathBuf>>,
+        terminals: Mutex<Vec<(PathBuf, Option<String>)>>,
+        open_error: Mutex<Option<fm_platform::PlatformError>>,
+    }
+
+    impl RecordingPlatformAdapter {
+        fn new(capabilities: PlatformCapabilities) -> Self {
+            Self {
+                capabilities,
+                opened: Mutex::new(Vec::new()),
+                revealed: Mutex::new(Vec::new()),
+                terminals: Mutex::new(Vec::new()),
+                open_error: Mutex::new(None),
+            }
+        }
+
+        fn fail_next_open_with(&self, error: fm_platform::PlatformError) {
+            *self.open_error.lock().expect("lock must not be poisoned") = Some(error);
+        }
+    }
+
+    impl fm_platform::PlatformAdapter for RecordingPlatformAdapter {
+        fn capabilities(&self) -> PlatformCapabilities {
+            self.capabilities
+        }
+
+        fn open_with_default_application(
+            &self,
+            path: &Path,
+        ) -> Result<(), fm_platform::PlatformError> {
+            if let Some(error) = self
+                .open_error
+                .lock()
+                .expect("lock must not be poisoned")
+                .take()
+            {
+                return Err(error);
+            }
+            self.opened
+                .lock()
+                .expect("lock must not be poisoned")
+                .push(path.to_path_buf());
+            Ok(())
+        }
+
+        fn reveal_in_file_manager(&self, path: &Path) -> Result<(), fm_platform::PlatformError> {
+            self.revealed
+                .lock()
+                .expect("lock must not be poisoned")
+                .push(path.to_path_buf());
+            Ok(())
+        }
+
+        fn open_terminal(
+            &self,
+            path: &Path,
+            command_override: Option<&str>,
+        ) -> Result<(), fm_platform::PlatformError> {
+            self.terminals
+                .lock()
+                .expect("lock must not be poisoned")
+                .push((path.to_path_buf(), command_override.map(str::to_owned)));
+            Ok(())
+        }
+    }
+
+    /// Builds a service backed by a [`RecordingPlatformAdapter`] reporting
+    /// every platform capability task 0061 cares about, and returns the
+    /// adapter (still owned via a second `Arc`) so tests can inspect what it
+    /// recorded.
+    fn service_with_recording_adapter() -> (
+        tempfile::TempDir,
+        FileManagerService,
+        Arc<RecordingPlatformAdapter>,
+    ) {
+        let dir = tempfile::tempdir().expect("must create a temp dir");
+        let adapter = Arc::new(RecordingPlatformAdapter::new(
+            PlatformCapabilities::OPEN_WITH_DEFAULT_APPLICATION
+                | PlatformCapabilities::REVEAL_IN_FILE_MANAGER
+                | PlatformCapabilities::OPEN_TERMINAL,
+        ));
+        let service = FileManagerService::with_platform_adapter(
+            RuntimeKindDto::Tauri,
+            dir.path(),
+            dir.path().join("settings"),
+            EventBus::default(),
+            adapter.clone(),
+        );
+        (dir, service, adapter)
+    }
+
+    fn single_selection_context() -> fm_transport_dto::ActionInvocationContextDto {
+        fm_transport_dto::ActionInvocationContextDto {
+            selected_entry_ids: vec![uuid::Uuid::new_v4()],
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn invoke_action_opens_the_uri_parameters_path_with_the_default_application() {
+        let (dir, service, adapter) = service_with_recording_adapter();
+        // Spaces, single/double quotes and non-ASCII must round-trip exactly:
+        // this proves the dispatch parses the URI via `Location` rather than
+        // building a shell command string.
+        let target = dir.path().join("with spaces & 'quotes' café.txt");
+        std::fs::write(&target, b"contents").expect("write fixture file");
+        let uri = Location::from_native_path(&target)
+            .expect("path must convert to a location")
+            .uri;
+
+        let result = service
+            .invoke_action(
+                "core.open".to_owned(),
+                InvokeActionRequestDto {
+                    parameters: Some(serde_json::json!({ "uri": uri })),
+                    context: single_selection_context(),
+                },
+                None,
+            )
+            .expect("core.open must dispatch to the platform adapter");
+
+        assert!(result.invoked);
+        assert!(result.operation_id.is_none());
+        assert_eq!(adapter.opened.lock().unwrap().as_slice(), [target]);
+    }
+
+    #[test]
+    fn invoke_action_reveals_the_uri_parameters_path() {
+        let (dir, service, adapter) = service_with_recording_adapter();
+        let target = dir.path().join("report.pdf");
+        let uri = Location::from_native_path(&target)
+            .expect("path must convert to a location")
+            .uri;
+
+        service
+            .invoke_action(
+                "core.revealInSystemFileManager".to_owned(),
+                InvokeActionRequestDto {
+                    parameters: Some(serde_json::json!({ "uri": uri })),
+                    context: single_selection_context(),
+                },
+                None,
+            )
+            .expect("core.revealInSystemFileManager must dispatch to the platform adapter");
+
+        assert_eq!(adapter.revealed.lock().unwrap().as_slice(), [target]);
+    }
+
+    #[test]
+    fn invoke_action_open_terminal_forwards_the_configured_terminal_command_override() {
+        let (dir, service, adapter) = service_with_recording_adapter();
+        let mut settings = service.get_settings();
+        settings.terminal_command = Some("alacritty".to_owned());
+        service
+            .update_settings(settings)
+            .expect("settings update must succeed");
+        let uri = Location::from_native_path(dir.path())
+            .expect("path must convert to a location")
+            .uri;
+
+        service
+            .invoke_action(
+                "core.openTerminal".to_owned(),
+                InvokeActionRequestDto {
+                    parameters: Some(serde_json::json!({ "uri": uri })),
+                    context: fm_transport_dto::ActionInvocationContextDto::default(),
+                },
+                None,
+            )
+            .expect("core.openTerminal must dispatch to the platform adapter");
+
+        assert_eq!(
+            adapter.terminals.lock().unwrap().as_slice(),
+            [(dir.path().to_path_buf(), Some("alacritty".to_owned()))]
+        );
+    }
+
+    #[test]
+    fn invoke_action_rejects_a_missing_uri_parameter_as_invalid_request() {
+        let (_dir, service, _adapter) = service_with_recording_adapter();
+
+        let error = service
+            .invoke_action(
+                "core.open".to_owned(),
+                InvokeActionRequestDto {
+                    parameters: None,
+                    context: single_selection_context(),
+                },
+                None,
+            )
+            .expect_err("a missing uri parameter must be rejected");
+
+        assert_eq!(
+            error.code(),
+            fm_transport_dto::ApplicationErrorCode::InvalidRequest
+        );
+    }
+
+    #[test]
+    fn invoke_action_rejects_a_malformed_uri_as_invalid_request() {
+        let (_dir, service, _adapter) = service_with_recording_adapter();
+
+        let error = service
+            .invoke_action(
+                "core.open".to_owned(),
+                InvokeActionRequestDto {
+                    parameters: Some(serde_json::json!({ "uri": "not a valid uri" })),
+                    context: single_selection_context(),
+                },
+                None,
+            )
+            .expect_err("a malformed uri must be rejected");
+
+        assert_eq!(
+            error.code(),
+            fm_transport_dto::ApplicationErrorCode::InvalidRequest
+        );
+    }
+
+    #[test]
+    fn invoke_action_maps_a_genuine_platform_failure_to_a_user_readable_platform_operation_failed_error()
+     {
+        let (dir, service, adapter) = service_with_recording_adapter();
+        adapter.fail_next_open_with(fm_platform::PlatformError::Io {
+            message: "no default application is registered for .xyz files".to_owned(),
+        });
+        let uri = Location::from_native_path(&dir.path().join("mystery.xyz"))
+            .expect("path must convert to a location")
+            .uri;
+
+        let error = service
+            .invoke_action(
+                "core.open".to_owned(),
+                InvokeActionRequestDto {
+                    parameters: Some(serde_json::json!({ "uri": uri })),
+                    context: single_selection_context(),
+                },
+                None,
+            )
+            .expect_err("a genuine platform failure must be reported, not swallowed");
+
+        assert_eq!(
+            error.code(),
+            fm_transport_dto::ApplicationErrorCode::PlatformOperationFailed
+        );
+        assert!(
+            error
+                .to_string()
+                .contains("no default application is registered for .xyz files")
+        );
+    }
+
+    #[test]
+    fn invoke_action_reveal_and_terminal_are_unavailable_in_browser_server_mode() {
+        let (_dir, service) = service();
+        let context = single_selection_context();
+
+        let reveal_error = service
+            .invoke_action(
+                "core.revealInSystemFileManager".to_owned(),
+                InvokeActionRequestDto {
+                    parameters: Some(serde_json::json!({ "uri": "file:///tmp/report.pdf" })),
+                    context: context.clone(),
+                },
+                None,
+            )
+            .expect_err("reveal has no native access in browser/server mode");
+        assert_eq!(
+            reveal_error.code(),
+            fm_transport_dto::ApplicationErrorCode::ActionUnavailable
+        );
+
+        let terminal_error = service
+            .invoke_action(
+                "core.openTerminal".to_owned(),
+                InvokeActionRequestDto {
+                    parameters: Some(serde_json::json!({ "uri": "file:///tmp" })),
+                    context: fm_transport_dto::ActionInvocationContextDto::default(),
+                },
+                None,
+            )
+            .expect_err("openTerminal has no native access in browser/server mode");
+        assert_eq!(
+            terminal_error.code(),
+            fm_transport_dto::ApplicationErrorCode::ActionUnavailable
+        );
     }
 
     #[test]

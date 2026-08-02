@@ -51,6 +51,13 @@ pub enum ApplicationError {
     /// not met by the caller's invocation context (spec §18).
     #[error("action {0:?} is not currently available")]
     ActionUnavailable(ActionId),
+    /// A native platform operation (open/reveal/terminal) failed for a
+    /// reason safe to show the user, e.g. no default application or the
+    /// configured terminal was not found (spec §21, task 0061). Never wraps
+    /// a raw OS error string directly; the message is already sanitized by
+    /// [`fm_platform::PlatformError`].
+    #[error("{0}")]
+    PlatformOperationFailed(String),
     /// An unexpected, unclassified failure occurred.
     #[error("internal error")]
     Internal,
@@ -71,6 +78,7 @@ impl ApplicationError {
             }
             Self::ActionNotFound(_) => ApplicationErrorCode::ActionNotFound,
             Self::ActionUnavailable(_) => ApplicationErrorCode::ActionUnavailable,
+            Self::PlatformOperationFailed(_) => ApplicationErrorCode::PlatformOperationFailed,
             Self::Internal => ApplicationErrorCode::Internal,
         }
     }
@@ -200,12 +208,31 @@ mod tests {
                 ApplicationError::ActionUnavailable(ActionId::new("core.rename")),
                 ApplicationErrorCode::ActionUnavailable,
             ),
+            (
+                ApplicationError::PlatformOperationFailed("no default application".to_owned()),
+                ApplicationErrorCode::PlatformOperationFailed,
+            ),
             (ApplicationError::Internal, ApplicationErrorCode::Internal),
         ];
 
         for (error, expected_code) in cases {
             assert_eq!(error.code(), expected_code);
         }
+    }
+
+    #[test]
+    fn platform_operation_failed_keeps_its_user_readable_message_instead_of_a_generic_string() {
+        let request_id = Uuid::new_v4();
+        let dto = ApplicationError::PlatformOperationFailed(
+            "no default application is set for this file type".to_owned(),
+        )
+        .into_dto(request_id);
+
+        assert_eq!(dto.code, ApplicationErrorCode::PlatformOperationFailed);
+        assert_eq!(
+            dto.message,
+            "no default application is set for this file type"
+        );
     }
 
     #[test]

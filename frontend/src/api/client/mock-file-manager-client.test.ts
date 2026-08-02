@@ -109,6 +109,8 @@ describe('MockFileManagerClient API', () => {
       'core.newTab',
       'core.closeTab',
       'core.open',
+      'core.openWith',
+      'core.revealInSystemFileManager',
       'core.openTerminal',
       'core.parent',
       'core.switchPane',
