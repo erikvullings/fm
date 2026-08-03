@@ -5,6 +5,7 @@
   { "id": "core.move", "title": "Move", "category": "fileOperations", "defaultShortcuts": [{ "key": "F6" }], "contextRequirements": {}, "source": { "kind": "core" } },
   { "id": "core.createDirectory", "title": "New folder", "category": "fileOperations", "defaultShortcuts": [{ "key": "F7" }], "contextRequirements": {}, "source": { "kind": "core" } },
   { "id": "core.paste", "title": "Paste", "category": "fileOperations", "defaultShortcuts": [], "contextRequirements": {}, "source": { "kind": "core" } },
+  { "id": "core.trash", "title": "Trash", "category": "fileOperations", "defaultShortcuts": [], "contextRequirements": { "featureAvailable": false }, "source": { "kind": "core" } },
   { "id": "core.delete", "title": "Delete", "category": "fileOperations", "defaultShortcuts": [{ "key": "F8" }, { "key": "Delete" }], "contextRequirements": {}, "source": { "kind": "core" } },
   { "id": "core.palette", "title": "Command palette", "category": "navigation", "defaultShortcuts": [{ "key": "p", "ctrl": true }], "contextRequirements": {}, "source": { "kind": "core" } },
   { "id": "core.focusLocation", "title": "Focus location", "category": "navigation", "defaultShortcuts": [{ "key": "l", "ctrl": true }], "contextRequirements": {}, "source": { "kind": "core" } },

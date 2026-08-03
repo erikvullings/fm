@@ -129,4 +129,18 @@ describe('command availability', () => {
       { action: actions[1], available: true },
     ]);
   });
+
+  it('keeps core.trash available for a read-only selection, unlike core.delete (task 0043)', () => {
+    const actions = [
+      action('core.trash', { requiresSelection: true }),
+      action('core.delete', { requiresSelection: true }),
+    ];
+
+    const result = availableActions(actions, context({ selectedEntries: [entry('file', true)] }));
+
+    expect(result).toEqual([
+      { action: actions[0], available: true },
+      { action: actions[1], available: false, reason: 'Selected item is read-only' },
+    ]);
+  });
 });

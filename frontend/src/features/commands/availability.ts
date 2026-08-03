@@ -28,11 +28,15 @@ const SELECTION_ACTION_IDS = new Set([
   'core.copy',
   'core.move',
   'core.rename',
+  'core.trash',
   'core.delete',
   'core.copyPath',
   'core.copyRelativePath',
 ]);
 
+// `core.trash` is deliberately excluded: unlike rename/move/permanent-delete,
+// trashing is reversible and requires no `overrideReadOnly` escape hatch, so
+// read-only selected entries stay trashable (task 0043).
 const WRITE_SELECTION_ACTION_IDS = new Set(['core.rename', 'core.move', 'core.delete']);
 
 function unavailable(action: ActionDescriptor, reason: string): AvailableAction {

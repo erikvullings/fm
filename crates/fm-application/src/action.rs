@@ -154,6 +154,17 @@ fn capability_gated_none(feature_available: bool) -> ActionContextRequirements {
     }
 }
 
+/// At least one selected entry, like [`ActionContextRequirements::selection`],
+/// but with `feature_available` computed from the injected platform
+/// adapter's capabilities (task 0043) rather than hardcoded `true`.
+fn capability_gated_selection(feature_available: bool) -> ActionContextRequirements {
+    ActionContextRequirements {
+        feature_available,
+        requires_selection: true,
+        requires_single_selection: false,
+    }
+}
+
 /// Core actions named by spec §18, plus the selection/navigation ids
 /// reserved by task 0028's frontend keybinding table.
 ///
@@ -168,10 +179,38 @@ fn capability_gated_none(feature_available: bool) -> ActionContextRequirements {
 /// over-claimed. `core.copyPath` and `core.copyRelativePath` have no backend
 /// feature yet (the system-clipboard/relative-path work tracked alongside
 /// this task), so they stay registered as permanently unavailable.
+///
+/// `core.trash` and `core.delete` split ownership of the `F8`/`Delete` keys
+/// based on [`PlatformCapabilities::TRASH`] (task 0043): when trash is
+/// available, it owns the bare keys (the safe, reversible default) and
+/// `core.delete` moves to `Shift+F8`/`Shift+Delete`; when trash is
+/// unavailable (e.g. browser/server mode), `core.delete` keeps the bare keys
+/// exactly as before, since permanent delete is the only option and still
+/// requires its own mandatory confirmation (task 0044).
 fn core_actions(capabilities: PlatformCapabilities) -> Vec<ActionDescriptor> {
     let open_available = capabilities.contains(PlatformCapabilities::OPEN_WITH_DEFAULT_APPLICATION);
     let reveal_available = capabilities.contains(PlatformCapabilities::REVEAL_IN_FILE_MANAGER);
     let open_terminal_available = capabilities.contains(PlatformCapabilities::OPEN_TERMINAL);
+    let trash_available = capabilities.contains(PlatformCapabilities::TRASH);
+    let (trash_shortcuts, delete_shortcuts) = if trash_available {
+        (
+            vec![key("F8"), key("Delete")],
+            vec![
+                KeyChord {
+                    key: "F8".to_owned(),
+                    shift: true,
+                    ..KeyChord::default()
+                },
+                KeyChord {
+                    key: "Delete".to_owned(),
+                    shift: true,
+                    ..KeyChord::default()
+                },
+            ],
+        )
+    } else {
+        (Vec::new(), vec![key("F8"), key("Delete")])
+    };
     vec![
         core_action(
             "core.open",
@@ -237,10 +276,17 @@ fn core_actions(capabilities: PlatformCapabilities) -> Vec<ActionDescriptor> {
             ActionContextRequirements::single_selection(),
         ),
         core_action(
+            "core.trash",
+            "Trash",
+            "fileOperations",
+            trash_shortcuts,
+            capability_gated_selection(trash_available),
+        ),
+        core_action(
             "core.delete",
             "Delete",
             "fileOperations",
-            vec![key("F8"), key("Delete")],
+            delete_shortcuts,
             ActionContextRequirements::selection(),
         ),
         core_action(
@@ -466,6 +512,7 @@ mod tests {
             "core.copy",
             "core.move",
             "core.rename",
+            "core.trash",
             "core.delete",
             "core.createDirectory",
             "core.palette",
@@ -518,6 +565,7 @@ mod tests {
             "core.open",
             "core.openWith",
             "core.revealInSystemFileManager",
+            "core.trash",
         ] {
             let action_id = ActionId::new(id);
             let error = registry
@@ -537,7 +585,8 @@ mod tests {
         let registry = ActionRegistry::with_core_actions(
             PlatformCapabilities::OPEN_WITH_DEFAULT_APPLICATION
                 | PlatformCapabilities::REVEAL_IN_FILE_MANAGER
-                | PlatformCapabilities::OPEN_TERMINAL,
+                | PlatformCapabilities::OPEN_TERMINAL
+                | PlatformCapabilities::TRASH,
         );
         let mut single_selection = ActionInvocationContext::default();
         single_selection
@@ -547,6 +596,7 @@ mod tests {
             "core.open",
             "core.openWith",
             "core.revealInSystemFileManager",
+            "core.trash",
         ] {
             let action_id = ActionId::new(id);
             registry
@@ -575,6 +625,7 @@ mod tests {
             "core.open",
             "core.openWith",
             "core.revealInSystemFileManager",
+            "core.trash",
         ] {
             let action_id = ActionId::new(id);
             let error = registry
@@ -588,6 +639,58 @@ mod tests {
                 &ActionInvocationContext::default(),
             )
             .expect("OPEN_TERMINAL was granted");
+    }
+
+    #[test]
+    fn trash_owns_f8_and_delete_when_available_and_delete_moves_to_shift() {
+        let registry = ActionRegistry::with_core_actions(PlatformCapabilities::TRASH);
+        let trash = registry
+            .get(&ActionId::new("core.trash"))
+            .expect("core.trash must be registered");
+        assert_eq!(
+            trash.default_shortcuts,
+            vec![key("F8"), key("Delete")],
+            "trash must own the bare keys once it is available"
+        );
+        let delete = registry
+            .get(&ActionId::new("core.delete"))
+            .expect("core.delete must be registered");
+        assert_eq!(
+            delete.default_shortcuts,
+            vec![
+                KeyChord {
+                    key: "F8".to_owned(),
+                    shift: true,
+                    ..KeyChord::default()
+                },
+                KeyChord {
+                    key: "Delete".to_owned(),
+                    shift: true,
+                    ..KeyChord::default()
+                },
+            ],
+            "delete must move to the shift variants once trash owns the bare keys"
+        );
+    }
+
+    #[test]
+    fn delete_keeps_f8_and_delete_when_trash_is_unavailable() {
+        let registry = ActionRegistry::with_core_actions(PlatformCapabilities::empty());
+        let trash = registry
+            .get(&ActionId::new("core.trash"))
+            .expect("core.trash must still be registered, just unavailable");
+        assert!(
+            trash.default_shortcuts.is_empty(),
+            "an unavailable trash action must not claim any shortcut"
+        );
+        let delete = registry
+            .get(&ActionId::new("core.delete"))
+            .expect("core.delete must be registered");
+        assert_eq!(
+            delete.default_shortcuts,
+            vec![key("F8"), key("Delete")],
+            "delete must keep the bare keys unchanged when trash is unavailable"
+        );
     }
 
     #[test]

@@ -102,6 +102,7 @@ describe('MockFileManagerClient API', () => {
       'core.move',
       'core.createDirectory',
       'core.paste',
+      'core.trash',
       'core.delete',
       'core.palette',
       'core.focusLocation',

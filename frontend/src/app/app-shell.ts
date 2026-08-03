@@ -955,6 +955,25 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       }
       return;
     }
+    if (dispatchedAction === 'core.trash') {
+      const active = activeDirectory();
+      const selection =
+        active === undefined ? undefined : selections.get(activeTabKey(active.paneId));
+      const directory =
+        active === undefined ? undefined : directories.get(activeTabKey(active.paneId));
+      const selected = directory?.entries.filter(
+        (entry) => selection?.selectedEntryIds.includes(entry.id) === true,
+      );
+      if (selected !== undefined && selected.length > 0) {
+        event.preventDefault();
+        void attrsClient.startOperation({
+          type: 'trash',
+          sources: selected.map((entry) => entry.location),
+          conflictPolicy: 'ask',
+        });
+      }
+      return;
+    }
     if (dispatchedAction === 'core.delete') {
       const active = activeDirectory();
       const selection =

@@ -311,6 +311,47 @@ describe('AppShell', () => {
     });
   });
 
+  it('trashes the selected file with F8 when core.trash owns the shortcut (task 0043)', async () => {
+    const client = new MockFileManagerClient();
+    vi.spyOn(client, 'listActions').mockResolvedValue([
+      {
+        id: 'core.trash',
+        title: 'Trash',
+        category: 'fileOperations',
+        defaultShortcuts: [{ key: 'F8' }, { key: 'Delete' }],
+        contextRequirements: {},
+        source: { kind: 'core' },
+      },
+      {
+        id: 'core.delete',
+        title: 'Delete',
+        category: 'fileOperations',
+        defaultShortcuts: [
+          { key: 'F8', shift: true },
+          { key: 'Delete', shift: true },
+        ],
+        contextRequirements: {},
+        source: { kind: 'core' },
+      },
+    ]);
+    const startOperation = vi.spyOn(client, 'startOperation');
+    m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
+    await vi.waitFor(() => expect(root.textContent).toContain('.env'));
+    const activePane = root.querySelector<HTMLElement>('[data-active="true"] > .fm-pane');
+    const file = [...(activePane?.querySelectorAll<HTMLElement>('.fm-directory-row') ?? [])].find(
+      (row) => row.textContent?.includes('.env'),
+    );
+    file?.click();
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'F8', bubbles: true }));
+
+    await vi.waitFor(() => expect(startOperation).toHaveBeenCalledOnce());
+    expect(startOperation.mock.calls[0]?.[0]).toMatchObject({
+      type: 'trash',
+      sources: [{ uri: 'mock:///.env' }],
+      conflictPolicy: 'ask',
+    });
+  });
+
   it('cuts a selection, dims it, and pastes the move into the active pane', async () => {
     const client = new MockFileManagerClient();
     const startOperation = vi.spyOn(client, 'startOperation');

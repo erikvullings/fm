@@ -605,7 +605,28 @@ impl FileManagerService {
                         && !request.permanent_delete_confirmed,
                 })
             }
-            _ => Arc::new(NoOpExecutor),
+            OperationKindDto::Trash => {
+                if request.sources.is_empty() {
+                    return Err(ApplicationError::InvalidRequest(
+                        "trash requires at least one source".into(),
+                    ));
+                }
+                if !self
+                    .platform
+                    .capabilities()
+                    .contains(PlatformCapabilities::TRASH)
+                {
+                    return Err(ApplicationError::PlatformOperationFailed(
+                        fm_platform::PlatformError::Unsupported {
+                            capability: PlatformCapabilities::TRASH,
+                        }
+                        .to_string(),
+                    ));
+                }
+                Arc::new(TrashExecutor {
+                    platform: Arc::clone(&self.platform),
+                })
+            }
         };
         let sources: Vec<EntryRef> = request
             .sources
@@ -1311,8 +1332,6 @@ impl From<WorkspaceSummary> for WorkspaceSummaryDto {
     }
 }
 
-struct NoOpExecutor;
-
 struct CreateDirectoryExecutor {
     provider: Arc<dyn FileSystemProvider>,
     parent: fm_domain::Location,
@@ -1503,6 +1522,61 @@ impl OperationExecutor for DeleteExecutor {
         _cancellation: &CancellationToken,
     ) -> Result<(), ExecutionError> {
         self.write_audit(operation).await
+    }
+}
+
+/// Moves entries to the platform trash (task 0043). Unlike [`DeleteExecutor`],
+/// this bypasses [`FileSystemProvider`] entirely: the platform adapter
+/// natively relocates the whole entry (file or directory tree) in one call,
+/// mirroring how `core.open`/`core.revealInSystemFileManager` dispatch
+/// directly to `self.platform` (task 0061). Trash is reversible, so unlike
+/// permanent delete there is no mandatory confirmation, read-only override,
+/// or audit log.
+struct TrashExecutor {
+    platform: Arc<dyn PlatformAdapter>,
+}
+
+#[async_trait]
+impl OperationExecutor for TrashExecutor {
+    async fn plan(
+        &self,
+        operation: &Operation,
+        _cancellation: &CancellationToken,
+    ) -> Result<OperationPlan, ExecutionError> {
+        Ok(OperationPlan::new(
+            operation
+                .sources
+                .iter()
+                .cloned()
+                .map(|entry| PlanItem::new(entry, 0))
+                .collect(),
+        ))
+    }
+
+    async fn execute(
+        &self,
+        _operation: &Operation,
+        item: &PlanItem,
+        _resolution: Option<fm_operations::ConflictResolution>,
+        _pause: &PauseToken,
+        _cancellation: &CancellationToken,
+    ) -> Result<fm_operations::ExecutionOutcome, ExecutionError> {
+        let path = item
+            .entry
+            .location
+            .to_native_path()
+            .map_err(|error| ExecutionError::Failed(error.to_string()))?;
+        self.platform
+            .trash(&path)
+            .map_err(|error| ExecutionError::Warning {
+                entry: item.entry.clone(),
+                message: error.to_string(),
+            })?;
+        Ok(ExecutionOutcome::Completed)
+    }
+
+    async fn cleanup_partial(&self, _operation: &Operation) -> Result<(), ExecutionError> {
+        Ok(())
     }
 }
 
@@ -2552,37 +2626,6 @@ impl OperationExecutor for CreateDirectoryExecutor {
     }
 }
 
-#[async_trait]
-impl OperationExecutor for NoOpExecutor {
-    async fn plan(
-        &self,
-        operation: &Operation,
-        _cancellation: &CancellationToken,
-    ) -> Result<OperationPlan, ExecutionError> {
-        Ok(OperationPlan::new(
-            operation
-                .sources
-                .iter()
-                .cloned()
-                .map(|entry| PlanItem::new(entry, 0))
-                .collect(),
-        ))
-    }
-    async fn execute(
-        &self,
-        _operation: &Operation,
-        _item: &PlanItem,
-        _resolution: Option<fm_operations::ConflictResolution>,
-        _pause: &PauseToken,
-        _cancellation: &CancellationToken,
-    ) -> Result<fm_operations::ExecutionOutcome, ExecutionError> {
-        Ok(ExecutionOutcome::Completed)
-    }
-    async fn cleanup_partial(&self, _operation: &Operation) -> Result<(), ExecutionError> {
-        Ok(())
-    }
-}
-
 fn map_scheduler_error(error: SchedulerError) -> ApplicationError {
     match error {
         SchedulerError::UnknownOperation(_) => ApplicationError::NotFound,
@@ -2629,6 +2672,7 @@ fn mutating_operation_kind(id: &ActionId) -> Option<OperationKindDto> {
         "core.copy" => Some(OperationKindDto::Copy),
         "core.move" => Some(OperationKindDto::Move),
         "core.rename" => Some(OperationKindDto::Rename),
+        "core.trash" => Some(OperationKindDto::Trash),
         "core.delete" => Some(OperationKindDto::Delete),
         "core.createDirectory" => Some(OperationKindDto::CreateDirectory),
         _ => None,
@@ -3456,7 +3500,9 @@ mod tests {
         opened: Mutex<Vec<PathBuf>>,
         revealed: Mutex<Vec<PathBuf>>,
         terminals: Mutex<Vec<(PathBuf, Option<String>)>>,
+        trashed: Mutex<Vec<PathBuf>>,
         open_error: Mutex<Option<fm_platform::PlatformError>>,
+        trash_error: Mutex<Option<fm_platform::PlatformError>>,
     }
 
     impl RecordingPlatformAdapter {
@@ -3466,12 +3512,18 @@ mod tests {
                 opened: Mutex::new(Vec::new()),
                 revealed: Mutex::new(Vec::new()),
                 terminals: Mutex::new(Vec::new()),
+                trashed: Mutex::new(Vec::new()),
                 open_error: Mutex::new(None),
+                trash_error: Mutex::new(None),
             }
         }
 
         fn fail_next_open_with(&self, error: fm_platform::PlatformError) {
             *self.open_error.lock().expect("lock must not be poisoned") = Some(error);
+        }
+
+        fn fail_next_trash_with(&self, error: fm_platform::PlatformError) {
+            *self.trash_error.lock().expect("lock must not be poisoned") = Some(error);
         }
     }
 
@@ -3507,6 +3559,22 @@ mod tests {
             Ok(())
         }
 
+        fn trash(&self, path: &Path) -> Result<(), fm_platform::PlatformError> {
+            if let Some(error) = self
+                .trash_error
+                .lock()
+                .expect("lock must not be poisoned")
+                .take()
+            {
+                return Err(error);
+            }
+            self.trashed
+                .lock()
+                .expect("lock must not be poisoned")
+                .push(path.to_path_buf());
+            Ok(())
+        }
+
         fn open_terminal(
             &self,
             path: &Path,
@@ -3521,7 +3589,7 @@ mod tests {
     }
 
     /// Builds a service backed by a [`RecordingPlatformAdapter`] reporting
-    /// every platform capability task 0061 cares about, and returns the
+    /// every platform capability task 0061/0043 cares about, and returns the
     /// adapter (still owned via a second `Arc`) so tests can inspect what it
     /// recorded.
     fn service_with_recording_adapter() -> (
@@ -3533,7 +3601,8 @@ mod tests {
         let adapter = Arc::new(RecordingPlatformAdapter::new(
             PlatformCapabilities::OPEN_WITH_DEFAULT_APPLICATION
                 | PlatformCapabilities::REVEAL_IN_FILE_MANAGER
-                | PlatformCapabilities::OPEN_TERMINAL,
+                | PlatformCapabilities::OPEN_TERMINAL
+                | PlatformCapabilities::TRASH,
         ));
         let service = FileManagerService::with_platform_adapter(
             RuntimeKindDto::Tauri,
@@ -3629,6 +3698,108 @@ mod tests {
             adapter.terminals.lock().unwrap().as_slice(),
             [(dir.path().to_path_buf(), Some("alacritty".to_owned()))]
         );
+    }
+
+    /// Builds a `Trash` request targeting the given native paths.
+    fn trash_request(paths: &[&std::path::Path]) -> StartOperationRequestDto {
+        StartOperationRequestDto {
+            operation_type: OperationKindDto::Trash,
+            sources: paths
+                .iter()
+                .map(|path| {
+                    Location::from_native_path(path)
+                        .expect("path must convert to a location")
+                        .into()
+                })
+                .collect(),
+            destination: None,
+            conflict_policy: OperationConflictPolicyDto::Ask,
+            name: None,
+            create_intermediate_directories: false,
+            symlink_policy: Default::default(),
+            permanent_delete_confirmed: false,
+            override_read_only: false,
+        }
+    }
+
+    async fn wait_for_terminal_operation(
+        service: &FileManagerService,
+        id: fm_domain::OperationId,
+    ) -> OperationDto {
+        loop {
+            let operation = service.get_operation(id).expect("operation must exist");
+            if matches!(
+                operation.state,
+                OperationStateDto::Completed
+                    | OperationStateDto::CompletedWithWarnings
+                    | OperationStateDto::Failed
+                    | OperationStateDto::Cancelled
+            ) {
+                return operation;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    }
+
+    #[tokio::test]
+    async fn start_operation_trash_dispatches_every_source_to_the_platform_adapter() {
+        let (dir, service, adapter) = service_with_recording_adapter();
+        let first = dir.path().join("trash-me.txt");
+        let second = dir.path().join("trash-me-too.txt");
+        std::fs::write(&first, b"1").expect("write first fixture");
+        std::fs::write(&second, b"2").expect("write second fixture");
+
+        let started = service
+            .start_operation(trash_request(&[&first, &second]), None)
+            .expect("trash must be accepted when TRASH capability is available");
+        let result = wait_for_terminal_operation(&service, started.id.into()).await;
+
+        assert_eq!(result.state, OperationStateDto::Completed);
+        assert_eq!(adapter.trashed.lock().unwrap().as_slice(), [first, second]);
+        // Trashing never routes through a `FileSystemProvider::remove` call,
+        // so the fixtures are untouched by this test double; only the real
+        // macOS adapter test (`fm-platform-macos`) exercises an actual move.
+    }
+
+    #[test]
+    fn start_operation_trash_is_rejected_when_the_platform_reports_no_trash_capability() {
+        let dir = tempfile::tempdir().expect("must create a temp dir");
+        let file = dir.path().join("trash-me.txt");
+        std::fs::write(&file, b"content").expect("write fixture");
+        // `FileManagerService::new` defaults to `FallbackPlatformAdapter`,
+        // which reports no capabilities at all (browser/server mode).
+        let service = FileManagerService::new(
+            RuntimeKindDto::BrowserServer,
+            dir.path().join("workspaces"),
+            dir.path().join("settings"),
+        );
+
+        let error = service
+            .start_operation(trash_request(&[&file]), None)
+            .expect_err("trash must be rejected without the TRASH capability");
+
+        assert_eq!(
+            error.code(),
+            fm_transport_dto::ApplicationErrorCode::PlatformOperationFailed
+        );
+        assert!(file.exists(), "no attempt to move the file must be made");
+    }
+
+    #[tokio::test]
+    async fn start_operation_trash_reports_completed_with_warnings_on_a_platform_failure() {
+        let (dir, service, adapter) = service_with_recording_adapter();
+        let file = dir.path().join("stubborn.txt");
+        std::fs::write(&file, b"content").expect("write fixture");
+        adapter.fail_next_trash_with(fm_platform::PlatformError::Io {
+            message: "permission denied".to_owned(),
+        });
+
+        let started = service
+            .start_operation(trash_request(&[&file]), None)
+            .expect("trash must be accepted when TRASH capability is available");
+        let result = wait_for_terminal_operation(&service, started.id.into()).await;
+
+        assert_eq!(result.state, OperationStateDto::CompletedWithWarnings);
     }
 
     #[test]
