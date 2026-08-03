@@ -64,7 +64,17 @@ export function hasPrimaryModifier(event: KeyboardEvent, platform: SelectionPlat
 
 function matches(event: KeyboardEvent, chord: KeyChord, platform: SelectionPlatform): boolean {
   if (event.key.toUpperCase() !== chord.key.toUpperCase()) return false;
-  if (Boolean(chord.ctrl || chord.meta) !== hasPrimaryModifier(event, platform)) return false;
+  const wantsModifier = Boolean(chord.ctrl || chord.meta);
+  // Ctrl+Tab/Ctrl+Shift+Tab is a platform-invariant tab-cycling convention (every
+  // browser and desktop app honours literal Control here, never Command) because
+  // Cmd+Tab is reserved by macOS for the app switcher and never reaches the page.
+  // So Tab chords check the literal Control key instead of going through the
+  // translated "primary modifier" used for every other shortcut.
+  const modifierMatches =
+    chord.key.toUpperCase() === 'TAB'
+      ? event.ctrlKey === wantsModifier && !event.metaKey
+      : hasPrimaryModifier(event, platform) === wantsModifier;
+  if (!modifierMatches) return false;
   return Boolean(chord.shift) === event.shiftKey && Boolean(chord.alt) === event.altKey;
 }
 

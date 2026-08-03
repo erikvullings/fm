@@ -1053,6 +1053,47 @@ describe('tabs per pane (task 0069)', () => {
     await vi.waitFor(() => expect(selectedTabIndex()).toBe(0));
   });
 
+  it('cycles tabs with literal Ctrl+Tab on macOS instead of switching panes (Cmd+Tab is OS-reserved)', async () => {
+    const client = new MockFileManagerClient();
+    vi.spyOn(client, 'getRuntimeCapabilities').mockResolvedValue({
+      clipboard: false,
+      nativeDragOut: false,
+      nativeFileIcons: false,
+      nativeMenus: false,
+      nativeThumbnails: false,
+      openTerminal: false,
+      platform: 'macos',
+      plugins: true,
+      revealInSystemFileManager: false,
+      runtime: 'mock',
+      serverAdministration: false,
+      systemTrash: false,
+    });
+    const dispatchWorkspaceCommand = vi.spyOn(client, 'dispatchWorkspaceCommand');
+    m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
+    await vi.waitFor(() => expect(root.textContent).toContain('Documents'));
+
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 't', metaKey: true, bubbles: true }),
+    );
+    await vi.waitFor(() => expect(activePane()?.querySelectorAll('[role="tab"]')).toHaveLength(2));
+    dispatchWorkspaceCommand.mockClear();
+
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Tab', ctrlKey: true, bubbles: true }),
+    );
+    await vi.waitFor(() =>
+      expect(dispatchWorkspaceCommand).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'activateTab', paneId: 'left' }),
+        undefined,
+      ),
+    );
+    expect(dispatchWorkspaceCommand).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'setActivePane' }),
+      undefined,
+    );
+  });
+
   it('reopens the most recently closed tab with Ctrl+Shift+T', async () => {
     const client = new MockFileManagerClient();
     const dispatchWorkspaceCommand = vi.spyOn(client, 'dispatchWorkspaceCommand');

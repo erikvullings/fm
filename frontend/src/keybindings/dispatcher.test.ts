@@ -42,6 +42,22 @@ const actions: readonly ActionDescriptor[] = [
     contextRequirements: {},
     source: { kind: 'core' },
   },
+  {
+    id: 'core.switchPane',
+    title: 'Switch pane',
+    category: 'navigation',
+    defaultShortcuts: [{ key: 'Tab' }, { key: 'Tab', shift: true }],
+    contextRequirements: {},
+    source: { kind: 'core' },
+  },
+  {
+    id: 'core.nextTab',
+    title: 'Next tab',
+    category: 'navigation',
+    defaultShortcuts: [{ key: 'Tab', ctrl: true }],
+    contextRequirements: {},
+    source: { kind: 'core' },
+  },
 ];
 
 const table: KeybindingContext = { scope: 'table', platform: 'windows', runtime: 'desktop' };
@@ -85,6 +101,18 @@ describe('keybinding dispatcher', () => {
         {},
       ),
     ).toBeUndefined();
+  });
+
+  it('matches Ctrl+Tab to tab-cycling rather than pane-switching on macOS (Cmd+Tab is OS-reserved)', () => {
+    const macos = { ...table, platform: 'macos' as const };
+    expect(dispatchKeybinding(event('Tab', { ctrlKey: true }), macos, actions, {})).toBe(
+      'core.nextTab',
+    );
+    expect(dispatchKeybinding(event('Tab'), macos, actions, {})).toBe('core.switchPane');
+    expect(dispatchKeybinding(event('Tab', { shiftKey: true }), macos, actions, {})).toBe(
+      'core.switchPane',
+    );
+    expect(dispatchKeybinding(event('Tab', { metaKey: true }), macos, actions, {})).toBeUndefined();
   });
 
   it('does not dispatch table actions while a path input or modal has focus', () => {
