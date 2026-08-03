@@ -1616,48 +1616,67 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
           ]),
           m('details.fm-settings-disclosure', [
             m('summary.fm-settings-button', 'Settings'),
-            m('.fm-settings-editor', { role: 'dialog', 'aria-label': 'Settings' }, [
-              m('.fm-settings-editor-heading', [
-                m('strong', 'Settings'),
-                m(
-                  'button',
-                  {
-                    type: 'button',
-                    'aria-label': 'Close settings',
-                    onclick: (event: MouseEvent) => {
-                      const disclosure = (event.currentTarget as HTMLElement).closest('details');
-                      if (disclosure instanceof HTMLDetailsElement) disclosure.open = false;
-                    },
-                  },
-                  '×',
-                ),
-              ]),
-              currentSettings === undefined
-                ? m('p', 'Loading settings…')
-                : m(SettingsEditor, {
-                    settings: currentSettings,
-                    actions: registeredActions,
-                    platform,
-                    runtime: keybindingRuntime,
-                    plugins,
-                    onPreview: (draft: Settings) => {
-                      applyAppearance(draft);
-                      m.redraw();
-                    },
-                    onSave: async (draft: Settings) => {
-                      await attrs.client.updateSettings(draft);
-                      currentSettings = draft;
-                      applyAppearance(draft);
-                    },
-                    onCancel: () => {
-                      if (currentSettings !== undefined) applyAppearance(currentSettings);
-                    },
-                    onTogglePlugin: (pluginId: PluginId, enabled: boolean) =>
-                      attrs.client.setPluginEnabled(pluginId, enabled),
-                    onRequestPluginLogs: (pluginId: PluginId): Promise<readonly PluginLogEntry[]> =>
-                      attrs.client.getPluginLogs(pluginId),
-                  }),
-            ]),
+            m(
+              '.fm-settings-editor',
+              {
+                role: 'dialog',
+                'aria-label': 'Settings',
+                onclick: (event: MouseEvent) => {
+                  if (event.target === event.currentTarget) {
+                    const disclosure = (event.currentTarget as HTMLElement).closest('details');
+                    if (disclosure instanceof HTMLDetailsElement) disclosure.open = false;
+                  }
+                },
+              },
+              [
+                m('.fm-settings-editor-panel', [
+                  m('.fm-settings-editor-heading', [
+                    m('strong', 'Settings'),
+                    m(
+                      'button',
+                      {
+                        type: 'button',
+                        'aria-label': 'Close settings',
+                        onclick: (event: MouseEvent) => {
+                          const disclosure = (event.currentTarget as HTMLElement).closest(
+                            'details',
+                          );
+                          if (disclosure instanceof HTMLDetailsElement) disclosure.open = false;
+                        },
+                      },
+                      '×',
+                    ),
+                  ]),
+                  currentSettings === undefined
+                    ? m('p', 'Loading settings…')
+                    : m(SettingsEditor, {
+                        settings: currentSettings,
+                        actions: registeredActions,
+                        platform,
+                        runtime: keybindingRuntime,
+                        plugins,
+                        onPreview: (draft: Settings) => {
+                          applyAppearance(draft);
+                          m.redraw();
+                        },
+                        onSave: async (draft: Settings) => {
+                          await attrs.client.updateSettings(draft);
+                          currentSettings = draft;
+                          applyAppearance(draft);
+                        },
+                        onCancel: () => {
+                          if (currentSettings !== undefined) applyAppearance(currentSettings);
+                        },
+                        onTogglePlugin: (pluginId: PluginId, enabled: boolean) =>
+                          attrs.client.setPluginEnabled(pluginId, enabled),
+                        onRequestPluginLogs: (
+                          pluginId: PluginId,
+                        ): Promise<readonly PluginLogEntry[]> =>
+                          attrs.client.getPluginLogs(pluginId),
+                      }),
+                ]),
+              ],
+            ),
           ]),
         ]),
         m('main.fm-workspace', [

@@ -169,7 +169,7 @@ body {
 }
 
 .fm-settings-editor-panel {
-  width: min(34rem, calc(100vw - 2rem));
+  width: min(48rem, calc(100vw - 2rem));
   max-height: calc(100vh - 4rem);
   overflow-y: auto;
   border: 1px solid var(--fm-border);
