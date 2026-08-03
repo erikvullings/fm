@@ -1108,7 +1108,9 @@ describe('workspace management (task 0084)', () => {
     row(root, second.id)?.querySelector<HTMLElement>('.fm-workspace-switcher-name')?.click();
 
     await vi.waitFor(() =>
-      expect(root.querySelector('.fm-workspace-switcher-button')?.textContent).toBe('Bravo'),
+      expect(
+        root.querySelector('.fm-workspace-switcher-button')?.getAttribute('data-tooltip'),
+      ).toBe('Bravo'),
     );
     await vi.waitFor(() => expect(row(root, second.id)?.getAttribute('data-active')).toBe('true'));
   });
@@ -1126,7 +1128,9 @@ describe('workspace management (task 0084)', () => {
       expect((await client.listWorkspaces()).length).toBe(before.length + 1),
     );
     await vi.waitFor(() =>
-      expect(root.querySelector('.fm-workspace-switcher-button')?.textContent).toBe('Default'),
+      expect(
+        root.querySelector('.fm-workspace-switcher-button')?.getAttribute('data-tooltip'),
+      ).toBe('Default'),
     );
   });
 
@@ -1151,9 +1155,9 @@ describe('workspace management (task 0084)', () => {
       ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
 
     await vi.waitFor(() =>
-      expect(root.querySelector('.fm-workspace-switcher-button')?.textContent).toBe(
-        'Renamed workspace',
-      ),
+      expect(
+        root.querySelector('.fm-workspace-switcher-button')?.getAttribute('data-tooltip'),
+      ).toBe('Renamed workspace'),
     );
   });
 
@@ -1200,7 +1204,9 @@ describe('workspace management (task 0084)', () => {
     row(root, second.id)?.querySelector<HTMLElement>('.fm-workspace-switcher-name')?.click();
 
     await vi.waitFor(() =>
-      expect(root.querySelector('.fm-workspace-switcher-button')?.textContent).toBe('Bravo'),
+      expect(
+        root.querySelector('.fm-workspace-switcher-button')?.getAttribute('data-tooltip'),
+      ).toBe('Bravo'),
     );
     expect(root.textContent).toContain('copy · running');
     expect(cancelOperation).not.toHaveBeenCalled();

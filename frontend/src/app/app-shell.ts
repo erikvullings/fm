@@ -1478,7 +1478,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     const pane = workspace?.panesById[paneId];
     const tab = pane?.tabsById[pane.activeTabId];
     const key = tab === undefined ? undefined : tabKey(paneId, tab.id);
-    const directory = (key === undefined ? undefined : directories.get(key)) ?? {
+    const directory: PaneDirectoryView = (key === undefined ? undefined : directories.get(key)) ?? {
       state: { type: 'idle' } as const,
       entries: [],
       hasMore: false,
@@ -1501,6 +1501,14 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     const cursorIndex =
       selection.cursorEntryId === undefined ? undefined : entryIds.indexOf(selection.cursorEntryId);
     const selectedEntryIds = new Set<EntryId>(selection.selectedEntryIds);
+    // While filtering, the true directory total can't be projected past what's loaded and
+    // matched so far; otherwise use the backend's real count (plus the synthetic ".." row)
+    // so the scrollbar is sized correctly from the very first page, not just once fully loaded.
+    const totalKnownEntries =
+      quickFilterQuery.trim() === ''
+        ? (directory.totalKnownEntries ?? directory.entries.length) +
+          (entries.length - filtered.length)
+        : entries.length;
     return {
       ...directory,
       entries,
@@ -1513,6 +1521,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       sortLabel: sortLabel(effectiveSort(tab?.view.sort ?? [])),
       sort: effectiveSort(tab?.view.sort ?? []),
       totalEntryCount: directory.entries.length,
+      totalKnownEntries,
       hiddenSelectedCount: hiddenSelectedEntryCount(directory.entries, filtered, selectedEntryIds),
       filterOpen: key === undefined ? false : quickFilterOpenFor(key, tab),
       filterQuery: quickFilterQuery,
@@ -1551,6 +1560,23 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
               ),
       onSelectionAction: (action: SelectionAction) => {
         if (key === undefined) return;
+        if (action.type === 'moveCursorTo' && action.edge === 'last' && directory.hasMore) {
+          // The loaded prefix doesn't include the real last entry yet: fetch every remaining
+          // page (cheap, cache-backed slices on the backend) before landing the cursor, rather
+          // than jumping to the last entry loaded so far.
+          void navigation.loadAllPages(paneId).then(() => {
+            const loaded = paneContent(client, entryFormatSettings, paneId);
+            const loadedEntryIds = loaded.entries.map((entry) => entry.id);
+            const next = reduceSelection(selections.get(key) ?? selection, action, loadedEntryIds);
+            selections.set(key, next);
+            const cursorEntry = loaded.entries.find((entry) => entry.id === next.cursorEntryId);
+            void metadataLoader(client, key).select(
+              cursorEntry === undefined || isParentEntry(cursorEntry.id) ? undefined : cursorEntry,
+            );
+            m.redraw();
+          });
+          return;
+        }
         const next = reduceSelection(selection, action, entryIds);
         selections.set(key, next);
         const cursorEntry = entries.find((entry) => entry.id === next.cursorEntryId);
@@ -1775,6 +1801,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
                       workspace.panesById[workspace.activePaneId]?.activeTabId ?? ''
                     ]?.canNavigateBack !== true,
                   'aria-label': 'Back',
+                  'data-tooltip': 'Back',
                   onclick: () => void navigation.back(workspace?.activePaneId ?? ''),
                 },
                 arrowLeftIcon(),
@@ -1788,6 +1815,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
                       workspace.panesById[workspace.activePaneId]?.activeTabId ?? ''
                     ]?.canNavigateForward !== true,
                   'aria-label': 'Forward',
+                  'data-tooltip': 'Forward',
                   onclick: () => void navigation.forward(workspace?.activePaneId ?? ''),
                 },
                 arrowRightIcon(),
@@ -1798,6 +1826,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
                   type: 'button',
                   disabled: workspace === undefined,
                   'aria-label': 'Parent directory',
+                  'data-tooltip': 'Parent directory',
                   onclick: () => void navigation.parent(workspace?.activePaneId ?? ''),
                 },
                 cornerLeftUpIcon(),
@@ -1809,6 +1838,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
                 type: 'button',
                 disabled: activeDirectory() === undefined,
                 'aria-label': 'Find files',
+                'data-tooltip': 'Find files',
                 onclick: () => {
                   const active = activeDirectory();
                   if (active === undefined) return;
@@ -1816,31 +1846,30 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
                   findFilesOpen = true;
                 },
               },
-              [searchIcon(), m('span', 'Find files')],
+              searchIcon(),
             ),
             m(
               'button',
               {
                 type: 'button',
                 disabled: registeredActions.length === 0,
+                'aria-label': 'Command palette',
+                'data-tooltip': 'Command palette',
                 onclick: () => {
                   commandPaletteOpen = true;
                   commandPaletteError = undefined;
                 },
               },
-              [commandIcon(), m('span', 'Command palette')],
+              commandIcon(),
             ),
             m('details.fm-workspace-disclosure', [
               m(
                 'summary.fm-workspace-switcher-button',
                 {
-                  title: 'Switch or manage workspaces',
+                  'data-tooltip': workspace?.name ?? 'Workspace',
                   'aria-label': `Workspace switcher, current workspace: ${workspace?.name ?? 'none'}`,
                 },
-                [
-                  layoutGridIcon(),
-                  m('span.fm-workspace-switcher-label', workspace?.name ?? 'Workspace'),
-                ],
+                layoutGridIcon(),
               ),
               m('.fm-workspace-switcher-panel', { role: 'dialog', 'aria-label': 'Workspaces' }, [
                 m('.fm-workspace-switcher-heading', [
@@ -1873,7 +1902,11 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
               ]),
             ]),
             m('details.fm-settings-disclosure', [
-              m('summary.fm-settings-button', [settingsIcon(), m('span', 'Settings')]),
+              m(
+                'summary.fm-settings-button',
+                { 'aria-label': 'Settings', 'data-tooltip': 'Settings' },
+                settingsIcon(),
+              ),
               m(
                 '.fm-settings-editor',
                 {
