@@ -1,6 +1,6 @@
 # 0083 Settings editor UI
 
-Status: open
+Status: done
 Priority: medium
 Owner: unassigned
 Agent: unassigned
@@ -45,3 +45,15 @@ added later as disconnected screens.
 - 2026-07-31 codex: Created after 0030 delivered persistence without a user-facing editor. Best
   implementation point is immediately after 0050 and 0057; those tasks should leave reusable
   keybinding and plugin-management feature boundaries for this screen.
+- 2026-08-03 Claude Sonnet 5 (Copilot): Implemented `features/settings/settings-model.ts` (draft
+  clone/validation/list-field parsing/keybinding-override helpers) and
+  `features/settings/settings-editor.ts` (all sections: appearance incl. `ThemeSwitcher`, file
+  behavior, operations, new-workspace defaults, terminal command, keybindings with 0050's conflict
+  detection and browser/platform availability, and 0057's `PluginManagement` embedded directly).
+  Wired into `app/app-shell.ts`: the settings disclosure now renders `SettingsEditor` once
+  `getSettings()` resolves, with `onPreview` applying appearance live, `onSave` persisting the full
+  document via `updateSettings`, and `onCancel` reverting. 20 new Vitest cases across
+  settings-model.test.ts (12) and settings-editor.test.ts (8) cover loading, live preview, cancel,
+  save + save-error, validation, keybinding conflicts, and the plugin-management boundary;
+  `app-shell.test.ts` covers open/close, theme switching, and plugin listing/events through the new
+  editor. Full frontend suite (369 tests), `tsc --noEmit`, and `biome check` all clean.
