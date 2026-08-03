@@ -96,7 +96,7 @@ export function resolveEntryIcon(
   }
   if (entry.mimeType !== undefined) {
     for (const [prefix, renderer] of registry.mimePrefixIcons) {
-      if (entry.mimeType.startsWith(prefix)) {
+      if (entry.mimeType?.startsWith(prefix)) {
         return renderer;
       }
     }
