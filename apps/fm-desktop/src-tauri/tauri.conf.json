@@ -14,7 +14,8 @@
       {
         "title": "File Manager",
         "width": 1280,
-        "height": 800
+        "height": 800,
+        "backgroundColor": "#f4f6f8"
       }
     ],
     "security": {

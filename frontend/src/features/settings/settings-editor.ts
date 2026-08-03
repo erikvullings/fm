@@ -118,12 +118,15 @@ export const SettingsEditor: FactoryComponent<SettingsEditorAttrs> = () => {
       const conflictedActionIds = new Set(conflicts.flatMap((conflict) => conflict.actionIds));
 
       return m('.fm-settings-editor-body', { 'aria-label': 'Settings editor' }, [
-        m('h4.fm-settings-section-heading', 'Appearance'),
-        m(ThemeSwitcher, {
-          theme: activeDraft.theme,
-          showLabels: true,
-          onThemeChange: (next: Settings['theme']) => update(current, { theme: next }),
-        }),
+        m('.row', [
+          m('h4.fm-settings-section-heading.col.s12', 'Appearance'),
+          m(ThemeSwitcher, {
+            className: 'col s12',
+            theme: activeDraft.theme,
+            showLabels: true,
+            onThemeChange: (next: Settings['theme']) => update(current, { theme: next }),
+          }),
+        ]),
         m('.row', [
           m(NumberInput, {
             className: 'col s6',
@@ -180,7 +183,7 @@ export const SettingsEditor: FactoryComponent<SettingsEditorAttrs> = () => {
           }),
         ]),
 
-        m('h4.fm-settings-section-heading', 'File behavior'),
+        m('.row', m('h4.fm-settings-section-heading.col.s12', 'File behavior')),
         m('.row', [
           m(Switch, {
             className: 'col s12 m6',
@@ -200,7 +203,7 @@ export const SettingsEditor: FactoryComponent<SettingsEditorAttrs> = () => {
           }),
         ]),
 
-        m('h4.fm-settings-section-heading', 'Operations'),
+        m('.row', m('h4.fm-settings-section-heading.col.s12', 'Operations')),
         m('.row', [
           m(Select<Settings['defaultConflictPolicy']>, {
             className: 'col s6',
@@ -225,7 +228,7 @@ export const SettingsEditor: FactoryComponent<SettingsEditorAttrs> = () => {
           }),
         ]),
 
-        m('h4.fm-settings-section-heading', 'New workspace defaults'),
+        m('.row', m('h4.fm-settings-section-heading.col.s12', 'New workspace defaults')),
         m('.row', [
           m(Select<Settings['defaultPaneLayout']>, {
             label: 'Default pane layout',
@@ -265,7 +268,7 @@ export const SettingsEditor: FactoryComponent<SettingsEditorAttrs> = () => {
           }),
         ]),
 
-        m('h4.fm-settings-section-heading', 'Terminal'),
+        m('.row', m('h4.fm-settings-section-heading.col.s12', 'Terminal')),
         m('.row', [
           m(TextInput, {
             label: 'Terminal command',
@@ -278,7 +281,7 @@ export const SettingsEditor: FactoryComponent<SettingsEditorAttrs> = () => {
           }),
         ]),
 
-        m('h4.fm-settings-section-heading', 'Keybindings'),
+        m('.row', m('h4.fm-settings-section-heading.col.s12', 'Keybindings')),
         conflicts.length === 0
           ? undefined
           : m(
@@ -325,7 +328,7 @@ export const SettingsEditor: FactoryComponent<SettingsEditorAttrs> = () => {
           }),
         ),
 
-        m('h4.fm-settings-section-heading', 'Plugins'),
+        m('.row', m('h4.fm-settings-section-heading.col.s12', 'Plugins')),
         m(PluginManagement, {
           plugins: current.plugins,
           onToggle: current.onTogglePlugin,

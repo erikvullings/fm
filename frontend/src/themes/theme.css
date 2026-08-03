@@ -687,3 +687,9 @@ input[type="text"].fm-command-palette-input {
   color: var(--fm-error);
   font-size: 0.8rem;
 }
+.fm-settings-section-heading {
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 0.75rem 0 0.35rem 0;
+}
+

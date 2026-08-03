@@ -14,7 +14,8 @@
       "*.mjs",
       "!**/dist",
       "!**/openapi",
-      "!frontend/src/api/generated"
+      "!frontend/src/api/generated",
+      "!frontend/public"
     ]
   },
   "formatter": {
