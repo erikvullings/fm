@@ -210,6 +210,8 @@ export const CommandPalette: FactoryComponent<CommandPaletteAttrs> = () => {
                       active === undefined ? undefined : `command-palette-option-${activeIndex}`,
                     placeholder: 'Type a command…',
                     value: query,
+                    // autofocus alone is unreliable once the trigger button already holds focus.
+                    oncreate: ({ dom }) => (dom as HTMLInputElement).focus(),
                     oninput: (event: InputEvent) => {
                       query = (event.currentTarget as HTMLInputElement).value;
                       activeIndex = 0;
