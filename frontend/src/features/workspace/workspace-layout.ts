@@ -32,6 +32,7 @@ export interface WorkspacePaneContent {
   readonly sort: readonly SortDescriptor[];
   readonly hasMore?: boolean;
   readonly totalEntryCount: number;
+  readonly totalKnownEntries?: number;
   readonly hiddenSelectedCount: number;
   readonly filterOpen: boolean;
   readonly filterQuery: string;
@@ -296,6 +297,9 @@ export const WorkspaceLayoutView: FactoryComponent<WorkspaceLayoutViewAttrs> = (
         sort: content.sort,
         ...(content.hasMore === undefined ? {} : { hasMore: content.hasMore }),
         totalEntryCount: content.totalEntryCount,
+        ...(content.totalKnownEntries === undefined
+          ? {}
+          : { totalKnownEntries: content.totalKnownEntries }),
         hiddenSelectedCount: content.hiddenSelectedCount,
         filterOpen: content.filterOpen,
         filterQuery: content.filterQuery,

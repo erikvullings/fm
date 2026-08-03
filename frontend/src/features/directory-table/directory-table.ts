@@ -22,10 +22,15 @@ export interface DirectoryEntrySource {
   entryAt(index: number): EntrySummary | undefined;
 }
 
-/** Adapts an ordinary directory snapshot to the random-access table surface. */
-export function entryArraySource(entries: readonly EntrySummary[]): DirectoryEntrySource {
+/** Adapts an ordinary directory snapshot to the random-access table surface.
+ * `totalCount`, when larger than `entries.length`, lets the scrollbar/virtualized
+ * content height reflect the directory's real size before every page has loaded. */
+export function entryArraySource(
+  entries: readonly EntrySummary[],
+  totalCount?: number,
+): DirectoryEntrySource {
   return {
-    length: entries.length,
+    length: Math.max(totalCount ?? entries.length, entries.length),
     entryAt: (index) => entries[index],
   };
 }
@@ -302,47 +307,30 @@ export const DirectoryTable: FactoryComponent<DirectoryTableAttrs> = () => {
       return;
     }
     previousCursorIndex = attrs.cursorIndex;
-    const bodyScrollTop = Math.max(0, element.scrollTop - rowHeight);
-    const nextBodyScrollTop = scrollOffsetForIndex({
+    const nextScrollTop = scrollOffsetForIndex({
       index: attrs.cursorIndex,
       entryCount: attrs.source.length,
       rowHeight,
-      scrollTop: bodyScrollTop,
+      scrollTop: element.scrollTop,
       viewportHeight: attrs.viewportHeight ?? (element.clientHeight || DEFAULT_VIEWPORT_HEIGHT),
     });
-    if (nextBodyScrollTop === bodyScrollTop) {
+    if (nextScrollTop === element.scrollTop) {
       return;
     }
-    const nextScrollTop = nextBodyScrollTop === 0 ? 0 : nextBodyScrollTop + rowHeight;
-    if (nextScrollTop !== element.scrollTop) {
-      element.scrollTop = nextScrollTop;
-      scrollTop = nextScrollTop;
-    }
+    element.scrollTop = nextScrollTop;
+    scrollTop = nextScrollTop;
   }
 
   return {
-    oncreate: (vnode: VnodeDOM<DirectoryTableAttrs>) => {
-      element = vnode.dom as HTMLElement;
-      rowHeight = readRowHeight(element);
-      if (vnode.attrs.pluginColumns?.some((column) => column.id === fileAgeColumn.id) === true) {
-        refreshTimer = setInterval(() => m.redraw(), fileAgeColumn.refreshIntervalMs);
-      }
-      syncCursor(vnode.attrs);
-      m.redraw();
-    },
     onremove: () => {
       if (refreshTimer !== undefined) clearInterval(refreshTimer);
     },
-    onbeforeupdate: (vnode: VnodeDOM<DirectoryTableAttrs>) => {
-      syncCursor(vnode.attrs);
-      return true;
-    },
     view: ({ attrs }) => {
+      syncCursor(attrs);
       const state = stateView(attrs, rowHeight);
       const source = attrs.source;
       const cursorEntry =
         attrs.cursorIndex === undefined ? undefined : source?.entryAt(attrs.cursorIndex);
-      const bodyScrollTop = Math.max(0, scrollTop - rowHeight);
       const viewportHeight =
         attrs.viewportHeight ?? (element?.clientHeight || DEFAULT_VIEWPORT_HEIGHT);
       const window =
@@ -351,17 +339,22 @@ export const DirectoryTable: FactoryComponent<DirectoryTableAttrs> = () => {
           : calculateVisibleWindow({
               entryCount: source.length,
               rowHeight,
-              scrollTop: bodyScrollTop,
+              scrollTop,
               viewportHeight,
               overscan: attrs.overscan ?? DEFAULT_OVERSCAN,
             });
       const rows: m.Children[] = [];
       const columns = [...INITIAL_COLUMNS, ...(attrs.pluginColumns ?? [])];
       const now = Date.now();
+      let sawUnloadedEntry = false;
       if (source !== undefined && window !== undefined && state === undefined) {
         for (let index = window.start; index < window.end; index += 1) {
           const entry = source.entryAt(index);
           if (entry === undefined) {
+            // Not yet fetched (beyond the loaded pages, ahead of the total known count):
+            // request more immediately rather than waiting for the physical scroll bottom,
+            // which a fast scroll/jump can reach well before the fetch completes.
+            sawUnloadedEntry = true;
             continue;
           }
           const cursor = index === attrs.cursorIndex;
@@ -458,58 +451,81 @@ export const DirectoryTable: FactoryComponent<DirectoryTableAttrs> = () => {
             }),
           );
         }
+        if (sawUnloadedEntry) {
+          attrs.onEndReached?.();
+        }
       }
 
       return m(
         '.fm-directory-table',
-        {
-          role: 'grid',
-          tabindex: 0,
-          'aria-label': attrs.label ?? 'Directory contents',
-          'aria-rowcount': (source?.length ?? 0) + 1,
-          'aria-colcount': columns.length,
-          'aria-activedescendant': cursorEntry === undefined ? undefined : rowId(cursorEntry.id),
-          'aria-busy': attrs.state.type === 'loading' ? 'true' : undefined,
-          'data-active': attrs.active ? 'true' : 'false',
-          style: { height: attrs.viewportHeight === undefined ? '100%' : `${viewportHeight}px` },
-          onscroll: (event: Event) => {
-            const target = event.currentTarget as HTMLElement;
-            scrollTop = target.scrollTop;
-            if (target.scrollTop + target.clientHeight >= target.scrollHeight - rowHeight) {
-              attrs.onEndReached?.();
-            }
-          },
-          oncontextmenu: (event: MouseEvent) => {
-            if (
-              !(event.target instanceof Element) ||
-              event.target.closest('.fm-directory-row') === null
-            ) {
-              event.preventDefault();
-              attrs.onContextMenu?.(undefined, event.clientX, event.clientY);
-            }
-          },
-          onkeydown: (event: KeyboardEvent) => {
-            if (event.key !== 'ContextMenu' && !(event.shiftKey && event.key === 'F10')) return;
-            event.preventDefault();
-            const bounds = (event.currentTarget as HTMLElement).getBoundingClientRect();
-            attrs.onContextMenu?.(attrs.cursorIndex, bounds.left + 12, bounds.top + 12);
-          },
-        },
+        { style: { height: attrs.viewportHeight === undefined ? '100%' : `${viewportHeight}px` } },
         [
           headerView(attrs),
-          state ??
-            m(
-              '.fm-directory-body',
-              {
-                role: 'rowgroup',
-                style: { height: `${Math.max(window?.totalHeight ?? 0, viewportHeight)}px` },
-              },
-              rows,
-            ),
           m(
-            '.fm-visually-hidden',
-            { role: 'status', 'aria-live': 'polite', 'aria-atomic': 'true' },
-            cursorEntry === undefined ? '' : `Focused ${cursorEntry.name}`,
+            '.fm-directory-viewport',
+            {
+              role: 'grid',
+              tabindex: 0,
+              'aria-label': attrs.label ?? 'Directory contents',
+              'aria-rowcount': (source?.length ?? 0) + 1,
+              'aria-colcount': columns.length,
+              'aria-activedescendant':
+                cursorEntry === undefined ? undefined : rowId(cursorEntry.id),
+              'aria-busy': attrs.state.type === 'loading' ? 'true' : undefined,
+              'data-active': attrs.active ? 'true' : 'false',
+              oncreate: (vnode: VnodeDOM) => {
+                element = vnode.dom as HTMLElement;
+                rowHeight = readRowHeight(element);
+                if (
+                  attrs.pluginColumns?.some((column) => column.id === fileAgeColumn.id) === true
+                ) {
+                  refreshTimer = setInterval(() => m.redraw(), fileAgeColumn.refreshIntervalMs);
+                }
+                syncCursor(attrs);
+                m.redraw();
+              },
+              onupdate: (vnode: VnodeDOM) => {
+                element = vnode.dom as HTMLElement;
+              },
+              onscroll: (event: Event) => {
+                const target = event.currentTarget as HTMLElement;
+                scrollTop = target.scrollTop;
+                if (target.scrollTop + target.clientHeight >= target.scrollHeight - rowHeight) {
+                  attrs.onEndReached?.();
+                }
+              },
+              oncontextmenu: (event: MouseEvent) => {
+                if (
+                  !(event.target instanceof Element) ||
+                  event.target.closest('.fm-directory-row') === null
+                ) {
+                  event.preventDefault();
+                  attrs.onContextMenu?.(undefined, event.clientX, event.clientY);
+                }
+              },
+              onkeydown: (event: KeyboardEvent) => {
+                if (event.key !== 'ContextMenu' && !(event.shiftKey && event.key === 'F10')) return;
+                event.preventDefault();
+                const bounds = (event.currentTarget as HTMLElement).getBoundingClientRect();
+                attrs.onContextMenu?.(attrs.cursorIndex, bounds.left + 12, bounds.top + 12);
+              },
+            },
+            [
+              state ??
+                m(
+                  '.fm-directory-body',
+                  {
+                    role: 'rowgroup',
+                    style: { height: `${Math.max(window?.totalHeight ?? 0, viewportHeight)}px` },
+                  },
+                  rows,
+                ),
+              m(
+                '.fm-visually-hidden',
+                { role: 'status', 'aria-live': 'polite', 'aria-atomic': 'true' },
+                cursorEntry === undefined ? '' : `Focused ${cursorEntry.name}`,
+              ),
+            ],
           ),
         ],
       );

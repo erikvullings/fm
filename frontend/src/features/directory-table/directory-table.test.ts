@@ -331,7 +331,7 @@ describe('DirectoryTable rows', () => {
     m.redraw.sync();
 
     expect(root.querySelectorAll('.fm-directory-row').length).toBeLessThanOrEqual(10);
-    expect(root.textContent).toContain('generated-0749998');
+    expect(root.textContent).toContain('generated-0749999');
   });
 
   it('keeps a row DOM node when its stable entry id is patched', () => {
@@ -354,7 +354,7 @@ describe('DirectoryTable rows', () => {
       viewportHeight: 120,
       onEndReached,
     });
-    const grid = root.querySelector<HTMLElement>('.fm-directory-table');
+    const grid = root.querySelector<HTMLElement>('[role="grid"]');
     if (grid === null) {
       throw new Error('directory grid was not rendered');
     }
@@ -367,6 +367,23 @@ describe('DirectoryTable rows', () => {
     grid.dispatchEvent(new Event('scroll'));
 
     expect(onEndReached).toHaveBeenCalledOnce();
+  });
+
+  it('requests more data as soon as the visible window reaches unloaded entries, before the physical scroll bottom', () => {
+    const onEndReached = vi.fn();
+    const loaded = [entry({ id: 'entry-0', name: 'entry-0.txt' })];
+    mount({
+      state: { type: 'loaded' },
+      // Only one entry is loaded, but the source reports a much larger real total (as the
+      // backend does via `totalKnownEntries`), so the very first render's window already spans
+      // unloaded indices — that gap must trigger a fetch immediately, not only once physically
+      // scrolled all the way to the (much further away) bottom of the full virtual list.
+      source: entryArraySource(loaded, 10_000),
+      viewportHeight: 120,
+      onEndReached,
+    });
+
+    expect(onEndReached).toHaveBeenCalled();
   });
 
   it('announces and scrolls a cursor supplied by the navigation layer', () => {

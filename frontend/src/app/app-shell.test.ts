@@ -762,7 +762,7 @@ describe('AppShell', () => {
     m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
     await vi.waitFor(() => expect(root.textContent).toContain('日本語.txt'));
 
-    const table = root.querySelector<HTMLElement>('.fm-directory-table');
+    const table = root.querySelector<HTMLElement>('[role="grid"]');
     table?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 5, clientY: 5 }));
     m.redraw.sync();
 
