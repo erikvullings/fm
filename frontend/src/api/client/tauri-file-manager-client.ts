@@ -20,6 +20,8 @@ import type {
   RuntimeCapabilities,
   Settings,
   StartOperationRequest,
+  StartSearchRequest,
+  StartSearchResult,
   Unsubscribe,
   WorkspaceCommand,
   WorkspaceId,
@@ -157,6 +159,14 @@ export class TauriFileManagerClient implements FileManagerClient {
 
   async resolveConflict(request: ResolveConflictRequest, _signal?: AbortSignal): Promise<void> {
     await invoke('resolve_operation_conflict', { request });
+  }
+
+  startSearch(request: StartSearchRequest, _signal?: AbortSignal): Promise<StartSearchResult> {
+    return invoke<StartSearchResult>('start_search', { request });
+  }
+
+  async cancelSearch(searchId: string, _signal?: AbortSignal): Promise<void> {
+    await invoke('cancel_search', { searchId });
   }
 
   listActions(_signal?: AbortSignal): Promise<ActionDescriptor[]> {

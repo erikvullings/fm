@@ -18,6 +18,8 @@ import type {
   RuntimeCapabilities,
   Settings,
   StartOperationRequest,
+  StartSearchRequest,
+  StartSearchResult,
   Unsubscribe,
   WorkspaceCommand,
   WorkspaceId,
@@ -45,6 +47,8 @@ import {
   getPluginLogs as requestPluginLogs,
   listPlugins as requestPlugins,
   getRuntimeCapabilities as requestRuntimeCapabilities,
+  cancelSearch as requestSearchCancel,
+  startSearch as requestSearchStart,
   getSettings as requestSettings,
   updateSettings as requestSettingsUpdate,
   getWorkspace as requestWorkspace,
@@ -270,6 +274,26 @@ export class HttpFileManagerClient implements FileManagerClient {
     );
     if (response.status !== 204)
       throw new Error(`Unexpected resolveConflict response status: ${response.status}`);
+  }
+
+  async startSearch(request: StartSearchRequest, signal?: AbortSignal): Promise<StartSearchResult> {
+    const response = await requestSearchStart(
+      { query: request.query, roots: [...request.roots], workspaceId: request.workspaceId },
+      signal === undefined ? undefined : { signal },
+    );
+    if (response.status !== 201) {
+      throw new Error(`Unexpected startSearch response status: ${response.status}`);
+    }
+    return { searchId: response.data.searchId, location: response.data.location };
+  }
+
+  async cancelSearch(searchId: string, signal?: AbortSignal): Promise<void> {
+    const response = await requestSearchCancel(
+      searchId,
+      signal === undefined ? undefined : { signal },
+    );
+    if (response.status !== 204)
+      throw new Error(`Unexpected cancelSearch response status: ${response.status}`);
   }
 
   listActions(signal?: AbortSignal): Promise<ActionDescriptor[]> {

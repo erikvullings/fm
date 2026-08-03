@@ -87,6 +87,8 @@ pub fn run() {
             commands::enable_plugin,
             commands::disable_plugin,
             commands::get_plugin_logs,
+            commands::start_search,
+            commands::cancel_search,
         ])
         .run(build_context())
         .expect("error while running the Tauri application");
@@ -146,6 +148,8 @@ mod tests {
                 commands::enable_plugin,
                 commands::disable_plugin,
                 commands::get_plugin_logs,
+                commands::start_search,
+                commands::cancel_search,
             ])
             // Uses the app's real `tauri.conf.json` config (same as `run()`)
             // rather than `mock_context(noop_assets())`'s empty default config,

@@ -332,6 +332,17 @@ fn core_actions(capabilities: PlatformCapabilities) -> Vec<ActionDescriptor> {
             ActionContextRequirements::none(),
         ),
         core_action(
+            "core.findFiles",
+            "Find Files",
+            "navigation",
+            vec![KeyChord {
+                key: "F7".to_owned(),
+                alt: true,
+                ..KeyChord::default()
+            }],
+            ActionContextRequirements::none(),
+        ),
+        core_action(
             "core.newTab",
             "New Tab",
             "navigation",
@@ -518,6 +529,7 @@ mod tests {
             "core.palette",
             "core.focusLocation",
             "core.quickFilter",
+            "core.findFiles",
             "core.newTab",
             "core.closeTab",
             "core.nextTab",
@@ -691,6 +703,27 @@ mod tests {
             vec![key("F8"), key("Delete")],
             "delete must keep the bare keys unchanged when trash is unavailable"
         );
+    }
+
+    #[test]
+    fn find_files_has_no_selection_requirement_and_uses_alt_f7() {
+        let registry = ActionRegistry::with_core_actions(PlatformCapabilities::empty());
+        let action_id = ActionId::new("core.findFiles");
+        let find_files = registry
+            .get(&action_id)
+            .expect("core.findFiles must be registered");
+        assert_eq!(
+            find_files.default_shortcuts,
+            vec![KeyChord {
+                key: "F7".to_owned(),
+                alt: true,
+                ..KeyChord::default()
+            }],
+            "core.findFiles must default to the Total Commander Alt+F7 shortcut"
+        );
+        registry
+            .require_available(&action_id, &ActionInvocationContext::default())
+            .expect("core.findFiles must not require a selection");
     }
 
     #[test]

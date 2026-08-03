@@ -50,7 +50,7 @@ export interface NavigationControllerOptions {
 /** Public navigation operations consumed by pane and workspace input handlers. */
 export interface NavigationController {
   load(paneId: PaneId): Promise<void>;
-  navigate(paneId: PaneId, location: Location): Promise<void>;
+  navigate(paneId: PaneId, location: Location, preferredCursorName?: string): Promise<void>;
   parent(paneId: PaneId): Promise<void>;
   back(paneId: PaneId): Promise<void>;
   forward(paneId: PaneId): Promise<void>;
@@ -295,7 +295,8 @@ export function createNavigationController(
 
   return {
     load,
-    navigate: (paneId, location) => navigateHistory(paneId, 'push', location),
+    navigate: (paneId, location, preferredCursorName) =>
+      navigateHistory(paneId, 'push', location, preferredCursorName),
     parent: async (paneId) => {
       const workspace = options.getWorkspace();
       const tab = workspace === undefined ? undefined : activeTab(workspace, paneId);

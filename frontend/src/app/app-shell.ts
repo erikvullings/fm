@@ -31,6 +31,7 @@ import {
   createNavigationController,
   type NavigationController,
   type PaneDirectoryView,
+  parentLocation,
 } from '../features/navigation/navigation';
 import { ConflictDialog } from '../features/operations/conflict-dialog';
 import { CreateDirectoryDialog } from '../features/operations/create-directory-dialog';
@@ -46,6 +47,7 @@ import { CloseLastTabDialog } from '../features/panes/close-last-tab-dialog';
 import { isParentEntry, withParentEntry } from '../features/panes/parent-entry';
 import { cycledTabIndex, tabIdForJump } from '../features/panes/tab-navigation';
 import { filterEntries, hiddenSelectedEntryCount } from '../features/quick-filter/quick-filter';
+import { FindFilesDialog } from '../features/search/find-files-dialog';
 import type { SelectionPlatform } from '../features/selection/keybindings';
 import {
   emptySelection,
@@ -142,6 +144,12 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
   let flushPendingLayoutUpdate: (() => void) | undefined;
   let createDirectoryOpen = false;
   let createDirectoryLocation: Location | undefined;
+  let findFilesOpen = false;
+  let findFilesRoot: Location | undefined;
+  let findFilesSearchId: string | undefined;
+  let findFilesResults: readonly EntrySummary[] = [];
+  let findFilesSearching = false;
+  let findFilesError: string | undefined;
   let commandPaletteOpen = false;
   let commandPaletteError: string | undefined;
   let openTerminalSupported = false;
@@ -626,6 +634,57 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     return paneId === undefined || location === undefined ? undefined : { paneId, location };
   }
 
+  /**
+   * Invalidates any in-flight `startSearch` resolution and running search
+   * when incremented, without depending on backend-assigned search ids
+   * (which are not yet known synchronously) for correlation.
+   */
+  let findFilesGeneration = 0;
+
+  function closeFindFiles(): void {
+    if (findFilesSearchId !== undefined) {
+      void attrsClient.cancelSearch(findFilesSearchId).catch(() => undefined);
+    }
+    findFilesGeneration += 1;
+    findFilesOpen = false;
+    findFilesRoot = undefined;
+    findFilesSearchId = undefined;
+    findFilesResults = [];
+    findFilesSearching = false;
+    findFilesError = undefined;
+  }
+
+  /** Starts (or restarts) a filename search rooted at the dialog's current directory. */
+  function startFindFilesSearch(query: string): void {
+    const root = findFilesRoot;
+    if (root === undefined || workspace === undefined) return;
+    if (findFilesSearchId !== undefined) {
+      void attrsClient.cancelSearch(findFilesSearchId).catch(() => undefined);
+    }
+    findFilesGeneration += 1;
+    const generation = findFilesGeneration;
+    findFilesResults = [];
+    findFilesSearching = true;
+    findFilesError = undefined;
+    findFilesSearchId = undefined;
+    void attrsClient
+      .startSearch({ query, roots: [root], workspaceId: workspace.id })
+      .then((result) => {
+        if (generation !== findFilesGeneration) {
+          void attrsClient.cancelSearch(result.searchId).catch(() => undefined);
+          return;
+        }
+        findFilesSearchId = result.searchId;
+        m.redraw();
+      })
+      .catch((error: unknown) => {
+        if (generation !== findFilesGeneration) return;
+        findFilesSearching = false;
+        findFilesError = error instanceof Error ? error.message : 'Unable to start search';
+        m.redraw();
+      });
+  }
+
   function clipboard() {
     return appState?.clipboard ?? emptyClipboard;
   }
@@ -1005,6 +1064,15 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       m.redraw();
       return;
     }
+    if (dispatchedAction === 'core.findFiles' && !findFilesOpen) {
+      const active = activeDirectory();
+      if (active === undefined) return;
+      event.preventDefault();
+      findFilesRoot = active.location;
+      findFilesOpen = true;
+      m.redraw();
+      return;
+    }
     if (dispatchedAction === 'core.quickFilter') {
       const active = activeDirectory();
       if (active === undefined) return;
@@ -1105,6 +1173,13 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       plugins = plugins.some((plugin) => plugin.id === changed.id)
         ? plugins.map((plugin) => (plugin.id === changed.id ? { ...plugin, ...changed } : plugin))
         : plugins;
+      m.redraw();
+      return;
+    }
+    if (payload.type === 'search.resultsBatch') {
+      if (payload.searchId !== findFilesSearchId) return;
+      findFilesResults = [...findFilesResults, ...payload.entries];
+      findFilesSearching = !payload.isComplete;
       m.redraw();
       return;
     }
@@ -1588,7 +1663,21 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
               '↑',
             ),
           ]),
-          m('span', 'Search'),
+          m(
+            'button',
+            {
+              type: 'button',
+              disabled: activeDirectory() === undefined,
+              'aria-label': 'Find files',
+              onclick: () => {
+                const active = activeDirectory();
+                if (active === undefined) return;
+                findFilesRoot = active.location;
+                findFilesOpen = true;
+              },
+            },
+            'Find files',
+          ),
           m(
             'button',
             {
@@ -1801,6 +1890,21 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
               .catch(() => {
                 pendingCreatedLocation = undefined;
               });
+          },
+        }),
+        m(FindFilesDialog, {
+          open: findFilesOpen,
+          scopeLabel: findFilesRoot === undefined ? '' : pathFromUri(findFilesRoot.uri),
+          results: findFilesResults,
+          searching: findFilesSearching,
+          ...(findFilesError === undefined ? {} : { error: findFilesError }),
+          onSearch: (query: string) => startFindFilesSearch(query),
+          onCancel: () => closeFindFiles(),
+          onActivateResult: (entry: EntrySummary) => {
+            const paneId = activeDirectory()?.paneId ?? workspace?.activePaneId;
+            if (paneId === undefined) return;
+            closeFindFiles();
+            void navigation.navigate(paneId, parentLocation(entry.location), entry.name);
           },
         }),
         m(PermanentDeleteDialog, {

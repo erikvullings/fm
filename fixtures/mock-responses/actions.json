@@ -10,6 +10,7 @@
   { "id": "core.palette", "title": "Command palette", "category": "navigation", "defaultShortcuts": [{ "key": "p", "ctrl": true }], "contextRequirements": {}, "source": { "kind": "core" } },
   { "id": "core.focusLocation", "title": "Focus location", "category": "navigation", "defaultShortcuts": [{ "key": "l", "ctrl": true }], "contextRequirements": {}, "source": { "kind": "core" } },
   { "id": "core.quickFilter", "title": "Quick filter", "category": "navigation", "defaultShortcuts": [{ "key": "f", "ctrl": true }], "contextRequirements": {}, "source": { "kind": "core" } },
+  { "id": "core.findFiles", "title": "Find files", "category": "navigation", "defaultShortcuts": [{ "key": "F7", "alt": true }], "contextRequirements": {}, "source": { "kind": "core" } },
   { "id": "core.newTab", "title": "New tab", "category": "navigation", "defaultShortcuts": [{ "key": "t", "ctrl": true }], "contextRequirements": {}, "source": { "kind": "core" } },
   { "id": "core.closeTab", "title": "Close tab", "category": "navigation", "defaultShortcuts": [{ "key": "w", "ctrl": true }], "contextRequirements": {}, "source": { "kind": "core" } }
   ,{ "id": "core.nextTab", "title": "Next tab", "category": "navigation", "defaultShortcuts": [{ "key": "Tab", "ctrl": true }], "contextRequirements": {}, "source": { "kind": "core" } }

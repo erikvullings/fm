@@ -272,6 +272,30 @@ describe('navigation controller', () => {
     );
   });
 
+  it('forwards an optional preferredCursorName on navigate to updatePane', async () => {
+    const context = setup();
+    const next = workspace('file:///home/erik/Documents');
+    const nextLocation = { providerId: 'local', uri: 'file:///home/erik/Documents' } as const;
+    vi.mocked(context.client.dispatchWorkspaceCommand).mockResolvedValue(next);
+    vi.mocked(context.client.navigatePane).mockImplementation(async (request) =>
+      snapshot(request.requestId, nextLocation.uri, ['Projects']),
+    );
+    const preferredCursorNames: (string | undefined)[] = [];
+    const controller = createNavigationController({
+      client: context.client,
+      getWorkspace: context.getWorkspace,
+      replaceWorkspace: context.replaceWorkspace,
+      updatePane: (_paneId, _tabId, view, preferredCursorName) => {
+        context.views.push(view);
+        preferredCursorNames.push(preferredCursorName);
+      },
+    });
+
+    await controller.navigate('left', nextLocation, 'Projects');
+
+    expect(preferredCursorNames.at(-1)).toBe('Projects');
+  });
+
   it('asks the backend to resolve back and forward targets', async () => {
     const context = setup();
     vi.mocked(context.client.dispatchWorkspaceCommand)

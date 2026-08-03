@@ -75,3 +75,22 @@ export interface InvokeActionRequest {
   parameters?: unknown;
   context: ActionInvocationContext;
 }
+
+/**
+ * Starts a recursive, cancellable filename search (`POST /api/v1/search`,
+ * task 0068), mirroring `fm_transport_dto::StartSearchRequestDto`.
+ */
+export interface StartSearchRequest {
+  query: string;
+  roots: readonly Location[];
+  workspaceId: string;
+}
+
+/**
+ * Identifies a started search and its `search://local/{searchId}` virtual
+ * result location, mirroring `fm_transport_dto::StartSearchResponseDto`.
+ */
+export interface StartSearchResult {
+  searchId: string;
+  location: Location;
+}

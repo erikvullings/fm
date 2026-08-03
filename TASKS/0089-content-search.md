@@ -64,3 +64,24 @@ entry point, not just adding a content-matching mode to an existing dialog.
   (content query, scope) — see `AGENTS.md` "Generated code".
 
 ## Agent Notes
+- 2026-08-03: Implemented the **filename-search slice only** (content/grep scanning explicitly
+  NOT attempted — status intentionally left `open`). Added `core.findFiles` (`Alt+F7`, Total
+  Commander convention, no selection requirement) to `crates/fm-application/src/action.rs`, wired
+  through the mock action fixture (`fixtures/mock-responses/actions.json`).
+- Added `startSearch`/`cancelSearch` to the semantic `FileManagerClient` interface
+  (`frontend/src/api/client/file-manager-client.ts`) and implemented them in all three adapters
+  (HTTP, mock, Tauri) so UI code never calls the raw generated Orval `startSearch`/`cancelSearch`
+  functions directly. Tauri adapter forwards to new `start_search`/`cancel_search` commands in
+  `apps/fm-desktop/src-tauri/src/commands.rs` (registered in `lib.rs`), which call the same
+  `FileManagerService` methods as the REST route from task 0068.
+- New dialog: `frontend/src/features/search/find-files-dialog.ts`, following the `ModalPanel`
+  focus/blur pattern from `create-directory-dialog.ts`. Replaced the dead `m('span', 'Search')`
+  placeholder in `frontend/src/app/app-shell.ts` with a real "Find files" entry point that opens
+  the dialog, starts a search via the client, and reuses 0068's existing `search://local/{searchId}`
+  results machinery (via `search.resultsBatch` events) rather than a bespoke list — activating a
+  result navigates the active pane to its containing directory with the entry selected
+  (`navigation.ts`'s `navigate()` gained an optional `preferredCursorName` parameter for this).
+- Content-search query field, regex opt-in, per-file streaming/bounded scanning, binary-file
+  skip heuristic, virtualized results view, and the `fm-search`/`fm-server` backend content-matching
+  work described in the Acceptance Criteria above are all still outstanding — this task remains
+  open until that half lands.

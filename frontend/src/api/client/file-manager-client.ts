@@ -18,6 +18,8 @@ import type {
   RuntimeCapabilities,
   Settings,
   StartOperationRequest,
+  StartSearchRequest,
+  StartSearchResult,
   Unsubscribe,
   WorkspaceCommand,
   WorkspaceId,
@@ -98,6 +100,10 @@ export interface FileManagerClient {
   resumeOperation(operationId: OperationId, signal?: AbortSignal): Promise<void>;
 
   resolveConflict(request: ResolveConflictRequest, signal?: AbortSignal): Promise<void>;
+
+  startSearch(request: StartSearchRequest, signal?: AbortSignal): Promise<StartSearchResult>;
+
+  cancelSearch(searchId: string, signal?: AbortSignal): Promise<void>;
 
   listActions(signal?: AbortSignal): Promise<ActionDescriptor[]>;
 

@@ -18,6 +18,8 @@ const requestCancelOperation = vi.fn();
 const requestPauseOperation = vi.fn();
 const requestResumeOperation = vi.fn();
 const requestResolveOperationConflict = vi.fn();
+const requestStartSearch = vi.fn();
+const requestCancelSearch = vi.fn();
 const requestListPlugins = vi.fn();
 const requestEnablePlugin = vi.fn();
 const requestDisablePlugin = vi.fn();
@@ -40,6 +42,8 @@ vi.mock('../generated/file-manager-api', () => ({
   pauseOperation: (...args: unknown[]) => requestPauseOperation(...args),
   resumeOperation: (...args: unknown[]) => requestResumeOperation(...args),
   resolveOperationConflict: (...args: unknown[]) => requestResolveOperationConflict(...args),
+  startSearch: (...args: unknown[]) => requestStartSearch(...args),
+  cancelSearch: (...args: unknown[]) => requestCancelSearch(...args),
   listPlugins: (...args: unknown[]) => requestListPlugins(...args),
   enablePlugin: (...args: unknown[]) => requestEnablePlugin(...args),
   disablePlugin: (...args: unknown[]) => requestDisablePlugin(...args),
@@ -91,6 +95,8 @@ afterEach(() => {
   requestPauseOperation.mockReset();
   requestResumeOperation.mockReset();
   requestResolveOperationConflict.mockReset();
+  requestStartSearch.mockReset();
+  requestCancelSearch.mockReset();
   requestListPlugins.mockReset();
   requestEnablePlugin.mockReset();
   requestDisablePlugin.mockReset();
@@ -293,6 +299,74 @@ describe('HttpFileManagerClient', () => {
         'operation-1',
         { resolution: 'renameNew', applyToAllSimilar: true },
         undefined,
+      );
+    });
+  });
+
+  describe('search methods', () => {
+    it('starts a filename search and returns its id and virtual location', async () => {
+      requestStartSearch.mockResolvedValue({
+        status: 201,
+        headers: new Headers(),
+        data: {
+          searchId: 'search-1',
+          location: { providerId: 'local', uri: 'search://local/search-1' },
+        },
+      });
+      const client = new HttpFileManagerClient();
+      const controller = new AbortController();
+
+      await expect(
+        client.startSearch(
+          {
+            query: 'report',
+            roots: [{ providerId: 'local', uri: 'file:///Documents' }],
+            workspaceId: 'workspace-1',
+          },
+          controller.signal,
+        ),
+      ).resolves.toEqual({
+        searchId: 'search-1',
+        location: { providerId: 'local', uri: 'search://local/search-1' },
+      });
+      expect(requestStartSearch).toHaveBeenCalledWith(
+        {
+          query: 'report',
+          roots: [{ providerId: 'local', uri: 'file:///Documents' }],
+          workspaceId: 'workspace-1',
+        },
+        expect.objectContaining({ signal: controller.signal }),
+      );
+    });
+
+    it('rejects an unexpected startSearch response status', async () => {
+      requestStartSearch.mockResolvedValue({ status: 400, headers: new Headers(), data: {} });
+      const client = new HttpFileManagerClient();
+
+      await expect(
+        client.startSearch({ query: 'x', roots: [], workspaceId: 'workspace-1' }),
+      ).rejects.toThrow('Unexpected startSearch response status: 400');
+    });
+
+    it('cancels a search', async () => {
+      requestCancelSearch.mockResolvedValue({ status: 204, headers: new Headers() });
+      const client = new HttpFileManagerClient();
+      const controller = new AbortController();
+
+      await client.cancelSearch('search-1', controller.signal);
+
+      expect(requestCancelSearch).toHaveBeenCalledWith(
+        'search-1',
+        expect.objectContaining({ signal: controller.signal }),
+      );
+    });
+
+    it('rejects an unexpected cancelSearch response status', async () => {
+      requestCancelSearch.mockResolvedValue({ status: 404, headers: new Headers() });
+      const client = new HttpFileManagerClient();
+
+      await expect(client.cancelSearch('search-1')).rejects.toThrow(
+        'Unexpected cancelSearch response status: 404',
       );
     });
   });

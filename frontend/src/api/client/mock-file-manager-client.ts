@@ -22,6 +22,8 @@ import type {
   RuntimeCapabilities,
   Settings,
   StartOperationRequest,
+  StartSearchRequest,
+  StartSearchResult,
   Unsubscribe,
   WorkspaceCommand,
   WorkspaceId,
@@ -72,7 +74,9 @@ export type MockClientMethod =
   | 'invokeAction'
   | 'listPlugins'
   | 'setPluginEnabled'
-  | 'getPluginLogs';
+  | 'getPluginLogs'
+  | 'startSearch'
+  | 'cancelSearch';
 
 export interface MockFileManagerClientOptions {
   pageSize?: number;
@@ -103,6 +107,45 @@ function fixtureEntry(
     ...(extension === undefined ? {} : { extension }),
     metadataRevision: 1,
   };
+}
+
+/** Case-insensitive substring match, or a `*`/`?` glob match when the query contains a wildcard. */
+function matchesQuery(name: string, query: string): boolean {
+  if (!query.includes('*') && !query.includes('?')) {
+    return name.toLowerCase().includes(query.toLowerCase());
+  }
+  const pattern = query
+    .toLowerCase()
+    .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+    .replace(/\*/g, '.*')
+    .replace(/\?/g, '.');
+  return new RegExp(`^${pattern}$`).test(name.toLowerCase());
+}
+
+/**
+ * Recursively walks the fixture directory tree from `rootUri` (reduced
+ * fidelity vs. the real `fm-search` traversal), silently skipping the
+ * `Unreadable` fixture directory the same way `directorySnapshot` treats it.
+ */
+function collectMatches(rootUri: string, query: string): import('../../models').EntrySummary[] {
+  const results: import('../../models').EntrySummary[] = [];
+  const pending = [rootUri];
+  while (pending.length > 0) {
+    const uri = pending.pop();
+    if (uri === undefined || uri === 'mock:///Unreadable') continue;
+    const fixtures = directories[uri];
+    if (fixtures === undefined) continue;
+    for (const fixture of fixtures) {
+      const entry = fixtureEntry(uri, fixture);
+      if (matchesQuery(fixture.name, query)) {
+        results.push(entry);
+      }
+      if (fixture.kind === 'directory') {
+        pending.push(entry.location.uri);
+      }
+    }
+  }
+  return results;
 }
 
 function createMockWorkspace(id: WorkspaceId, name = 'Mock Workspace'): WorkspaceProjection {
@@ -205,6 +248,9 @@ export class MockFileManagerClient implements FileManagerClient {
   private operationSequence = 0;
   private tabSequence = 0;
   private workspaceSequence = 0;
+  private searchSequence = 0;
+  private eventSequence = 0;
+  private readonly searches = new Map<string, { cancelled: boolean }>();
 
   constructor(options: MockFileManagerClientOptions = {}) {
     this.pageSize = options.pageSize ?? 100;
@@ -599,6 +645,47 @@ export class MockFileManagerClient implements FileManagerClient {
         throw new MockClientError('pluginNotFound', `No mock plugin with id ${pluginId}`);
       }
       return [];
+    });
+  }
+
+  startSearch(request: StartSearchRequest, signal?: AbortSignal): Promise<StartSearchResult> {
+    return this.perform('startSearch', signal, () => {
+      this.searchSequence += 1;
+      const searchId = `mock-search-${this.seed}-${this.searchSequence}`;
+      const location: Location = { providerId: 'local', uri: `search://local/${searchId}` };
+      this.searches.set(searchId, { cancelled: false });
+      const entries = request.roots.flatMap((root) => collectMatches(root.uri, request.query));
+      // Deferred with a macrotask (rather than a microtask) so it always runs
+      // after this method's own promise has resolved and the caller has
+      // recorded `searchId`, avoiding a race against the resultsBatch handler
+      // matching events by searchId.
+      setTimeout(() => {
+        if (this.searches.get(searchId)?.cancelled ?? true) return;
+        this.eventSequence += 1;
+        this.emit({
+          eventId: this.eventSequence,
+          timestamp: '2026-01-01T00:00:00.000Z',
+          workspaceId: request.workspaceId,
+          payload: {
+            type: 'search.resultsBatch',
+            searchId,
+            entries,
+            isComplete: true,
+            warningsCount: 0,
+          },
+        });
+      }, 0);
+      return { searchId, location };
+    });
+  }
+
+  cancelSearch(searchId: string, signal?: AbortSignal): Promise<void> {
+    return this.perform('cancelSearch', signal, () => {
+      const search = this.searches.get(searchId);
+      if (search === undefined) {
+        throw new MockClientError('searchNotFound', `No mock search with id ${searchId}`);
+      }
+      search.cancelled = true;
     });
   }
 

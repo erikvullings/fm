@@ -11,7 +11,8 @@ use fm_transport_dto::{
     DirectorySnapshotDto, EntryMetadataDto, EntryMetadataRequest, InvokeActionRequestDto,
     ListDirectoryRequest, NavigateRequest, OperationDto, PluginDescriptorDto, PluginLogEntryDto,
     ResolveOperationConflictRequestDto, RuntimeCapabilitiesDto, SettingsDto,
-    StartOperationRequestDto, WorkspaceCommandDto, WorkspaceDto, WorkspaceSummaryDto,
+    StartOperationRequestDto, StartSearchRequestDto, StartSearchResponseDto, WorkspaceCommandDto,
+    WorkspaceDto, WorkspaceSummaryDto,
 };
 
 use crate::{AppState, event_stream::EventSubscriptionRegistry};
@@ -333,5 +334,30 @@ pub(crate) fn get_plugin_logs(
     state
         .service
         .plugin_logs(&plugin_id)
+        .map_err(|error| error.into_dto(Uuid::new_v4()))
+}
+
+/// Starts a cancellable recursive filename search through the same service
+/// method as REST (task 0068).
+#[tauri::command]
+pub(crate) fn start_search(
+    state: State<'_, AppState>,
+    request: StartSearchRequestDto,
+) -> Result<StartSearchResponseDto, ApplicationErrorDto> {
+    state
+        .service
+        .start_search(request)
+        .map_err(|error| error.into_dto(Uuid::new_v4()))
+}
+
+/// Cancels a running search through the shared service.
+#[tauri::command]
+pub(crate) fn cancel_search(
+    state: State<'_, AppState>,
+    search_id: Uuid,
+) -> Result<(), ApplicationErrorDto> {
+    state
+        .service
+        .cancel_search(search_id)
         .map_err(|error| error.into_dto(Uuid::new_v4()))
 }

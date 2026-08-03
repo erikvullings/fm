@@ -113,6 +113,34 @@ describe('TauriFileManagerClient', () => {
     });
   });
 
+  describe('search methods', () => {
+    it('invokes start_search and returns the searchId/location', async () => {
+      const request = {
+        query: 'report',
+        roots: [{ providerId: 'local', uri: 'file:///Documents' }],
+        workspaceId: 'workspace-1',
+      };
+      const result = {
+        searchId: 'search-1',
+        location: { providerId: 'local', uri: 'search://local/search-1' },
+      };
+      invoke.mockResolvedValue(result);
+      const client = new TauriFileManagerClient();
+
+      await expect(client.startSearch(request)).resolves.toEqual(result);
+      expect(invoke).toHaveBeenCalledWith('start_search', { request });
+    });
+
+    it('invokes cancel_search with the searchId', async () => {
+      invoke.mockResolvedValue(undefined);
+      const client = new TauriFileManagerClient();
+
+      await client.cancelSearch('search-1');
+
+      expect(invoke).toHaveBeenCalledWith('cancel_search', { searchId: 'search-1' });
+    });
+  });
+
   describe('workspace methods', () => {
     it('invokes get_workspace and normalizes the result', async () => {
       invoke.mockResolvedValue({

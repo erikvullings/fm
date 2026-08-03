@@ -107,6 +107,7 @@ describe('MockFileManagerClient API', () => {
       'core.palette',
       'core.focusLocation',
       'core.quickFilter',
+      'core.findFiles',
       'core.newTab',
       'core.closeTab',
       'core.nextTab',
@@ -242,5 +243,87 @@ describe('MockFileManagerClient controls', () => {
     });
 
     await expect(client.listDirectory(ROOT_REQUEST)).rejects.toBe(failure);
+  });
+});
+
+describe('MockFileManagerClient search methods', () => {
+  it('recursively matches filenames by substring and streams a completed resultsBatch event', async () => {
+    vi.useFakeTimers();
+    const client = new MockFileManagerClient();
+    const listener = vi.fn();
+    await client.subscribe(listener);
+
+    const result = await client.startSearch({
+      query: 'report',
+      roots: [{ providerId: 'file', uri: 'mock:///' }],
+      workspaceId: 'workspace-1',
+    });
+
+    expect(result.searchId).toMatch(/^mock-search-/);
+    expect(result.location).toEqual({
+      providerId: 'local',
+      uri: `search://local/${result.searchId}`,
+    });
+
+    await vi.runAllTimersAsync();
+    vi.useRealTimers();
+
+    expect(listener).toHaveBeenCalledOnce();
+    const event = listener.mock.calls[0]?.[0] as BackendEvent;
+    expect(event.payload).toMatchObject({
+      type: 'search.resultsBatch',
+      searchId: result.searchId,
+      isComplete: true,
+      warningsCount: 0,
+    });
+    expect(event.payload).toMatchObject({
+      entries: [expect.objectContaining({ name: 'report.pdf' })],
+    });
+  });
+
+  it('matches a glob query recursively across nested fixture directories', async () => {
+    vi.useFakeTimers();
+    const client = new MockFileManagerClient();
+    const listener = vi.fn();
+    await client.subscribe(listener);
+
+    await client.startSearch({
+      query: '*.md',
+      roots: [{ providerId: 'file', uri: 'mock:///' }],
+      workspaceId: 'workspace-1',
+    });
+    await vi.runAllTimersAsync();
+    vi.useRealTimers();
+
+    const event = listener.mock.calls[0]?.[0] as BackendEvent;
+    expect(event.payload).toMatchObject({
+      entries: [expect.objectContaining({ name: 'file-manager.md' })],
+    });
+  });
+
+  it('never emits a resultsBatch for a search cancelled before it fires', async () => {
+    vi.useFakeTimers();
+    const client = new MockFileManagerClient();
+    const listener = vi.fn();
+    await client.subscribe(listener);
+
+    const result = await client.startSearch({
+      query: 'report',
+      roots: [{ providerId: 'file', uri: 'mock:///' }],
+      workspaceId: 'workspace-1',
+    });
+    await client.cancelSearch(result.searchId);
+    await vi.runAllTimersAsync();
+    vi.useRealTimers();
+
+    expect(listener).not.toHaveBeenCalled();
+  });
+
+  it('rejects cancelling an unknown search id', async () => {
+    const client = new MockFileManagerClient();
+
+    await expect(client.cancelSearch('nonexistent')).rejects.toMatchObject({
+      code: 'searchNotFound',
+    });
   });
 });
