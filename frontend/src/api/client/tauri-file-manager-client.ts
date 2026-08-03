@@ -26,8 +26,12 @@ import type {
   WorkspaceProjection,
   WorkspaceSummary,
 } from '../../models';
+import { entryMetadataFromDto } from '../../models/entry';
+import { directorySnapshotFromDto } from '../../models/snapshot';
 import { workspaceProjectionFromDto } from '../../models/workspace';
 import { TauriEventStream } from '../events/tauri-event-stream';
+import type { DirectorySnapshotDto } from '../generated/models/directorySnapshotDto';
+import type { EntryMetadataDto } from '../generated/models/entryMetadataDto';
 import type { WorkspaceDto } from '../generated/models/workspaceDto';
 import type { FileManagerClient } from './file-manager-client';
 
@@ -109,16 +113,26 @@ export class TauriFileManagerClient implements FileManagerClient {
     );
   }
 
-  navigatePane(request: NavigateRequest, _signal?: AbortSignal): Promise<DirectorySnapshot> {
-    return invoke<DirectorySnapshot>('navigate_pane', { request });
+  async navigatePane(request: NavigateRequest, _signal?: AbortSignal): Promise<DirectorySnapshot> {
+    return directorySnapshotFromDto(
+      await invoke<DirectorySnapshotDto>('navigate_pane', { request }),
+    );
   }
 
-  listDirectory(request: ListDirectoryRequest, _signal?: AbortSignal): Promise<DirectorySnapshot> {
-    return invoke<DirectorySnapshot>('list_directory', { request });
+  async listDirectory(
+    request: ListDirectoryRequest,
+    _signal?: AbortSignal,
+  ): Promise<DirectorySnapshot> {
+    return directorySnapshotFromDto(
+      await invoke<DirectorySnapshotDto>('list_directory', { request }),
+    );
   }
 
-  getEntryMetadata(request: EntryMetadataRequest, _signal?: AbortSignal): Promise<EntryMetadata> {
-    return invoke<EntryMetadata>('get_entry_metadata', { request });
+  async getEntryMetadata(
+    request: EntryMetadataRequest,
+    _signal?: AbortSignal,
+  ): Promise<EntryMetadata> {
+    return entryMetadataFromDto(await invoke<EntryMetadataDto>('get_entry_metadata', { request }));
   }
 
   startOperation(request: StartOperationRequest, _signal?: AbortSignal): Promise<Operation> {

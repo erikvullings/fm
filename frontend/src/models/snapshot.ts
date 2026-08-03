@@ -1,4 +1,5 @@
-import type { EntrySummary } from './entry';
+import type { DirectorySnapshotDto } from '../api/generated/models/directorySnapshotDto';
+import { type EntrySummary, entrySummaryFromDto } from './entry';
 import type { EntryId, PaneId } from './ids';
 import type { Location } from './location';
 
@@ -28,6 +29,26 @@ export interface DirectorySnapshot {
   hasMore: boolean;
   continuationToken?: string;
   loadingState: LoadingState;
+}
+
+/**
+ * Converts the wire DTO into the frontend model, normalizing the wire's `null` (used for
+ * absent optional fields) to `undefined`, and mapping each entry through
+ * {@link entrySummaryFromDto}.
+ */
+export function directorySnapshotFromDto(dto: DirectorySnapshotDto): DirectorySnapshot {
+  return {
+    paneId: dto.paneId,
+    requestId: dto.requestId,
+    revision: dto.revision,
+    location: dto.location,
+    writable: dto.writable,
+    entries: dto.entries.map(entrySummaryFromDto),
+    hasMore: dto.hasMore,
+    loadingState: dto.loadingState,
+    ...(dto.totalKnownEntries == null ? {} : { totalKnownEntries: dto.totalKnownEntries }),
+    ...(dto.continuationToken == null ? {} : { continuationToken: dto.continuationToken }),
+  };
 }
 
 /**

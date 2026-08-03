@@ -24,6 +24,8 @@ import type {
   WorkspaceProjection,
   WorkspaceSummary,
 } from '../../models';
+import { entryMetadataFromDto } from '../../models/entry';
+import { directorySnapshotFromDto } from '../../models/snapshot';
 import { workspaceProjectionFromDto } from '../../models/workspace';
 import { SseEventStream } from '../events/sse-event-stream';
 import {
@@ -183,7 +185,10 @@ export class HttpFileManagerClient implements FileManagerClient {
       request,
       signal !== undefined ? { signal } : undefined,
     );
-    return response.data as DirectorySnapshot;
+    if (response.status !== 200) {
+      throw new Error(`Unexpected navigatePane response status: ${response.status}`);
+    }
+    return directorySnapshotFromDto(response.data);
   }
 
   async listDirectory(
@@ -191,7 +196,10 @@ export class HttpFileManagerClient implements FileManagerClient {
     signal?: AbortSignal,
   ): Promise<DirectorySnapshot> {
     const response = await requestDirectory(request, signal !== undefined ? { signal } : undefined);
-    return response.data as DirectorySnapshot;
+    if (response.status !== 200) {
+      throw new Error(`Unexpected listDirectory response status: ${response.status}`);
+    }
+    return directorySnapshotFromDto(response.data);
   }
 
   async getEntryMetadata(
@@ -202,7 +210,10 @@ export class HttpFileManagerClient implements FileManagerClient {
       request,
       signal !== undefined ? { signal } : undefined,
     );
-    return response.data as EntryMetadata;
+    if (response.status !== 200) {
+      throw new Error(`Unexpected getEntryMetadata response status: ${response.status}`);
+    }
+    return entryMetadataFromDto(response.data);
   }
 
   async startOperation(request: StartOperationRequest, signal?: AbortSignal): Promise<Operation> {
