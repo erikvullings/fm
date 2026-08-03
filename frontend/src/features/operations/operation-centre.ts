@@ -17,6 +17,11 @@ function formatBytes(value: number): string {
   return `${(value / 1_048_576).toFixed(1)} MiB`;
 }
 
+/** Guards against `null` slipping through instead of an omitted optional field. */
+function hasValue<T>(value: T | null | undefined): value is T {
+  return value !== undefined && value !== null;
+}
+
 function currentEntryName(operation: Operation): string | undefined {
   const uri = operation.progress.currentEntry?.location.uri;
   if (uri === undefined) return undefined;
@@ -26,9 +31,9 @@ function currentEntryName(operation: Operation): string | undefined {
 
 function cancelledResult(operation: Operation): string {
   const { completedItems, totalItems, completedBytes, totalBytes } = operation.progress;
-  const items = `${completedItems}${totalItems === undefined ? '' : ` / ${totalItems}`}`;
+  const items = `${completedItems}${hasValue(totalItems) ? ` / ${totalItems}` : ''}`;
   const bytes = `${formatBytes(completedBytes)}${
-    totalBytes === undefined ? '' : ` / ${formatBytes(totalBytes)}`
+    hasValue(totalBytes) ? ` / ${formatBytes(totalBytes)}` : ''
   }`;
   return operation.result?.message ?? `Cancelled after ${items} items (${bytes}).`;
 }
@@ -60,7 +65,7 @@ export const OperationCentre: Component<OperationCentreAttrs> = {
           operation.state === 'interrupted';
         return m('article.fm-operation', { 'data-operation-id': operation.id }, [
           m('.fm-operation-summary', [
-            m('strong', `${operation.kind} · ${operation.state}`),
+            m('strong', `${operation.kind ?? 'operation'} · ${operation.state}`),
             operation.queuePosition === undefined
               ? undefined
               : m('span', `Queue position ${operation.queuePosition}`),
@@ -69,23 +74,23 @@ export const OperationCentre: Component<OperationCentreAttrs> = {
               : m('span', currentEntryName(operation)),
             m(
               'span',
-              `${progress.completedItems}${progress.totalItems === undefined ? '' : ` / ${progress.totalItems}`} items`,
+              `${progress.completedItems}${hasValue(progress.totalItems) ? ` / ${progress.totalItems}` : ''} items`,
             ),
             m(
               'span',
-              `${formatBytes(progress.completedBytes)}${progress.totalBytes === undefined ? '' : ` / ${formatBytes(progress.totalBytes)}`}`,
+              `${formatBytes(progress.completedBytes)}${hasValue(progress.totalBytes) ? ` / ${formatBytes(progress.totalBytes)}` : ''}`,
             ),
-            progress.bytesPerSecond === undefined
-              ? undefined
-              : m('span', `${formatBytes(progress.bytesPerSecond)}/s`),
+            hasValue(progress.bytesPerSecond)
+              ? m('span', `${formatBytes(progress.bytesPerSecond)}/s`)
+              : undefined,
           ]),
-          progress.totalBytes === undefined
-            ? undefined
-            : m('progress', {
+          hasValue(progress.totalBytes)
+            ? m('progress', {
                 value: progress.completedBytes,
                 max: Math.max(progress.totalBytes, 1),
-                'aria-label': `${operation.kind} progress`,
-              }),
+                'aria-label': `${operation.kind ?? 'operation'} progress`,
+              })
+            : undefined,
           operation.state !== 'completed' && operation.state !== 'completedWithWarnings'
             ? operation.state === 'cancelled'
               ? m('.fm-operation-result', cancelledResult(operation))
