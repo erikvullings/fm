@@ -3,5 +3,10 @@
   "identifier": "default",
   "description": "Capabilities for the main window. Allow-lists only the commands this host actually implements (spec §22): no default full-filesystem plugin access.",
   "windows": ["main"],
-  "permissions": ["core:default"]
+  "permissions": [
+    "core:default",
+    "core:window:allow-set-background-color",
+    "core:window:allow-set-theme",
+    "core:window:allow-start-dragging"
+  ]
 }
