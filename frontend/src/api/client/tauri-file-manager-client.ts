@@ -29,7 +29,7 @@ import type {
 import { workspaceProjectionFromDto } from '../../models/workspace';
 import { TauriEventStream } from '../events/tauri-event-stream';
 import type { WorkspaceDto } from '../generated/models/workspaceDto';
-import { type FileManagerClient } from './file-manager-client';
+import type { FileManagerClient } from './file-manager-client';
 
 /**
  * Tauri transport adapter, calling `FileManagerService` through `invoke`
