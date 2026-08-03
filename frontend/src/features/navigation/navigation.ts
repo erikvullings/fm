@@ -7,6 +7,7 @@ import type {
   Location,
   PaneId,
   TabId,
+  TabProjection,
   WorkspaceCommand,
   WorkspaceProjection,
 } from '../../models';
@@ -27,6 +28,8 @@ export interface PaneDirectoryView {
   readonly revision?: number;
   readonly hasMore: boolean;
   readonly continuationToken?: string;
+  /** Total entries in the directory, known from the first page's response even before all pages load. */
+  readonly totalKnownEntries?: number;
 }
 
 /** Integration callbacks kept outside the navigation module. */
@@ -56,6 +59,8 @@ export interface NavigationController {
   forward(paneId: PaneId): Promise<void>;
   retry(paneId: PaneId): Promise<void>;
   loadNextPage(paneId: PaneId): Promise<void>;
+  /** Loads every remaining page for the pane's current directory (e.g. before jumping to the last entry). */
+  loadAllPages(paneId: PaneId): Promise<void>;
   /** Cancels a specific tab's in-flight request, e.g. because it just became hidden. */
   abort(paneId: PaneId, tabId: TabId): void;
   dispose(): void;
@@ -115,6 +120,11 @@ export function createNavigationController(
 ): NavigationController {
   const activeRequests = new Map<string, ActiveRequest>();
   const paneViews = new Map<string, PaneDirectoryView>();
+  // Dedupes concurrent `loadNextPage` calls for the same tab (e.g. repeated `onEndReached`
+  // firing while scrolling) so a later call reuses the in-flight fetch instead of aborting it
+  // via `begin()` and restarting from scratch — otherwise a fast scroll can cancel-and-restart
+  // the fetch forever, so it never completes.
+  const pendingNextPage = new Map<string, Promise<void>>();
 
   function begin(paneId: PaneId, tabId: TabId): ActiveRequest {
     const key = tabKey(paneId, tabId);
@@ -163,9 +173,9 @@ export function createNavigationController(
     paneId: PaneId,
     requestId: string,
     location: Location,
+    tab: TabProjection | undefined,
     continuationToken?: string,
   ): ListDirectoryRequest {
-    const tab = activeTab(workspace, paneId);
     return {
       workspaceId: workspace.id,
       paneId,
@@ -194,6 +204,9 @@ export function createNavigationController(
       ...(snapshot.continuationToken === undefined
         ? {}
         : { continuationToken: snapshot.continuationToken }),
+      ...(snapshot.totalKnownEntries === undefined
+        ? {}
+        : { totalKnownEntries: snapshot.totalKnownEntries }),
     };
   }
 
@@ -207,7 +220,7 @@ export function createNavigationController(
     publish(paneId, tab.id, loadingView(paneId, tab.id, request, tab.location));
     try {
       const snapshot = await options.client.listDirectory(
-        requestFor(workspace, paneId, request.id, tab.location),
+        requestFor(workspace, paneId, request.id, tab.location, tab),
         request.controller.signal,
       );
       if (isCurrent(paneId, tab.id, request) && snapshot.requestId === request.id) {
@@ -293,6 +306,89 @@ export function createNavigationController(
     }
   }
 
+  // `loadNextPageImpl`/`loadNextPage`/`loadAllPages` all take an explicit `tabId` pinned by
+  // their caller (defaulting to the pane's active tab at the moment of the call) rather than
+  // re-resolving `pane.activeTabId` on every invocation. Otherwise, if the user switches tabs
+  // while `loadAllPages`'s loop is still awaiting a page, the next iteration would silently
+  // start fetching pages for whichever tab is now active instead of stopping for the original
+  // (now-hidden) tab, corrupting both tabs' entries.
+  async function loadNextPageImpl(paneId: PaneId, tabId: TabId): Promise<void> {
+    const workspace = options.getWorkspace();
+    const tab = workspace?.panesById[paneId]?.tabsById[tabId];
+    const current = paneViews.get(tabKey(paneId, tabId));
+    if (
+      workspace === undefined ||
+      tab === undefined ||
+      current?.location === undefined ||
+      !current.hasMore ||
+      current.continuationToken === undefined
+    ) {
+      return;
+    }
+    const request = begin(paneId, tabId);
+    try {
+      const snapshot = await options.client.listDirectory(
+        requestFor(workspace, paneId, request.id, current.location, tab, current.continuationToken),
+        request.controller.signal,
+      );
+      if (isCurrent(paneId, tabId, request) && snapshot.requestId === request.id) {
+        publish(
+          paneId,
+          tabId,
+          viewFromSnapshot(snapshot, [...current.entries, ...snapshot.entries]),
+        );
+      }
+    } catch (error: unknown) {
+      if (isCurrent(paneId, tabId, request)) {
+        publish(paneId, tabId, {
+          ...current,
+          state: { type: 'error', message: errorMessage(error) },
+          requestId: request.id,
+        });
+      }
+    }
+  }
+
+  function loadNextPage(paneId: PaneId, tabId?: TabId): Promise<void> {
+    const workspace = options.getWorkspace();
+    const resolvedTabId =
+      tabId ?? (workspace === undefined ? undefined : activeTab(workspace, paneId)?.id);
+    if (resolvedTabId === undefined) {
+      return Promise.resolve();
+    }
+    const key = tabKey(paneId, resolvedTabId);
+    const pending = pendingNextPage.get(key);
+    if (pending !== undefined) {
+      return pending;
+    }
+    const promise = loadNextPageImpl(paneId, resolvedTabId).finally(() => {
+      pendingNextPage.delete(key);
+    });
+    pendingNextPage.set(key, promise);
+    return promise;
+  }
+
+  async function loadAllPages(paneId: PaneId): Promise<void> {
+    const workspace = options.getWorkspace();
+    const tabId = workspace === undefined ? undefined : activeTab(workspace, paneId)?.id;
+    if (tabId === undefined) {
+      return;
+    }
+    for (;;) {
+      // Stop (without switching targets) once the tab this was started for is no longer
+      // active, e.g. the user switched tabs while pages were still loading in the background.
+      const stillActive = options.getWorkspace();
+      if (stillActive === undefined || activeTab(stillActive, paneId)?.id !== tabId) {
+        return;
+      }
+      const current = paneViews.get(tabKey(paneId, tabId));
+      if (current === undefined || !current.hasMore || current.state.type === 'error') {
+        return;
+      }
+      await loadNextPage(paneId, tabId);
+    }
+  }
+
   return {
     load,
     navigate: (paneId, location, preferredCursorName) =>
@@ -311,42 +407,8 @@ export function createNavigationController(
     back: (paneId) => navigateHistory(paneId, 'back'),
     forward: (paneId) => navigateHistory(paneId, 'forward'),
     retry: load,
-    loadNextPage: async (paneId) => {
-      const workspace = options.getWorkspace();
-      const tab = workspace === undefined ? undefined : activeTab(workspace, paneId);
-      const current = tab === undefined ? undefined : paneViews.get(tabKey(paneId, tab.id));
-      if (
-        workspace === undefined ||
-        tab === undefined ||
-        current?.location === undefined ||
-        !current.hasMore ||
-        current.continuationToken === undefined
-      ) {
-        return;
-      }
-      const request = begin(paneId, tab.id);
-      try {
-        const snapshot = await options.client.listDirectory(
-          requestFor(workspace, paneId, request.id, current.location, current.continuationToken),
-          request.controller.signal,
-        );
-        if (isCurrent(paneId, tab.id, request) && snapshot.requestId === request.id) {
-          publish(
-            paneId,
-            tab.id,
-            viewFromSnapshot(snapshot, [...current.entries, ...snapshot.entries]),
-          );
-        }
-      } catch (error: unknown) {
-        if (isCurrent(paneId, tab.id, request)) {
-          publish(paneId, tab.id, {
-            ...current,
-            state: { type: 'error', message: errorMessage(error) },
-            requestId: request.id,
-          });
-        }
-      }
-    },
+    loadNextPage,
+    loadAllPages,
     abort: (paneId, tabId) => {
       activeRequests.get(tabKey(paneId, tabId))?.controller.abort();
     },

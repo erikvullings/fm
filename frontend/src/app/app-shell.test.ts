@@ -1094,6 +1094,64 @@ describe('tabs per pane (task 0069)', () => {
     );
   });
 
+  it('keeps the pane populated after Ctrl+Tab away and back while End is still loading pages', async () => {
+    // Regression test: pressing End on a directory with more pages than are loaded starts a
+    // background `loadAllPages` fetch. If the user switches tabs (Ctrl+Tab) before it settles,
+    // that background load must stay pinned to the tab it was started for — not silently follow
+    // whichever tab becomes active — otherwise the original tab's entries and cursor end up
+    // corrupted with data computed for the wrong tab once the fetch resolves.
+    const client = new MockFileManagerClient({ pageSize: 100, latencyMs: 20 });
+    m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
+    await vi.waitFor(() => expect(root.textContent).toContain('Documents'));
+
+    function selectedTabIndex(): number {
+      return [...(activePane()?.querySelectorAll<HTMLElement>('[role="tab"]') ?? [])].findIndex(
+        (tab) => tab.getAttribute('aria-selected') === 'true',
+      );
+    }
+
+    activePane()
+      ?.querySelector<HTMLElement>('.fm-breadcrumb-edit-target')
+      ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    m.redraw.sync();
+    const pathInput = activePane()?.querySelector<HTMLInputElement>('.fm-path-input');
+    if (pathInput === undefined || pathInput === null) throw new Error('path input missing');
+    pathInput.value = '/large/1000';
+    pathInput.dispatchEvent(new InputEvent('input', { bubbles: true }));
+    pathInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    await vi.waitFor(() => expect(activePane()?.textContent).toContain('generated-0000000'));
+
+    // Open a second tab (Ctrl+Tab needs somewhere to switch to), then switch back to the first.
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 't', ctrlKey: true, bubbles: true }),
+    );
+    await vi.waitFor(() => expect(activePane()?.querySelectorAll('[role="tab"]')).toHaveLength(2));
+    await vi.waitFor(() => expect(selectedTabIndex()).toBe(1));
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Tab', ctrlKey: true, shiftKey: true, bubbles: true }),
+    );
+    await vi.waitFor(() => expect(selectedTabIndex()).toBe(0));
+    await vi.waitFor(() => expect(activePane()?.textContent).toContain('generated-0000000'));
+
+    // Start loading every remaining page (each page fetch delayed by `latencyMs`), then switch
+    // away and back before those background fetches settle.
+    activePane()?.dispatchEvent(new KeyboardEvent('keydown', { key: 'End', bubbles: true }));
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Tab', ctrlKey: true, bubbles: true }),
+    );
+    await vi.waitFor(() => expect(selectedTabIndex()).toBe(1));
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Tab', ctrlKey: true, shiftKey: true, bubbles: true }),
+    );
+    await vi.waitFor(() => expect(selectedTabIndex()).toBe(0));
+
+    // The background load may or may not have finished loading every page (switching away stops
+    // it, per the loop's own tab-pinning check), but tab 1's pane must never end up empty or
+    // showing data computed for tab 2's location — that is the corruption bug this test guards.
+    expect(activePane()?.querySelectorAll('.fm-directory-row').length).toBeGreaterThan(0);
+    expect(activePane()?.textContent).toContain('generated-');
+  });
+
   it('reopens the most recently closed tab with Ctrl+Shift+T', async () => {
     const client = new MockFileManagerClient();
     const dispatchWorkspaceCommand = vi.spyOn(client, 'dispatchWorkspaceCommand');

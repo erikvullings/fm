@@ -401,6 +401,154 @@ describe('navigation controller', () => {
       expect.objectContaining({ continuationToken: 'next' }),
     );
   });
+
+  it('dedupes concurrent loadNextPage calls instead of cancelling and restarting the fetch', async () => {
+    const context = setup();
+    const page = deferred<DirectorySnapshot>();
+    let secondRequestId = '';
+    vi.mocked(context.client.listDirectory)
+      .mockImplementationOnce(async (request) =>
+        snapshot(request.requestId, 'file:///home/erik', ['one'], {
+          hasMore: true,
+          continuationToken: 'next',
+        }),
+      )
+      .mockImplementationOnce((request) => {
+        secondRequestId = request.requestId;
+        return page.promise;
+      });
+    const controller = createNavigationController({
+      client: context.client,
+      getWorkspace: context.getWorkspace,
+      replaceWorkspace: context.replaceWorkspace,
+      updatePane: (_paneId, _tabId, view) => context.views.push(view),
+    });
+    await controller.load('left');
+
+    const firstCall = controller.loadNextPage('left');
+    const firstSignal = vi.mocked(context.client.listDirectory).mock.calls[1]?.[1];
+    const secondCall = controller.loadNextPage('left');
+
+    expect(vi.mocked(context.client.listDirectory)).toHaveBeenCalledTimes(2);
+    expect(firstSignal?.aborted).toBe(false);
+    page.resolve(snapshot(secondRequestId, 'file:///home/erik', ['two']));
+    await Promise.all([firstCall, secondCall]);
+
+    expect(context.views.at(-1)?.entries.map((entry) => entry.name)).toEqual(['one', 'two']);
+  });
+
+  it('loadAllPages fetches every remaining page in order', async () => {
+    const context = setup();
+    vi.mocked(context.client.listDirectory)
+      .mockImplementationOnce(async (request) =>
+        snapshot(request.requestId, 'file:///home/erik', ['one'], {
+          hasMore: true,
+          continuationToken: 'page-2',
+        }),
+      )
+      .mockImplementationOnce(async (request) =>
+        snapshot(request.requestId, 'file:///home/erik', ['two'], {
+          hasMore: true,
+          continuationToken: 'page-3',
+        }),
+      )
+      .mockImplementationOnce(async (request) =>
+        snapshot(request.requestId, 'file:///home/erik', ['three']),
+      );
+    const controller = createNavigationController({
+      client: context.client,
+      getWorkspace: context.getWorkspace,
+      replaceWorkspace: context.replaceWorkspace,
+      updatePane: (_paneId, _tabId, view) => context.views.push(view),
+    });
+    await controller.load('left');
+
+    await controller.loadAllPages('left');
+
+    expect(vi.mocked(context.client.listDirectory)).toHaveBeenCalledTimes(3);
+    expect(context.views.at(-1)?.hasMore).toBe(false);
+    expect(context.views.at(-1)?.entries.map((entry) => entry.name)).toEqual([
+      'one',
+      'two',
+      'three',
+    ]);
+  });
+
+  it('loadAllPages stops instead of retrying forever when a page fails', async () => {
+    const context = setup();
+    vi.mocked(context.client.listDirectory)
+      .mockImplementationOnce(async (request) =>
+        snapshot(request.requestId, 'file:///home/erik', ['one'], {
+          hasMore: true,
+          continuationToken: 'page-2',
+        }),
+      )
+      .mockRejectedValueOnce(new Error('boom'));
+    const controller = createNavigationController({
+      client: context.client,
+      getWorkspace: context.getWorkspace,
+      replaceWorkspace: context.replaceWorkspace,
+      updatePane: (_paneId, _tabId, view) => context.views.push(view),
+    });
+    await controller.load('left');
+
+    await controller.loadAllPages('left');
+
+    expect(vi.mocked(context.client.listDirectory)).toHaveBeenCalledTimes(2);
+    expect(context.views.at(-1)?.state).toEqual({ type: 'error', message: 'boom' });
+  });
+
+  it('loadAllPages stays pinned to the tab it started for and stops if the active tab changes', async () => {
+    // Regression test: switching tabs (e.g. via Ctrl+Tab) while `loadAllPages` is still fetching
+    // pages for the previously-active tab must never redirect its remaining fetches, or publish
+    // updates, to whichever tab becomes active next — that would corrupt the newly active tab's
+    // entries with data computed for a different location.
+    const context = setup(workspaceWithTwoTabs('tab-a'));
+    const secondPage = deferred<DirectorySnapshot>();
+    vi.mocked(context.client.listDirectory)
+      .mockImplementationOnce(async (request) =>
+        snapshot(request.requestId, 'file:///a', ['one'], {
+          hasMore: true,
+          continuationToken: 'page-2',
+        }),
+      )
+      .mockImplementationOnce((request) => {
+        void request;
+        return secondPage.promise;
+      });
+    const updates: Array<{ paneId: string; tabId: string; view: PaneDirectoryView }> = [];
+    const controller = createNavigationController({
+      client: context.client,
+      getWorkspace: context.getWorkspace,
+      replaceWorkspace: context.replaceWorkspace,
+      updatePane: (paneId, tabId, view) => updates.push({ paneId, tabId, view }),
+    });
+    await controller.load('left');
+
+    const allPages = controller.loadAllPages('left');
+    const secondRequestId = vi.mocked(context.client.listDirectory).mock.calls[1]?.[0].requestId;
+    // Simulate switching to tab-b (e.g. Ctrl+Tab) while tab-a's second page is still in flight.
+    context.replaceWorkspace(workspaceWithTwoTabs('tab-b'));
+    secondPage.resolve(
+      snapshot(secondRequestId ?? '', 'file:///a', ['two'], {
+        hasMore: true,
+        continuationToken: 'page-3',
+      }),
+    );
+    await allPages;
+
+    // The in-flight fetch for tab-a still completes and publishes to tab-a...
+    expect(
+      updates
+        .filter((update) => update.tabId === 'tab-a')
+        .at(-1)
+        ?.view.entries.map((e) => e.name),
+    ).toEqual(['one', 'two']);
+    // ...but the loop stops instead of fetching page-3 for whichever tab is now active, and
+    // never publishes anything to tab-b.
+    expect(vi.mocked(context.client.listDirectory)).toHaveBeenCalledTimes(2);
+    expect(updates.some((update) => update.tabId === 'tab-b')).toBe(false);
+  });
 });
 
 describe('per-tab isolation', () => {

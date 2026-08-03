@@ -1564,12 +1564,57 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
           // The loaded prefix doesn't include the real last entry yet: fetch every remaining
           // page (cheap, cache-backed slices on the backend) before landing the cursor, rather
           // than jumping to the last entry loaded so far.
-          void navigation.loadAllPages(paneId).then(() => {
-            const loaded = paneContent(client, entryFormatSettings, paneId);
-            const loadedEntryIds = loaded.entries.map((entry) => entry.id);
+          void navigation.loadAllPages(paneId).then(async () => {
+            // `entriesSortedFor`'s cache is only refreshed by a redraw, and no redraw happens
+            // between the background page fetches above. For directories at/over its 10k
+            // responsive-sort threshold, reading the cache right now would otherwise return a
+            // stale sort of a much smaller (pre-`loadAllPages`) prefix and land the cursor on
+            // the wrong entry. Force a fresh, correctly-ordered sort of the fully-loaded
+            // entries first, and seed the cache with it so this call (and the next redraw) see
+            // the real order.
+            //
+            // This must stay scoped to `tab`/`key` as captured when the action was dispatched,
+            // never re-derived from `pane.activeTabId` — the user may have switched to a
+            // different tab while the pages were still loading in the background, and applying
+            // the result to whichever tab is active *now* would write this tab's cursor/entry
+            // into the wrong tab's selection state.
+            const freshDirectory = directories.get(key);
+            if (tab !== undefined && freshDirectory !== undefined) {
+              const sortDescriptors = effectiveSort(tab.view.sort);
+              const cacheKey = JSON.stringify([sortDescriptors, tab.view.foldersFirst]);
+              // Invalidate any in-flight sort of an earlier (smaller) entries snapshot so it
+              // can't overwrite the fresh result seeded below once it resolves.
+              sortRequests.set(key, {});
+              const sorted = await sortEntriesResponsive(
+                freshDirectory.entries,
+                frontendSort(sortDescriptors),
+                tab.view.foldersFirst,
+              );
+              sortedEntries.set(key, {
+                input: freshDirectory.entries,
+                key: cacheKey,
+                entries: sorted,
+              });
+              sortRequests.delete(key);
+            }
+            const sortedFresh =
+              tab === undefined
+                ? (freshDirectory?.entries ?? [])
+                : entriesSortedFor(
+                    key,
+                    freshDirectory?.entries ?? [],
+                    effectiveSort(tab.view.sort),
+                    tab.view.foldersFirst,
+                  );
+            const filteredFresh = entriesFilteredFor(key, sortedFresh, quickFilterQueryFor(key, tab));
+            const loadedEntries =
+              tab === undefined
+                ? filteredFresh
+                : withParentEntry(pathFromUri(tab.location.uri), filteredFresh);
+            const loadedEntryIds = loadedEntries.map((entry) => entry.id);
             const next = reduceSelection(selections.get(key) ?? selection, action, loadedEntryIds);
             selections.set(key, next);
-            const cursorEntry = loaded.entries.find((entry) => entry.id === next.cursorEntryId);
+            const cursorEntry = loadedEntries.find((entry) => entry.id === next.cursorEntryId);
             void metadataLoader(client, key).select(
               cursorEntry === undefined || isParentEntry(cursorEntry.id) ? undefined : cursorEntry,
             );
