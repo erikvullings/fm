@@ -188,7 +188,12 @@ async fn listing_filters_hidden_entries_and_sorts_folders_first_then_by_name() {
 }
 
 #[tokio::test]
-async fn paging_a_large_directory_returns_every_entry_without_duplicates() {
+async fn listing_a_large_directory_returns_every_entry_sorted_in_one_response() {
+    // Regression test: providers enumerate directories in arbitrary (e.g. filesystem/inode)
+    // order, which does not match name order. A single `list()` call must fully enumerate and
+    // globally sort before returning anything, rather than sorting only a provider-sized page
+    // and forcing the caller to page through the rest to see the remaining, still-unsorted-
+    // relative-to-the-whole-directory entries.
     let root = tempfile::tempdir().expect("must create a temp directory");
     for index in 0..600 {
         std::fs::write(root.path().join(format!("entry-{index:04}")), b"x")
@@ -198,21 +203,24 @@ async fn paging_a_large_directory_returns_every_entry_without_duplicates() {
         Location::from_native_path(root.path()).expect("temp path must be representable");
     let pane_id = PaneId::new();
     let service = service();
-    let mut token = None;
-    let mut names = std::collections::HashSet::new();
 
-    loop {
-        let mut request = request(pane_id, &location);
-        request.continuation_token = token;
-        let snapshot = service.list(request).await.expect("page must load");
-        names.extend(snapshot.entries.into_iter().map(|entry| entry.name));
-        if !snapshot.has_more {
-            break;
-        }
-        token = snapshot.continuation_token;
-    }
+    let snapshot = service
+        .list(request(pane_id, &location))
+        .await
+        .expect("full listing must load in one response");
 
+    assert!(!snapshot.has_more);
+    assert_eq!(snapshot.continuation_token, None);
+    assert_eq!(snapshot.total_known_entries, Some(600));
+    let names: Vec<_> = snapshot
+        .entries
+        .iter()
+        .map(|entry| entry.name.clone())
+        .collect();
     assert_eq!(names.len(), 600);
+    let mut sorted_names = names.clone();
+    sorted_names.sort();
+    assert_eq!(names, sorted_names);
 }
 
 #[tokio::test]

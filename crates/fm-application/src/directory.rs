@@ -72,7 +72,15 @@ impl DirectoryService {
         }
     }
 
-    /// Lists one page and publishes it only if it is still the pane's newest request.
+    /// Lists a directory in full and publishes it only if it is still the pane's newest
+    /// request.
+    ///
+    /// The entire directory is enumerated and globally sorted before any of it is returned
+    /// (mirroring [`list_all`], used by the watch-triggered refresh path) rather than sorting
+    /// provider pages independently. Per-provider-page sorting cannot produce a correct order
+    /// across page boundaries, since providers enumerate in arbitrary (e.g. filesystem/inode)
+    /// order — that previously surfaced as an initial listing showing only a filesystem-order
+    /// prefix of entries, with more (and out-of-order) entries appearing as the pane scrolled.
     pub async fn list(
         &self,
         request: ListDirectoryRequest,
@@ -122,16 +130,7 @@ impl DirectoryService {
         }
 
         let provider = self.providers.resolve(&location)?;
-        let page = provider
-            .list(
-                &location,
-                ListOptions {
-                    continuation_token: request.continuation_token,
-                    ..ListOptions::default()
-                },
-                cancellation.clone(),
-            )
-            .await?;
+        let mut entries = list_all(provider.clone(), &location, cancellation.clone()).await?;
 
         let mut panes = self.panes.lock().await;
         let state = panes
@@ -140,7 +139,6 @@ impl DirectoryService {
             .ok_or(ApplicationError::OperationCancelled)?;
         state.revision += 1;
 
-        let mut entries = page.entries;
         if !request.show_hidden {
             entries.retain(|entry| !entry.hidden);
         }
@@ -164,29 +162,13 @@ impl DirectoryService {
             revision: state.revision,
             location,
             writable,
+            total_known_entries: Some(entries.len() as u64),
             entries,
-            total_known_entries: page.total_known_entries,
-            has_more: page.has_more,
-            continuation_token: page.continuation_token,
+            has_more: false,
+            continuation_token: None,
             loading_state: LoadingState::Loaded,
         };
-        if first_page {
-            state.snapshot = Some(snapshot.clone());
-        } else if let Some(accumulated) = state.snapshot.as_mut() {
-            accumulated.request_id = snapshot.request_id;
-            accumulated.revision = snapshot.revision;
-            accumulated.entries.extend(snapshot.entries.iter().cloned());
-            sort_entries(
-                &mut accumulated.entries,
-                &request.sort,
-                request.folders_first,
-            );
-            accumulated.total_known_entries = snapshot.total_known_entries;
-            accumulated.has_more = snapshot.has_more;
-            accumulated.continuation_token = snapshot.continuation_token.clone();
-        } else {
-            state.snapshot = Some(snapshot.clone());
-        }
+        state.snapshot = Some(snapshot.clone());
         let watch_cancellation = state.watch_cancellation.clone();
         drop(panes);
 
@@ -816,7 +798,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn loading_another_page_keeps_the_directory_watch_registered() {
+    async fn listing_a_directory_larger_than_a_provider_page_returns_every_entry() {
         let root = tempfile::tempdir().expect("temporary directory");
         for index in 0..257 {
             std::fs::write(root.path().join(format!("entry-{index:03}")), b"")
@@ -832,15 +814,21 @@ mod tests {
 
         let mut first_request = request(pane_id, Uuid::new_v4());
         first_request.workspace_id = workspace_id;
-        first_request.location = location.clone();
-        let first = service.list(first_request).await.expect("first page");
+        first_request.location = location;
+        let first = service.list(first_request).await.expect("full listing");
+
+        assert!(!first.has_more);
+        assert_eq!(first.continuation_token, None);
+        assert_eq!(first.total_known_entries, Some(257));
+        assert_eq!(first.entries.len(), 257);
         assert_eq!(service.watches.registration_count().await, 1);
 
+        // Re-listing the same pane/location must not leak a second watch registration.
         let mut second_request = request(pane_id, Uuid::new_v4());
         second_request.workspace_id = workspace_id;
-        second_request.location = location;
-        second_request.continuation_token = first.continuation_token;
-        service.list(second_request).await.expect("second page");
+        second_request.location =
+            LocationDto::from(Location::from_native_path(root.path()).expect("local location"));
+        service.list(second_request).await.expect("re-listing");
 
         assert_eq!(service.watches.registration_count().await, 1);
     }
