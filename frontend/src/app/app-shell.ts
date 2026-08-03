@@ -1,3 +1,4 @@
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import m, { type FactoryComponent } from 'mithril';
 import { type Theme, ThemeManager } from 'mithril-materialized';
 
@@ -136,6 +137,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
   let registeredActions: readonly ActionDescriptor[] = [];
   let plugins: readonly PluginDescriptor[] = [];
   let keybindingRuntime: KeybindingRuntime = 'browser';
+  let runtimeKind: RuntimeKind = 'http';
   let loadedEntryFormatSettings: EntryFormatSettings = DEFAULT_ENTRY_FORMAT_SETTINGS;
   let workspace: WorkspaceProjection | undefined;
   let workspaceError: string | undefined;
@@ -234,6 +236,29 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     } else {
       restoreDefaultIconTheme();
     }
+    syncTauriWindowBackground();
+  }
+
+  /**
+   * Keeps the native Tauri window frame's background in step with the
+   * resolved theme (light/dark/auto) so it never mismatches the webview's
+   * own --fm-background, e.g. on launch or when the OS appearance changes.
+   */
+  function syncTauriWindowBackground(): void {
+    if (runtimeKind !== 'tauri') return;
+    const resolved = getComputedStyle(document.documentElement)
+      .getPropertyValue('--fm-background')
+      .trim();
+    if (resolved.length === 0) return;
+    void getCurrentWindow().setBackgroundColor(resolved);
+  }
+
+  const systemThemeQuery: MediaQueryList | undefined =
+    typeof window.matchMedia === 'function'
+      ? window.matchMedia('(prefers-color-scheme: dark)')
+      : undefined;
+  function handleSystemThemeChange(): void {
+    if (theme === 'auto') syncTauriWindowBackground();
   }
 
   async function loadSettings(client: FileManagerClient): Promise<void> {
@@ -1527,7 +1552,9 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     oninit: ({ attrs }) => {
       attrsClient = attrs.client;
       keybindingRuntime = attrs.runtime === 'http' ? 'browser' : 'desktop';
+      runtimeKind = attrs.runtime;
       document.addEventListener('keydown', handleGlobalKeydown);
+      systemThemeQuery?.addEventListener('change', handleSystemThemeChange);
       appState = applyAppPatches(
         createInitialAppState(attrs.runtime),
         connectionPatch({ status: attrs.client.connection.get() }),
@@ -1606,6 +1633,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     onremove: () => {
       removed = true;
       document.removeEventListener('keydown', handleGlobalKeydown);
+      systemThemeQuery?.removeEventListener('change', handleSystemThemeChange);
       if (operationFrame !== undefined) cancelAnimationFrame(operationFrame);
       workspaceRequest?.abort();
       unsubscribeEvents?.();
