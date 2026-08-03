@@ -1442,7 +1442,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
         client: attrs.client,
         getWorkspace: () => workspace,
         replaceWorkspace: (next) => replaceWorkspace(next),
-        updatePane: (paneId, tabId, view) => {
+        updatePane: (paneId, tabId, view, preferredCursorName) => {
           const key = tabKey(paneId, tabId);
           const previous = directories.get(key);
           directories.set(key, view);
@@ -1453,7 +1453,10 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
             selections.get(key)?.cursorEntryId === undefined ||
             previous?.location?.uri !== view.location?.uri
           ) {
-            const firstEntry = view.entries[0];
+            // After `..` navigation, land the cursor back on the child directory
+            // just navigated away from instead of always the listing's first entry.
+            const preferredEntry = view.entries.find((entry) => entry.name === preferredCursorName);
+            const firstEntry = preferredEntry ?? view.entries[0];
             selections.set(key, {
               selectedEntryIds: [],
               ...(firstEntry === undefined ? {} : { cursorEntryId: firstEntry.id }),

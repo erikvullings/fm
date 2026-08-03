@@ -34,7 +34,17 @@ export interface NavigationControllerOptions {
   readonly client: NavigationClient;
   readonly getWorkspace: () => WorkspaceProjection | undefined;
   readonly replaceWorkspace: (workspace: WorkspaceProjection) => void;
-  readonly updatePane: (paneId: PaneId, tabId: TabId, view: PaneDirectoryView) => void;
+  /**
+   * `preferredCursorName`, when set, is the entry name the pane's cursor
+   * should land on instead of the listing's first entry (e.g. the child
+   * directory just navigated away from via `parent()`).
+   */
+  readonly updatePane: (
+    paneId: PaneId,
+    tabId: TabId,
+    view: PaneDirectoryView,
+    preferredCursorName?: string,
+  ) => void;
 }
 
 /** Public navigation operations consumed by pane and workspace input handlers. */
@@ -82,6 +92,18 @@ export function parentLocation(location: Location): Location {
   }
 }
 
+/** Returns the final path segment (decoded) of a location, e.g. for cursor restoration after `..`. */
+function lastPathSegment(location: Location): string | undefined {
+  try {
+    const path = new URL(location.uri).pathname.replace(/\/+$/, '');
+    const finalSeparator = path.lastIndexOf('/');
+    const segment = finalSeparator < 0 ? path : path.slice(finalSeparator + 1);
+    return segment.length === 0 ? undefined : decodeURIComponent(segment);
+  } catch {
+    return undefined;
+  }
+}
+
 /** Isolates cancellable requests and cached views per tab, not merely per pane. */
 function tabKey(paneId: PaneId, tabId: TabId): string {
   return `${paneId}:${tabId}`;
@@ -110,9 +132,14 @@ export function createNavigationController(
     return activeRequests.get(key)?.id === request.id && !request.controller.signal.aborted;
   }
 
-  function publish(paneId: PaneId, tabId: TabId, view: PaneDirectoryView): void {
+  function publish(
+    paneId: PaneId,
+    tabId: TabId,
+    view: PaneDirectoryView,
+    preferredCursorName?: string,
+  ): void {
     paneViews.set(tabKey(paneId, tabId), view);
-    options.updatePane(paneId, tabId, view);
+    options.updatePane(paneId, tabId, view, preferredCursorName);
   }
 
   function loadingView(
@@ -203,6 +230,7 @@ export function createNavigationController(
     paneId: PaneId,
     navigationMode: 'push' | 'back' | 'forward',
     location?: Location,
+    preferredCursorName?: string,
   ): Promise<void> {
     const workspace = options.getWorkspace();
     const pane = workspace?.panesById[paneId];
@@ -250,7 +278,7 @@ export function createNavigationController(
         request.controller.signal,
       );
       if (isCurrent(paneId, tab.id, request) && snapshot.requestId === request.id) {
-        publish(paneId, tab.id, viewFromSnapshot(snapshot));
+        publish(paneId, tab.id, viewFromSnapshot(snapshot), preferredCursorName);
       }
     } catch (error: unknown) {
       if (isCurrent(paneId, tab.id, request)) {
@@ -276,7 +304,7 @@ export function createNavigationController(
       }
       const parent = parentLocation(tab.location);
       if (parent.uri !== tab.location.uri) {
-        await navigateHistory(paneId, 'push', parent);
+        await navigateHistory(paneId, 'push', parent, lastPathSegment(tab.location));
       }
     },
     back: (paneId) => navigateHistory(paneId, 'back'),
