@@ -127,6 +127,16 @@ body {
   gap: 0.35rem;
 }
 
+/*
+ * macOS overlay title bar (tauri.conf.json titleBarStyle: Overlay + hiddenTitle):
+ * the toolbar itself extends under the native traffic lights, so it needs room
+ * for them instead of a separate OS-drawn title strip.
+ */
+.fm-app-shell[data-mac-titlebar-overlay="true"] .fm-workspace-toolbar {
+  padding-left: 78px;
+  min-height: 28px;
+}
+
 .fm-workspace-toolbar > span {
   margin-left: auto;
   color: var(--fm-text-muted);
@@ -141,6 +151,9 @@ body {
 .fm-workspace-toolbar > button,
 .fm-settings-button,
 .fm-settings-editor button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
   min-width: 1.75rem;
   border: 0;
   border-radius: 2px;
