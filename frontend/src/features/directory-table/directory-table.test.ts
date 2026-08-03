@@ -331,7 +331,7 @@ describe('DirectoryTable rows', () => {
     m.redraw.sync();
 
     expect(root.querySelectorAll('.fm-directory-row').length).toBeLessThanOrEqual(10);
-    expect(root.textContent).toContain('generated-0681816');
+    expect(root.textContent).toContain('generated-0749998');
   });
 
   it('keeps a row DOM node when its stable entry id is patched', () => {

@@ -80,7 +80,7 @@ describe('DirectoryTable rendering benchmark', () => {
   it('measures responsive scrolling and cursor redraws with one million lazy entries', () => {
     const measurements = measureRendering(20);
 
-    expect(measurements.mountedRows).toBeLessThanOrEqual(30);
+    expect(measurements.mountedRows).toBeLessThanOrEqual(32);
     expect(measurements.averageScrollRedrawMs).toBeLessThan(100);
     expect(measurements.averageCursorRedrawMs).toBeLessThan(100);
   });
@@ -88,7 +88,7 @@ describe('DirectoryTable rendering benchmark', () => {
   it('keeps the file-age column within the same scrolling budget', () => {
     const measurements = measureRendering(20, [SAMPLE_FILE_AGE_COLUMN]);
 
-    expect(measurements.mountedRows).toBeLessThanOrEqual(30);
+    expect(measurements.mountedRows).toBeLessThanOrEqual(32);
     expect(measurements.averageScrollRedrawMs).toBeLessThan(100);
     expect(measurements.averageCursorRedrawMs).toBeLessThan(100);
   });

@@ -12,7 +12,7 @@ import { entryIcon } from './entry-icons';
 import { calculateVisibleWindow, scrollOffsetForIndex } from './windowing';
 import './directory-table.css';
 
-const DEFAULT_ROW_HEIGHT = 22;
+const DEFAULT_ROW_HEIGHT = 20;
 const DEFAULT_VIEWPORT_HEIGHT = 300;
 const DEFAULT_OVERSCAN = 1;
 
