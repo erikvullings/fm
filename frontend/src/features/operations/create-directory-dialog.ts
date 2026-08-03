@@ -26,20 +26,51 @@ export function validateDirectoryName(name: string): string | undefined {
   return undefined;
 }
 
+/**
+ * Moves focus away from the input before the modal closes, so the browser
+ * never has to apply aria-hidden to an ancestor of the focused element.
+ */
+function blurActive(): void {
+  const active = document.activeElement;
+  if (active instanceof HTMLElement) active.blur();
+}
+
 /** Materialized modal used by the F7 create-directory action. */
 export const CreateDirectoryDialog: FactoryComponent<CreateDirectoryDialogAttrs> = () => {
   let name = '';
   let error: string | undefined;
+  let wasOpen = false;
 
   function confirm(attrs: CreateDirectoryDialogAttrs): void {
     error = validateDirectoryName(name);
-    if (error === undefined) attrs.onConfirm(name);
+    if (error === undefined) {
+      blurActive();
+      attrs.onConfirm(name);
+    }
+  }
+
+  function cancel(attrs: CreateDirectoryDialogAttrs): void {
+    blurActive();
+    attrs.onCancel();
   }
 
   return {
+    onupdate: ({ attrs }) => {
+      // ModalPanel keeps this component (and its input) permanently mounted and
+      // only toggles CSS visibility, so a plain oncreate-focus only ever fires
+      // once at app boot, before the dialog is ever shown. Focus explicitly on
+      // the false->true transition instead.
+      if (attrs.open && !wasOpen) {
+        name = '';
+        error = undefined;
+        document.getElementById('create-directory-name')?.focus();
+      }
+      wasOpen = attrs.open;
+    },
     view: ({ attrs }) =>
       m(ModalPanel, {
         title: 'New folder',
+        className: 'fm-dense-modal',
         description: m('label.fm-create-directory-field', [
           m('span', 'Folder name'),
           m('input#create-directory-name', {
@@ -56,7 +87,7 @@ export const CreateDirectoryDialog: FactoryComponent<CreateDirectoryDialogAttrs>
             onkeydown: (event: KeyboardEvent) => {
               if (event.key === 'Escape') {
                 event.stopPropagation();
-                attrs.onCancel();
+                cancel(attrs);
               } else if (event.key === 'Enter') {
                 event.preventDefault();
                 event.stopPropagation();
@@ -69,10 +100,10 @@ export const CreateDirectoryDialog: FactoryComponent<CreateDirectoryDialogAttrs>
         isOpen: attrs.open,
         closeOnEsc: true,
         onToggle: (open: boolean) => {
-          if (!open) attrs.onCancel();
+          if (!open) cancel(attrs);
         },
         buttons: [
-          { label: 'Cancel', onclick: attrs.onCancel },
+          { label: 'Cancel', onclick: () => cancel(attrs) },
           {
             label: 'Create',
             disabled: validateDirectoryName(name) !== undefined,

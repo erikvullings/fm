@@ -159,12 +159,21 @@ body {
 }
 
 .fm-settings-editor {
-  position: absolute;
+  position: fixed;
   z-index: 20;
-  top: calc(100% + 1px);
-  right: 0.5rem;
-  width: min(22rem, calc(100vw - 2rem));
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgb(0 0 0 / 35%);
+}
+
+.fm-settings-editor-panel {
+  width: min(34rem, calc(100vw - 2rem));
+  max-height: calc(100vh - 4rem);
+  overflow-y: auto;
   border: 1px solid var(--fm-border);
+  border-radius: var(--fm-radius);
   padding: 0.75rem;
   background: var(--fm-surface-elevated);
   box-shadow: var(--fm-shadow);
@@ -623,4 +632,48 @@ input[type="text"].fm-command-palette-input {
     animation-duration: 0.01ms;
     animation-iteration-count: 1;
   }
+}
+
+/*
+ * ModalPanel (mithril-materialized) sets width/padding/title size via inline
+ * styles, so overriding them for a denser look requires !important here.
+ */
+/* biome-ignore-start lint/complexity/noImportantStyles: overrides ModalPanel's inline styles */
+.modal.fm-dense-modal {
+  max-width: min(24rem, calc(100vw - 2rem)) !important;
+}
+
+.modal.fm-dense-modal .modal-content {
+  padding: 0.75rem 1rem !important;
+}
+
+.modal.fm-dense-modal .modal-content h4 {
+  margin: 0 0 0.6rem 0 !important;
+  font-size: 1.05rem !important;
+}
+
+.modal.fm-dense-modal .modal-footer {
+  padding: 0.4rem 0.6rem !important;
+}
+/* biome-ignore-end lint/complexity/noImportantStyles: overrides ModalPanel's inline styles */
+
+.fm-create-directory-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: 0.85rem;
+}
+
+.fm-create-directory-field input {
+  padding: 0.3rem 0.4rem;
+  font: inherit;
+  background: var(--fm-surface);
+  color: var(--fm-text);
+  border: 1px solid var(--fm-border);
+  border-radius: 2px;
+}
+
+.fm-field-error {
+  color: var(--fm-error);
+  font-size: 0.8rem;
 }
