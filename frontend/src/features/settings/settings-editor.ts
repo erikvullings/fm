@@ -170,7 +170,6 @@ export const SettingsEditor: FactoryComponent<SettingsEditorAttrs> = () => {
         ]),
         m('.row', [
           m(Select<Settings['iconTheme']>, {
-            className: 'col s6',
             label: 'Directory icon theme',
             options: [
               { id: 'generic', label: 'Generic' },
@@ -182,20 +181,24 @@ export const SettingsEditor: FactoryComponent<SettingsEditorAttrs> = () => {
         ]),
 
         m('h4.fm-settings-section-heading', 'File behavior'),
-        m(Switch, {
-          label: 'Show hidden files',
-          checked: activeDraft.showHiddenFiles,
-          left: 'Hidden',
-          right: 'Shown',
-          onchange: (checked: boolean) => update(current, { showHiddenFiles: checked }),
-        }),
-        m(Switch, {
-          label: 'Confirm permanent delete',
-          checked: activeDraft.confirmPermanentDelete,
-          left: 'Off',
-          right: 'On',
-          onchange: (checked: boolean) => update(current, { confirmPermanentDelete: checked }),
-        }),
+        m('.row', [
+          m(Switch, {
+            className: 'col s12 m6',
+            label: 'Show hidden files',
+            checked: activeDraft.showHiddenFiles,
+            left: 'Hidden',
+            right: 'Shown',
+            onchange: (checked: boolean) => update(current, { showHiddenFiles: checked }),
+          }),
+          m(Switch, {
+            className: 'col s12 m6',
+            label: 'Confirm permanent delete',
+            checked: activeDraft.confirmPermanentDelete,
+            left: 'Off',
+            right: 'On',
+            onchange: (checked: boolean) => update(current, { confirmPermanentDelete: checked }),
+          }),
+        ]),
 
         m('h4.fm-settings-section-heading', 'Operations'),
         m('.row', [
@@ -223,49 +226,57 @@ export const SettingsEditor: FactoryComponent<SettingsEditorAttrs> = () => {
         ]),
 
         m('h4.fm-settings-section-heading', 'New workspace defaults'),
-        m(Select<Settings['defaultPaneLayout']>, {
-          label: 'Default pane layout',
-          options: [
-            { id: 'dual', label: 'Dual pane' },
-            { id: 'single', label: 'Single pane' },
-          ],
-          checkedId: activeDraft.defaultPaneLayout,
-          onchange: ([value]) =>
-            value !== undefined && update(current, { defaultPaneLayout: value }),
-        }),
-        m(TextInput, {
-          label: 'Default columns (comma-separated)',
-          value: columnsText,
-          oninput: (value: string) => {
-            columnsText = value;
-          },
-          onchange: (value: string) => {
-            columnsText = value;
-            update(current, { defaultColumns: parseListInput(value) });
-          },
-        }),
-        m(TextInput, {
-          label: 'Default start locations (comma-separated)',
-          value: startLocationsText,
-          oninput: (value: string) => {
-            startLocationsText = value;
-          },
-          onchange: (value: string) => {
-            startLocationsText = value;
-            update(current, { defaultStartLocations: parseListInput(value) });
-          },
-        }),
+        m('.row', [
+          m(Select<Settings['defaultPaneLayout']>, {
+            label: 'Default pane layout',
+            options: [
+              { id: 'dual', label: 'Dual pane' },
+              { id: 'single', label: 'Single pane' },
+            ],
+            checkedId: activeDraft.defaultPaneLayout,
+            onchange: ([value]) =>
+              value !== undefined && update(current, { defaultPaneLayout: value }),
+          }),
+        ]),
+        m('.row', [
+          m(TextInput, {
+            label: 'Default columns (comma-separated)',
+            value: columnsText,
+            oninput: (value: string) => {
+              columnsText = value;
+            },
+            onchange: (value: string) => {
+              columnsText = value;
+              update(current, { defaultColumns: parseListInput(value) });
+            },
+          }),
+        ]),
+        m('.row', [
+          m(TextInput, {
+            label: 'Default start locations (comma-separated)',
+            value: startLocationsText,
+            oninput: (value: string) => {
+              startLocationsText = value;
+            },
+            onchange: (value: string) => {
+              startLocationsText = value;
+              update(current, { defaultStartLocations: parseListInput(value) });
+            },
+          }),
+        ]),
 
         m('h4.fm-settings-section-heading', 'Terminal'),
-        m(TextInput, {
-          label: 'Terminal command',
-          value: activeDraft.terminalCommand ?? '',
-          placeholder: 'System default',
-          oninput: (value: string) =>
-            update(current, { terminalCommand: value.trim().length === 0 ? null : value }),
-          onchange: (value: string) =>
-            update(current, { terminalCommand: value.trim().length === 0 ? null : value }),
-        }),
+        m('.row', [
+          m(TextInput, {
+            label: 'Terminal command',
+            value: activeDraft.terminalCommand ?? '',
+            placeholder: 'System default',
+            oninput: (value: string) =>
+              update(current, { terminalCommand: value.trim().length === 0 ? null : value }),
+            onchange: (value: string) =>
+              update(current, { terminalCommand: value.trim().length === 0 ? null : value }),
+          }),
+        ]),
 
         m('h4.fm-settings-section-heading', 'Keybindings'),
         conflicts.length === 0
@@ -281,11 +292,11 @@ export const SettingsEditor: FactoryComponent<SettingsEditorAttrs> = () => {
               ),
             ),
         m(
-          'ul.fm-settings-keybindings',
+          'ul.fm-settings-keybindings.row',
           current.actions.map((action) => {
             const shortcut = liveBindings.find((binding) => binding.actionId === action.id);
             return m(
-              'li.fm-settings-keybinding-row',
+              'li.fm-settings-keybinding-row.col.s12.m6',
               {
                 'data-action-id': action.id,
                 'data-conflict': String(conflictedActionIds.has(action.id)),
@@ -293,7 +304,8 @@ export const SettingsEditor: FactoryComponent<SettingsEditorAttrs> = () => {
               [
                 m('span.fm-settings-keybinding-title', action.title),
                 m(TextInput, {
-                  label: `${action.title} shortcut`,
+                  className: 'fm-settings-keybinding-input',
+                  label: 'Shortcut',
                   value: activeDraft.keybindings[action.id] ?? '',
                   placeholder: shortcut?.shortcut ?? 'None',
                   oninput: (value: string) =>
