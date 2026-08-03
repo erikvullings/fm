@@ -208,8 +208,12 @@ pub(crate) async fn apply_workspace_command(
 }
 
 /// Starts an operation through the same service method as REST.
+///
+/// Must be `async` (not a plain blocking command): `Scheduler::submit` calls
+/// `tokio::spawn` internally, which panics without a live Tokio reactor.
+/// Tauri only guarantees that context for `async fn` commands.
 #[tauri::command]
-pub(crate) fn start_operation(
+pub(crate) async fn start_operation(
     state: State<'_, AppState>,
     request: StartOperationRequestDto,
     idempotency_key: Option<String>,
@@ -273,8 +277,12 @@ pub(crate) fn list_actions(state: State<'_, AppState>) -> Vec<ActionDescriptorDt
 }
 
 /// Invokes a registered action through the same service method as REST.
+///
+/// Must be `async`: mutating actions delegate to `start_operation`, which
+/// calls `Scheduler::submit` (`tokio::spawn`) and panics without a live
+/// Tokio reactor outside an `async fn` command.
 #[tauri::command]
-pub(crate) fn invoke_action(
+pub(crate) async fn invoke_action(
     state: State<'_, AppState>,
     action_id: String,
     request: InvokeActionRequestDto,

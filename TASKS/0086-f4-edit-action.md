@@ -9,7 +9,7 @@ Depends on: 0058
 
 ## Context
 Follow-up from the same regression-report conversation as task 0085: the user expects the footer's
-function-key bar to read F2 Rename, F4 Edit, F5 Copy, F6 Move, F7 New Folder, F8 Delete (Total
+function-key bar to read F2 Rename, F3 View, F4 Edit, F5 Copy, F6 Move, F7 New Folder, F8 Delete (Total
 Commander convention). No `core.edit` action exists anywhere yet (backend registry
 `crates/fm-application/src/action.rs`, mock fixture `fixtures/mock-responses/actions.json`, or
 frontend) — F4 is currently unbound. The footer's `footerFunctionKeyBindings` helper
