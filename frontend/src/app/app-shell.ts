@@ -241,13 +241,13 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
 
   /**
    * Keeps the native Tauri window frame's background in step with the
-   * resolved theme (light/dark/auto) so it never mismatches the webview's
-   * own --fm-background, e.g. on launch or when the OS appearance changes.
+   * resolved theme (light/dark/auto) so it never mismatches the toolbar's
+   * own --fm-surface-elevated, e.g. on launch or when the OS appearance changes.
    */
   function syncTauriWindowBackground(): void {
     if (runtimeKind !== 'tauri') return;
     const resolved = getComputedStyle(document.documentElement)
-      .getPropertyValue('--fm-background')
+      .getPropertyValue('--fm-surface-elevated')
       .trim();
     if (resolved.length === 0) return;
     void getCurrentWindow().setBackgroundColor(resolved);
