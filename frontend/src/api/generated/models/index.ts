@@ -33,6 +33,7 @@ export * from './entryRefDto';
 export * from './entrySummaryDto';
 export * from './healthDto';
 export * from './healthStatusDto';
+export * from './iconThemeDto';
 export * from './imageDimensionsDto';
 export * from './invokeActionRequestDto';
 export * from './invokeActionRequestDtoParameters';

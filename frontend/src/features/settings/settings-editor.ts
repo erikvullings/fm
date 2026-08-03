@@ -132,7 +132,6 @@ export const SettingsEditor: FactoryComponent<SettingsEditorAttrs> = () => {
             min: 8,
             max: 32,
             oninput: (value: number) => update(current, { fontSize: value }),
-            onchange: (value: number) => update(current, { fontSize: value }),
             ...errorAttrs('fontSize'),
           }),
           m(NumberInput, {
@@ -142,7 +141,6 @@ export const SettingsEditor: FactoryComponent<SettingsEditorAttrs> = () => {
             min: 16,
             max: 64,
             oninput: (value: number) => update(current, { rowHeight: value }),
-            onchange: (value: number) => update(current, { rowHeight: value }),
             ...errorAttrs('rowHeight'),
           }),
         ]),
@@ -168,6 +166,18 @@ export const SettingsEditor: FactoryComponent<SettingsEditorAttrs> = () => {
             ],
             checkedId: activeDraft.sizeFormat,
             onchange: ([value]) => value !== undefined && update(current, { sizeFormat: value }),
+          }),
+        ]),
+        m('.row', [
+          m(Select<Settings['iconTheme']>, {
+            className: 'col s6',
+            label: 'Directory icon theme',
+            options: [
+              { id: 'generic', label: 'Generic' },
+              { id: 'catppuccin', label: 'Catppuccin' },
+            ],
+            checkedId: activeDraft.iconTheme,
+            onchange: ([value]) => value !== undefined && update(current, { iconTheme: value }),
           }),
         ]),
 
@@ -208,7 +218,6 @@ export const SettingsEditor: FactoryComponent<SettingsEditorAttrs> = () => {
             value: activeDraft.operationConcurrency,
             min: 1,
             oninput: (value: number) => update(current, { operationConcurrency: value }),
-            onchange: (value: number) => update(current, { operationConcurrency: value }),
             ...errorAttrs('operationConcurrency'),
           }),
         ]),

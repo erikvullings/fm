@@ -200,6 +200,7 @@ export class MockFileManagerClient implements FileManagerClient {
     pluginSettings: {},
     terminalCommand: null,
     defaultStartLocations: [],
+    iconTheme: 'generic',
   };
   private operationSequence = 0;
   private tabSequence = 0;

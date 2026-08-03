@@ -66,6 +66,16 @@ pub enum DefaultPaneLayoutDto {
     Single,
 }
 
+/// Directory-entry icon set.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub enum IconThemeDto {
+    /// Built-in hand-drawn generic glyphs.
+    Generic,
+    /// Vendored Catppuccin (Mocha) per-file-type icon set.
+    Catppuccin,
+}
+
 /// Versioned global settings. Live workspace content is deliberately absent.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
@@ -105,4 +115,6 @@ pub struct SettingsDto {
     pub terminal_command: Option<String>,
     /// Locations inherited by new panes.
     pub default_start_locations: Vec<String>,
+    /// Directory-entry icon set.
+    pub icon_theme: IconThemeDto,
 }

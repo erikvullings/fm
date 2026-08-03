@@ -75,3 +75,21 @@ the same defaults as the shared `entryIconRegistry` singleton. Every icon render
 This is a themeable rendering layer only; native OS icons served from the backend
 (`runtimeCapabilities.nativeFileIcons`) are a separate, not-yet-implemented overlay tracked by a
 follow-up task.
+
+### Catppuccin icon theme (task 0092)
+
+`frontend/src/themes/catppuccin-icons.ts` provides an alternate icon set built on the same
+`EntryIconRegistry` extension point, vendoring a curated subset of the MIT-licensed
+[`catppuccin/vscode-icons`](https://github.com/catppuccin/vscode-icons) SVGs (Mocha flavor) —
+folder/file/symlink glyphs plus common source-code extensions (TypeScript, JavaScript, JSON,
+Markdown, HTML, CSS, YAML, TOML, Rust, Python, XML, CSV, git-related dotfiles, lockfiles, logs,
+fonts) and MIME-prefix fallbacks (image/audio/video/PDF/ZIP). Unlike the default `.fm-icon`
+helpers in `components/icons.ts` (single-path, `currentColor`, `viewBox="0 0 24 24"`), these icons
+are reproduced verbatim from the upstream source: multi-path/multi-group, stroke-based, with fixed
+per-icon Catppuccin Mocha palette colors, at `viewBox="0 0 16 16"`.
+
+The theme is selected through `Settings.iconTheme` (`'generic' | 'catppuccin'`, persisted through
+the backend `Settings` entity per specification §26 — not `localStorage`) and applied via
+`installCatppuccinIconTheme()` / `restoreDefaultIconTheme()`, called from `app-shell.ts`'s
+`applyAppearance()` alongside the other live-appearance settings. The Settings Editor's
+Appearance section exposes it as a `Select` next to date/size format.

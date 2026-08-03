@@ -27,13 +27,14 @@ use fm_plugin_api::{ActionContribution, PluginManifest, PluginPermissions, Selec
 use fm_plugin_runtime::{PluginDiscovery, PluginRuntime};
 use fm_search::{SearchEngine, SearchFileSystemProvider, SearchResultsStore};
 use fm_settings::{
-    ConflictPolicy, DateFormat, DefaultPaneLayout, Settings, SettingsStore, SizeFormat, Theme,
+    ConflictPolicy, DateFormat, DefaultPaneLayout, IconTheme, Settings, SettingsStore, SizeFormat,
+    Theme,
 };
 use fm_transport_dto::{
     ActionDescriptorDto, ActionResultDto, ConflictPolicyDto, ConflictResolutionDto, DateFormatDto,
-    DefaultPaneLayoutDto, EntryMetadataRequest, InvokeActionRequestDto, ListDirectoryRequest,
-    NavigateRequest, OperationConflictPolicyDto, OperationDto, OperationKindDto,
-    OperationProgressDto, OperationStateDto, PlatformKindDto, PluginLogEntryDto,
+    DefaultPaneLayoutDto, EntryMetadataRequest, IconThemeDto, InvokeActionRequestDto,
+    ListDirectoryRequest, NavigateRequest, OperationConflictPolicyDto, OperationDto,
+    OperationKindDto, OperationProgressDto, OperationStateDto, PlatformKindDto, PluginLogEntryDto,
     PluginPermissionsDto, ResolveOperationConflictRequestDto, RuntimeCapabilitiesDto,
     RuntimeKindDto, SettingsDto, SizeFormatDto, StartOperationRequestDto, StartSearchRequestDto,
     StartSearchResponseDto, ThemeDto, WorkspaceCommandDto, WorkspaceDto, WorkspaceSummaryDto,
@@ -2880,6 +2881,10 @@ fn settings_to_dto(settings: Settings) -> SettingsDto {
             .unwrap_or_else(|_| serde_json::Value::Object(serde_json::Map::new())),
         terminal_command: settings.terminal_command,
         default_start_locations: settings.default_start_locations,
+        icon_theme: match settings.icon_theme {
+            IconTheme::Generic => IconThemeDto::Generic,
+            IconTheme::Catppuccin => IconThemeDto::Catppuccin,
+        },
     }
 }
 
@@ -2922,6 +2927,10 @@ fn settings_from_dto(settings: SettingsDto) -> Settings {
         plugin_settings: serde_json::from_value(settings.plugin_settings).unwrap_or_default(),
         terminal_command: settings.terminal_command,
         default_start_locations: settings.default_start_locations,
+        icon_theme: match settings.icon_theme {
+            IconThemeDto::Generic => IconTheme::Generic,
+            IconThemeDto::Catppuccin => IconTheme::Catppuccin,
+        },
     }
 }
 

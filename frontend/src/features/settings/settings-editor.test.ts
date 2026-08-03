@@ -35,6 +35,7 @@ function fixtureSettings(overrides: Partial<Settings> = {}): Settings {
     pluginSettings: {},
     terminalCommand: null,
     defaultStartLocations: [],
+    iconTheme: 'generic',
     ...overrides,
   };
 }

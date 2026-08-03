@@ -109,6 +109,7 @@ import {
   connectionPatch,
   createInitialAppState,
 } from '../state';
+import { installCatppuccinIconTheme, restoreDefaultIconTheme } from '../themes/catppuccin-icons';
 import type { RuntimeKind } from '../utilities/runtime';
 
 /** Attributes of the application shell. */
@@ -206,9 +207,9 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
   ];
 
   /**
-   * Applies theme, font size, row height and date/size format live (task 0083):
-   * shared by the initial settings load, the settings editor's live preview,
-   * a successful save, and reverting on cancel.
+   * Applies theme, font size, row height, date/size format and icon theme live (task 0083,
+   * extended by task 0092): shared by the initial settings load, the settings editor's live
+   * preview, a successful save, and reverting on cancel.
    */
   function applyAppearance(settings: Settings): void {
     theme = settings.theme;
@@ -220,6 +221,11 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     document.documentElement.style.setProperty('--fm-font-size', `${settings.fontSize}px`);
     document.documentElement.style.setProperty('--fm-row-height', `${settings.rowHeight}px`);
     ThemeManager.setTheme(theme);
+    if (settings.iconTheme === 'catppuccin') {
+      installCatppuccinIconTheme();
+    } else {
+      restoreDefaultIconTheme();
+    }
   }
 
   async function loadSettings(client: FileManagerClient): Promise<void> {

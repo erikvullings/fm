@@ -831,6 +831,14 @@
         ],
         "type": "string"
       },
+      "IconThemeDto": {
+        "description": "Directory-entry icon set.",
+        "enum": [
+          "generic",
+          "catppuccin"
+        ],
+        "type": "string"
+      },
       "ImageDimensionsDto": {
         "description": "Pixel dimensions of an image entry.",
         "properties": {
@@ -1902,6 +1910,10 @@
             "minimum": 0,
             "type": "integer"
           },
+          "iconTheme": {
+            "$ref": "#/components/schemas/IconThemeDto",
+            "description": "Directory-entry icon set."
+          },
           "keybindings": {
             "additionalProperties": {
               "type": "string"
@@ -1970,7 +1982,8 @@
           "keybindings",
           "enabledPlugins",
           "pluginSettings",
-          "defaultStartLocations"
+          "defaultStartLocations",
+          "iconTheme"
         ],
         "type": "object"
       },

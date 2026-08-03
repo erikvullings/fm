@@ -42,7 +42,8 @@ pub use requests::{EntryMetadataRequest, ListDirectoryRequest, NavigateRequest};
 pub use runtime::{PlatformKindDto, RuntimeCapabilitiesDto, RuntimeKindDto};
 pub use search::{StartSearchRequestDto, StartSearchResponseDto};
 pub use settings::{
-    ConflictPolicyDto, DateFormatDto, DefaultPaneLayoutDto, SettingsDto, SizeFormatDto, ThemeDto,
+    ConflictPolicyDto, DateFormatDto, DefaultPaneLayoutDto, IconThemeDto, SettingsDto,
+    SizeFormatDto, ThemeDto,
 };
 pub use snapshot::{DirectorySnapshotDto, LoadingStateDto};
 pub use workspace::{
