@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createFileManagerClient } from '../api/client/create-client';
 import { MockFileManagerClient } from '../api/client/mock-file-manager-client';
+import { ApiError } from '../api/fetch-mutator';
 import { AppShell } from './app-shell';
 
 let root: HTMLElement;
@@ -43,6 +44,13 @@ async function openAppearanceSettings(container: HTMLElement = root): Promise<vo
   container.querySelector<HTMLElement>('.fm-settings-button')?.click();
   m.redraw.sync();
   await vi.waitFor(() => expect(container.querySelector('.theme-switcher')).not.toBeNull());
+}
+
+/** Opens the workspace switcher disclosure in the toolbar (task 0084). */
+async function openWorkspaceSwitcher(container: HTMLElement = root): Promise<void> {
+  container.querySelector<HTMLElement>('.fm-workspace-switcher-button')?.click();
+  m.redraw.sync();
+  await vi.waitFor(() => expect(container.querySelector('.fm-workspace-switcher')).not.toBeNull());
 }
 
 beforeEach(() => {
@@ -1036,5 +1044,217 @@ describe('tabs per pane (task 0069)', () => {
       ),
     );
     await vi.waitFor(() => expect(activePane()?.querySelectorAll('[role="tab"]')).toHaveLength(2));
+  });
+});
+
+describe('workspace management (task 0084)', () => {
+  function row(container: HTMLElement, workspaceId: string): HTMLElement | null {
+    return container.querySelector<HTMLElement>(`[data-workspace-id="${workspaceId}"]`);
+  }
+
+  it('lists persisted workspaces in the switcher and switches the active one', async () => {
+    const client = new MockFileManagerClient();
+    const first = await client.createWorkspace({ name: 'Alpha' });
+    const second = await client.createWorkspace({ name: 'Bravo' });
+    m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
+    await vi.waitFor(() => expect(root.textContent).toContain('Documents'));
+    await openWorkspaceSwitcher();
+
+    expect(root.textContent).toContain('Alpha');
+    expect(root.textContent).toContain('Bravo');
+    expect(row(root, first.id)?.getAttribute('data-active')).toBe('true');
+
+    row(root, second.id)?.querySelector<HTMLElement>('.fm-workspace-switcher-name')?.click();
+
+    await vi.waitFor(() =>
+      expect(root.querySelector('.fm-workspace-switcher-button')?.textContent).toBe('Bravo'),
+    );
+    await vi.waitFor(() => expect(row(root, second.id)?.getAttribute('data-active')).toBe('true'));
+  });
+
+  it('creates a new workspace and activates it immediately', async () => {
+    const client = new MockFileManagerClient();
+    m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
+    await vi.waitFor(() => expect(root.textContent).toContain('Documents'));
+    await openWorkspaceSwitcher();
+    const before = await client.listWorkspaces();
+
+    root.querySelector<HTMLButtonElement>('.fm-workspace-create-button')?.click();
+
+    await vi.waitFor(async () =>
+      expect((await client.listWorkspaces()).length).toBe(before.length + 1),
+    );
+    await vi.waitFor(() =>
+      expect(root.querySelector('.fm-workspace-switcher-button')?.textContent).toBe('Default'),
+    );
+  });
+
+  it('renames the active workspace and updates the toolbar label', async () => {
+    const client = new MockFileManagerClient();
+    m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
+    await vi.waitFor(() => expect(root.textContent).toContain('Documents'));
+    const workspaceId = (await client.listWorkspaces())[0]?.id;
+    if (workspaceId === undefined) throw new Error('no workspace to rename');
+    await openWorkspaceSwitcher();
+
+    row(root, workspaceId)
+      ?.querySelector<HTMLButtonElement>('.fm-workspace-rename-button')
+      ?.click();
+    m.redraw.sync();
+    const input = row(root, workspaceId)?.querySelector<HTMLInputElement>('input[type="text"]');
+    if (input === null || input === undefined) throw new Error('rename input missing');
+    input.value = 'Renamed workspace';
+    input.dispatchEvent(new InputEvent('input', { bubbles: true }));
+    row(root, workspaceId)
+      ?.querySelector<HTMLFormElement>('.fm-workspace-rename-form')
+      ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+
+    await vi.waitFor(() =>
+      expect(root.querySelector('.fm-workspace-switcher-button')?.textContent).toBe(
+        'Renamed workspace',
+      ),
+    );
+  });
+
+  it('deletes a workspace after confirmation and never strands the app without an active workspace', async () => {
+    const client = new MockFileManagerClient();
+    m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
+    await vi.waitFor(() => expect(root.textContent).toContain('Documents'));
+    const workspaceId = (await client.listWorkspaces())[0]?.id;
+    if (workspaceId === undefined) throw new Error('no workspace to delete');
+    await openWorkspaceSwitcher();
+
+    row(root, workspaceId)
+      ?.querySelector<HTMLButtonElement>('.fm-workspace-delete-button')
+      ?.click();
+    m.redraw.sync();
+    [...root.querySelectorAll('button')]
+      .find((button) => button.textContent === 'Delete workspace')
+      ?.click();
+
+    await vi.waitFor(async () => {
+      const summaries = await client.listWorkspaces();
+      expect(summaries.find((summary) => summary.id === workspaceId)).toBeUndefined();
+    });
+    // Recovers by creating a fresh default workspace rather than stranding the app.
+    await vi.waitFor(() => expect(root.textContent).toContain('Documents'));
+    expect(root.querySelector('.fm-workspace-loading')).toBeNull();
+  });
+
+  it('leaves a running operation untouched when switching workspaces', async () => {
+    const client = new MockFileManagerClient();
+    await client.createWorkspace({ name: 'Alpha' });
+    const second = await client.createWorkspace({ name: 'Bravo' });
+    await client.startOperation({
+      type: 'copy',
+      sources: [{ providerId: 'file', uri: 'mock:///Documents/report.pdf' }],
+      destination: { providerId: 'file', uri: 'mock:///Empty' },
+      conflictPolicy: 'ask',
+    });
+    const cancelOperation = vi.spyOn(client, 'cancelOperation');
+    m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
+    await vi.waitFor(() => expect(root.textContent).toContain('copy · running'));
+    await openWorkspaceSwitcher();
+
+    row(root, second.id)?.querySelector<HTMLElement>('.fm-workspace-switcher-name')?.click();
+
+    await vi.waitFor(() =>
+      expect(root.querySelector('.fm-workspace-switcher-button')?.textContent).toBe('Bravo'),
+    );
+    expect(root.textContent).toContain('copy · running');
+    expect(cancelOperation).not.toHaveBeenCalled();
+  });
+
+  it('refreshes the switcher when another session creates, renames, and deletes a workspace', async () => {
+    const client = new MockFileManagerClient();
+    m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
+    await vi.waitFor(() => expect(root.textContent).toContain('Documents'));
+
+    const created = await client.createWorkspace({ name: 'Remote workspace' });
+    client.emit({
+      eventId: 101,
+      timestamp: '2026-08-03T00:00:00Z',
+      workspaceId: created.id,
+      payload: { type: 'workspace.created', revision: created.revision },
+    });
+    await vi.waitFor(() => expect(root.textContent).toContain('Remote workspace'));
+
+    const renamed = await client.renameWorkspace(created.id, 'Renamed remotely', created.revision);
+    client.emit({
+      eventId: 102,
+      timestamp: '2026-08-03T00:00:00Z',
+      workspaceId: created.id,
+      payload: { type: 'workspace.renamed', revision: renamed.revision, name: 'Renamed remotely' },
+    });
+    await vi.waitFor(() => expect(root.textContent).toContain('Renamed remotely'));
+
+    await client.deleteWorkspace(created.id, renamed.revision);
+    client.emit({
+      eventId: 103,
+      timestamp: '2026-08-03T00:00:00Z',
+      workspaceId: created.id,
+      payload: { type: 'workspace.deleted', revision: renamed.revision + 1 },
+    });
+    await vi.waitFor(() => expect(root.textContent).not.toContain('Renamed remotely'));
+  });
+
+  it('surfaces a rename revision conflict without silently discarding the edit', async () => {
+    const client = new MockFileManagerClient({
+      failures: {
+        dispatchWorkspaceCommand: new ApiError(409, {
+          code: 'workspaceRevisionConflict',
+          message: 'stale workspace revision',
+        }),
+      },
+    });
+    m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
+    await vi.waitFor(() => expect(root.textContent).toContain('Documents'));
+    const workspaceId = (await client.listWorkspaces())[0]?.id;
+    if (workspaceId === undefined) throw new Error('no workspace to rename');
+    await openWorkspaceSwitcher();
+
+    row(root, workspaceId)
+      ?.querySelector<HTMLButtonElement>('.fm-workspace-rename-button')
+      ?.click();
+    m.redraw.sync();
+    const input = row(root, workspaceId)?.querySelector<HTMLInputElement>('input[type="text"]');
+    if (input === null || input === undefined) throw new Error('rename input missing');
+    input.value = 'New name';
+    input.dispatchEvent(new InputEvent('input', { bubbles: true }));
+    row(root, workspaceId)
+      ?.querySelector<HTMLFormElement>('.fm-workspace-rename-form')
+      ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+
+    await vi.waitFor(() => expect(root.textContent).toContain('changed elsewhere'));
+    const unchanged = await client.getWorkspace(workspaceId);
+    expect(unchanged.name).not.toBe('New name');
+  });
+
+  it('surfaces a delete revision conflict without deleting the workspace', async () => {
+    const client = new MockFileManagerClient({
+      failures: {
+        deleteWorkspace: new ApiError(409, {
+          code: 'workspaceRevisionConflict',
+          message: 'stale workspace revision',
+        }),
+      },
+    });
+    m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
+    await vi.waitFor(() => expect(root.textContent).toContain('Documents'));
+    const workspaceId = (await client.listWorkspaces())[0]?.id;
+    if (workspaceId === undefined) throw new Error('no workspace to delete');
+    await openWorkspaceSwitcher();
+
+    row(root, workspaceId)
+      ?.querySelector<HTMLButtonElement>('.fm-workspace-delete-button')
+      ?.click();
+    m.redraw.sync();
+    [...root.querySelectorAll('button')]
+      .find((button) => button.textContent === 'Delete workspace')
+      ?.click();
+
+    await vi.waitFor(() => expect(root.textContent).toContain('changed elsewhere'));
+    const summaries = await client.listWorkspaces();
+    expect(summaries.find((summary) => summary.id === workspaceId)).toBeDefined();
   });
 });

@@ -20,7 +20,8 @@ function isSafelyIdempotent(command: WorkspaceCommand): boolean {
   }
 }
 
-function isRevisionConflict(error: unknown): error is ApiError {
+/** True for a stale-projection conflict raised by any workspace-mutating client call. */
+export function isWorkspaceRevisionConflict(error: unknown): error is ApiError {
   return error instanceof ApiError && error.code === 'workspaceRevisionConflict';
 }
 
@@ -39,7 +40,7 @@ export async function dispatchWorkspaceCommand(
     replaceProjection(changed);
     return changed;
   } catch (error) {
-    if (!isRevisionConflict(error)) {
+    if (!isWorkspaceRevisionConflict(error)) {
       throw error;
     }
     const latest = await client.getWorkspace(command.workspaceId, signal);

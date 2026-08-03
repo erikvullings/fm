@@ -60,12 +60,20 @@ import {
   sortEntries,
   sortEntriesResponsive,
 } from '../features/sorting/sorting';
-import { dispatchWorkspaceCommand } from '../features/workspace/dispatch-workspace-command';
+import {
+  dispatchWorkspaceCommand,
+  isWorkspaceRevisionConflict,
+} from '../features/workspace/dispatch-workspace-command';
 import {
   pathFromUri,
   WorkspaceLayoutView,
   type WorkspacePaneContent,
 } from '../features/workspace/workspace-layout';
+import {
+  firstAvailableWorkspaceId,
+  sortWorkspaceSummaries,
+} from '../features/workspace/workspace-manager';
+import { WorkspaceSwitcher } from '../features/workspace/workspace-switcher';
 import {
   dispatchKeybinding,
   footerFunctionKeyBindings,
@@ -89,8 +97,10 @@ import type {
   SortDescriptor,
   TabId,
   TabProjection,
+  WorkspaceId,
   WorkspaceLayout,
   WorkspaceProjection,
+  WorkspaceSummary,
 } from '../models';
 import {
   type AppState,
@@ -126,6 +136,9 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
   let loadedEntryFormatSettings: EntryFormatSettings = DEFAULT_ENTRY_FORMAT_SETTINGS;
   let workspace: WorkspaceProjection | undefined;
   let workspaceError: string | undefined;
+  let workspaceSummaries: readonly WorkspaceSummary[] = [];
+  let workspaceActionError: string | undefined;
+  let flushPendingLayoutUpdate: (() => void) | undefined;
   let createDirectoryOpen = false;
   let createDirectoryLocation: Location | undefined;
   let commandPaletteOpen = false;
@@ -351,28 +364,188 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     filteredEntries.delete(key);
   }
 
+  /** Releases every per-tab cache belonging to a workspace being switched away from. */
+  function releaseWorkspaceTabState(outgoing: WorkspaceProjection): void {
+    for (const paneId of outgoing.paneOrder) {
+      for (const tabId of outgoing.panesById[paneId]?.tabOrder ?? []) {
+        clearTabState(paneId, tabId);
+      }
+    }
+  }
+
+  /** Loads every pane's active tab, the currently active pane first (task 0084). */
+  function loadPanesActiveFirst(loaded: WorkspaceProjection): void {
+    void navigation.load(loaded.activePaneId);
+    for (const paneId of loaded.paneOrder) {
+      if (paneId !== loaded.activePaneId) void navigation.load(paneId);
+    }
+  }
+
+  function workspaceErrorMessage(error: unknown, fallback: string): string {
+    return error instanceof Error ? error.message : fallback;
+  }
+
+  /** Flushes any pending layout edit and swaps in an already-fetched workspace projection. */
+  function activateWorkspace(loaded: WorkspaceProjection): void {
+    flushPendingLayoutUpdate?.();
+    if (workspace !== undefined) {
+      releaseWorkspaceTabState(workspace);
+    }
+    workspace = loaded;
+    workspaceError = undefined;
+    loadPanesActiveFirst(loaded);
+  }
+
+  /** Opens the first persisted workspace, or creates the global-default one if none exist. */
+  async function openOrCreateDefaultWorkspace(
+    client: FileManagerClient,
+    signal?: AbortSignal,
+  ): Promise<{ loaded: WorkspaceProjection; summaries: readonly WorkspaceSummary[] }> {
+    const summaries = await client.listWorkspaces(signal);
+    const loaded =
+      summaries[0] === undefined
+        ? await client.createWorkspace({ name: 'Default' }, signal)
+        : await client.openWorkspace(summaries[0].id, signal);
+    const refreshedSummaries =
+      summaries[0] === undefined ? await client.listWorkspaces(signal) : summaries;
+    return { loaded, summaries: refreshedSummaries };
+  }
+
+  /** Chooses and activates a replacement workspace once the active one is no longer valid. */
+  async function recoverActiveWorkspace(
+    client: FileManagerClient,
+    summaries: readonly WorkspaceSummary[],
+  ): Promise<void> {
+    const nextId = firstAvailableWorkspaceId(summaries);
+    if (nextId === undefined) {
+      const created = await client.createWorkspace({ name: 'Default' });
+      activateWorkspace(created);
+      workspaceSummaries = await client.listWorkspaces();
+      return;
+    }
+    await switchWorkspace(client, nextId);
+  }
+
   async function loadWorkspace(client: FileManagerClient): Promise<void> {
     workspaceRequest = new AbortController();
     try {
       const capabilities = await client.getRuntimeCapabilities(workspaceRequest.signal);
       platform = capabilities.platform;
       openTerminalSupported = capabilities.openTerminal;
-      const summaries = await client.listWorkspaces(workspaceRequest.signal);
-      const loaded =
-        summaries[0] === undefined
-          ? await client.createWorkspace({ name: 'Default' }, workspaceRequest.signal)
-          : await client.openWorkspace(summaries[0].id, workspaceRequest.signal);
-      workspace = loaded;
-      for (const paneId of loaded.paneOrder) {
-        void navigation.load(paneId);
-      }
+      const { loaded, summaries } = await openOrCreateDefaultWorkspace(
+        client,
+        workspaceRequest.signal,
+      );
+      activateWorkspace(loaded);
+      workspaceSummaries = summaries;
     } catch (error: unknown) {
       if (workspaceRequest.signal.aborted) {
         return;
       }
-      workspaceError = error instanceof Error ? error.message : 'Unable to load workspace';
+      workspaceError = workspaceErrorMessage(error, 'Unable to load workspace');
     }
     m.redraw();
+  }
+
+  /**
+   * Switches the active workspace (task 0084): flushes any pending debounced
+   * layout edit, releases the outgoing workspace's per-tab caches, restores
+   * the target workspace's persisted layout, and loads its active pane's
+   * tabs first. Never touches `operations` — running file operations must
+   * survive a switch untouched.
+   */
+  async function switchWorkspace(
+    client: FileManagerClient,
+    workspaceId: WorkspaceId,
+  ): Promise<void> {
+    if (workspace?.id === workspaceId) return;
+    workspaceRequest?.abort();
+    const request = new AbortController();
+    workspaceRequest = request;
+    workspaceActionError = undefined;
+    try {
+      const loaded = await client.openWorkspace(workspaceId, request.signal);
+      activateWorkspace(loaded);
+      workspaceSummaries = await client.listWorkspaces(request.signal);
+    } catch (error: unknown) {
+      if (request.signal.aborted) return;
+      workspaceActionError = workspaceErrorMessage(error, 'Unable to switch workspace');
+    }
+    m.redraw();
+  }
+
+  function refreshWorkspaceSummaries(client: FileManagerClient): void {
+    void client
+      .listWorkspaces()
+      .then((summaries) => {
+        workspaceSummaries = summaries;
+        m.redraw();
+      })
+      .catch(() => undefined);
+  }
+
+  function revisionForWorkspace(workspaceId: WorkspaceId): number {
+    if (workspace?.id === workspaceId) return workspace.revision;
+    return workspaceSummaries.find((summary) => summary.id === workspaceId)?.revision ?? 0;
+  }
+
+  function createWorkspaceAction(client: FileManagerClient): void {
+    workspaceActionError = undefined;
+    void client
+      .createWorkspace({})
+      .then(async (created) => {
+        activateWorkspace(created);
+        workspaceSummaries = await client.listWorkspaces();
+        m.redraw();
+      })
+      .catch((error: unknown) => {
+        workspaceActionError = workspaceErrorMessage(error, 'Unable to create workspace');
+        m.redraw();
+      });
+  }
+
+  function renameWorkspaceAction(
+    client: FileManagerClient,
+    workspaceId: WorkspaceId,
+    name: string,
+  ): void {
+    workspaceActionError = undefined;
+    void client
+      .renameWorkspace(workspaceId, name, revisionForWorkspace(workspaceId))
+      .then(async (updated) => {
+        if (workspace?.id === workspaceId) workspace = updated;
+        workspaceSummaries = await client.listWorkspaces();
+        m.redraw();
+      })
+      .catch(async (error: unknown) => {
+        if (isWorkspaceRevisionConflict(error)) {
+          workspaceSummaries = await client.listWorkspaces().catch(() => workspaceSummaries);
+          workspaceActionError =
+            'This workspace changed elsewhere; refresh and try renaming again.';
+        } else {
+          workspaceActionError = workspaceErrorMessage(error, 'Unable to rename workspace');
+        }
+        m.redraw();
+      });
+  }
+
+  function deleteWorkspaceAction(client: FileManagerClient, workspaceId: WorkspaceId): void {
+    workspaceActionError = undefined;
+    const wasActive = workspace?.id === workspaceId;
+    void client
+      .deleteWorkspace(workspaceId, revisionForWorkspace(workspaceId))
+      .then(async () => {
+        const summaries = await client.listWorkspaces();
+        workspaceSummaries = summaries;
+        if (wasActive) await recoverActiveWorkspace(client, summaries);
+        m.redraw();
+      })
+      .catch((error: unknown) => {
+        workspaceActionError = isWorkspaceRevisionConflict(error)
+          ? 'This workspace changed elsewhere; refresh and try deleting again.'
+          : workspaceErrorMessage(error, 'Unable to delete workspace');
+        m.redraw();
+      });
   }
 
   function refetchAffectedPanes(paneId?: PaneId): void {
@@ -851,8 +1024,31 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
   }
 
   function handleBackendEvent(event: BackendEvent): void {
-    if (event.workspaceId !== undefined && event.workspaceId !== workspace?.id) return;
     const payload = event.payload;
+    // Workspace lifecycle events must refresh the switcher's summary list
+    // regardless of which workspace they pertain to (task 0084); every other
+    // payload stays scoped to the active workspace by the filter below.
+    if (
+      payload.type === 'workspace.created' ||
+      payload.type === 'workspace.renamed' ||
+      payload.type === 'workspace.deleted'
+    ) {
+      refreshWorkspaceSummaries(attrsClient);
+      if (payload.type === 'workspace.deleted' && event.workspaceId === workspace?.id) {
+        void attrsClient
+          .listWorkspaces()
+          .then((summaries) => {
+            workspaceSummaries = summaries;
+            return recoverActiveWorkspace(attrsClient, summaries);
+          })
+          .catch((error: unknown) => {
+            workspaceActionError = workspaceErrorMessage(error, 'Unable to recover workspace');
+          })
+          .finally(() => m.redraw());
+        return;
+      }
+    }
+    if (event.workspaceId !== undefined && event.workspaceId !== workspace?.id) return;
     if (payload.type === 'operation.conflict') {
       pendingConflict = payload;
       m.redraw();
@@ -1377,6 +1573,38 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
             },
             'Command palette',
           ),
+          m('details.fm-workspace-disclosure', [
+            m('summary.fm-workspace-switcher-button', workspace?.name ?? 'Workspace'),
+            m('.fm-workspace-switcher-panel', { role: 'dialog', 'aria-label': 'Workspaces' }, [
+              m('.fm-workspace-switcher-heading', [
+                m('strong', 'Workspaces'),
+                m(
+                  'button',
+                  {
+                    type: 'button',
+                    'aria-label': 'Close workspaces',
+                    onclick: (event: MouseEvent) => {
+                      const disclosure = (event.currentTarget as HTMLElement).closest('details');
+                      if (disclosure instanceof HTMLDetailsElement) disclosure.open = false;
+                    },
+                  },
+                  '×',
+                ),
+              ]),
+              m(WorkspaceSwitcher, {
+                summaries: sortWorkspaceSummaries(workspaceSummaries),
+                activeWorkspaceId: workspace?.id,
+                error: workspaceActionError,
+                onSwitch: (workspaceId) => {
+                  void switchWorkspace(attrs.client, workspaceId);
+                },
+                onCreate: () => createWorkspaceAction(attrs.client),
+                onRename: (workspaceId, name) =>
+                  renameWorkspaceAction(attrs.client, workspaceId, name),
+                onDelete: (workspaceId) => deleteWorkspaceAction(attrs.client, workspaceId),
+              }),
+            ]),
+          ]),
           m('details.fm-settings-disclosure', [
             m('summary.fm-settings-button', 'Settings'),
             m('.fm-settings-editor', { role: 'dialog', 'aria-label': 'Settings' }, [
@@ -1439,6 +1667,9 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
                 onSelectTab: (paneId, tabId) => activateTab(attrs.client, paneId, tabId),
                 onCloseTab: (paneId, tabId) => requestCloseTab(attrs.client, paneId, tabId),
                 onNewTab: (paneId) => openTab(attrs.client, paneId),
+                registerFlush: (flush) => {
+                  flushPendingLayoutUpdate = flush;
+                },
               }),
         ]),
         clipboardMessage === undefined

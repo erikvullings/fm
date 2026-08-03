@@ -68,6 +68,12 @@ export interface WorkspaceLayoutViewAttrs {
   readonly onSelectTab: (paneId: PaneId, tabId: TabId) => void;
   readonly onCloseTab: (paneId: PaneId, tabId: TabId) => void;
   readonly onNewTab: (paneId: PaneId) => void;
+  /**
+   * Lets the caller force-persist an in-flight debounced layout edit (e.g.
+   * before switching workspaces) by handing it a callback registered once on
+   * init.
+   */
+  readonly registerFlush?: (flush: () => void) => void;
 }
 
 /** Clamps a horizontal split so both children retain a usable minimum width. */
@@ -107,6 +113,7 @@ export const WorkspaceLayoutView: FactoryComponent<WorkspaceLayoutViewAttrs> = (
   let displayedLayout: WorkspaceLayout | undefined;
   let sourceLayout: WorkspaceLayout | undefined;
   let persistenceTimer: ReturnType<typeof setTimeout> | undefined;
+  let pendingLayoutUpdate: { attrs: WorkspaceLayoutViewAttrs; layout: WorkspaceLayout } | undefined;
   let stopDragging: (() => void) | undefined;
   /** Frontend-only tab order overrides for drag-reorder; no backend command persists this. */
   const tabOrderOverrides = new Map<PaneId, readonly TabId[]>();
@@ -147,10 +154,24 @@ export const WorkspaceLayoutView: FactoryComponent<WorkspaceLayoutViewAttrs> = (
     if (persistenceTimer !== undefined) {
       clearTimeout(persistenceTimer);
     }
+    pendingLayoutUpdate = { attrs, layout };
     persistenceTimer = setTimeout(() => {
       persistenceTimer = undefined;
+      pendingLayoutUpdate = undefined;
       attrs.onUpdateLayout(layout);
     }, 500);
+  }
+
+  /** Immediately persists a pending debounced layout edit, if any, cancelling its timer. */
+  function flushPendingLayoutUpdate(): void {
+    if (persistenceTimer === undefined || pendingLayoutUpdate === undefined) {
+      return;
+    }
+    clearTimeout(persistenceTimer);
+    persistenceTimer = undefined;
+    const { attrs, layout } = pendingLayoutUpdate;
+    pendingLayoutUpdate = undefined;
+    attrs.onUpdateLayout(layout);
   }
 
   function beginSplitDrag(
@@ -341,6 +362,9 @@ export const WorkspaceLayoutView: FactoryComponent<WorkspaceLayoutViewAttrs> = (
   }
 
   return {
+    oninit: ({ attrs }) => {
+      attrs.registerFlush?.(flushPendingLayoutUpdate);
+    },
     onremove: () => {
       stopDragging?.();
       if (persistenceTimer !== undefined) {

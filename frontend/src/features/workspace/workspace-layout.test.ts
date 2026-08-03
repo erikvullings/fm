@@ -289,4 +289,62 @@ describe('splitter constraints', () => {
       ratio: 0.7,
     });
   });
+
+  it('flushes a pending debounced layout update immediately via registerFlush', () => {
+    vi.useFakeTimers();
+    const onUpdateLayout = vi.fn<(layout: WorkspaceProjection['layout']) => void>();
+    let flush: (() => void) | undefined;
+    mount(
+      attrs({
+        onUpdateLayout,
+        registerFlush: (registered) => {
+          flush = registered;
+        },
+      }),
+    );
+    const split = root.querySelector<HTMLElement>('.fm-workspace-split');
+    const splitter = root.querySelector<HTMLElement>('.fm-workspace-splitter');
+    vi.spyOn(split as HTMLElement, 'getBoundingClientRect').mockReturnValue({
+      x: 100,
+      y: 0,
+      top: 0,
+      right: 1_100,
+      bottom: 600,
+      left: 100,
+      width: 1_000,
+      height: 600,
+      toJSON: () => ({}),
+    });
+
+    splitter?.dispatchEvent(new MouseEvent('pointerdown', { clientX: 600, bubbles: true }));
+    window.dispatchEvent(new MouseEvent('pointermove', { clientX: 800 }));
+
+    expect(onUpdateLayout).not.toHaveBeenCalled();
+    flush?.();
+
+    expect(onUpdateLayout).toHaveBeenCalledExactlyOnceWith({
+      ...projection().layout,
+      ratio: 0.7,
+    });
+
+    vi.advanceTimersByTime(500);
+    expect(onUpdateLayout).toHaveBeenCalledOnce();
+  });
+
+  it('does nothing when flushed with no pending layout update', () => {
+    let flush: (() => void) | undefined;
+    const onUpdateLayout = vi.fn<(layout: WorkspaceProjection['layout']) => void>();
+    mount(
+      attrs({
+        onUpdateLayout,
+        registerFlush: (registered) => {
+          flush = registered;
+        },
+      }),
+    );
+
+    flush?.();
+
+    expect(onUpdateLayout).not.toHaveBeenCalled();
+  });
 });
