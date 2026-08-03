@@ -1,6 +1,6 @@
 {
-  "name": "File Manager",
-  "short_name": "File Manager",
+  "name": "Procyon",
+  "short_name": "Procyon",
   "icons": [
     {
       "src": "/web-app-manifest-192x192.png",

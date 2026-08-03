@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "File Manager",
+  "productName": "Procyon",
   "version": "0.1.0",
   "identifier": "dev.fm.desktop",
   "build": {
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "File Manager",
+        "title": "Procyon",
         "width": 1280,
         "height": 800,
         "backgroundColor": "#f4f6f8"
