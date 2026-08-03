@@ -1583,7 +1583,14 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
             'Command palette',
           ),
           m('details.fm-workspace-disclosure', [
-            m('summary.fm-workspace-switcher-button', workspace?.name ?? 'Workspace'),
+            m(
+              'summary.fm-workspace-switcher-button',
+              {
+                title: 'Switch or manage workspaces',
+                'aria-label': `Workspace switcher, current workspace: ${workspace?.name ?? 'none'}`,
+              },
+              [m('span.fm-workspace-switcher-label', workspace?.name ?? 'Workspace')],
+            ),
             m('.fm-workspace-switcher-panel', { role: 'dialog', 'aria-label': 'Workspaces' }, [
               m('.fm-workspace-switcher-heading', [
                 m('strong', 'Workspaces'),

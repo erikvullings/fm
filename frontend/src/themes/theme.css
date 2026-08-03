@@ -210,12 +210,22 @@ body {
   display: flex;
   min-height: var(--fm-row-height);
   align-items: center;
+  gap: 0.3rem;
   cursor: default;
   list-style: none;
   max-width: 12rem;
+}
+
+.fm-workspace-switcher-label {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.fm-workspace-switcher-button::after {
+  content: "▾";
+  color: var(--fm-text-muted);
+  font-size: 0.7rem;
 }
 
 .fm-workspace-switcher-button::-webkit-details-marker {
