@@ -4,6 +4,16 @@ import { type Theme, ThemeManager } from 'mithril-materialized';
 
 import type { FileManagerClient } from '../api/client/file-manager-client';
 import {
+  arrowLeftIcon,
+  arrowRightIcon,
+  closeIcon,
+  commandIcon,
+  cornerLeftUpIcon,
+  layoutGridIcon,
+  searchIcon,
+  settingsIcon,
+} from '../components/tabler-icons';
+import {
   clearClipboard,
   copyToClipboard,
   cutToClipboard,
@@ -91,7 +101,10 @@ import type {
   EntryId,
   EntrySummary,
   Location,
+  Operation,
   OperationConflict,
+  OperationId,
+  OperationState,
   PaneId,
   PluginDescriptor,
   PluginId,
@@ -126,6 +139,33 @@ export interface AppShellAttrs {
 }
 
 const DEFAULT_THEME: Theme = 'auto';
+
+/**
+ * Operations that reach a successful terminal state within this window of
+ * their `createdAt` are dismissed without ever showing the operation centre:
+ * no user can read a progress card that appears and disappears faster than
+ * this, so surfacing it would only be visual noise.
+ */
+const FAST_OPERATION_DISMISS_THRESHOLD_MS = 500;
+
+/**
+ * Delay before a terminal, non-`failed` operation (completed, cancelled or
+ * interrupted) auto-dismisses itself. Only failures require the user to
+ * dismiss manually; everything else would otherwise pile up in the operation
+ * centre forever, since dismissal is not persisted and every app restart
+ * reloads the full backend history.
+ */
+const AUTO_DISMISS_DELAY_MS = 5_000;
+
+/** States that auto-dismiss; `failed` is intentionally excluded. */
+function isAutoDismissibleState(state: OperationState): boolean {
+  return (
+    state === 'completed' ||
+    state === 'completedWithWarnings' ||
+    state === 'cancelled' ||
+    state === 'interrupted'
+  );
+}
 
 /**
  * A factory component so that per-instance state lives in the closure rather
@@ -211,7 +251,33 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
   let clipboardMessage: string | undefined;
   let pendingOperationEvents: BackendEvent[] = [];
   let operationFrame: number | undefined;
+  const autoDismissTimers = new Map<OperationId, ReturnType<typeof setTimeout>>();
   let removed = false;
+
+  /** (Re)schedules an operation to auto-dismiss unless it's manually dismissed first. */
+  function scheduleAutoDismiss(operationId: OperationId, delayMs: number): void {
+    const existing = autoDismissTimers.get(operationId);
+    if (existing !== undefined) clearTimeout(existing);
+    autoDismissTimers.set(
+      operationId,
+      setTimeout(() => {
+        autoDismissTimers.delete(operationId);
+        const current = operations.byId[operationId];
+        if (current !== undefined && isAutoDismissibleState(current.state)) {
+          operations = dismissOperation(operations, operationId);
+          m.redraw();
+        }
+      }, delayMs),
+    );
+  }
+
+  /** Clears a pending auto-dismiss timer, e.g. once the user dismisses manually. */
+  function cancelAutoDismiss(operationId: OperationId): void {
+    const existing = autoDismissTimers.get(operationId);
+    if (existing === undefined) return;
+    clearTimeout(existing);
+    autoDismissTimers.delete(operationId);
+  }
   const DEFAULT_SORT: readonly SortDescriptor[] = [
     { columnId: 'core.name', direction: 'ascending' },
   ];
@@ -240,9 +306,11 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
   }
 
   /**
-   * Keeps the native Tauri window frame's background in step with the
-   * resolved theme (light/dark/auto) so it never mismatches the toolbar's
-   * own --fm-surface-elevated, e.g. on launch or when the OS appearance changes.
+   * Keeps the native Tauri window frame (background + title bar chrome) in
+   * step with the resolved theme (light/dark/auto) so it never mismatches the
+   * toolbar's own --fm-surface-elevated, e.g. on launch or when the OS
+   * appearance changes. `setTheme` drives the title bar's own light/dark
+   * rendering, which `setBackgroundColor` alone doesn't affect on macOS.
    */
   function syncTauriWindowBackground(): void {
     if (runtimeKind !== 'tauri') return;
@@ -250,7 +318,10 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       .getPropertyValue('--fm-surface-elevated')
       .trim();
     if (resolved.length === 0) return;
-    void getCurrentWindow().setBackgroundColor(resolved);
+    const window = getCurrentWindow();
+    void window.setBackgroundColor(resolved);
+    // 'auto' -> null lets the OS decide, matching the CSS `@media` fallback.
+    void window.setTheme(theme === 'auto' ? null : theme);
   }
 
   const systemThemeQuery: MediaQueryList | undefined =
@@ -995,19 +1066,18 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       const directory =
         active === undefined ? undefined : directories.get(activeTabKey(active.paneId));
       const selected = directory?.entries.filter(
-        (entry) => selection?.selectedEntryIds.includes(entry.id) === true && entry.kind === 'file',
+        (entry) => selection?.selectedEntryIds.includes(entry.id) === true,
       );
       const otherPaneId = workspace?.paneOrder.find((paneId) => paneId !== active?.paneId);
       const destination =
         otherPaneId === undefined
           ? undefined
           : directories.get(activeTabKey(otherPaneId))?.location;
-      const source = selected?.length === 1 ? selected[0] : undefined;
-      if (source !== undefined && destination !== undefined) {
+      if (selected !== undefined && selected.length > 0 && destination !== undefined) {
         event.preventDefault();
         void attrsClient.startOperation({
           type: 'copy',
-          sources: [source.location],
+          sources: selected.map((entry) => entry.location),
           destination,
           conflictPolicy: 'ask',
         });
@@ -1176,8 +1246,29 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       if (operationFrame === undefined) {
         operationFrame = requestAnimationFrame(() => {
           operationFrame = undefined;
-          operations = reduceOperationEvents(operations, pendingOperationEvents);
+          const events = pendingOperationEvents;
           pendingOperationEvents = [];
+          const previous = operations;
+          let next = reduceOperationEvents(previous, events);
+          let panesNeedRefresh = false;
+          for (const [id, current] of Object.entries(next.byId) as Array<
+            [OperationId, Operation | undefined]
+          >) {
+            if (current === undefined) continue;
+            const previousState = previous.byId[id]?.state;
+            if (previousState === current.state) continue;
+            if (current.state === 'completed' || current.state === 'completedWithWarnings') {
+              panesNeedRefresh = true;
+            }
+            if (!isAutoDismissibleState(current.state)) continue;
+            if (Date.now() - Date.parse(current.createdAt) < FAST_OPERATION_DISMISS_THRESHOLD_MS) {
+              next = dismissOperation(next, id);
+            } else {
+              scheduleAutoDismiss(id, AUTO_DISMISS_DELAY_MS);
+            }
+          }
+          operations = next;
+          if (panesNeedRefresh) refetchAffectedPanes();
           m.redraw();
         });
       }
@@ -1613,6 +1704,11 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
         .then((listed) => {
           if (!removed) {
             operations = createOperationsState(listed);
+            for (const operation of listed) {
+              if (isAutoDismissibleState(operation.state)) {
+                scheduleAutoDismiss(operation.id, AUTO_DISMISS_DELAY_MS);
+              }
+            }
             m.redraw();
           }
         })
@@ -1635,6 +1731,8 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       document.removeEventListener('keydown', handleGlobalKeydown);
       systemThemeQuery?.removeEventListener('change', handleSystemThemeChange);
       if (operationFrame !== undefined) cancelAnimationFrame(operationFrame);
+      for (const timer of autoDismissTimers.values()) clearTimeout(timer);
+      autoDismissTimers.clear();
       workspaceRequest?.abort();
       unsubscribeEvents?.();
       unsubscribeConnection?.();
@@ -1651,8 +1749,16 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
         (operation) =>
           operation?.kind === 'delete' && operation.state === 'waitingForConflictResolution',
       );
-      return m('.fm-app-shell', [
-        m('.fm-workspace-toolbar', [
+      // macOS's overlay title bar (spec follow-up) removes the reserved native title
+      // strip so the toolbar itself extends under the traffic lights, painted by our
+      // own CSS -- this is what actually makes the frame colour match, since a plain
+      // "Transparent" title bar still let the OS render its own vibrancy behind it.
+      const isMacOverlay = runtimeKind === 'tauri' && platform === 'macos';
+      return m(
+        '.fm-app-shell',
+        { 'data-mac-titlebar-overlay': isMacOverlay ? 'true' : undefined },
+        [
+        m('.fm-workspace-toolbar', { 'data-tauri-drag-region': isMacOverlay ? '' : undefined }, [
           m('.fm-navigation-controls', { 'aria-label': 'Active pane navigation' }, [
             m(
               'button',
@@ -1665,7 +1771,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
                 'aria-label': 'Back',
                 onclick: () => void navigation.back(workspace?.activePaneId ?? ''),
               },
-              '←',
+              arrowLeftIcon(),
             ),
             m(
               'button',
@@ -1678,7 +1784,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
                 'aria-label': 'Forward',
                 onclick: () => void navigation.forward(workspace?.activePaneId ?? ''),
               },
-              '→',
+              arrowRightIcon(),
             ),
             m(
               'button',
@@ -1688,7 +1794,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
                 'aria-label': 'Parent directory',
                 onclick: () => void navigation.parent(workspace?.activePaneId ?? ''),
               },
-              '↑',
+              cornerLeftUpIcon(),
             ),
           ]),
           m(
@@ -1704,7 +1810,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
                 findFilesOpen = true;
               },
             },
-            'Find files',
+            [searchIcon(), m('span', 'Find files')],
           ),
           m(
             'button',
@@ -1716,7 +1822,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
                 commandPaletteError = undefined;
               },
             },
-            'Command palette',
+            [commandIcon(), m('span', 'Command palette')],
           ),
           m('details.fm-workspace-disclosure', [
             m(
@@ -1725,7 +1831,10 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
                 title: 'Switch or manage workspaces',
                 'aria-label': `Workspace switcher, current workspace: ${workspace?.name ?? 'none'}`,
               },
-              [m('span.fm-workspace-switcher-label', workspace?.name ?? 'Workspace')],
+              [
+                layoutGridIcon(),
+                m('span.fm-workspace-switcher-label', workspace?.name ?? 'Workspace'),
+              ],
             ),
             m('.fm-workspace-switcher-panel', { role: 'dialog', 'aria-label': 'Workspaces' }, [
               m('.fm-workspace-switcher-heading', [
@@ -1740,7 +1849,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
                       if (disclosure instanceof HTMLDetailsElement) disclosure.open = false;
                     },
                   },
-                  '×',
+                  closeIcon(),
                 ),
               ]),
               m(WorkspaceSwitcher, {
@@ -1758,7 +1867,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
             ]),
           ]),
           m('details.fm-settings-disclosure', [
-            m('summary.fm-settings-button', 'Settings'),
+            m('summary.fm-settings-button', [settingsIcon(), m('span', 'Settings')]),
             m(
               '.fm-settings-editor',
               {
@@ -1787,7 +1896,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
                           if (disclosure instanceof HTMLDetailsElement) disclosure.open = false;
                         },
                       },
-                      '×',
+                      closeIcon(),
                     ),
                   ]),
                   currentSettings === undefined
@@ -1891,6 +2000,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
             void attrs.client.resumeOperation(operationId).catch(() => undefined);
           },
           onDismiss: (operationId) => {
+            cancelAutoDismiss(operationId);
             operations = dismissOperation(operations, operationId);
           },
         }),
@@ -2002,7 +2112,8 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
             ),
           ),
         ),
-      ]);
+        ],
+      );
     },
   };
 };
