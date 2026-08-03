@@ -34,9 +34,15 @@ function themeButton(label: string): HTMLButtonElement {
   return themeButtonIn(root, label);
 }
 
-function openAppearanceSettings(container: HTMLElement = root): void {
+/**
+ * Opens the settings disclosure and waits for the (async) initial settings
+ * load to complete, since the settings editor only renders once
+ * `currentSettings` is available (§0083).
+ */
+async function openAppearanceSettings(container: HTMLElement = root): Promise<void> {
   container.querySelector<HTMLElement>('.fm-settings-button')?.click();
   m.redraw.sync();
+  await vi.waitFor(() => expect(container.querySelector('.theme-switcher')).not.toBeNull());
 }
 
 beforeEach(() => {
@@ -521,11 +527,13 @@ describe('AppShell', () => {
     await vi.waitFor(() => expect(root.textContent).toContain('8,192 B'));
   });
 
-  it('renders the theme switcher inside the appearance settings editor', () => {
-    mountShell();
+  it('renders the theme switcher inside the appearance settings editor', async () => {
+    m.mount(root, {
+      view: () => m(AppShell, { runtime: 'mock', client: new MockFileManagerClient() }),
+    });
 
     expect(root.querySelector<HTMLDetailsElement>('.fm-settings-disclosure')?.open).toBe(false);
-    openAppearanceSettings();
+    await openAppearanceSettings();
     expect(root.querySelector<HTMLDetailsElement>('.fm-settings-disclosure')?.open).toBe(true);
     expect(root.querySelector('.fm-settings-editor')?.getAttribute('role')).toBe('dialog');
     expect(root.querySelector('.theme-switcher')).not.toBeNull();
@@ -538,7 +546,7 @@ describe('AppShell', () => {
     const client = new MockFileManagerClient();
     m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
 
-    openAppearanceSettings();
+    await openAppearanceSettings();
 
     await vi.waitFor(() => expect(root.querySelector('.fm-plugin-row')).not.toBeNull());
     expect(root.querySelector('.fm-plugin-row strong')?.textContent).toBe('Mock Archive');
@@ -548,7 +556,7 @@ describe('AppShell', () => {
     const client = new MockFileManagerClient();
     m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
 
-    openAppearanceSettings();
+    await openAppearanceSettings();
     await vi.waitFor(() => expect(root.querySelector('.fm-plugin-row')).not.toBeNull());
 
     client.emit({
@@ -565,11 +573,13 @@ describe('AppShell', () => {
     expect(checkbox?.checked).toBe(false);
   });
 
-  it('applies a theme change and keeps the switcher selection in step', () => {
+  it('applies a theme change and keeps the switcher selection in step', async () => {
     const setTheme = vi.spyOn(ThemeManager, 'setTheme');
 
-    mountShell();
-    openAppearanceSettings();
+    m.mount(root, {
+      view: () => m(AppShell, { runtime: 'mock', client: new MockFileManagerClient() }),
+    });
+    await openAppearanceSettings();
     themeButton('Dark').click();
     m.redraw.sync();
 
@@ -578,9 +588,11 @@ describe('AppShell', () => {
     expect(themeButton('Light').classList.contains('active')).toBe(false);
   });
 
-  it('switches light, dark and follow-system themes without remounting', () => {
-    mountShell();
-    openAppearanceSettings();
+  it('switches light, dark and follow-system themes without remounting', async () => {
+    m.mount(root, {
+      view: () => m(AppShell, { runtime: 'mock', client: new MockFileManagerClient() }),
+    });
+    await openAppearanceSettings();
 
     themeButton('Light').click();
     m.redraw.sync();
@@ -596,9 +608,11 @@ describe('AppShell', () => {
     expect(root.querySelector('.fm-app-shell')).not.toBeNull();
   });
 
-  it('keeps per-instance theme state in the factory closure', () => {
-    mountShell();
-    openAppearanceSettings();
+  it('keeps per-instance theme state in the factory closure', async () => {
+    m.mount(root, {
+      view: () => m(AppShell, { runtime: 'mock', client: new MockFileManagerClient() }),
+    });
+    await openAppearanceSettings();
     themeButton('Dark').click();
     m.redraw.sync();
     expect(themeButton('Dark').classList.contains('active')).toBe(true);
@@ -607,9 +621,9 @@ describe('AppShell', () => {
     const second = document.createElement('div');
     document.body.appendChild(second);
     m.mount(second, {
-      view: () => m(AppShell, { runtime: 'http', client: createFileManagerClient('http') }),
+      view: () => m(AppShell, { runtime: 'mock', client: new MockFileManagerClient() }),
     });
-    openAppearanceSettings(second);
+    await openAppearanceSettings(second);
 
     expect(themeButtonIn(second, 'Auto').classList.contains('active')).toBe(true);
     expect(themeButtonIn(second, 'Dark').classList.contains('active')).toBe(false);

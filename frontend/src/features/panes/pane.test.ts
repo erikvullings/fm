@@ -452,6 +452,23 @@ describe('Pane navigation input', () => {
     expect(onOpenEntry).toHaveBeenCalledWith(entries[0]);
   });
 
+  it('extends the selection range on a shift-click and toggles on a ctrl-click', () => {
+    const onSelectionAction = vi.fn();
+    mount(attrs({ cursorIndex: 0, onSelectionAction }));
+
+    root
+      .querySelectorAll<HTMLElement>('.fm-directory-row')[1]
+      ?.dispatchEvent(new MouseEvent('click', { bubbles: true, shiftKey: true }));
+    root
+      .querySelectorAll<HTMLElement>('.fm-directory-row')[0]
+      ?.dispatchEvent(new MouseEvent('click', { bubbles: true, ctrlKey: true }));
+
+    expect(onSelectionAction.mock.calls.map(([action]) => action)).toEqual([
+      { type: 'extendRangeTo', entryId: 'two' },
+      { type: 'toggle', entryId: 'one' },
+    ]);
+  });
+
   it('keeps and highlights a matching typeahead prefix until explicitly cleared', () => {
     vi.useFakeTimers();
     vi.setSystemTime(1_000);

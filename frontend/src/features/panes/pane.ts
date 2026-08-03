@@ -650,14 +650,19 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
             ...(typeahead === undefined ? {} : { nameMatchPrefix: typeahead.prefix }),
             onRetry: () => void attrs.onRetry(),
             onEndReached: () => void attrs.onLoadNextPage(),
-            onCursorChange: (index) => {
+            onCursorChange: (index, modifiers) => {
               const entry = attrs.entries[index];
-              if (entry !== undefined) {
-                attrs.onSelectionAction(
-                  isParentEntry(entry.id)
-                    ? { type: 'setCursor', entryId: entry.id }
-                    : { type: 'selectOnly', entryId: entry.id },
-                );
+              if (entry === undefined) {
+                return;
+              }
+              if (isParentEntry(entry.id)) {
+                attrs.onSelectionAction({ type: 'setCursor', entryId: entry.id });
+              } else if (modifiers?.shiftKey === true) {
+                attrs.onSelectionAction({ type: 'extendRangeTo', entryId: entry.id });
+              } else if (modifiers?.ctrlKey === true) {
+                attrs.onSelectionAction({ type: 'toggle', entryId: entry.id });
+              } else {
+                attrs.onSelectionAction({ type: 'selectOnly', entryId: entry.id });
               }
             },
             onActivate: (index) => {

@@ -89,6 +89,32 @@ describe('selection reducer', () => {
     });
   });
 
+  it('extends a range to a clicked entry and keeps the anchor when clicking back and forth', () => {
+    const initial: SelectionState = {
+      selectedEntryIds: ['b'],
+      cursorEntryId: 'b',
+      anchorEntryId: 'b',
+    };
+    const extended = reduceSelection(
+      initial,
+      { type: 'extendRangeTo', entryId: 'd' },
+      ids('a', 'b', 'c', 'd'),
+    );
+    expect(extended).toEqual({
+      selectedEntryIds: ['b', 'c', 'd'],
+      cursorEntryId: 'd',
+      anchorEntryId: 'b',
+    });
+
+    expect(
+      reduceSelection(extended, { type: 'extendRangeTo', entryId: 'a' }, ids('a', 'b', 'c', 'd')),
+    ).toEqual({
+      selectedEntryIds: ['a', 'b'],
+      cursorEntryId: 'a',
+      anchorEntryId: 'b',
+    });
+  });
+
   it('selects all and inverts the current visible entries', () => {
     const all = reduceSelection(emptySelection, { type: 'selectAll' }, ids('a', 'b', 'c'));
     expect(all.selectedEntryIds).toEqual(['a', 'b', 'c']);

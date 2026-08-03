@@ -186,7 +186,7 @@ export class MockFileManagerClient implements FileManagerClient {
     schemaVersion: 2,
     theme: 'auto',
     fontSize: 13,
-    rowHeight: 24,
+    rowHeight: 22,
     dateFormat: 'medium',
     sizeFormat: 'binary',
     showHiddenFiles: false,

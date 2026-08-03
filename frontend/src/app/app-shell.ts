@@ -1,5 +1,5 @@
 import m, { type FactoryComponent } from 'mithril';
-import { type Theme, ThemeManager, ThemeSwitcher } from 'mithril-materialized';
+import { type Theme, ThemeManager } from 'mithril-materialized';
 
 import type { FileManagerClient } from '../api/client/file-manager-client';
 import {
@@ -45,7 +45,6 @@ import { PermanentDeleteDialog } from '../features/operations/permanent-delete-d
 import { CloseLastTabDialog } from '../features/panes/close-last-tab-dialog';
 import { isParentEntry, withParentEntry } from '../features/panes/parent-entry';
 import { cycledTabIndex, tabIdForJump } from '../features/panes/tab-navigation';
-import { PluginManagement } from '../features/plugin-management/plugin-management';
 import { filterEntries, hiddenSelectedEntryCount } from '../features/quick-filter/quick-filter';
 import type { SelectionPlatform } from '../features/selection/keybindings';
 import {
@@ -54,6 +53,7 @@ import {
   type SelectionAction,
   type SelectionState,
 } from '../features/selection/selection';
+import { SettingsEditor } from '../features/settings/settings-editor';
 import {
   type SortColumn,
   type SortModel,
@@ -68,7 +68,7 @@ import {
 } from '../features/workspace/workspace-layout';
 import {
   dispatchKeybinding,
-  getLiveBindings,
+  footerFunctionKeyBindings,
   hasPrimaryModifier,
   type KeybindingRuntime,
 } from '../keybindings/dispatcher';
@@ -192,19 +192,28 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     { columnId: 'core.name', direction: 'ascending' },
   ];
 
+  /**
+   * Applies theme, font size, row height and date/size format live (task 0083):
+   * shared by the initial settings load, the settings editor's live preview,
+   * a successful save, and reverting on cancel.
+   */
+  function applyAppearance(settings: Settings): void {
+    theme = settings.theme;
+    loadedEntryFormatSettings = {
+      dateFormat: settings.dateFormat,
+      sizeFormat: settings.sizeFormat,
+      locale: navigator.language,
+    };
+    document.documentElement.style.setProperty('--fm-font-size', `${settings.fontSize}px`);
+    document.documentElement.style.setProperty('--fm-row-height', `${settings.rowHeight}px`);
+    ThemeManager.setTheme(theme);
+  }
+
   async function loadSettings(client: FileManagerClient): Promise<void> {
     try {
       const settings = await client.getSettings();
       currentSettings = settings;
-      theme = settings.theme;
-      loadedEntryFormatSettings = {
-        dateFormat: settings.dateFormat,
-        sizeFormat: settings.sizeFormat,
-        locale: navigator.language,
-      };
-      document.documentElement.style.setProperty('--fm-font-size', `${settings.fontSize}px`);
-      document.documentElement.style.setProperty('--fm-row-height', `${settings.rowHeight}px`);
-      ThemeManager.setTheme(theme);
+      applyAppearance(settings);
       m.redraw();
     } catch {
       // A transport failure leaves the application usable with defaults.
@@ -1049,16 +1058,6 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     if (tabId !== undefined) activateTab(client, paneId, tabId);
   }
 
-  function setTheme(client: FileManagerClient, next: Theme): void {
-    theme = next;
-    ThemeManager.setTheme(next);
-    if (currentSettings !== undefined) {
-      const updated = { ...currentSettings, theme: next };
-      currentSettings = updated;
-      void client.updateSettings(updated);
-    }
-  }
-
   function paneContent(
     client: FileManagerClient,
     entryFormatSettings: EntryFormatSettings,
@@ -1140,11 +1139,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
               ),
       onSelectionAction: (action: SelectionAction) => {
         if (key === undefined) return;
-        const orderedEntryIds =
-          action.type === 'selectAll' || action.type === 'invert'
-            ? directory.entries.map((entry) => entry.id)
-            : entryIds;
-        const next = reduceSelection(selection, action, orderedEntryIds);
+        const next = reduceSelection(selection, action, entryIds);
         selections.set(key, next);
         const cursorEntry = entries.find((entry) => entry.id === next.cursorEntryId);
         void metadataLoader(client, key).select(
@@ -1386,7 +1381,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
             m('summary.fm-settings-button', 'Settings'),
             m('.fm-settings-editor', { role: 'dialog', 'aria-label': 'Settings' }, [
               m('.fm-settings-editor-heading', [
-                m('strong', 'Appearance'),
+                m('strong', 'Settings'),
                 m(
                   'button',
                   {
@@ -1400,19 +1395,31 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
                   '×',
                 ),
               ]),
-              m(ThemeSwitcher, {
-                theme,
-                showLabels: true,
-                onThemeChange: (next: Theme) => setTheme(attrs.client, next),
-              }),
-              m('.fm-settings-editor-heading', [m('strong', 'Plugins')]),
-              m(PluginManagement, {
-                plugins,
-                onToggle: (pluginId: PluginId, enabled: boolean) =>
-                  attrs.client.setPluginEnabled(pluginId, enabled),
-                onRequestLogs: (pluginId: PluginId): Promise<readonly PluginLogEntry[]> =>
-                  attrs.client.getPluginLogs(pluginId),
-              }),
+              currentSettings === undefined
+                ? m('p', 'Loading settings…')
+                : m(SettingsEditor, {
+                    settings: currentSettings,
+                    actions: registeredActions,
+                    platform,
+                    runtime: keybindingRuntime,
+                    plugins,
+                    onPreview: (draft: Settings) => {
+                      applyAppearance(draft);
+                      m.redraw();
+                    },
+                    onSave: async (draft: Settings) => {
+                      await attrs.client.updateSettings(draft);
+                      currentSettings = draft;
+                      applyAppearance(draft);
+                    },
+                    onCancel: () => {
+                      if (currentSettings !== undefined) applyAppearance(currentSettings);
+                    },
+                    onTogglePlugin: (pluginId: PluginId, enabled: boolean) =>
+                      attrs.client.setPluginEnabled(pluginId, enabled),
+                    onRequestPluginLogs: (pluginId: PluginId): Promise<readonly PluginLogEntry[]> =>
+                      attrs.client.getPluginLogs(pluginId),
+                  }),
             ]),
           ]),
         ]),
@@ -1562,23 +1569,21 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
         }),
         m(
           '.fm-function-key-bar',
-          getLiveBindings(registeredActions, currentSettings?.keybindings ?? {}, {
-            scope: 'table',
-            platform,
-            runtime: attrs.runtime === 'http' ? 'browser' : 'desktop',
-          })
-            .filter((binding) => /^F(?:2|5|6|7|8)$/u.test(binding.shortcut))
-            .flatMap((binding) => {
-              const action = registeredActions.find(
-                (candidate) => candidate.id === binding.actionId,
-              );
-              if (
-                action === undefined ||
-                !evaluateActionAvailability(action, commandAvailabilityContext()).available
-              )
-                return [];
-              return [m('span', `${binding.shortcut} ${action.title}`)];
-            }),
+          footerFunctionKeyBindings(
+            registeredActions,
+            currentSettings?.keybindings ?? {},
+            { scope: 'table', platform, runtime: attrs.runtime === 'http' ? 'browser' : 'desktop' },
+            (action) => evaluateActionAvailability(action, commandAvailabilityContext()).available,
+          ).map((binding) =>
+            m(
+              'span.fm-function-key',
+              {
+                key: binding.actionId,
+                'aria-disabled': binding.actionAvailable ? undefined : 'true',
+              },
+              `${binding.shortcut} ${binding.title}`,
+            ),
+          ),
         ),
       ]);
     },

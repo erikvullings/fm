@@ -11,6 +11,10 @@ Depends on: 0038, 0051
 `file-manager-coding-agent-spec.md` §16 milestone 3 (multi-rename with preview) and §37.
 
 ## Acceptance Criteria
+- Entry point: pressing F2 (`core.rename`) with more than one entry selected opens this dialog
+  instead of the single-entry inline rename input (see `beginRename` in
+  `frontend/src/features/panes/pane.ts`, which currently only implements the single-selection
+  inline-input path); F2 with exactly one entry selected keeps using the existing inline rename.
 - A multi-rename dialog operating on the current selection with rules for: search and replace,
   prefix, suffix, sequence number (configurable start/step/padding) and case transformation.
 - A live preview table shows old name → new name for every selected entry before anything is

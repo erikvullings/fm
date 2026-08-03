@@ -103,6 +103,48 @@ export function getLiveBindings(
   });
 }
 
+const FOOTER_SHORTCUT_PATTERN = /^F(?:2|3|4|5|6|7|8)$/u;
+
+/** One entry in the footer function-key hint bar. */
+export interface FunctionKeyBinding {
+  readonly actionId: ActionId;
+  readonly shortcut: string;
+  readonly title: string;
+  readonly actionAvailable: boolean;
+}
+
+/**
+ * Lists the footer's fixed set of function-key hints (F2-F8), always
+ * present so the bar's layout stays stable, sorted in ascending F-key
+ * order; `actionAvailable` says whether the bound action can run right
+ * now (see `evaluateActionAvailability`).
+ */
+export function footerFunctionKeyBindings(
+  actions: readonly ActionDescriptor[],
+  overrides: Readonly<Record<string, string>>,
+  context: KeybindingContext,
+  isActionAvailable: (action: ActionDescriptor) => boolean,
+): readonly FunctionKeyBinding[] {
+  return getLiveBindings(actions, overrides, context)
+    .filter((binding) => FOOTER_SHORTCUT_PATTERN.test(binding.shortcut))
+    .flatMap((binding) => {
+      const action = actions.find((candidate) => candidate.id === binding.actionId);
+      return action === undefined
+        ? []
+        : [
+            {
+              actionId: action.id,
+              shortcut: binding.shortcut,
+              title: action.title,
+              actionAvailable: isActionAvailable(action),
+            },
+          ];
+    })
+    .sort(
+      (a, b) => Number.parseInt(a.shortcut.slice(1), 10) - Number.parseInt(b.shortcut.slice(1), 10),
+    );
+}
+
 /** Reports effective-shortcut collisions for the settings editor. */
 export function detectBindingConflicts(
   actions: readonly ActionDescriptor[],

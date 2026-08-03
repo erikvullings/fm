@@ -1,4 +1,5 @@
 import m, { type FactoryComponent, type VnodeDOM } from 'mithril';
+import { fileIcon, folderIcon, symlinkIcon } from '../../components/icons';
 import type { EntryId, EntrySummary, LoadingState, SortDescriptor } from '../../models';
 import {
   DEFAULT_ENTRY_FORMAT_SETTINGS,
@@ -29,6 +30,12 @@ export function entryArraySource(entries: readonly EntrySummary[]): DirectoryEnt
   };
 }
 
+/** Mouse modifiers held during a row click, for shift/ctrl range and toggle selection. */
+export interface CursorClickModifiers {
+  readonly shiftKey: boolean;
+  readonly ctrlKey: boolean;
+}
+
 /** Rendering inputs. Cursor and selection behavior are owned by tasks 0028/0029. */
 export interface DirectoryTableAttrs {
   readonly state: LoadingState;
@@ -46,7 +53,7 @@ export interface DirectoryTableAttrs {
   readonly formatSettings?: EntryFormatSettings;
   /** Enabled declarative plugin columns, already validated by the host. */
   readonly pluginColumns?: readonly DirectoryColumnDescriptor[];
-  readonly onCursorChange?: (index: number) => void;
+  readonly onCursorChange?: (index: number, modifiers?: CursorClickModifiers) => void;
   readonly onActivate?: (index: number) => void;
   readonly onRetry?: () => void;
   readonly onEndReached?: () => void;
@@ -74,6 +81,17 @@ function typeLabel(entry: EntrySummary): string {
     return 'Link';
   }
   return entry.extension ?? entry.mimeType ?? 'File';
+}
+
+/** Generic per-kind glyph shown ahead of the entry name, pending native icon integration. */
+function entryTypeIcon(entry: EntrySummary): m.Children {
+  if (entry.kind === 'directory') {
+    return folderIcon({ className: 'fm-entry-icon' });
+  }
+  if (entry.kind === 'symlink') {
+    return symlinkIcon({ className: 'fm-entry-icon' });
+  }
+  return fileIcon({ className: 'fm-entry-icon' });
 }
 
 function rowId(entryId: EntryId): string {
@@ -112,6 +130,7 @@ const INITIAL_COLUMNS: readonly DirectoryColumnDescriptor[] = [
           ? -1
           : entry.name.toLocaleLowerCase().indexOf(nameMatchPrefix.toLocaleLowerCase());
       return [
+        entryTypeIcon(entry),
         m('span.fm-entry-name', [
           matchIndex < 0 || nameMatchPrefix === undefined
             ? entry.name
@@ -368,7 +387,11 @@ export const DirectoryTable: FactoryComponent<DirectoryTableAttrs> = () => {
                 'aria-rowindex': index + 2,
                 'aria-selected': selected ? 'true' : 'false',
                 'data-row-stripe': index % 2 === 1 ? 'alternate' : undefined,
-                onclick: () => attrs.onCursorChange?.(index),
+                onclick: (event: MouseEvent) =>
+                  attrs.onCursorChange?.(index, {
+                    shiftKey: event.shiftKey,
+                    ctrlKey: event.ctrlKey || event.metaKey,
+                  }),
                 oncontextmenu: (event: MouseEvent) => {
                   event.preventDefault();
                   attrs.onContextMenu?.(index, event.clientX, event.clientY);
@@ -391,7 +414,7 @@ export const DirectoryTable: FactoryComponent<DirectoryTableAttrs> = () => {
                   { key: column.id, role: 'gridcell' },
                   column.id === 'core.name' && attrs.renamingEntryId === entry.id
                     ? [
-                        m('input.fm-inline-rename-input', {
+                        m('input[type=text].fm-inline-rename-input', {
                           value: attrs.renameValue ?? entry.name,
                           'aria-label': `Rename ${entry.name}`,
                           'aria-invalid': attrs.renameError === undefined ? undefined : 'true',

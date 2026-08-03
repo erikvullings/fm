@@ -135,6 +135,12 @@ the workspace-service tasks; see Step 2b above).
 - 0066 Accessibility review (§29)
 - 0073 Diagnostics view and structured logging (§30)
 - 0074 README, development commands and roadmap (§38)
+- 0085 Directory entry icons (themeable, with optional native-icon overlay)
+- 0086 F4 edit-in-external-editor action
+- 0087 F3 view action
+- 0088 Lister-style instant large-file viewer with lazy search
+- 0089 Content search across files
+- 0090 Total Commander-style selection toggles (invert, select/deselect by mask)
 
 ## Milestone 3 / version 1 features (§16.3, §37)
 

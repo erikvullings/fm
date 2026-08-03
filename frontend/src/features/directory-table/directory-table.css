@@ -93,7 +93,7 @@
   top: 0;
   right: 0;
   left: 0;
-  height: 22px;
+  height: var(--fm-row-height);
   cursor: default;
 }
 
@@ -119,6 +119,33 @@
   padding: 0 0.5rem;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.fm-directory-name {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.fm-entry-icon {
+  flex: 0 0 auto;
+  color: var(--fm-text-muted);
+}
+
+.fm-directory-cell > input[type="text"]:not(.browser-default).fm-inline-rename-input {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  color: var(--fm-text);
+  font-family: var(--fm-font-family);
+  font-size: inherit;
+  font-weight: normal;
+  line-height: inherit;
+  margin: 0;
+  border-bottom: 0;
+  box-shadow: none;
+  height: var(--fm-row-height);
 }
 
 .fm-directory-size {

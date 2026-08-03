@@ -15,6 +15,7 @@ export type SelectionAction =
   | { readonly type: 'selectOnly'; readonly entryId: EntryId }
   | { readonly type: 'toggle'; readonly entryId: EntryId }
   | { readonly type: 'extendRange'; readonly offset: number }
+  | { readonly type: 'extendRangeTo'; readonly entryId: EntryId }
   | { readonly type: 'selectAll' }
   | { readonly type: 'invert' }
   | { readonly type: 'clear' }
@@ -96,6 +97,21 @@ export function reduceSelection(
           ? {}
           : { cursorEntryId: orderedEntryIds[nextIndex] }),
         ...(anchorEntryId === undefined ? {} : { anchorEntryId }),
+      };
+    }
+    case 'extendRangeTo': {
+      const targetIndex = orderedEntryIds.indexOf(action.entryId);
+      if (targetIndex < 0) {
+        return state;
+      }
+      const anchorEntryId = state.anchorEntryId ?? state.cursorEntryId ?? action.entryId;
+      const anchorIndex = orderedEntryIds.indexOf(anchorEntryId);
+      const rangeStart = Math.min(anchorIndex < 0 ? targetIndex : anchorIndex, targetIndex);
+      const rangeEnd = Math.max(anchorIndex < 0 ? targetIndex : anchorIndex, targetIndex);
+      return {
+        selectedEntryIds: orderedEntryIds.slice(rangeStart, rangeEnd + 1),
+        cursorEntryId: action.entryId,
+        anchorEntryId,
       };
     }
     case 'selectAll':

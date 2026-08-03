@@ -154,7 +154,7 @@ describe('DirectoryTable rows', () => {
 
     root.querySelectorAll<HTMLElement>('.fm-directory-row')[1]?.click();
 
-    expect(onCursorChange).toHaveBeenCalledWith(1);
+    expect(onCursorChange).toHaveBeenCalledWith(1, { shiftKey: false, ctrlKey: false });
   });
 
   it('does not scroll when a clicked row is already visible', () => {

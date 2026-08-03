@@ -403,6 +403,11 @@ input[type="text"].fm-command-palette-input {
   font-variant-numeric: tabular-nums;
 }
 
+.fm-function-key[aria-disabled="true"] {
+  color: var(--fm-text-muted);
+  opacity: 0.5;
+}
+
 .fm-pane[data-active="true"] .fm-selected-row {
   background: var(--fm-selection);
   box-shadow: inset 3px 0 var(--fm-accent);

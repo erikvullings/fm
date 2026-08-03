@@ -130,7 +130,7 @@ impl Default for Settings {
             schema_version: CURRENT_SCHEMA_VERSION,
             theme: Theme::Auto,
             font_size: 13,
-            row_height: 24,
+            row_height: 22,
             date_format: DateFormat::Medium,
             size_format: SizeFormat::Binary,
             show_hidden_files: false,

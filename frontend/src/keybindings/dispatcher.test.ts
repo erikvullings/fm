@@ -4,6 +4,7 @@ import type { ActionDescriptor } from '../models';
 import {
   detectBindingConflicts,
   dispatchKeybinding,
+  footerFunctionKeyBindings,
   getLiveBindings,
   type KeybindingContext,
 } from './dispatcher';
@@ -30,6 +31,14 @@ const actions: readonly ActionDescriptor[] = [
     title: 'New tab',
     category: 'navigation',
     defaultShortcuts: [{ key: 't', ctrl: true }],
+    contextRequirements: {},
+    source: { kind: 'core' },
+  },
+  {
+    id: 'core.rename',
+    title: 'Rename',
+    category: 'fileOperations',
+    defaultShortcuts: [{ key: 'F2' }],
     contextRequirements: {},
     source: { kind: 'core' },
   },
@@ -115,5 +124,19 @@ describe('keybinding dispatcher', () => {
       getLiveBindings(actions, {}, table).find((binding) => binding.actionId === 'core.newTab')
         ?.available,
     ).toBe(true);
+  });
+
+  it('always lists footer function keys in ascending F-key order, marking unavailable actions instead of hiding them', () => {
+    const bindings = footerFunctionKeyBindings(
+      actions,
+      {},
+      table,
+      (action) => action.id === 'core.copy',
+    );
+
+    expect(bindings).toEqual([
+      { actionId: 'core.rename', shortcut: 'F2', title: 'Rename', actionAvailable: false },
+      { actionId: 'core.copy', shortcut: 'F5', title: 'Copy', actionAvailable: true },
+    ]);
   });
 });
