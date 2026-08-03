@@ -437,6 +437,27 @@ export const DirectoryTable: FactoryComponent<DirectoryTableAttrs> = () => {
             ),
           );
         }
+        // Extend the row stripe pattern into unused viewport space below short directory listings.
+        const contentHeight = source.length * rowHeight;
+        const fillerCount = Math.max(0, Math.ceil((viewportHeight - contentHeight) / rowHeight));
+        for (let i = 0; i < fillerCount; i += 1) {
+          const index = source.length + i;
+          rows.push(
+            m('.fm-directory-row-filler', {
+              key: `filler-${i}`,
+              'aria-hidden': 'true',
+              'data-row-stripe': index % 2 === 1 ? 'alternate' : undefined,
+              oncontextmenu: (event: MouseEvent) => {
+                event.preventDefault();
+                attrs.onContextMenu?.(undefined, event.clientX, event.clientY);
+              },
+              style: {
+                transform: `translateY(${contentHeight + i * rowHeight}px)`,
+                gridTemplateColumns: gridTemplate(columns.length),
+              },
+            }),
+          );
+        }
       }
 
       return m(
@@ -479,7 +500,10 @@ export const DirectoryTable: FactoryComponent<DirectoryTableAttrs> = () => {
           state ??
             m(
               '.fm-directory-body',
-              { role: 'rowgroup', style: { height: `${window?.totalHeight ?? 0}px` } },
+              {
+                role: 'rowgroup',
+                style: { height: `${Math.max(window?.totalHeight ?? 0, viewportHeight)}px` },
+              },
               rows,
             ),
           m(

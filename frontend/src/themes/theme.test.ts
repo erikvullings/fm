@@ -135,6 +135,6 @@ describe('theme stylesheet', () => {
   });
 
   it('keeps the arrow cursor over directory rows', () => {
-    expect(directoryTableCss).toMatch(/\.fm-directory-row\s*\{[^}]*cursor:\s*default/s);
+    expect(directoryTableCss).toMatch(/\.fm-directory-row\s*[,{][^}]*cursor:\s*default/s);
   });
 });
