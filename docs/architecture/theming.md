@@ -44,3 +44,34 @@ active selection, and inactive selection.
 
 When `prefers-reduced-motion: reduce` is active, the theme stylesheet reduces transitions and
 animations to effectively zero duration and disables smooth scrolling.
+
+## Directory entry icons
+
+Per-entry glyphs in the directory table (`frontend/src/features/directory-table/entry-icons.ts`)
+are resolved from `entryIconRegistry`, a mutable registry exported from that module rather than
+hard-coded in `directory-table.ts`. It holds three maps:
+
+- `kindIcons`: keyed by `EntryKind` (`directory`/`symlink`/`file`), used before any extension/MIME
+  match and as the final fallback.
+- `extensionIcons`: keyed by lowercased file extension without the leading dot (`png`, `zip`, `pdf`,
+  ...), consulted first for `file` entries.
+- `mimePrefixIcons`: keyed by a MIME type prefix (`image/`, `audio/`, ...), consulted when an
+  entry's extension has no registered icon.
+
+A theme or plugin package overrides or extends the built-in set by mutating these maps directly at
+startup, for example:
+
+```ts
+import { entryIconRegistry } from '../features/directory-table/entry-icons';
+import { psdIcon } from './my-theme-icons';
+
+entryIconRegistry.extensionIcons.set('psd', psdIcon);
+```
+
+`createDefaultEntryIconRegistry()` returns a fresh, independent registry (used by tests) built from
+the same defaults as the shared `entryIconRegistry` singleton. Every icon renderer has the shape
+`(attrs?: IconAttrs) => m.Children`, matching the plain SVG helpers in
+`frontend/src/components/icons.ts` (`.fm-icon` class, `currentColor` fill, consistent `viewBox`).
+This is a themeable rendering layer only; native OS icons served from the backend
+(`runtimeCapabilities.nativeFileIcons`) are a separate, not-yet-implemented overlay tracked by a
+follow-up task.

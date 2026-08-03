@@ -84,6 +84,24 @@ describe('DirectoryTable states', () => {
 });
 
 describe('DirectoryTable rows', () => {
+  it('renders the themed icon matching each entry kind and extension', () => {
+    mount({
+      state: { type: 'loaded' },
+      source: entryArraySource([
+        entry({ id: 'dir', name: 'Photos', kind: 'directory' }),
+        entry({ id: 'link', name: 'shortcut', kind: 'symlink' }),
+        entry({ id: 'image', name: 'photo.png', extension: 'png' }),
+        entry({ id: 'plain', name: 'notes.txt', extension: 'txt' }),
+      ]),
+    });
+
+    const rows = root.querySelectorAll('.fm-directory-row');
+    expect(rows[0]?.querySelector('svg')?.getAttribute('class')).toContain('fm-icon-folder');
+    expect(rows[1]?.querySelector('svg')?.getAttribute('class')).toContain('fm-icon-symlink');
+    expect(rows[2]?.querySelector('svg')?.getAttribute('class')).toContain('fm-icon-image');
+    expect(rows[3]?.querySelector('svg')?.getAttribute('class')).toContain('fm-icon-file');
+  });
+
   it('renders a declarative file-age column alongside core columns', () => {
     mount({
       state: { type: 'loaded' },

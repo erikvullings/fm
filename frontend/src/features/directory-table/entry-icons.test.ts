@@ -1,0 +1,61 @@
+import { describe, expect, it } from 'vitest';
+import { archiveIcon, fileIcon, folderIcon, imageIcon, symlinkIcon } from '../../components/icons';
+import type { EntrySummary } from '../../models';
+import { createDefaultEntryIconRegistry, entryIcon, resolveEntryIcon } from './entry-icons';
+
+function entry(overrides: Partial<EntrySummary> = {}): EntrySummary {
+  return {
+    id: 'entry-1',
+    location: { providerId: 'file', uri: 'mock:///report.txt' },
+    name: 'report.txt',
+    kind: 'file',
+    hidden: false,
+    readOnly: false,
+    metadataRevision: 1,
+    ...overrides,
+  };
+}
+
+describe('resolveEntryIcon', () => {
+  const registry = createDefaultEntryIconRegistry();
+
+  it('resolves directories to the folder icon regardless of extension', () => {
+    expect(resolveEntryIcon(entry({ kind: 'directory', extension: 'zip' }), registry)).toBe(
+      folderIcon,
+    );
+  });
+
+  it('resolves symlinks to the symlink icon', () => {
+    expect(resolveEntryIcon(entry({ kind: 'symlink' }), registry)).toBe(symlinkIcon);
+  });
+
+  it('resolves a known extension to its themed icon', () => {
+    expect(resolveEntryIcon(entry({ extension: 'png' }), registry)).toBe(imageIcon);
+    expect(resolveEntryIcon(entry({ extension: 'ZIP' }), registry)).toBe(archiveIcon);
+  });
+
+  it('falls back to a MIME type prefix when the extension has no registered icon', () => {
+    expect(
+      resolveEntryIcon(entry({ extension: 'bin', mimeType: 'image/x-custom' }), registry),
+    ).toBe(imageIcon);
+  });
+
+  it('falls back to the generic file icon for unknown extensions and MIME types', () => {
+    expect(resolveEntryIcon(entry({ extension: 'xyz' }), registry)).toBe(fileIcon);
+    expect(resolveEntryIcon(entry(), registry)).toBe(fileIcon);
+  });
+
+  it('lets a theme override an extension without editing directory-table.ts', () => {
+    const customIcon = () => 'custom-icon';
+    registry.extensionIcons.set('pdf', customIcon);
+
+    expect(resolveEntryIcon(entry({ extension: 'pdf' }), registry)).toBe(customIcon);
+  });
+});
+
+describe('entryIcon', () => {
+  it('renders using the shared default registry', () => {
+    const rendered = entryIcon(entry({ kind: 'directory' }), { className: 'fm-entry-icon' });
+    expect(rendered).toEqual(folderIcon({ className: 'fm-entry-icon' }));
+  });
+});

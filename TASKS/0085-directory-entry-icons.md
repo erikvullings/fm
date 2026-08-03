@@ -76,3 +76,40 @@ theme-icon fallback unless `fm-server` also serves native icons.
   icon primitive.
 
 ## Agent Notes
+- 2026-08-03 Claude Sonnet 5 (Copilot): Shipped the frontend theme-icon baseline only; split the
+  backend-served native-icon overlay into a new follow-up task, 0091, per this task's own
+  explicit split-scope allowance ("Consider splitting this into two tasks..."). Status stays
+  `open` — see 0091 for the remaining acceptance criteria this task's own text describes
+  (`nativeFileIcons`-gated backend route/command, lazy fetch/cache, overlay-with-fallback).
+  - **Built**: `frontend/src/features/directory-table/entry-icons.ts` — a themeable icon
+    resolution registry (`entryIconRegistry`, mutable `kindIcons`/`extensionIcons`/
+    `mimePrefixIcons` maps + `createDefaultEntryIconRegistry()` for isolated test copies),
+    resolving `EntryKind`/extension/MIME type to an icon renderer. Five new extension-badge SVG
+    glyphs added to `frontend/src/components/icons.ts` (`imageIcon`, `archiveIcon`, `audioIcon`,
+    `videoIcon`, `pdfIcon`), reusing the existing `icon()` helper and file-body path, covering
+    image/archive/audio/video/pdf per the Acceptance Criteria's v1 scope.
+  - `frontend/src/features/directory-table/directory-table.ts` now imports `entryIcon` from the
+    new module instead of the removed inline `entryTypeIcon`; the `core.name` column renders it
+    unchanged otherwise.
+  - Documented the new `entryIconRegistry` extension point in
+    `docs/architecture/theming.md` under a new "Directory entry icons" section (satisfies the
+    hard theme-replaceability requirement: a theme package mutates the exported registry's maps,
+    no edit to `directory-table.ts` needed).
+  - **Tested**: `frontend/src/features/directory-table/entry-icons.test.ts` (7 new tests:
+    kind resolution for directory/symlink, extension resolution incl. case-insensitivity, MIME
+    prefix fallback, unknown-extension fallback to the generic file icon, and a registry-override
+    test proving theme replaceability) + 1 new test in `directory-table.test.ts` asserting the
+    correct `.fm-icon-*` class renders per kind/extension in an actual mounted row. Verified via
+    `pnpm exec vitest run src/features/directory-table/entry-icons.test.ts
+    src/features/directory-table/directory-table.test.ts` (30/30 passing in those two files) and
+    then the full suite: 406/406 passing (up from a 398-test baseline, +8: the 7 new
+    `entry-icons.test.ts` tests + 1 new `directory-table.test.ts` test). `pnpm exec tsc --noEmit`
+    clean, `pnpm run lint:frontend` (biome) clean. No Rust code touched, so `cargo` checks were
+    not re-run for this commit.
+  - **Deferred to 0091** (not done, no code written for these): the HTTP route + Tauri command
+    calling `PlatformAdapter::file_icon`, OpenAPI/Orval regeneration, the `getFileIcon` client
+    method on all three adapters, and the lazy-fetch/cache/overlay wiring gated on
+    `runtimeCapabilities.nativeFileIcons`. 0091 also flags a real pre-existing risk found while
+    scoping this: `frontend/src/api/fetch-mutator.ts`'s `readBody()` decodes every non-JSON
+    response via `.text()`, which would corrupt binary PNG bytes — needs a real fix as part of
+    0091, not a per-call workaround.

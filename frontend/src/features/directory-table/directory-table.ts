@@ -1,5 +1,4 @@
 import m, { type FactoryComponent, type VnodeDOM } from 'mithril';
-import { fileIcon, folderIcon, symlinkIcon } from '../../components/icons';
 import type { EntryId, EntrySummary, LoadingState, SortDescriptor } from '../../models';
 import {
   DEFAULT_ENTRY_FORMAT_SETTINGS,
@@ -9,6 +8,7 @@ import {
 } from '../entry-formatting/entry-formatting';
 import { isParentEntry } from '../panes/parent-entry';
 import { fileAgeColumn } from '../plugin-columns/file-age-column';
+import { entryIcon } from './entry-icons';
 import { calculateVisibleWindow, scrollOffsetForIndex } from './windowing';
 import './directory-table.css';
 
@@ -83,17 +83,6 @@ function typeLabel(entry: EntrySummary): string {
   return entry.extension ?? entry.mimeType ?? 'File';
 }
 
-/** Generic per-kind glyph shown ahead of the entry name, pending native icon integration. */
-function entryTypeIcon(entry: EntrySummary): m.Children {
-  if (entry.kind === 'directory') {
-    return folderIcon({ className: 'fm-entry-icon' });
-  }
-  if (entry.kind === 'symlink') {
-    return symlinkIcon({ className: 'fm-entry-icon' });
-  }
-  return fileIcon({ className: 'fm-entry-icon' });
-}
-
 function rowId(entryId: EntryId): string {
   let hash = 2_166_136_261;
   for (const character of entryId) {
@@ -130,7 +119,7 @@ const INITIAL_COLUMNS: readonly DirectoryColumnDescriptor[] = [
           ? -1
           : entry.name.toLocaleLowerCase().indexOf(nameMatchPrefix.toLocaleLowerCase());
       return [
-        entryTypeIcon(entry),
+        entryIcon(entry, { className: 'fm-entry-icon' }),
         m('span.fm-entry-name', [
           matchIndex < 0 || nameMatchPrefix === undefined
             ? entry.name
