@@ -98,6 +98,23 @@ body {
   font-size: var(--fm-font-size);
 }
 
+/*
+ * The file manager UI is not a document -- only text the user actively types
+ * (inputs/textareas) should be selectable. Everything else (chrome, labels,
+ * directory rows) must reject click-and-drag text selection. -webkit- prefix
+ * is required for Tauri's WKWebView, which ignores the unprefixed property.
+ */
+* {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+input,
+textarea {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
 .fm-app-shell {
   display: grid;
   grid-template-rows: auto auto minmax(0, 1fr) auto auto;

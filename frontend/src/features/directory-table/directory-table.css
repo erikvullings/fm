@@ -17,8 +17,6 @@
   min-height: 0;
   overflow: auto;
   outline: none;
-  -webkit-user-select: none;
-  user-select: none;
 }
 
 .fm-directory-viewport:focus-visible {
@@ -155,8 +153,6 @@
   font-size: inherit;
   font-weight: normal;
   line-height: inherit;
-  -webkit-user-select: text;
-  user-select: text;
   margin: 0;
   border-bottom: 0;
   box-shadow: none;
