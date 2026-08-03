@@ -335,6 +335,9 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "opens a real Finder window on the developer's desktop every run; \
+                run explicitly with `cargo test -- --ignored` when verifying \
+                reveal_in_file_manager changes"]
     fn reveal_in_finder_succeeds_for_a_real_temporary_file() {
         let dir = tempdir().expect("temp dir");
         let file = dir.path().join("reveal-me.txt");

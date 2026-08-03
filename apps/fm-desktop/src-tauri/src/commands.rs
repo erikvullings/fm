@@ -339,8 +339,12 @@ pub(crate) fn get_plugin_logs(
 
 /// Starts a cancellable recursive filename search through the same service
 /// method as REST (task 0068).
+///
+/// Must be `async`: `SearchEngine::start` calls `tokio::task::spawn_blocking`
+/// internally, which panics without a live Tokio reactor outside an
+/// `async fn` command.
 #[tauri::command]
-pub(crate) fn start_search(
+pub(crate) async fn start_search(
     state: State<'_, AppState>,
     request: StartSearchRequestDto,
 ) -> Result<StartSearchResponseDto, ApplicationErrorDto> {
