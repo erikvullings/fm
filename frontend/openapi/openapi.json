@@ -831,14 +831,6 @@
         ],
         "type": "string"
       },
-      "IconThemeDto": {
-        "description": "Directory-entry icon set.",
-        "enum": [
-          "generic",
-          "catppuccin"
-        ],
-        "type": "string"
-      },
       "ImageDimensionsDto": {
         "description": "Pixel dimensions of an image entry.",
         "properties": {
@@ -1607,6 +1599,17 @@
             "description": "Whether the valid plugin is enabled in persisted settings.",
             "type": "boolean"
           },
+          "iconTheme": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PluginIconThemeDto",
+                "description": "The distributable icon theme this plugin contributes, when enabled and valid (task 0095)."
+              }
+            ]
+          },
           "id": {
             "description": "Stable manifest identifier, or a directory-derived identifier when invalid.",
             "type": "string"
@@ -1632,6 +1635,81 @@
           "enabled",
           "columns",
           "permissions"
+        ],
+        "type": "object"
+      },
+      "PluginIconDefinitionDto": {
+        "description": "One icon asset a theme can reference, resolved by `GET\n/api/v1/plugins/{pluginId}/icon-theme/asset?path=...` (or the matching Tauri command).",
+        "properties": {
+          "iconPath": {
+            "description": "SVG asset path, relative to the plugin directory; pass verbatim to the asset route.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "iconPath"
+        ],
+        "type": "object"
+      },
+      "PluginIconThemeDto": {
+        "description": "A distributable directory-entry icon theme contributed by a plugin (task 0095), read from\nthat plugin's `icon-theme.json`. Mirrors `fm_plugin_api::IconThemeManifest`.",
+        "properties": {
+          "file": {
+            "description": "Default icon definition key for `file` entries.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "fileExtensions": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Lowercased, dot-less file extension to icon definition key.",
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "folder": {
+            "description": "Default icon definition key for `directory` entries.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "iconDefinitions": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/PluginIconDefinitionDto"
+            },
+            "description": "Every icon asset this theme can reference, keyed by a theme-local name.",
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "mimePrefixes": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "MIME type prefix (e.g. `\"image/\"`) to icon definition key.",
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "symlink": {
+            "description": "Default icon definition key for `symlink` entries.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "iconDefinitions",
+          "fileExtensions",
+          "mimePrefixes"
         ],
         "type": "object"
       },
@@ -1911,8 +1989,8 @@
             "type": "integer"
           },
           "iconTheme": {
-            "$ref": "#/components/schemas/IconThemeDto",
-            "description": "Directory-entry icon set."
+            "description": "Directory-entry icon set: `\"generic\"` for the built-in glyphs, or a discovered plugin's id.",
+            "type": "string"
           },
           "keybindings": {
             "additionalProperties": {
@@ -3451,6 +3529,52 @@
             "description": ""
           }
         }
+      }
+    },
+    "/api/v1/plugins/{pluginId}/icon-theme/asset": {
+      "get": {
+        "operationId": "getPluginIconThemeAsset",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "pluginId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationErrorDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "Serves one SVG asset from an enabled plugin's icon theme (task 0095). Rejects any path that\nis not one of the theme's declared icon definitions; see\n`fm_application::Service::plugin_icon_theme_asset`."
       }
     },
     "/api/v1/plugins/{pluginId}/logs": {

@@ -76,20 +76,98 @@ This is a themeable rendering layer only; native OS icons served from the backen
 (`runtimeCapabilities.nativeFileIcons`) are a separate, not-yet-implemented overlay tracked by a
 follow-up task.
 
-### Catppuccin icon theme (task 0092)
+### Distributable icon theme plugins (task 0095)
 
-`frontend/src/themes/catppuccin-icons.ts` provides an alternate icon set built on the same
-`EntryIconRegistry` extension point, vendoring a curated subset of the MIT-licensed
-[`catppuccin/vscode-icons`](https://github.com/catppuccin/vscode-icons) SVGs (Mocha flavor) —
-folder/file/symlink glyphs plus common source-code extensions (TypeScript, JavaScript, JSON,
-Markdown, HTML, CSS, YAML, TOML, Rust, Python, XML, CSV, git-related dotfiles, lockfiles, logs,
-fonts) and MIME-prefix fallbacks (image/audio/video/PDF/ZIP). Unlike the default `.fm-icon`
-helpers in `components/icons.ts` (single-path, `currentColor`, `viewBox="0 0 24 24"`), these icons
-are reproduced verbatim from the upstream source: multi-path/multi-group, stroke-based, with fixed
-per-icon Catppuccin Mocha palette colors, at `viewBox="0 0 16 16"`.
+Icon themes are installed at runtime from **plugin packages**, not compiled into the frontend
+bundle. Any plugin directory under `plugins/` (or the user plugin directory) may declare
+`[contributions] icon_theme = true` in its `plugin.toml`; unlike action/column plugins, an
+icon-theme-only plugin needs no `entrypoint` — there is no code to execute, only a manifest and a
+set of SVG assets.
 
-The theme is selected through `Settings.iconTheme` (`'generic' | 'catppuccin'`, persisted through
-the backend `Settings` entity per specification §26 — not `localStorage`) and applied via
-`installCatppuccinIconTheme()` / `restoreDefaultIconTheme()`, called from `app-shell.ts`'s
-`applyAppearance()` alongside the other live-appearance settings. The Settings Editor's
-Appearance section exposes it as a `Select` next to date/size format.
+#### Manifest schema
+
+A theme plugin ships a sibling `icon-theme.json` next to `plugin.toml`, modeled on VS Code's file
+icon theme format but trimmed to what `entryIconRegistry` resolves:
+
+```json
+{
+  "iconDefinitions": {
+    "folder": { "iconPath": "icons/folder.svg" },
+    "file": { "iconPath": "icons/file.svg" },
+    "typescript": { "iconPath": "icons/typescript.svg" }
+  },
+  "folder": "folder",
+  "file": "file",
+  "symlink": "symlink",
+  "fileExtensions": { "ts": "typescript" },
+  "mimePrefixes": { "image/": "image" }
+}
+```
+
+- `iconDefinitions`: maps an arbitrary definition key to an `iconPath` relative to the plugin
+  directory. The path must resolve inside that directory — `..` segments and absolute paths are
+  rejected.
+- `folder`, `file`, `symlink`: definition keys used as the default glyph for each `EntryKind`.
+- `fileExtensions`: lowercased extension (no leading dot) to definition key, feeding
+  `entryIconRegistry.extensionIcons`.
+- `mimePrefixes`: MIME-type prefix to definition key, feeding `entryIconRegistry.mimePrefixIcons`
+  (an fm-specific fallback tier; not part of VS Code's format).
+
+`discover_plugins` parses and validates `icon-theme.json` whenever `icon_theme` is declared, using
+the same "invalid plugin → disabled with a diagnostic, never fail startup" pattern as action/column
+plugins: an empty `iconDefinitions`, an unsafe `iconPath`, or any `file`/`folder`/`symlink`/
+`fileExtensions`/`mimePrefixes` value referencing an undeclared definition key disables the plugin
+with a diagnostic instead of aborting discovery.
+
+#### Serving theme assets
+
+The theme's JSON and each referenced SVG are served read-only, strictly contained to the plugin's
+own directory — an `HTTP GET /api/v1/plugins/{pluginId}/icon-theme/asset?path=...` route
+(`fm-server`) and an equivalent Tauri `get_plugin_icon_theme_asset` command, both backed by
+`Service::plugin_icon_theme_asset`, which rejects any `path` that is not one of the theme's
+declared icon paths (including path-traversal attempts). `PluginDescriptorDto` carries the plugin's
+icon theme (id + definitions) so the frontend can list it without a second discovery mechanism.
+
+#### Security: sanitizing third-party SVGs
+
+Icon markup now comes from a third-party plugin directory rather than a vendored, build-time
+constant, so it cannot be handed to `m.trust()` as-is — that would be an XSS vector. Before install,
+`frontend/src/themes/svg-sanitizer.ts`'s `sanitizeSvgMarkup()` parses each SVG and rebuilds it from
+an allow-list: only `svg`/`path`/`g`/`circle`/`rect`/`polygon` elements and their presentation
+attributes (`fill`, `stroke`, `stroke-width`, `d`, `viewBox`, etc.) survive; `<script>`,
+`<foreignObject>`, and any `on*` event-handler attribute are stripped unconditionally. This runs
+once per icon at theme-install time, not per render.
+
+#### Installing a theme
+
+`frontend/src/themes/plugin-icon-theme.ts`'s `installPluginIconTheme(client, pluginId, iconTheme)`
+is the generic, data-driven replacement for the old hardcoded `installCatppuccinIconTheme()`: it
+fetches each declared icon asset through `FileManagerClient.getPluginIconThemeAsset()`, sanitizes
+it, and installs renderers into `entryIconRegistry` keyed the same way `fileExtensions`/
+`mimePrefixes` describe. `restoreDefaultIconTheme()` (in
+`frontend/src/features/directory-table/entry-icons.ts`) removes the theme-only entries and
+restores the built-in generic set, unchanged from 0085/0092's original restore contract.
+
+`Settings.iconTheme` is an open plugin-id string rather than a closed enum; `'generic'` is the
+reserved built-in default that requires no plugin lookup. The Settings Editor's icon-theme
+`Select` is populated from `plugins.filter(p => p.iconTheme !== undefined)` — any discovered
+icon-theme plugin appears automatically, with no core-repo change required to add a theme.
+
+#### Worked example: the Catppuccin theme package
+
+`plugins/catppuccin-icons/` is a real, distributable plugin package built entirely with this
+mechanism — a worked example for third-party theme authors:
+
+```
+plugins/catppuccin-icons/
+├── plugin.toml       # id = "catppuccin.icons", contributions.icon_theme = true, no entrypoint
+├── icon-theme.json   # iconDefinitions + file/folder/symlink + fileExtensions + mimePrefixes
+└── icons/*.svg       # one SVG per definition key, Catppuccin Mocha palette baked into each
+                       # icon's own stroke/fill attributes (no CSS var indirection)
+```
+
+Each SVG is a standalone `<svg viewBox="0 0 16 16">...</svg>` document vendored verbatim from the
+MIT-licensed [`catppuccin/vscode-icons`](https://github.com/catppuccin/vscode-icons) project (see
+`plugin.toml` for the full attribution). Adding or updating a theme is purely a matter of shipping
+this kind of package — no PR into this repository, no TypeScript, no rebuild.
+

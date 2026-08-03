@@ -81,6 +81,23 @@ export function createDefaultEntryIconRegistry(): EntryIconRegistry {
  */
 export const entryIconRegistry: EntryIconRegistry = createDefaultEntryIconRegistry();
 
+/** Restores `registry` to the built-in generic icon set, undoing any installed theme plugin. */
+export function restoreDefaultIconTheme(registry: EntryIconRegistry = entryIconRegistry): void {
+  const defaults = createDefaultEntryIconRegistry();
+  registry.kindIcons.clear();
+  for (const [kind, renderer] of defaults.kindIcons) {
+    registry.kindIcons.set(kind, renderer);
+  }
+  registry.extensionIcons.clear();
+  for (const [extension, renderer] of defaults.extensionIcons) {
+    registry.extensionIcons.set(extension, renderer);
+  }
+  registry.mimePrefixIcons.clear();
+  for (const [prefix, renderer] of defaults.mimePrefixIcons) {
+    registry.mimePrefixIcons.set(prefix, renderer);
+  }
+}
+
 /** Resolves the icon renderer for `entry` against `registry` (defaults to the shared singleton). */
 export function resolveEntryIcon(
   entry: EntrySummary,

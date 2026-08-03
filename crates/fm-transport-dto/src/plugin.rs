@@ -1,5 +1,7 @@
 //! Plugin discovery DTOs shared by REST and Tauri.
 
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
@@ -33,6 +35,36 @@ pub struct PluginDescriptorDto {
     pub columns: Vec<PluginColumnDto>,
     /// Capabilities the manifest requests; ungranted capabilities are denied (spec §19).
     pub permissions: PluginPermissionsDto,
+    /// The distributable icon theme this plugin contributes, when enabled and valid (task 0095).
+    pub icon_theme: Option<PluginIconThemeDto>,
+}
+
+/// One icon asset a theme can reference, resolved by `GET
+/// /api/v1/plugins/{pluginId}/icon-theme/asset?path=...` (or the matching Tauri command).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginIconDefinitionDto {
+    /// SVG asset path, relative to the plugin directory; pass verbatim to the asset route.
+    pub icon_path: String,
+}
+
+/// A distributable directory-entry icon theme contributed by a plugin (task 0095), read from
+/// that plugin's `icon-theme.json`. Mirrors `fm_plugin_api::IconThemeManifest`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginIconThemeDto {
+    /// Every icon asset this theme can reference, keyed by a theme-local name.
+    pub icon_definitions: BTreeMap<String, PluginIconDefinitionDto>,
+    /// Default icon definition key for `file` entries.
+    pub file: Option<String>,
+    /// Default icon definition key for `directory` entries.
+    pub folder: Option<String>,
+    /// Default icon definition key for `symlink` entries.
+    pub symlink: Option<String>,
+    /// Lowercased, dot-less file extension to icon definition key.
+    pub file_extensions: BTreeMap<String, String>,
+    /// MIME type prefix (e.g. `"image/"`) to icon definition key.
+    pub mime_prefixes: BTreeMap<String, String>,
 }
 
 /// The manifest-declared capability grants for one plugin (spec §19), mirroring

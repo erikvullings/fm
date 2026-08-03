@@ -12,6 +12,7 @@ import type {
   Operation,
   OperationId,
   PluginDescriptor,
+  PluginIconTheme,
   PluginId,
   PluginLogEntry,
   ResolveConflictRequest,
@@ -44,6 +45,7 @@ import {
   listOperations as requestOperations,
   disablePlugin as requestPluginDisable,
   enablePlugin as requestPluginEnable,
+  getPluginIconThemeAsset as requestPluginIconThemeAsset,
   getPluginLogs as requestPluginLogs,
   listPlugins as requestPlugins,
   getRuntimeCapabilities as requestRuntimeCapabilities,
@@ -61,6 +63,7 @@ import {
 import type { ActionDescriptorDto } from '../generated/models/actionDescriptorDto';
 import type { InvokeActionRequestDtoParameters } from '../generated/models/invokeActionRequestDtoParameters';
 import type { OperationDto } from '../generated/models/operationDto';
+import type { PluginIconThemeDto } from '../generated/models/pluginIconThemeDto';
 import type { SettingsDto } from '../generated/models/settingsDto';
 import type { FileManagerClient } from './file-manager-client';
 
@@ -333,6 +336,7 @@ export class HttpFileManagerClient implements FileManagerClient {
       enabled: plugin.enabled,
       ...(plugin.diagnostic == null ? {} : { diagnostic: plugin.diagnostic }),
       ...(plugin.columns === undefined ? {} : { columns: plugin.columns }),
+      ...(plugin.iconTheme == null ? {} : { iconTheme: pluginIconThemeFromDto(plugin.iconTheme) }),
       permissions: {
         selectedEntryMetadata: plugin.permissions.selectedEntryMetadata,
         selectedEntryContentRead: plugin.permissions.selectedEntryContentRead,
@@ -371,6 +375,21 @@ export class HttpFileManagerClient implements FileManagerClient {
     return response.data.map((entry) => ({ message: entry.message }));
   }
 
+  async getPluginIconThemeAsset(
+    pluginId: PluginId,
+    assetPath: string,
+    signal?: AbortSignal,
+  ): Promise<string> {
+    const response = await requestPluginIconThemeAsset(
+      pluginId,
+      { path: assetPath },
+      signal === undefined ? undefined : { signal },
+    );
+    if (response.status !== 200)
+      throw new Error(`Unexpected getPluginIconThemeAsset response status: ${response.status}`);
+    return response.data;
+  }
+
   async subscribe(listener: (event: BackendEvent) => void): Promise<Unsubscribe> {
     const unsubscribe = this.eventStream.listeners.subscribe(listener);
     await this.eventStream.connect();
@@ -384,6 +403,17 @@ export class HttpFileManagerClient implements FileManagerClient {
   disconnect(): void {
     this.eventStream.close();
   }
+}
+
+function pluginIconThemeFromDto(dto: PluginIconThemeDto): PluginIconTheme {
+  return {
+    iconDefinitions: dto.iconDefinitions,
+    ...(dto.file == null ? {} : { file: dto.file }),
+    ...(dto.folder == null ? {} : { folder: dto.folder }),
+    ...(dto.symlink == null ? {} : { symlink: dto.symlink }),
+    fileExtensions: dto.fileExtensions,
+    mimePrefixes: dto.mimePrefixes,
+  };
 }
 
 function operationFromDto(dto: OperationDto): Operation {

@@ -115,6 +115,16 @@ export interface FileManagerClient {
 
   getPluginLogs(pluginId: PluginId, signal?: AbortSignal): Promise<PluginLogEntry[]>;
 
+  /**
+   * Fetches raw SVG markup for one icon-theme asset (task 0095); `assetPath` is a theme's
+   * `PluginIconDefinition.iconPath` value, passed through verbatim.
+   */
+  getPluginIconThemeAsset(
+    pluginId: PluginId,
+    assetPath: string,
+    signal?: AbortSignal,
+  ): Promise<string>;
+
   subscribe(listener: (event: BackendEvent) => void): Promise<Unsubscribe>;
 
   onResynchronise(listener: () => void): Unsubscribe;

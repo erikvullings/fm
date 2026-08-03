@@ -188,12 +188,13 @@ async fn listing_filters_hidden_entries_and_sorts_folders_first_then_by_name() {
 }
 
 #[tokio::test]
-async fn listing_a_large_directory_returns_every_entry_sorted_in_one_response() {
+async fn paging_a_large_directory_returns_every_entry_in_global_sort_order() {
     // Regression test: providers enumerate directories in arbitrary (e.g. filesystem/inode)
-    // order, which does not match name order. A single `list()` call must fully enumerate and
-    // globally sort before returning anything, rather than sorting only a provider-sized page
-    // and forcing the caller to page through the rest to see the remaining, still-unsorted-
-    // relative-to-the-whole-directory entries.
+    // order, which does not match name order. `list()` must fully enumerate and globally sort
+    // the directory once, then bound each page to a slice of that already-sorted list — never
+    // sort a provider-sized page independently, since that cannot produce a correct order across
+    // page boundaries (previously surfaced as later pages containing names that sort earlier
+    // than names already shown on prior pages).
     let root = tempfile::tempdir().expect("must create a temp directory");
     for index in 0..600 {
         std::fs::write(root.path().join(format!("entry-{index:04}")), b"x")
@@ -203,24 +204,29 @@ async fn listing_a_large_directory_returns_every_entry_sorted_in_one_response() 
         Location::from_native_path(root.path()).expect("temp path must be representable");
     let pane_id = PaneId::new();
     let service = service();
+    let mut token = None;
+    let mut names = Vec::new();
 
-    let snapshot = service
-        .list(request(pane_id, &location))
-        .await
-        .expect("full listing must load in one response");
+    loop {
+        let mut request = request(pane_id, &location);
+        request.continuation_token = token;
+        let snapshot = service.list(request).await.expect("page must load");
+        assert_eq!(snapshot.total_known_entries, Some(600));
+        names.extend(snapshot.entries.into_iter().map(|entry| entry.name));
+        if !snapshot.has_more {
+            assert_eq!(snapshot.continuation_token, None);
+            break;
+        }
+        token = snapshot.continuation_token;
+    }
 
-    assert!(!snapshot.has_more);
-    assert_eq!(snapshot.continuation_token, None);
-    assert_eq!(snapshot.total_known_entries, Some(600));
-    let names: Vec<_> = snapshot
-        .entries
-        .iter()
-        .map(|entry| entry.name.clone())
-        .collect();
     assert_eq!(names.len(), 600);
     let mut sorted_names = names.clone();
     sorted_names.sort();
-    assert_eq!(names, sorted_names);
+    assert_eq!(
+        names, sorted_names,
+        "pages must be contiguous slices of one sorted list"
+    );
 }
 
 #[tokio::test]

@@ -337,6 +337,20 @@ pub(crate) fn get_plugin_logs(
         .map_err(|error| error.into_dto(Uuid::new_v4()))
 }
 
+/// Serves one SVG asset from an enabled plugin's icon theme (task 0095), mirroring the HTTP
+/// `GET /api/v1/plugins/{pluginId}/icon-theme/asset` route.
+#[tauri::command]
+pub(crate) fn get_plugin_icon_theme_asset(
+    state: State<'_, AppState>,
+    plugin_id: String,
+    path: String,
+) -> Result<String, ApplicationErrorDto> {
+    state
+        .service
+        .plugin_icon_theme_asset(&plugin_id, &path)
+        .map_err(|error| error.into_dto(Uuid::new_v4()))
+}
+
 /// Starts a cancellable recursive filename search through the same service
 /// method as REST (task 0068).
 ///

@@ -58,16 +58,9 @@ pub enum SizeFormat {
     Bytes,
 }
 
-/// Directory-entry icon set (task 0092).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
-#[serde(rename_all = "camelCase")]
-pub enum IconTheme {
-    /// Built-in hand-drawn generic glyphs.
-    #[default]
-    Generic,
-    /// Vendored Catppuccin (Mocha) per-file-type icon set.
-    Catppuccin,
-}
+/// Reserved `icon_theme` value selecting the built-in generic glyphs, rather than a distributable
+/// icon theme plugin's id (task 0095).
+pub const GENERIC_ICON_THEME: &str = "generic";
 
 /// Default choice for file-operation conflicts.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -133,8 +126,9 @@ pub struct Settings {
     pub terminal_command: Option<String>,
     /// Locations inherited by newly created panes.
     pub default_start_locations: Vec<String>,
-    /// Directory-entry icon set.
-    pub icon_theme: IconTheme,
+    /// Directory-entry icon set: `"generic"` for the built-in glyphs, or a discovered plugin's id
+    /// (task 0095).
+    pub icon_theme: String,
 }
 
 impl Default for Settings {
@@ -161,7 +155,7 @@ impl Default for Settings {
             plugin_settings: BTreeMap::new(),
             terminal_command: None,
             default_start_locations: Vec::new(),
-            icon_theme: IconTheme::Generic,
+            icon_theme: GENERIC_ICON_THEME.to_owned(),
         }
     }
 }
@@ -319,7 +313,7 @@ mod tests {
             plugin_settings: [("archive".into(), serde_json::json!({"level": 3}))].into(),
             terminal_command: Some("alacritty".into()),
             default_start_locations: vec!["file:///tmp".into()],
-            icon_theme: IconTheme::Catppuccin,
+            icon_theme: "catppuccin".into(),
             ..Settings::default()
         };
 

@@ -78,6 +78,12 @@ export interface PaneAttrs {
   readonly hasMore?: boolean;
   /** Total loaded ordinary entries before filtering, for the "N of M shown" status. */
   readonly totalEntryCount: number;
+  /**
+   * The directory's real entry count reported by the backend, known from the first page even
+   * before every page has loaded — sizes the scrollbar/virtualized content height correctly up
+   * front instead of only once all pages have been fetched.
+   */
+  readonly totalKnownEntries?: number;
   /** Selected entries hidden by the active filter (still selected, just not rendered). */
   readonly hiddenSelectedCount: number;
   readonly filterOpen: boolean;
@@ -630,7 +636,7 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
             : undefined,
           m(DirectoryTable, {
             state: attrs.state,
-            source: entryArraySource(attrs.entries),
+            source: entryArraySource(attrs.entries, attrs.totalKnownEntries),
             selectedEntryIds: attrs.selectedEntryIds,
             cutEntryIds: attrs.cutEntryIds,
             active: attrs.active,

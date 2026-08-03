@@ -125,7 +125,7 @@ import {
   connectionPatch,
   createInitialAppState,
 } from '../state';
-import { installCatppuccinIconTheme, restoreDefaultIconTheme } from '../themes/catppuccin-icons';
+import { installPluginIconTheme, restoreDefaultIconTheme } from '../themes/plugin-icon-theme';
 import type { RuntimeKind } from '../utilities/runtime';
 
 /** Attributes of the application shell. */
@@ -176,6 +176,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
   let currentSettings: Settings | undefined;
   let registeredActions: readonly ActionDescriptor[] = [];
   let plugins: readonly PluginDescriptor[] = [];
+  let installedIconThemeId: string | undefined;
   let keybindingRuntime: KeybindingRuntime = 'browser';
   let runtimeKind: RuntimeKind = 'http';
   let loadedEntryFormatSettings: EntryFormatSettings = DEFAULT_ENTRY_FORMAT_SETTINGS;
@@ -297,12 +298,46 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     document.documentElement.style.setProperty('--fm-font-size', `${settings.fontSize}px`);
     document.documentElement.style.setProperty('--fm-row-height', `${settings.rowHeight}px`);
     ThemeManager.setTheme(theme);
-    if (settings.iconTheme === 'catppuccin') {
-      installCatppuccinIconTheme();
-    } else {
-      restoreDefaultIconTheme();
-    }
+    applyIconTheme(settings.iconTheme);
     syncTauriWindowBackground();
+  }
+
+  /**
+   * Installs `themeId`'s icons into `entryIconRegistry` (task 0095): `'generic'` restores the
+   * built-in defaults with no lookup; any other id is resolved against the already-discovered
+   * `plugins` list and fetched/sanitized via {@link installPluginIconTheme}. A theme whose plugin
+   * isn't discovered yet, doesn't declare an icon theme, or is currently disabled falls back to
+   * the defaults. Unlike the plugin-lookup/enabled check (re-run on every call, since the same
+   * `themeId` can flip between available and unavailable as its plugin is enabled/disabled without
+   * `themeId` itself ever changing), the actual (re)install is skipped once `themeId` is already
+   * installed, to avoid redundant asset fetches.
+   */
+  function applyIconTheme(themeId: string): void {
+    if (themeId === 'generic') {
+      if (installedIconThemeId !== themeId) {
+        restoreDefaultIconTheme();
+        installedIconThemeId = themeId;
+      }
+      return;
+    }
+    const plugin = plugins.find((candidate) => candidate.id === themeId);
+    if (plugin?.iconTheme === undefined || !plugin.enabled) {
+      if (installedIconThemeId !== undefined) restoreDefaultIconTheme();
+      installedIconThemeId = undefined;
+      return;
+    }
+    if (themeId === installedIconThemeId) return;
+    installedIconThemeId = themeId;
+    void installPluginIconTheme(attrsClient, plugin.id, plugin.iconTheme).then(
+      () => m.redraw(),
+      () => {
+        // The plugin was disabled (or its assets became unreadable) between the check above and
+        // the fetch resolving; fall back rather than leaving stale/partial icons installed.
+        restoreDefaultIconTheme();
+        installedIconThemeId = undefined;
+        m.redraw();
+      },
+    );
   }
 
   /**
@@ -1290,6 +1325,17 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
         ? plugins.map((plugin) => (plugin.id === changed.id ? { ...plugin, ...changed } : plugin))
         : plugins;
       m.redraw();
+      // `PluginPayload` only carries id/name/version/enabled; refetch the full descriptor
+      // (columns, permissions, diagnostic, iconTheme) so e.g. an icon theme newly enabled here
+      // becomes available in the Settings Editor without a page reload.
+      void attrsClient
+        .listPlugins()
+        .then((listed) => {
+          plugins = listed;
+          if (currentSettings !== undefined) applyIconTheme(currentSettings.iconTheme);
+          m.redraw();
+        })
+        .catch(() => undefined);
       return;
     }
     if (payload.type === 'search.resultsBatch') {
@@ -1606,7 +1652,11 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
                     effectiveSort(tab.view.sort),
                     tab.view.foldersFirst,
                   );
-            const filteredFresh = entriesFilteredFor(key, sortedFresh, quickFilterQueryFor(key, tab));
+            const filteredFresh = entriesFilteredFor(
+              key,
+              sortedFresh,
+              quickFilterQueryFor(key, tab),
+            );
             const loadedEntries =
               tab === undefined
                 ? filteredFresh
@@ -1766,6 +1816,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
         .listPlugins()
         .then((listed) => {
           plugins = listed;
+          if (currentSettings !== undefined) applyIconTheme(currentSettings.iconTheme);
           m.redraw();
         })
         .catch(() => undefined);

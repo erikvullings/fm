@@ -17,5 +17,5 @@ export interface Settings {
   readonly pluginSettings: Readonly<Record<string, unknown>>;
   readonly terminalCommand: string | null;
   readonly defaultStartLocations: readonly string[];
-  readonly iconTheme: 'generic' | 'catppuccin';
+  readonly iconTheme: string;
 }

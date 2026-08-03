@@ -196,6 +196,14 @@ export class TauriFileManagerClient implements FileManagerClient {
     return invoke<PluginLogEntry[]>('get_plugin_logs', { pluginId });
   }
 
+  getPluginIconThemeAsset(
+    pluginId: PluginId,
+    assetPath: string,
+    _signal?: AbortSignal,
+  ): Promise<string> {
+    return invoke<string>('get_plugin_icon_theme_asset', { pluginId, path: assetPath });
+  }
+
   /** TODO(0034): full EventBus → Tauri channel parity; connects the minimal skeleton for now. */
   async subscribe(listener: (event: BackendEvent) => void): Promise<Unsubscribe> {
     const unsubscribeListener = this.eventStream.listeners.subscribe(listener);

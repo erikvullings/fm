@@ -9,8 +9,7 @@ import type { IconAttrs } from './icons';
  * Copyright (c) 2020-2024 Paweł Kuna) — a curated subset of the
  * `icons/outline/*.svg` sources, reproduced verbatim below rather than
  * imported as an asset, since only a handful of glyphs are needed and the
- * codebase already follows this vendoring convention (see
- * `../themes/catppuccin-icons.ts`).
+ * codebase already follows this vendoring convention (see `./icons.ts`).
  */
 
 /** Builds an icon renderer from one vendored icon's inner SVG markup (`<path>` elements). */

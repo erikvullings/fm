@@ -11,6 +11,7 @@ import type {
   DirectorySnapshotDto,
   EntryMetadataDto,
   EntryMetadataRequest,
+  GetPluginIconThemeAssetParams,
   HealthDto,
   InvokeActionRequestDto,
   ListDirectoryRequest,
@@ -811,6 +812,60 @@ export const enablePlugin = async (pluginId: string, options?: Parameters<typeof
   {
     ...options,
     method: 'POST'
+
+
+  }
+);}
+
+
+
+export type getPluginIconThemeAssetResponse200 = {
+  data: string
+  status: 200
+}
+
+export type getPluginIconThemeAssetResponse404 = {
+  data: ApplicationErrorDto
+  status: 404
+}
+
+export type getPluginIconThemeAssetResponseSuccess = (getPluginIconThemeAssetResponse200) & {
+  headers: Headers;
+};
+export type getPluginIconThemeAssetResponseError = (getPluginIconThemeAssetResponse404) & {
+  headers: Headers;
+};
+
+export type getPluginIconThemeAssetResponse = (getPluginIconThemeAssetResponseSuccess | getPluginIconThemeAssetResponseError)
+
+export const getGetPluginIconThemeAssetUrl = (pluginId: string,
+    params: GetPluginIconThemeAssetParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/plugins/${pluginId}/icon-theme/asset?${stringifiedParams}` : `/api/v1/plugins/${pluginId}/icon-theme/asset`
+}
+
+/**
+ * @summary Serves one SVG asset from an enabled plugin's icon theme (task 0095). Rejects any path that
+is not one of the theme's declared icon definitions; see
+`fm_application::Service::plugin_icon_theme_asset`.
+ */
+export const getPluginIconThemeAsset = async (pluginId: string,
+    params: GetPluginIconThemeAssetParams, options?: Parameters<typeof fetchMutator>[1]): Promise<getPluginIconThemeAssetResponse> => {
+
+  return fetchMutator<getPluginIconThemeAssetResponse>(getGetPluginIconThemeAssetUrl(pluginId,params),
+  {
+    ...options,
+    method: 'GET'
 
 
   }

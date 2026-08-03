@@ -23,18 +23,19 @@ use fm_operations::{
     OperationPlan, OperationSnapshotObserver, PauseToken, PlanItem, Scheduler, SchedulerError,
 };
 use fm_platform::{FallbackPlatformAdapter, PlatformAdapter, PlatformCapabilities};
-use fm_plugin_api::{ActionContribution, PluginManifest, PluginPermissions, SelectedEntryContext};
+use fm_plugin_api::{
+    ActionContribution, IconThemeManifest, PluginManifest, PluginPermissions, SelectedEntryContext,
+};
 use fm_plugin_runtime::{PluginDiscovery, PluginRuntime};
 use fm_search::{SearchEngine, SearchFileSystemProvider, SearchResultsStore};
 use fm_settings::{
-    ConflictPolicy, DateFormat, DefaultPaneLayout, IconTheme, Settings, SettingsStore, SizeFormat,
-    Theme,
+    ConflictPolicy, DateFormat, DefaultPaneLayout, Settings, SettingsStore, SizeFormat, Theme,
 };
 use fm_transport_dto::{
     ActionDescriptorDto, ActionResultDto, ConflictPolicyDto, ConflictResolutionDto, DateFormatDto,
-    DefaultPaneLayoutDto, EntryMetadataRequest, IconThemeDto, InvokeActionRequestDto,
-    ListDirectoryRequest, NavigateRequest, OperationConflictPolicyDto, OperationDto,
-    OperationKindDto, OperationProgressDto, OperationStateDto, PlatformKindDto, PluginLogEntryDto,
+    DefaultPaneLayoutDto, EntryMetadataRequest, InvokeActionRequestDto, ListDirectoryRequest,
+    NavigateRequest, OperationConflictPolicyDto, OperationDto, OperationKindDto,
+    OperationProgressDto, OperationStateDto, PlatformKindDto, PluginLogEntryDto,
     PluginPermissionsDto, ResolveOperationConflictRequestDto, RuntimeCapabilitiesDto,
     RuntimeKindDto, SettingsDto, SizeFormatDto, StartOperationRequestDto, StartSearchRequestDto,
     StartSearchResponseDto, ThemeDto, WorkspaceCommandDto, WorkspaceDto, WorkspaceSummaryDto,
@@ -936,10 +937,19 @@ impl FileManagerService {
                     .as_ref()
                     .map(|manifest| plugin_permissions_dto(&manifest.permissions))
                     .unwrap_or_default();
+                let is_enabled =
+                    plugin.is_valid() && enabled.contains(&id) && runtime_diagnostic.is_none();
+                // Listed regardless of `is_enabled` (unlike columns/actions, which require the
+                // plugin's Lua runtime to be live) so the settings UI can offer a not-yet-enabled
+                // theme for selection; `plugin_icon_theme_asset` below still refuses to serve any
+                // asset unless the plugin is actually enabled.
+                let icon_theme = if plugin.is_valid() {
+                    plugin.icon_theme.as_ref().map(plugin_icon_theme_dto)
+                } else {
+                    None
+                };
                 fm_transport_dto::PluginDescriptorDto {
-                    enabled: plugin.is_valid()
-                        && enabled.contains(&id)
-                        && runtime_diagnostic.is_none(),
+                    enabled: is_enabled,
                     id,
                     name,
                     version,
@@ -947,9 +957,49 @@ impl FileManagerService {
                     diagnostic: plugin.diagnostic.or(runtime_diagnostic),
                     columns,
                     permissions,
+                    icon_theme,
                 }
             })
             .collect()
+    }
+
+    /// Reads one asset referenced by an enabled plugin's icon theme (task 0095), rejecting any
+    /// path that is not exactly one of the theme's declared icon definitions and any path that
+    /// escapes the plugin's own directory.
+    pub fn plugin_icon_theme_asset(
+        &self,
+        plugin_id: &str,
+        asset_path: &str,
+    ) -> Result<String, ApplicationError> {
+        let enabled = self
+            .settings
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .enabled_plugins
+            .clone();
+        let plugin = self
+            .plugins
+            .discover()
+            .into_iter()
+            .find(|plugin| plugin.is_valid() && plugin.id() == plugin_id)
+            .filter(|_plugin| enabled.iter().any(|id| id == plugin_id))
+            .ok_or(ApplicationError::NotFound)?;
+        let icon_theme = plugin
+            .icon_theme
+            .as_ref()
+            .ok_or(ApplicationError::NotFound)?;
+        let is_declared = icon_theme
+            .icon_definitions
+            .values()
+            .any(|definition| definition.icon_path.to_string_lossy() == asset_path);
+        if !is_declared {
+            return Err(ApplicationError::NotFound);
+        }
+        let resolved =
+            fm_plugin_runtime::resolve_plugin_asset(&plugin.directory, Path::new(asset_path))
+                .ok_or(ApplicationError::NotFound)?;
+        fs::read_to_string(&resolved)
+            .map_err(|error| ApplicationError::PlatformOperationFailed(error.to_string()))
     }
 
     /// Returns the bounded diagnostic log retained for one plugin (spec §19.4).
@@ -2740,6 +2790,29 @@ fn plugin_permissions_dto(permissions: &PluginPermissions) -> PluginPermissionsD
     }
 }
 
+/// Projects a plugin's parsed `icon-theme.json` into the wire DTO (task 0095).
+fn plugin_icon_theme_dto(icon_theme: &IconThemeManifest) -> fm_transport_dto::PluginIconThemeDto {
+    fm_transport_dto::PluginIconThemeDto {
+        icon_definitions: icon_theme
+            .icon_definitions
+            .iter()
+            .map(|(key, definition)| {
+                (
+                    key.clone(),
+                    fm_transport_dto::PluginIconDefinitionDto {
+                        icon_path: definition.icon_path.to_string_lossy().into_owned(),
+                    },
+                )
+            })
+            .collect(),
+        file: icon_theme.file.clone(),
+        folder: icon_theme.folder.clone(),
+        symlink: icon_theme.symlink.clone(),
+        file_extensions: icon_theme.file_extensions.clone(),
+        mime_prefixes: icon_theme.mime_prefixes.clone(),
+    }
+}
+
 /// Builds an [`ActionDescriptor`] for a plugin's declared action contribution,
 /// deriving the context requirement from `requires_single_selection` (spec §18/§20).
 fn plugin_action_descriptor(
@@ -2925,10 +2998,7 @@ fn settings_to_dto(settings: Settings) -> SettingsDto {
             .unwrap_or_else(|_| serde_json::Value::Object(serde_json::Map::new())),
         terminal_command: settings.terminal_command,
         default_start_locations: settings.default_start_locations,
-        icon_theme: match settings.icon_theme {
-            IconTheme::Generic => IconThemeDto::Generic,
-            IconTheme::Catppuccin => IconThemeDto::Catppuccin,
-        },
+        icon_theme: settings.icon_theme,
     }
 }
 
@@ -2971,10 +3041,7 @@ fn settings_from_dto(settings: SettingsDto) -> Settings {
         plugin_settings: serde_json::from_value(settings.plugin_settings).unwrap_or_default(),
         terminal_command: settings.terminal_command,
         default_start_locations: settings.default_start_locations,
-        icon_theme: match settings.icon_theme {
-            IconThemeDto::Generic => IconTheme::Generic,
-            IconThemeDto::Catppuccin => IconTheme::Catppuccin,
-        },
+        icon_theme: settings.icon_theme,
     }
 }
 

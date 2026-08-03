@@ -29,6 +29,24 @@ export interface PluginLogEntry {
   message: string;
 }
 
+/** One icon asset a theme can reference; `iconPath` is passed verbatim to the asset route. */
+export interface PluginIconDefinition {
+  iconPath: string;
+}
+
+/**
+ * A distributable directory-entry icon theme contributed by an enabled plugin (task 0095).
+ * Fetch an asset's SVG markup via `FileManagerClient.getPluginIconThemeAsset`.
+ */
+export interface PluginIconTheme {
+  iconDefinitions: Readonly<Record<string, PluginIconDefinition>>;
+  file?: string;
+  folder?: string;
+  symlink?: string;
+  fileExtensions: Readonly<Record<string, string>>;
+  mimePrefixes: Readonly<Record<string, string>>;
+}
+
 /**
  * Minimal projection published by the `plugin.changed` event (spec §19.5).
  * The backend only broadcasts the fields that change on enable/disable;
@@ -54,4 +72,5 @@ export interface PluginDescriptor {
   diagnostic?: string;
   columns?: readonly PluginColumn[];
   permissions?: PluginPermissions;
+  iconTheme?: PluginIconTheme;
 }

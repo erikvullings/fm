@@ -2,10 +2,12 @@
 
 use axum::{
     Json,
-    extract::{Extension, Path, State},
-    http::StatusCode,
+    extract::{Extension, Path, Query, State},
+    http::{StatusCode, header},
+    response::IntoResponse,
 };
 use fm_transport_dto::{ApplicationErrorDto, PluginDescriptorDto, PluginLogEntryDto};
+use serde::Deserialize;
 use tower_http::request_id::RequestId;
 
 use crate::{
@@ -55,5 +57,29 @@ pub(crate) async fn disable_plugin(
         .service
         .set_plugin_enabled(plugin_id, false)
         .map(|()| StatusCode::NO_CONTENT)
+        .map_err(|error| ApiError::new(error, extract_request_id(&request_id)))
+}
+
+/// Query parameters for [`get_plugin_icon_theme_asset`].
+#[derive(Debug, Deserialize)]
+pub(crate) struct IconThemeAssetQuery {
+    /// The icon path exactly as it appears in the plugin's `icon-theme.json`.
+    path: String,
+}
+
+/// Serves one SVG asset from an enabled plugin's icon theme (task 0095). Rejects any path that
+/// is not one of the theme's declared icon definitions; see
+/// `fm_application::Service::plugin_icon_theme_asset`.
+#[utoipa::path(get, path = "/api/v1/plugins/{pluginId}/icon-theme/asset", operation_id = "getPluginIconThemeAsset", params(("pluginId" = String, Path), ("path" = String, Query)), responses((status = 200, body = String), (status = 404, body = ApplicationErrorDto)))]
+pub(crate) async fn get_plugin_icon_theme_asset(
+    State(state): State<AppState>,
+    Extension(request_id): Extension<RequestId>,
+    Path(plugin_id): Path<String>,
+    Query(query): Query<IconThemeAssetQuery>,
+) -> Result<impl IntoResponse, ApiError> {
+    state
+        .service
+        .plugin_icon_theme_asset(&plugin_id, &query.path)
+        .map(|svg| ([(header::CONTENT_TYPE, "image/svg+xml")], svg))
         .map_err(|error| ApiError::new(error, extract_request_id(&request_id)))
 }

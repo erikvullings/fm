@@ -3,7 +3,8 @@
 //! Deliberately free of unstable Rust ABI types so that plugins can later be
 //! isolated in WebAssembly without changing the interface they see.
 
-use std::path::PathBuf;
+use std::collections::BTreeMap;
+use std::path::{Component, Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -25,8 +26,11 @@ pub struct PluginManifest {
     pub api_version: String,
     /// User-facing description.
     pub description: String,
-    /// Plugin entrypoint relative to the manifest directory.
-    pub entrypoint: PathBuf,
+    /// Plugin entrypoint relative to the manifest directory. Required only when
+    /// `contributions.actions` or `contributions.columns` is set — a plugin that
+    /// contributes only an icon theme runs no code and needs no entrypoint.
+    #[serde(default)]
+    pub entrypoint: Option<PathBuf>,
     /// Explicit capability grants; omitted capabilities are denied.
     #[serde(default)]
     pub permissions: PluginPermissions,
@@ -61,8 +65,13 @@ impl PluginManifest {
                 self.api_version.clone(),
             ));
         }
-        if self.entrypoint.as_os_str().is_empty() || self.entrypoint.is_absolute() {
-            return Err(ManifestError::InvalidField("entrypoint"));
+        let runs_code = self.contributions.actions || self.contributions.columns;
+        match &self.entrypoint {
+            Some(entrypoint) if entrypoint.as_os_str().is_empty() || entrypoint.is_absolute() => {
+                return Err(ManifestError::InvalidField("entrypoint"));
+            }
+            None if runs_code => return Err(ManifestError::InvalidField("entrypoint")),
+            _ => {}
         }
         Ok(())
     }
@@ -170,6 +179,116 @@ pub struct PluginContributions {
     pub columns: bool,
     /// Metadata extraction fields.
     pub metadata_extraction: bool,
+    /// A directory-entry icon theme, described by a sibling `icon-theme.json`.
+    /// Runs no code: no `entrypoint` is required for this contribution alone.
+    pub icon_theme: bool,
+}
+
+/// One icon asset referenced by an icon theme (task 0095).
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct IconDefinition {
+    /// SVG asset path, relative to the plugin directory. Must not escape it.
+    pub icon_path: PathBuf,
+}
+
+/// A distributable directory-entry icon theme, read from `icon-theme.json` when a plugin
+/// declares `contributions.icon_theme` (task 0095).
+///
+/// Modeled on VS Code's file icon theme contribution, trimmed to what the frontend's
+/// `EntryIconRegistry` resolves: kind (`file`/`folder`/`symlink`), file extension, and MIME
+/// prefix. Pure data plus SVG assets — no code runs for this contribution.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct IconThemeManifest {
+    /// Every icon asset this theme can reference, keyed by an arbitrary theme-local name.
+    pub icon_definitions: BTreeMap<String, IconDefinition>,
+    /// Default icon definition key for `file` entries.
+    #[serde(default)]
+    pub file: Option<String>,
+    /// Default icon definition key for `directory` entries.
+    #[serde(default)]
+    pub folder: Option<String>,
+    /// Default icon definition key for `symlink` entries.
+    #[serde(default)]
+    pub symlink: Option<String>,
+    /// Lowercased, dot-less file extension to icon definition key.
+    #[serde(default)]
+    pub file_extensions: BTreeMap<String, String>,
+    /// MIME type prefix (e.g. `"image/"`) to icon definition key.
+    #[serde(default)]
+    pub mime_prefixes: BTreeMap<String, String>,
+}
+
+impl IconThemeManifest {
+    /// Parses and validates an `icon-theme.json` document.
+    pub fn parse(source: &str) -> Result<Self, IconThemeManifestError> {
+        let manifest: Self = serde_json::from_str(source).map_err(IconThemeManifestError::Json)?;
+        manifest.validate()?;
+        Ok(manifest)
+    }
+
+    /// Validates that every reference resolves to a declared definition and every
+    /// `iconPath` is a safe, plugin-directory-relative path (no absolute paths, no `..`).
+    pub fn validate(&self) -> Result<(), IconThemeManifestError> {
+        if self.icon_definitions.is_empty() {
+            return Err(IconThemeManifestError::Empty);
+        }
+        for (key, definition) in &self.icon_definitions {
+            if !Self::is_safe_relative_path(&definition.icon_path) {
+                return Err(IconThemeManifestError::UnsafeIconPath(key.clone()));
+            }
+        }
+        for key in [&self.file, &self.folder, &self.symlink]
+            .into_iter()
+            .flatten()
+        {
+            self.require_known_key(key)?;
+        }
+        for key in self
+            .file_extensions
+            .values()
+            .chain(self.mime_prefixes.values())
+        {
+            self.require_known_key(key)?;
+        }
+        Ok(())
+    }
+
+    fn require_known_key(&self, key: &str) -> Result<(), IconThemeManifestError> {
+        if self.icon_definitions.contains_key(key) {
+            Ok(())
+        } else {
+            Err(IconThemeManifestError::UnknownIconDefinition(
+                key.to_owned(),
+            ))
+        }
+    }
+
+    fn is_safe_relative_path(path: &Path) -> bool {
+        !path.as_os_str().is_empty()
+            && !path.is_absolute()
+            && !path
+                .components()
+                .any(|component| component == Component::ParentDir)
+    }
+}
+
+/// Icon theme manifest parsing or validation failure.
+#[derive(Debug, Error)]
+pub enum IconThemeManifestError {
+    /// The JSON does not conform to the schema.
+    #[error("invalid icon theme manifest: {0}")]
+    Json(#[source] serde_json::Error),
+    /// The manifest declares no icon assets at all.
+    #[error("icon theme manifest declares no icon definitions")]
+    Empty,
+    /// A `file`/`folder`/`symlink`/extension/MIME mapping references an undeclared key.
+    #[error("icon theme manifest references unknown icon definition {0:?}")]
+    UnknownIconDefinition(String),
+    /// An `iconPath` is absolute or escapes the plugin directory.
+    #[error("icon theme manifest icon definition {0:?} has an unsafe iconPath")]
+    UnsafeIconPath(String),
 }
 
 /// Plugin action declaration, projected into the host action registry.
@@ -283,6 +402,89 @@ actions = true
             .expect_err("omitted permission must be denied");
 
         assert_eq!(error.permission, Permission::ClipboardWrite);
+    }
+
+    #[test]
+    fn accepts_an_icon_theme_only_manifest_with_no_entrypoint() {
+        let manifest = PluginManifest::parse(
+            "id='example.icons'\nname='Icons'\nversion='1'\napi_version='1'\ndescription='An icon theme'\n[contributions]\nicon_theme=true",
+        )
+        .expect("icon-theme-only manifest needs no entrypoint");
+
+        assert!(manifest.entrypoint.is_none());
+        assert!(manifest.contributions.icon_theme);
+    }
+
+    #[test]
+    fn rejects_an_actions_manifest_with_no_entrypoint() {
+        let error = PluginManifest::parse(
+            "id='example.plugin'\nname='Example'\nversion='1'\napi_version='1'\ndescription='Example'\n[contributions]\nactions=true",
+        )
+        .expect_err("actions contribution requires an entrypoint");
+
+        assert!(matches!(error, ManifestError::InvalidField("entrypoint")));
+    }
+
+    #[test]
+    fn parses_a_valid_icon_theme_manifest() {
+        let icon_theme = IconThemeManifest::parse(
+            r#"{
+                "iconDefinitions": {
+                    "folder": {"iconPath": "folder.svg"},
+                    "psd": {"iconPath": "icons/psd.svg"}
+                },
+                "folder": "folder",
+                "fileExtensions": {"psd": "psd"},
+                "mimePrefixes": {"image/": "psd"}
+            }"#,
+        )
+        .expect("valid icon theme manifest");
+
+        assert_eq!(icon_theme.folder.as_deref(), Some("folder"));
+        assert_eq!(
+            icon_theme.file_extensions.get("psd").map(String::as_str),
+            Some("psd")
+        );
+    }
+
+    #[test]
+    fn rejects_an_icon_theme_manifest_referencing_an_unknown_definition() {
+        let error = IconThemeManifest::parse(
+            r#"{"iconDefinitions":{"folder":{"iconPath":"folder.svg"}},"file":"missing"}"#,
+        )
+        .expect_err("unknown definition reference must be rejected");
+
+        assert!(
+            matches!(error, IconThemeManifestError::UnknownIconDefinition(key) if key == "missing")
+        );
+    }
+
+    #[test]
+    fn rejects_an_icon_theme_manifest_with_a_path_traversal_icon_path() {
+        let error = IconThemeManifest::parse(
+            r#"{"iconDefinitions":{"folder":{"iconPath":"../../etc/passwd"}}}"#,
+        )
+        .expect_err("path traversal must be rejected");
+
+        assert!(matches!(error, IconThemeManifestError::UnsafeIconPath(key) if key == "folder"));
+    }
+
+    #[test]
+    fn rejects_an_icon_theme_manifest_with_an_absolute_icon_path() {
+        let error = IconThemeManifest::parse(
+            r#"{"iconDefinitions":{"folder":{"iconPath":"/etc/passwd"}}}"#,
+        )
+        .expect_err("absolute path must be rejected");
+
+        assert!(matches!(error, IconThemeManifestError::UnsafeIconPath(key) if key == "folder"));
+    }
+
+    #[test]
+    fn rejects_an_empty_icon_theme_manifest() {
+        let error = IconThemeManifest::parse(r#"{"iconDefinitions":{}}"#)
+            .expect_err("empty icon theme must be rejected");
+
+        assert!(matches!(error, IconThemeManifestError::Empty));
     }
 
     #[test]

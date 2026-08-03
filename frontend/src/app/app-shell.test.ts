@@ -101,6 +101,72 @@ describe('AppShell', () => {
     expect(activePane?.querySelector('.fm-cursor-row')?.textContent).toContain('report.pdf');
   });
 
+  it('End loads every remaining page and moves the cursor to the true last entry', async () => {
+    const client = new MockFileManagerClient({ pageSize: 100 });
+    m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
+    await vi.waitFor(() => expect(root.textContent).toContain('Documents'));
+    const activePane = root.querySelector<HTMLElement>('[data-active="true"] > .fm-pane');
+    if (activePane === null) throw new Error('no active pane');
+
+    activePane
+      .querySelector<HTMLElement>('.fm-breadcrumb-edit-target')
+      ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    m.redraw.sync();
+    const pathInput = activePane.querySelector<HTMLInputElement>('.fm-path-input');
+    if (pathInput === null) throw new Error('path input missing');
+    pathInput.value = '/large/1000';
+    pathInput.dispatchEvent(new InputEvent('input', { bubbles: true }));
+    pathInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    await vi.waitFor(() => expect(activePane.textContent).toContain('generated-0000000'));
+    // Only the first page (100 of 1000) should be loaded before pressing End.
+    expect(activePane.querySelectorAll('.fm-directory-row').length).toBeLessThan(200);
+
+    activePane.dispatchEvent(new KeyboardEvent('keydown', { key: 'End', bubbles: true }));
+    await vi.waitFor(() => expect(activePane.textContent).toContain('generated-0000999'));
+    expect(activePane.querySelector('.fm-cursor-row')?.textContent).toContain('generated-0000999');
+
+    // No entry follows the true last one, so ArrowDown must be a no-op.
+    activePane.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+    m.redraw.sync();
+    expect(activePane.querySelector('.fm-cursor-row')?.textContent).toContain('generated-0000999');
+  });
+
+  it('End on a directory large enough to use the responsive background sort still highlights the true last entry', async () => {
+    const client = new MockFileManagerClient({ pageSize: 1_000 });
+    m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
+    await vi.waitFor(() => expect(root.textContent).toContain('Documents'));
+    const activePane = root.querySelector<HTMLElement>('[data-active="true"] > .fm-pane');
+    if (activePane === null) throw new Error('no active pane');
+
+    activePane
+      .querySelector<HTMLElement>('.fm-breadcrumb-edit-target')
+      ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    m.redraw.sync();
+    const pathInput = activePane.querySelector<HTMLInputElement>('.fm-path-input');
+    if (pathInput === null) throw new Error('path input missing');
+    pathInput.value = '/large/10000';
+    pathInput.dispatchEvent(new InputEvent('input', { bubbles: true }));
+    pathInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    await vi.waitFor(() => expect(activePane.textContent).toContain('generated-0000000'));
+
+    activePane.dispatchEvent(new KeyboardEvent('keydown', { key: 'End', bubbles: true }));
+    await vi.waitFor(() => expect(activePane.textContent).toContain('generated-0009999'), {
+      timeout: 10_000,
+    });
+    await vi.waitFor(
+      () =>
+        expect(activePane.querySelector('.fm-cursor-row')?.textContent).toContain(
+          'generated-0009999',
+        ),
+      { timeout: 10_000 },
+    );
+
+    // No entry follows the true last one, so ArrowDown must be a no-op.
+    activePane.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+    m.redraw.sync();
+    expect(activePane.querySelector('.fm-cursor-row')?.textContent).toContain('generated-0009999');
+  }, 15_000);
+
   it('keeps cursor and selection independent while using keyboard selection', async () => {
     mountShell('mock');
 
@@ -620,6 +686,121 @@ describe('AppShell', () => {
 
     const checkbox = root.querySelector<HTMLInputElement>('.fm-plugin-row input[type="checkbox"]');
     expect(checkbox?.checked).toBe(false);
+  });
+
+  it('refetches the full plugin list after a plugin.changed event, picking up fields the sparse event payload omits (e.g. iconTheme)', async () => {
+    const client = new MockFileManagerClient();
+    const listPlugins = vi.spyOn(client, 'listPlugins');
+    m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
+
+    await openAppearanceSettings();
+    await vi.waitFor(() => expect(root.querySelector('.fm-plugin-row')).not.toBeNull());
+    const callsBeforeEvent = listPlugins.mock.calls.length;
+
+    listPlugins.mockResolvedValueOnce([
+      {
+        id: 'mock.archive',
+        name: 'Mock Archive',
+        version: '1.0.0',
+        description: 'Mock plugin with a sample column.',
+        enabled: true,
+        iconTheme: {
+          iconDefinitions: { file: { iconPath: 'icons/file.svg' } },
+          fileExtensions: {},
+          mimePrefixes: {},
+        },
+      },
+    ]);
+    client.emit({
+      eventId: 1,
+      timestamp: '2026-07-31T12:00:00Z',
+      payload: {
+        type: 'plugin.changed',
+        plugin: { id: 'mock.archive', name: 'Mock Archive', version: '1.0.0', enabled: true },
+      },
+    });
+
+    await vi.waitFor(() => expect(listPlugins.mock.calls.length).toBeGreaterThan(callsBeforeEvent));
+  });
+
+  it('reinstalls a plugin icon theme after disable-then-reenable, instead of assuming it is still installed', async () => {
+    const client = new MockFileManagerClient();
+    vi.spyOn(client, 'getSettings').mockResolvedValue({
+      schemaVersion: 2,
+      theme: 'auto',
+      fontSize: 13,
+      rowHeight: 20,
+      dateFormat: 'medium',
+      sizeFormat: 'binary',
+      showHiddenFiles: false,
+      confirmPermanentDelete: true,
+      defaultConflictPolicy: 'ask',
+      operationConcurrency: 2,
+      defaultPaneLayout: 'dual',
+      defaultColumns: ['core.name', 'core.size', 'core.modified'],
+      keybindings: {},
+      enabledPlugins: ['mock.archive'],
+      pluginSettings: {},
+      terminalCommand: null,
+      defaultStartLocations: [],
+      iconTheme: 'mock.archive',
+    });
+    const iconTheme = {
+      iconDefinitions: { file: { iconPath: 'icons/file.svg' } },
+      fileExtensions: {},
+      mimePrefixes: {},
+    };
+    const enabledDescriptor = {
+      id: 'mock.archive',
+      name: 'Mock Archive',
+      version: '1.0.0',
+      description: 'Mock plugin with a sample column.',
+      enabled: true,
+      iconTheme,
+    };
+    const disabledDescriptor = {
+      id: 'mock.archive',
+      name: 'Mock Archive',
+      version: '1.0.0',
+      description: 'Mock plugin with a sample column.',
+      enabled: false,
+      iconTheme,
+    };
+    const listPlugins = vi.spyOn(client, 'listPlugins').mockResolvedValue([enabledDescriptor]);
+    const pluginIconTheme = await import('../themes/plugin-icon-theme');
+    const install = vi.spyOn(pluginIconTheme, 'installPluginIconTheme').mockResolvedValue();
+    const restore = vi
+      .spyOn(pluginIconTheme, 'restoreDefaultIconTheme')
+      .mockImplementation(() => {});
+
+    m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
+    await vi.waitFor(() => expect(install).toHaveBeenCalledTimes(1));
+    const restoreCallsAfterBoot = restore.mock.calls.length;
+
+    listPlugins.mockResolvedValueOnce([disabledDescriptor]);
+    client.emit({
+      eventId: 1,
+      timestamp: '2026-07-31T12:00:00Z',
+      payload: {
+        type: 'plugin.changed',
+        plugin: { id: 'mock.archive', name: 'Mock Archive', version: '1.0.0', enabled: false },
+      },
+    });
+    await vi.waitFor(() =>
+      expect(restore.mock.calls.length).toBeGreaterThan(restoreCallsAfterBoot),
+    );
+
+    listPlugins.mockResolvedValueOnce([enabledDescriptor]);
+    client.emit({
+      eventId: 2,
+      timestamp: '2026-07-31T12:00:01Z',
+      payload: {
+        type: 'plugin.changed',
+        plugin: { id: 'mock.archive', name: 'Mock Archive', version: '1.0.0', enabled: true },
+      },
+    });
+
+    await vi.waitFor(() => expect(install).toHaveBeenCalledTimes(2));
   });
 
   it('applies a theme change and keeps the switcher selection in step', async () => {

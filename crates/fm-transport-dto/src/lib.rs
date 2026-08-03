@@ -37,13 +37,15 @@ pub use operation::{
     OperationStateDto, ResolveOperationConflictRequestDto, StartOperationRequestDto,
     SymlinkPolicyDto,
 };
-pub use plugin::{PluginColumnDto, PluginDescriptorDto, PluginLogEntryDto, PluginPermissionsDto};
+pub use plugin::{
+    PluginColumnDto, PluginDescriptorDto, PluginIconDefinitionDto, PluginIconThemeDto,
+    PluginLogEntryDto, PluginPermissionsDto,
+};
 pub use requests::{EntryMetadataRequest, ListDirectoryRequest, NavigateRequest};
 pub use runtime::{PlatformKindDto, RuntimeCapabilitiesDto, RuntimeKindDto};
 pub use search::{StartSearchRequestDto, StartSearchResponseDto};
 pub use settings::{
-    ConflictPolicyDto, DateFormatDto, DefaultPaneLayoutDto, IconThemeDto, SettingsDto,
-    SizeFormatDto, ThemeDto,
+    ConflictPolicyDto, DateFormatDto, DefaultPaneLayoutDto, SettingsDto, SizeFormatDto, ThemeDto,
 };
 pub use snapshot::{DirectorySnapshotDto, LoadingStateDto};
 pub use workspace::{

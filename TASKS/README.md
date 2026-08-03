@@ -142,6 +142,10 @@ the workspace-service tasks; see Step 2b above).
 - 0089 Content search across files
 - 0090 Total Commander-style selection toggles (invert, select/deselect by mask)
 - 0091 Native file icon overlay (backend-served, layered over 0085) *(after 0085; needs 0059)*
+- 0092 Catppuccin icon theme *(after 0085)*
+- 0093 Copy filename and path actions
+- 0094 Tabler icons toolbar
+- 0095 Distributable icon theme plugins *(after 0053, 0085, 0092)*
 
 ## Milestone 3 / version 1 features (§16.3, §37)
 

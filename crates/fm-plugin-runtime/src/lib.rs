@@ -12,7 +12,8 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use fm_plugin_api::{
-    ActionContribution, ColumnContribution, Permission, PluginManifest, SelectedEntryContext,
+    ActionContribution, ColumnContribution, IconThemeManifest, Permission, PluginManifest,
+    SelectedEntryContext,
 };
 use mlua::{Error as LuaError, HookTriggers, Lua, LuaOptions, LuaSerdeExt, StdLib, Table, VmState};
 use serde::de::DeserializeOwned;
@@ -228,7 +229,11 @@ impl PluginRuntime {
         directory: &Path,
         contribution: &str,
     ) -> Result<Vec<T>, String> {
-        let source = fs::read_to_string(directory.join(&manifest.entrypoint))
+        let entrypoint = manifest
+            .entrypoint
+            .as_ref()
+            .ok_or_else(|| "plugin declares no entrypoint".to_owned())?;
+        let source = fs::read_to_string(directory.join(entrypoint))
             .map_err(|error| format!("could not load entrypoint: {error}"))?;
         let lua = self.new_sandboxed_lua()?;
         install_host_services(&lua, manifest).map_err(|error| error.to_string())?;
@@ -251,7 +256,11 @@ impl PluginRuntime {
         action_id: &str,
         selection: &[SelectedEntryContext],
     ) -> Result<PluginActionOutcome, String> {
-        let source = fs::read_to_string(directory.join(&manifest.entrypoint))
+        let entrypoint = manifest
+            .entrypoint
+            .as_ref()
+            .ok_or_else(|| "plugin declares no entrypoint".to_owned())?;
+        let source = fs::read_to_string(directory.join(entrypoint))
             .map_err(|error| format!("could not load entrypoint: {error}"))?;
         let lua = self.new_sandboxed_lua()?;
         let clipboard_text = Arc::new(Mutex::new(None::<String>));
@@ -426,6 +435,8 @@ pub struct DiscoveredPlugin {
     pub directory: PathBuf,
     /// Validation diagnostic that prevents loading, if any.
     pub diagnostic: Option<String>,
+    /// The parsed `icon-theme.json`, present only for a valid `icon_theme` contribution.
+    pub icon_theme: Option<IconThemeManifest>,
 }
 
 impl DiscoveredPlugin {
@@ -473,11 +484,20 @@ impl PluginDiscovery {
     }
 
     /// Returns valid and disabled plugin records in deterministic directory order.
+    ///
+    /// If the same plugin id is found in more than one directory (e.g. a user plugin shadowing a
+    /// bundled one of the same id), only the first directory's copy is kept — directories are
+    /// scanned in the order they were added to `self`, so the user plugin directory (added via
+    /// [`Self::new`]) always wins over a later [`Self::with_bundled_directory`] — rather than
+    /// listing both, which would otherwise duplicate that plugin's contributions (columns,
+    /// actions, icon themes) in every consumer of `discover()`.
     pub fn discover(&self) -> Vec<DiscoveredPlugin> {
+        let mut seen_ids = std::collections::HashSet::new();
         let mut plugins = self
             .directories
             .iter()
             .flat_map(|directory| discover_plugins(directory))
+            .filter(|plugin| seen_ids.insert(plugin.id()))
             .collect::<Vec<_>>();
         plugins.sort_by_key(DiscoveredPlugin::id);
         plugins
@@ -505,25 +525,80 @@ pub fn discover_plugins(directory: &Path) -> Vec<DiscoveredPlugin> {
             }
             Some(match fs::read_to_string(&manifest_path) {
                 Ok(source) => match PluginManifest::parse(&source) {
-                    Ok(manifest) => DiscoveredPlugin {
-                        manifest: Some(manifest),
-                        directory,
-                        diagnostic: None,
-                    },
+                    Ok(manifest) => load_discovered_plugin(manifest, directory),
                     Err(error) => DiscoveredPlugin {
                         manifest: None,
                         directory,
                         diagnostic: Some(error.to_string()),
+                        icon_theme: None,
                     },
                 },
                 Err(error) => DiscoveredPlugin {
                     manifest: None,
                     directory,
                     diagnostic: Some(format!("could not read plugin.toml: {error}")),
+                    icon_theme: None,
                 },
             })
         })
         .collect()
+}
+
+/// Loads a valid manifest's `icon-theme.json` when declared, folding a missing/malformed/unsafe
+/// icon theme into the same "invalid plugin, disabled with diagnostic" outcome used for a bad
+/// `plugin.toml` — an icon-theme contribution runs no code, so this is the only validation gate
+/// it gets.
+fn load_discovered_plugin(manifest: PluginManifest, directory: PathBuf) -> DiscoveredPlugin {
+    if !manifest.contributions.icon_theme {
+        return DiscoveredPlugin {
+            manifest: Some(manifest),
+            directory,
+            diagnostic: None,
+            icon_theme: None,
+        };
+    }
+    match load_icon_theme(&directory) {
+        Ok(icon_theme) => DiscoveredPlugin {
+            manifest: Some(manifest),
+            directory,
+            diagnostic: None,
+            icon_theme: Some(icon_theme),
+        },
+        Err(diagnostic) => DiscoveredPlugin {
+            manifest: None,
+            directory,
+            diagnostic: Some(diagnostic),
+            icon_theme: None,
+        },
+    }
+}
+
+const ICON_THEME_MANIFEST_FILE_NAME: &str = "icon-theme.json";
+
+fn load_icon_theme(directory: &Path) -> Result<IconThemeManifest, String> {
+    let manifest_path = directory.join(ICON_THEME_MANIFEST_FILE_NAME);
+    let source = fs::read_to_string(&manifest_path)
+        .map_err(|error| format!("could not read {ICON_THEME_MANIFEST_FILE_NAME}: {error}"))?;
+    let icon_theme = IconThemeManifest::parse(&source).map_err(|error| error.to_string())?;
+    for definition in icon_theme.icon_definitions.values() {
+        resolve_plugin_asset(directory, &definition.icon_path).ok_or_else(|| {
+            format!(
+                "icon asset {:?} escapes the plugin directory",
+                definition.icon_path
+            )
+        })?;
+    }
+    Ok(icon_theme)
+}
+
+/// Resolves `relative` against `directory`, returning `None` unless the resolved, canonicalized
+/// path both exists and stays within `directory` — defense in depth against symlink-based
+/// traversal beyond `IconThemeManifest::validate`'s lexical (`..`/absolute) check.
+#[must_use]
+pub fn resolve_plugin_asset(directory: &Path, relative: &Path) -> Option<PathBuf> {
+    let root = fs::canonicalize(directory).ok()?;
+    let resolved = fs::canonicalize(directory.join(relative)).ok()?;
+    resolved.starts_with(&root).then_some(resolved)
 }
 
 #[cfg(test)]
@@ -549,6 +624,153 @@ mod tests {
                 .as_deref()
                 .is_some_and(|diagnostic| diagnostic.contains("invalid plugin manifest"))
         );
+    }
+
+    #[test]
+    fn discovers_a_valid_icon_theme_plugin_with_no_entrypoint() {
+        let temporary = tempfile::tempdir().expect("temporary directory");
+        let plugin = temporary.path().join("icons");
+        fs::create_dir(&plugin).expect("plugin directory");
+        fs::write(
+            plugin.join("plugin.toml"),
+            "id='example.icons'\nname='Icons'\nversion='1'\napi_version='1'\ndescription='An icon theme'\n[contributions]\nicon_theme=true",
+        )
+        .expect("manifest");
+        fs::write(plugin.join("folder.svg"), "<svg></svg>").expect("asset");
+        fs::write(
+            plugin.join("icon-theme.json"),
+            r#"{"iconDefinitions":{"folder":{"iconPath":"folder.svg"}},"folder":"folder"}"#,
+        )
+        .expect("icon theme");
+
+        let discovered = discover_plugins(temporary.path()).pop().expect("plugin");
+
+        assert!(discovered.is_valid());
+        assert!(discovered.manifest.expect("manifest").entrypoint.is_none());
+        let icon_theme = discovered.icon_theme.expect("icon theme");
+        assert_eq!(icon_theme.folder.as_deref(), Some("folder"));
+    }
+
+    #[test]
+    fn plugin_discovery_deduplicates_an_id_present_in_both_directories() {
+        fn write_same_plugin(root: &Path) {
+            let plugin = root.join("icons");
+            fs::create_dir(&plugin).expect("plugin directory");
+            fs::write(
+                plugin.join("plugin.toml"),
+                "id='example.icons'\nname='Icons'\nversion='1'\napi_version='1'\ndescription='An icon theme'\n[contributions]\nicon_theme=true",
+            )
+            .expect("manifest");
+        }
+
+        let user_directory = tempfile::tempdir().expect("user plugin directory");
+        let bundled_directory = tempfile::tempdir().expect("bundled plugin directory");
+        write_same_plugin(user_directory.path());
+        write_same_plugin(bundled_directory.path());
+
+        let discovery = PluginDiscovery::new(user_directory.path())
+            .with_bundled_directory(bundled_directory.path());
+        let discovered = discovery.discover();
+
+        assert_eq!(
+            discovered.len(),
+            1,
+            "the shared id should only be listed once"
+        );
+    }
+
+    #[test]
+    fn discovery_disables_an_icon_theme_plugin_whose_icon_path_escapes_the_directory() {
+        let temporary = tempfile::tempdir().expect("temporary directory");
+        let plugin = temporary.path().join("icons");
+        fs::create_dir(&plugin).expect("plugin directory");
+        fs::write(
+            plugin.join("plugin.toml"),
+            "id='example.icons'\nname='Icons'\nversion='1'\napi_version='1'\ndescription='An icon theme'\n[contributions]\nicon_theme=true",
+        )
+        .expect("manifest");
+        // A relative-but-safe-looking iconPath that does not exist is rejected the same as an
+        // actual traversal attempt, since `resolve_plugin_asset` requires the target to exist.
+        fs::write(
+            plugin.join("icon-theme.json"),
+            r#"{"iconDefinitions":{"folder":{"iconPath":"missing.svg"}}}"#,
+        )
+        .expect("icon theme");
+
+        let discovered = discover_plugins(temporary.path()).pop().expect("plugin");
+
+        assert!(!discovered.is_valid());
+        assert!(
+            discovered
+                .diagnostic
+                .as_deref()
+                .is_some_and(|diagnostic| diagnostic.contains("escapes the plugin directory"))
+        );
+    }
+
+    #[test]
+    fn discovery_disables_an_icon_theme_plugin_with_an_unknown_definition_reference() {
+        let temporary = tempfile::tempdir().expect("temporary directory");
+        let plugin = temporary.path().join("icons");
+        fs::create_dir(&plugin).expect("plugin directory");
+        fs::write(
+            plugin.join("plugin.toml"),
+            "id='example.icons'\nname='Icons'\nversion='1'\napi_version='1'\ndescription='An icon theme'\n[contributions]\nicon_theme=true",
+        )
+        .expect("manifest");
+        fs::write(plugin.join("folder.svg"), "<svg></svg>").expect("asset");
+        fs::write(
+            plugin.join("icon-theme.json"),
+            r#"{"iconDefinitions":{"folder":{"iconPath":"folder.svg"}},"folder":"not-declared"}"#,
+        )
+        .expect("icon theme");
+
+        let discovered = discover_plugins(temporary.path()).pop().expect("plugin");
+
+        assert!(!discovered.is_valid());
+        assert!(
+            discovered
+                .diagnostic
+                .as_deref()
+                .is_some_and(|diagnostic| diagnostic.contains("unknown icon definition"))
+        );
+    }
+
+    #[test]
+    fn discovers_the_real_catppuccin_icons_plugin_package() {
+        let plugins_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../plugins");
+        let discovered = discover_plugins(&plugins_root)
+            .into_iter()
+            .find(|plugin| {
+                plugin
+                    .manifest
+                    .as_ref()
+                    .is_some_and(|manifest| manifest.id == "catppuccin.icons")
+            })
+            .expect("catppuccin.icons plugin must be discovered");
+
+        assert!(
+            discovered.is_valid(),
+            "diagnostic: {:?}",
+            discovered.diagnostic
+        );
+        let manifest = discovered.manifest.expect("manifest");
+        assert!(manifest.entrypoint.is_none());
+        assert!(manifest.contributions.icon_theme);
+
+        let icon_theme = discovered.icon_theme.expect("icon theme");
+        assert_eq!(icon_theme.folder.as_deref(), Some("folder"));
+        assert_eq!(icon_theme.file.as_deref(), Some("file"));
+        assert_eq!(icon_theme.symlink.as_deref(), Some("symlink"));
+        assert_eq!(
+            icon_theme.file_extensions.get("ts").map(String::as_str),
+            Some("typescript")
+        );
+        assert_eq!(
+            icon_theme.mime_prefixes.get("image/").map(String::as_str),
+            Some("image")
+        );
+        assert_eq!(icon_theme.icon_definitions.len(), 27);
     }
 
     #[test]

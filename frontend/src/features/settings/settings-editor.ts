@@ -172,11 +172,16 @@ export const SettingsEditor: FactoryComponent<SettingsEditorAttrs> = () => {
           }),
         ]),
         m('.row', [
-          m(Select<Settings['iconTheme']>, {
+          m(Select<string>, {
             label: 'Directory icon theme',
             options: [
               { id: 'generic', label: 'Generic' },
-              { id: 'catppuccin', label: 'Catppuccin' },
+              ...current.plugins
+                .filter((plugin) => plugin.iconTheme !== undefined)
+                .map((plugin) => ({
+                  id: plugin.id,
+                  label: plugin.enabled ? plugin.name : `${plugin.name} (plugin disabled)`,
+                })),
             ],
             checkedId: activeDraft.iconTheme,
             onchange: ([value]) => value !== undefined && update(current, { iconTheme: value }),

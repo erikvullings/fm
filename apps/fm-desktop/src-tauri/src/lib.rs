@@ -87,6 +87,7 @@ pub fn run() {
             commands::enable_plugin,
             commands::disable_plugin,
             commands::get_plugin_logs,
+            commands::get_plugin_icon_theme_asset,
             commands::start_search,
             commands::cancel_search,
         ])
@@ -148,6 +149,7 @@ mod tests {
                 commands::enable_plugin,
                 commands::disable_plugin,
                 commands::get_plugin_logs,
+                commands::get_plugin_icon_theme_asset,
                 commands::start_search,
                 commands::cancel_search,
             ])

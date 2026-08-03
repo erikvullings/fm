@@ -3,6 +3,7 @@
  * Run `pnpm api:generate` (or `pnpm api:check`) to regenerate.
  */
 import type { PluginColumnDto } from './pluginColumnDto';
+import type { PluginIconThemeDto } from './pluginIconThemeDto';
 import type { PluginPermissionsDto } from './pluginPermissionsDto';
 
 /**
@@ -20,6 +21,7 @@ export interface PluginDescriptorDto {
   diagnostic?: string | null;
   /** Whether the valid plugin is enabled in persisted settings. */
   enabled: boolean;
+  iconTheme?: null | PluginIconThemeDto;
   /** Stable manifest identifier, or a directory-derived identifier when invalid. */
   id: string;
   /** User-facing name when available. */

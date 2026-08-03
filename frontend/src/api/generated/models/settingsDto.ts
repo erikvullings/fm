@@ -5,7 +5,6 @@
 import type { ConflictPolicyDto } from './conflictPolicyDto';
 import type { DateFormatDto } from './dateFormatDto';
 import type { DefaultPaneLayoutDto } from './defaultPaneLayoutDto';
-import type { IconThemeDto } from './iconThemeDto';
 import type { SettingsDtoKeybindings } from './settingsDtoKeybindings';
 import type { SettingsDtoPluginSettings } from './settingsDtoPluginSettings';
 import type { SizeFormatDto } from './sizeFormatDto';
@@ -34,8 +33,8 @@ export interface SettingsDto {
      * @minimum 0
      */
   fontSize: number;
-  /** Directory-entry icon set. */
-  iconTheme: IconThemeDto;
+  /** Directory-entry icon set: `"generic"` for the built-in glyphs, or a discovered plugin's id. */
+  iconTheme: string;
   /** Action-to-shortcut mappings. */
   keybindings: SettingsDtoKeybindings;
   /**

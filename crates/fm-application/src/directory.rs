@@ -22,6 +22,11 @@ use uuid::Uuid;
 
 use crate::ApplicationError;
 
+/// Maximum entries returned per `list()` response. The full directory is always enumerated and
+/// sorted first (see `list()` docs); this only bounds response/DOM size for very large
+/// directories, it never affects sort correctness across pages.
+const LIST_PAGE_SIZE: usize = 256;
+
 struct PaneRequest {
     request_id: Uuid,
     workspace_id: fm_domain::WorkspaceId,
@@ -32,6 +37,10 @@ struct PaneRequest {
     folders_first: bool,
     sort: Vec<SortDescriptorDto>,
     snapshot: Option<DirectorySnapshot>,
+    /// The complete, filtered, globally-sorted listing for the pane's current directory,
+    /// computed once (via [`list_all`]) and then sliced per page — never per-provider-page
+    /// sorted, since provider enumeration order is arbitrary (spec: see `list()` docs).
+    full_entries: Option<Arc<Vec<fm_domain::EntrySummary>>>,
 }
 
 struct SharedWatch {
@@ -72,15 +81,18 @@ impl DirectoryService {
         }
     }
 
-    /// Lists a directory in full and publishes it only if it is still the pane's newest
+    /// Lists one page of a directory, publishing it only if it is still the pane's newest
     /// request.
     ///
-    /// The entire directory is enumerated and globally sorted before any of it is returned
-    /// (mirroring [`list_all`], used by the watch-triggered refresh path) rather than sorting
-    /// provider pages independently. Per-provider-page sorting cannot produce a correct order
-    /// across page boundaries, since providers enumerate in arbitrary (e.g. filesystem/inode)
-    /// order — that previously surfaced as an initial listing showing only a filesystem-order
-    /// prefix of entries, with more (and out-of-order) entries appearing as the pane scrolled.
+    /// The entire directory is enumerated and globally sorted once per navigation (mirroring
+    /// [`list_all`], used by the watch-triggered refresh path), cached on the pane, and then
+    /// sliced into bounded [`LIST_PAGE_SIZE`] pages for the wire — sorting only cannot be done
+    /// per provider page, since providers enumerate in arbitrary (e.g. filesystem/inode) order:
+    /// that previously surfaced as an initial listing showing only a filesystem-order prefix of
+    /// entries, with more (and out-of-order) entries appearing as the pane scrolled. Slicing an
+    /// already-fully-sorted cached list keeps that fixed while still bounding per-response size
+    /// for very large directories; later pages reuse the cached list rather than re-enumerating
+    /// the provider.
     pub async fn list(
         &self,
         request: ListDirectoryRequest,
@@ -89,23 +101,29 @@ impl DirectoryService {
         let location: fm_domain::Location = request.location.clone().into();
         let first_page = request.continuation_token.is_none();
         let cancellation = CancellationToken::new();
-        {
+        let cached_full_entries = {
             let mut panes = self.panes.lock().await;
             let revision = panes.get(&pane_id).map_or(0, |state| state.revision);
             let previous = panes.remove(&pane_id);
-            let continuing_same_directory = !first_page
-                && previous
-                    .as_ref()
-                    .and_then(|state| state.snapshot.as_ref())
-                    .is_some_and(|snapshot| snapshot.location == location);
-            let (watch_cancellation, snapshot) = if continuing_same_directory {
+            let continuing_same_listing = !first_page
+                && previous.as_ref().is_some_and(|state| {
+                    state
+                        .snapshot
+                        .as_ref()
+                        .is_some_and(|snapshot| snapshot.location == location)
+                        && state.show_hidden == request.show_hidden
+                        && state.folders_first == request.folders_first
+                        && state.sort == request.sort
+                });
+            let (watch_cancellation, snapshot, full_entries) = if continuing_same_listing {
                 let previous = previous.as_ref().expect("checked above");
                 (
                     previous.watch_cancellation.clone(),
                     previous.snapshot.clone(),
+                    previous.full_entries.clone(),
                 )
             } else {
-                (CancellationToken::new(), None)
+                (CancellationToken::new(), None, None)
             };
             panes.insert(
                 pane_id,
@@ -119,18 +137,41 @@ impl DirectoryService {
                     folders_first: request.folders_first,
                     sort: request.sort.clone(),
                     snapshot,
+                    full_entries,
                 },
             );
             if let Some(previous) = previous {
                 previous.cancellation.cancel();
-                if !continuing_same_directory {
+                if !continuing_same_listing {
                     previous.watch_cancellation.cancel();
                 }
             }
-        }
+            panes
+                .get(&pane_id)
+                .and_then(|state| state.full_entries.clone())
+        };
 
         let provider = self.providers.resolve(&location)?;
-        let mut entries = list_all(provider.clone(), &location, cancellation.clone()).await?;
+        let full_entries = match cached_full_entries {
+            Some(cached) => cached,
+            None => {
+                let mut entries =
+                    list_all(provider.clone(), &location, cancellation.clone()).await?;
+                if !request.show_hidden {
+                    entries.retain(|entry| !entry.hidden);
+                }
+                sort_entries(&mut entries, &request.sort, request.folders_first);
+                Arc::new(entries)
+            }
+        };
+        let offset = decode_page_offset(request.continuation_token.as_deref())?;
+        if offset > full_entries.len() {
+            return Err(ApplicationError::InvalidRequest(
+                "continuation token is out of range".to_owned(),
+            ));
+        }
+        let end = full_entries.len().min(offset + LIST_PAGE_SIZE);
+        let has_more = end < full_entries.len();
 
         let mut panes = self.panes.lock().await;
         let state = panes
@@ -138,11 +179,7 @@ impl DirectoryService {
             .filter(|state| state.request_id == request.request_id)
             .ok_or(ApplicationError::OperationCancelled)?;
         state.revision += 1;
-
-        if !request.show_hidden {
-            entries.retain(|entry| !entry.hidden);
-        }
-        sort_entries(&mut entries, &request.sort, request.folders_first);
+        state.full_entries = Some(Arc::clone(&full_entries));
 
         let writable = provider
             .inspect(
@@ -162,10 +199,10 @@ impl DirectoryService {
             revision: state.revision,
             location,
             writable,
-            total_known_entries: Some(entries.len() as u64),
-            entries,
-            has_more: false,
-            continuation_token: None,
+            entries: full_entries[offset..end].to_vec(),
+            total_known_entries: Some(full_entries.len() as u64),
+            has_more,
+            continuation_token: has_more.then(|| end.to_string()),
             loading_state: LoadingState::Loaded,
         };
         state.snapshot = Some(snapshot.clone());
@@ -464,6 +501,7 @@ async fn publish_changes(
         reset_snapshot.revision = final_revision;
     }
     state.revision = final_revision;
+    state.full_entries = Some(Arc::new(snapshot.entries.clone()));
     state.snapshot = Some(snapshot);
     drop(panes);
 
@@ -592,6 +630,18 @@ fn compare_entry(
         "core.size" => left.size.cmp(&right.size),
         "core.modified" => left.modified_at.cmp(&right.modified_at),
         _ => left.name.to_lowercase().cmp(&right.name.to_lowercase()),
+    }
+}
+
+/// Decodes `list()`'s continuation token: a plain index offset into the pane's cached, fully
+/// sorted entry list (opaque to callers, but simple since it addresses an in-memory `Vec` rather
+/// than a provider-specific cursor).
+fn decode_page_offset(token: Option<&str>) -> Result<usize, ApplicationError> {
+    match token {
+        None => Ok(0),
+        Some(raw) => raw
+            .parse()
+            .map_err(|_| ApplicationError::InvalidRequest("invalid continuation token".to_owned())),
     }
 }
 
@@ -798,7 +848,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn listing_a_directory_larger_than_a_provider_page_returns_every_entry() {
+    async fn listing_a_directory_larger_than_one_page_paginates_a_globally_sorted_cache() {
         let root = tempfile::tempdir().expect("temporary directory");
         for index in 0..257 {
             std::fs::write(root.path().join(format!("entry-{index:03}")), b"")
@@ -814,22 +864,39 @@ mod tests {
 
         let mut first_request = request(pane_id, Uuid::new_v4());
         first_request.workspace_id = workspace_id;
-        first_request.location = location;
-        let first = service.list(first_request).await.expect("full listing");
+        first_request.location = location.clone();
+        let first = service.list(first_request).await.expect("first page");
 
-        assert!(!first.has_more);
-        assert_eq!(first.continuation_token, None);
+        assert!(first.has_more);
         assert_eq!(first.total_known_entries, Some(257));
-        assert_eq!(first.entries.len(), 257);
+        assert_eq!(first.entries.len(), 256);
         assert_eq!(service.watches.registration_count().await, 1);
 
-        // Re-listing the same pane/location must not leak a second watch registration.
         let mut second_request = request(pane_id, Uuid::new_v4());
         second_request.workspace_id = workspace_id;
-        second_request.location =
-            LocationDto::from(Location::from_native_path(root.path()).expect("local location"));
-        service.list(second_request).await.expect("re-listing");
+        second_request.location = location;
+        second_request.continuation_token = first.continuation_token;
+        let second = service.list(second_request).await.expect("second page");
 
+        assert!(!second.has_more);
+        assert_eq!(second.continuation_token, None);
+        assert_eq!(second.total_known_entries, Some(257));
+        assert_eq!(second.entries.len(), 1);
+        // The two pages must be a contiguous slice of one globally sorted list: no gaps,
+        // no duplicates, and page 2 continues immediately after page 1 in sort order.
+        assert!(first.entries.last().unwrap().name < second.entries[0].name);
+        let mut names: Vec<_> = first
+            .entries
+            .iter()
+            .chain(second.entries.iter())
+            .map(|entry| entry.name.clone())
+            .collect();
+        let unique_count = {
+            names.sort();
+            names.dedup();
+            names.len()
+        };
+        assert_eq!(unique_count, 257);
         assert_eq!(service.watches.registration_count().await, 1);
     }
 

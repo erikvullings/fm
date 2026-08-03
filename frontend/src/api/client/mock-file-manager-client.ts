@@ -75,6 +75,7 @@ export type MockClientMethod =
   | 'listPlugins'
   | 'setPluginEnabled'
   | 'getPluginLogs'
+  | 'getPluginIconThemeAsset'
   | 'startSearch'
   | 'cancelSearch';
 
@@ -645,6 +646,26 @@ export class MockFileManagerClient implements FileManagerClient {
         throw new MockClientError('pluginNotFound', `No mock plugin with id ${pluginId}`);
       }
       return [];
+    });
+  }
+
+  getPluginIconThemeAsset(
+    pluginId: PluginId,
+    assetPath: string,
+    signal?: AbortSignal,
+  ): Promise<string> {
+    return this.perform('getPluginIconThemeAsset', signal, () => {
+      const plugin = this.pluginState.find((candidate) => candidate.id === pluginId);
+      const isDeclared = Object.values(plugin?.iconTheme?.iconDefinitions ?? {}).some(
+        (definition) => definition.iconPath === assetPath,
+      );
+      if (!isDeclared) {
+        throw new MockClientError(
+          'pluginNotFound',
+          `No icon theme asset ${assetPath} for plugin ${pluginId}`,
+        );
+      }
+      return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"></svg>';
     });
   }
 
