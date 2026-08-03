@@ -95,6 +95,7 @@
   left: 0;
   height: var(--fm-row-height);
   cursor: default;
+  background: var(--fm-directory-row-base, transparent);
 }
 
 .fm-cursor-row,
