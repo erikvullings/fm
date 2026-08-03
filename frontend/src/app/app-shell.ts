@@ -1749,369 +1749,380 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
         (operation) =>
           operation?.kind === 'delete' && operation.state === 'waitingForConflictResolution',
       );
-      // macOS's overlay title bar (spec follow-up) removes the reserved native title
-      // strip so the toolbar itself extends under the traffic lights, painted by our
-      // own CSS -- this is what actually makes the frame colour match, since a plain
-      // "Transparent" title bar still let the OS render its own vibrancy behind it.
+      // macOS's overlay title bar (spec follow-up) keeps the native traffic lights, but
+      // draws our own centred title in a reserved CSS row instead of the OS title text
+      // (hidden via hiddenTitle) -- this is what makes the frame colour match, since a
+      // plain "Transparent" title bar still let the OS render its own vibrancy behind it.
+      // The web build doesn't need this: the browser tab already shows the title.
       const isMacOverlay = runtimeKind === 'tauri' && platform === 'macos';
       return m(
         '.fm-app-shell',
         { 'data-mac-titlebar-overlay': isMacOverlay ? 'true' : undefined },
         [
-        m('.fm-workspace-toolbar', { 'data-tauri-drag-region': isMacOverlay ? '' : undefined }, [
-          m('.fm-navigation-controls', { 'aria-label': 'Active pane navigation' }, [
+          isMacOverlay
+            ? m('.fm-titlebar-spacer', { 'data-tauri-drag-region': '' }, [
+                m('span.fm-titlebar-label', 'Procyon'),
+              ])
+            : null,
+          m('.fm-workspace-toolbar', [
+            m('.fm-navigation-controls', { 'aria-label': 'Active pane navigation' }, [
+              m(
+                'button',
+                {
+                  type: 'button',
+                  disabled:
+                    workspace?.panesById[workspace.activePaneId]?.tabsById[
+                      workspace.panesById[workspace.activePaneId]?.activeTabId ?? ''
+                    ]?.canNavigateBack !== true,
+                  'aria-label': 'Back',
+                  onclick: () => void navigation.back(workspace?.activePaneId ?? ''),
+                },
+                arrowLeftIcon(),
+              ),
+              m(
+                'button',
+                {
+                  type: 'button',
+                  disabled:
+                    workspace?.panesById[workspace.activePaneId]?.tabsById[
+                      workspace.panesById[workspace.activePaneId]?.activeTabId ?? ''
+                    ]?.canNavigateForward !== true,
+                  'aria-label': 'Forward',
+                  onclick: () => void navigation.forward(workspace?.activePaneId ?? ''),
+                },
+                arrowRightIcon(),
+              ),
+              m(
+                'button',
+                {
+                  type: 'button',
+                  disabled: workspace === undefined,
+                  'aria-label': 'Parent directory',
+                  onclick: () => void navigation.parent(workspace?.activePaneId ?? ''),
+                },
+                cornerLeftUpIcon(),
+              ),
+            ]),
             m(
               'button',
               {
                 type: 'button',
-                disabled:
-                  workspace?.panesById[workspace.activePaneId]?.tabsById[
-                    workspace.panesById[workspace.activePaneId]?.activeTabId ?? ''
-                  ]?.canNavigateBack !== true,
-                'aria-label': 'Back',
-                onclick: () => void navigation.back(workspace?.activePaneId ?? ''),
+                disabled: activeDirectory() === undefined,
+                'aria-label': 'Find files',
+                onclick: () => {
+                  const active = activeDirectory();
+                  if (active === undefined) return;
+                  findFilesRoot = active.location;
+                  findFilesOpen = true;
+                },
               },
-              arrowLeftIcon(),
+              [searchIcon(), m('span', 'Find files')],
             ),
             m(
               'button',
               {
                 type: 'button',
-                disabled:
-                  workspace?.panesById[workspace.activePaneId]?.tabsById[
-                    workspace.panesById[workspace.activePaneId]?.activeTabId ?? ''
-                  ]?.canNavigateForward !== true,
-                'aria-label': 'Forward',
-                onclick: () => void navigation.forward(workspace?.activePaneId ?? ''),
+                disabled: registeredActions.length === 0,
+                onclick: () => {
+                  commandPaletteOpen = true;
+                  commandPaletteError = undefined;
+                },
               },
-              arrowRightIcon(),
+              [commandIcon(), m('span', 'Command palette')],
             ),
-            m(
-              'button',
-              {
-                type: 'button',
-                disabled: workspace === undefined,
-                'aria-label': 'Parent directory',
-                onclick: () => void navigation.parent(workspace?.activePaneId ?? ''),
-              },
-              cornerLeftUpIcon(),
-            ),
-          ]),
-          m(
-            'button',
-            {
-              type: 'button',
-              disabled: activeDirectory() === undefined,
-              'aria-label': 'Find files',
-              onclick: () => {
-                const active = activeDirectory();
-                if (active === undefined) return;
-                findFilesRoot = active.location;
-                findFilesOpen = true;
-              },
-            },
-            [searchIcon(), m('span', 'Find files')],
-          ),
-          m(
-            'button',
-            {
-              type: 'button',
-              disabled: registeredActions.length === 0,
-              onclick: () => {
-                commandPaletteOpen = true;
-                commandPaletteError = undefined;
-              },
-            },
-            [commandIcon(), m('span', 'Command palette')],
-          ),
-          m('details.fm-workspace-disclosure', [
-            m(
-              'summary.fm-workspace-switcher-button',
-              {
-                title: 'Switch or manage workspaces',
-                'aria-label': `Workspace switcher, current workspace: ${workspace?.name ?? 'none'}`,
-              },
-              [
-                layoutGridIcon(),
-                m('span.fm-workspace-switcher-label', workspace?.name ?? 'Workspace'),
-              ],
-            ),
-            m('.fm-workspace-switcher-panel', { role: 'dialog', 'aria-label': 'Workspaces' }, [
-              m('.fm-workspace-switcher-heading', [
-                m('strong', 'Workspaces'),
-                m(
-                  'button',
-                  {
-                    type: 'button',
-                    'aria-label': 'Close workspaces',
-                    onclick: (event: MouseEvent) => {
+            m('details.fm-workspace-disclosure', [
+              m(
+                'summary.fm-workspace-switcher-button',
+                {
+                  title: 'Switch or manage workspaces',
+                  'aria-label': `Workspace switcher, current workspace: ${workspace?.name ?? 'none'}`,
+                },
+                [
+                  layoutGridIcon(),
+                  m('span.fm-workspace-switcher-label', workspace?.name ?? 'Workspace'),
+                ],
+              ),
+              m('.fm-workspace-switcher-panel', { role: 'dialog', 'aria-label': 'Workspaces' }, [
+                m('.fm-workspace-switcher-heading', [
+                  m('strong', 'Workspaces'),
+                  m(
+                    'button',
+                    {
+                      type: 'button',
+                      'aria-label': 'Close workspaces',
+                      onclick: (event: MouseEvent) => {
+                        const disclosure = (event.currentTarget as HTMLElement).closest('details');
+                        if (disclosure instanceof HTMLDetailsElement) disclosure.open = false;
+                      },
+                    },
+                    closeIcon(),
+                  ),
+                ]),
+                m(WorkspaceSwitcher, {
+                  summaries: sortWorkspaceSummaries(workspaceSummaries),
+                  activeWorkspaceId: workspace?.id,
+                  error: workspaceActionError,
+                  onSwitch: (workspaceId) => {
+                    void switchWorkspace(attrs.client, workspaceId);
+                  },
+                  onCreate: () => createWorkspaceAction(attrs.client),
+                  onRename: (workspaceId, name) =>
+                    renameWorkspaceAction(attrs.client, workspaceId, name),
+                  onDelete: (workspaceId) => deleteWorkspaceAction(attrs.client, workspaceId),
+                }),
+              ]),
+            ]),
+            m('details.fm-settings-disclosure', [
+              m('summary.fm-settings-button', [settingsIcon(), m('span', 'Settings')]),
+              m(
+                '.fm-settings-editor',
+                {
+                  role: 'dialog',
+                  'aria-label': 'Settings',
+                  onclick: (event: MouseEvent) => {
+                    if (event.target === event.currentTarget) {
                       const disclosure = (event.currentTarget as HTMLElement).closest('details');
                       if (disclosure instanceof HTMLDetailsElement) disclosure.open = false;
-                    },
+                    }
                   },
-                  closeIcon(),
-                ),
-              ]),
-              m(WorkspaceSwitcher, {
-                summaries: sortWorkspaceSummaries(workspaceSummaries),
-                activeWorkspaceId: workspace?.id,
-                error: workspaceActionError,
-                onSwitch: (workspaceId) => {
-                  void switchWorkspace(attrs.client, workspaceId);
                 },
-                onCreate: () => createWorkspaceAction(attrs.client),
-                onRename: (workspaceId, name) =>
-                  renameWorkspaceAction(attrs.client, workspaceId, name),
-                onDelete: (workspaceId) => deleteWorkspaceAction(attrs.client, workspaceId),
-              }),
+                [
+                  m('.fm-settings-editor-panel', [
+                    m('.fm-settings-editor-heading', [
+                      m('strong', 'Settings'),
+                      m(
+                        'button',
+                        {
+                          type: 'button',
+                          'aria-label': 'Close settings',
+                          onclick: (event: MouseEvent) => {
+                            const disclosure = (event.currentTarget as HTMLElement).closest(
+                              'details',
+                            );
+                            if (disclosure instanceof HTMLDetailsElement) disclosure.open = false;
+                          },
+                        },
+                        closeIcon(),
+                      ),
+                    ]),
+                    currentSettings === undefined
+                      ? m('p', 'Loading settings…')
+                      : m(SettingsEditor, {
+                          settings: currentSettings,
+                          actions: registeredActions,
+                          platform,
+                          runtime: keybindingRuntime,
+                          plugins,
+                          onPreview: (draft: Settings) => {
+                            applyAppearance(draft);
+                            m.redraw();
+                          },
+                          onSave: async (draft: Settings) => {
+                            await attrs.client.updateSettings(draft);
+                            currentSettings = draft;
+                            applyAppearance(draft);
+                          },
+                          onCancel: () => {
+                            if (currentSettings !== undefined) applyAppearance(currentSettings);
+                          },
+                          onTogglePlugin: (pluginId: PluginId, enabled: boolean) =>
+                            attrs.client.setPluginEnabled(pluginId, enabled),
+                          onRequestPluginLogs: (
+                            pluginId: PluginId,
+                          ): Promise<readonly PluginLogEntry[]> =>
+                            attrs.client.getPluginLogs(pluginId),
+                        }),
+                  ]),
+                ],
+              ),
             ]),
           ]),
-          m('details.fm-settings-disclosure', [
-            m('summary.fm-settings-button', [settingsIcon(), m('span', 'Settings')]),
-            m(
-              '.fm-settings-editor',
-              {
-                role: 'dialog',
-                'aria-label': 'Settings',
-                onclick: (event: MouseEvent) => {
-                  if (event.target === event.currentTarget) {
-                    const disclosure = (event.currentTarget as HTMLElement).closest('details');
-                    if (disclosure instanceof HTMLDetailsElement) disclosure.open = false;
-                  }
-                },
-              },
-              [
-                m('.fm-settings-editor-panel', [
-                  m('.fm-settings-editor-heading', [
-                    m('strong', 'Settings'),
-                    m(
-                      'button',
-                      {
-                        type: 'button',
-                        'aria-label': 'Close settings',
-                        onclick: (event: MouseEvent) => {
-                          const disclosure = (event.currentTarget as HTMLElement).closest(
-                            'details',
-                          );
-                          if (disclosure instanceof HTMLDetailsElement) disclosure.open = false;
-                        },
-                      },
-                      closeIcon(),
+          m('main.fm-workspace', [
+            workspace === undefined
+              ? m('.fm-workspace-loading', workspaceError ?? 'Loading workspace…')
+              : m(WorkspaceLayoutView, {
+                  workspace,
+                  paneContent: (paneId) =>
+                    paneContent(
+                      attrs.client,
+                      attrs.entryFormatSettings ?? loadedEntryFormatSettings,
+                      paneId,
                     ),
-                  ]),
-                  currentSettings === undefined
-                    ? m('p', 'Loading settings…')
-                    : m(SettingsEditor, {
-                        settings: currentSettings,
-                        actions: registeredActions,
-                        platform,
-                        runtime: keybindingRuntime,
-                        plugins,
-                        onPreview: (draft: Settings) => {
-                          applyAppearance(draft);
-                          m.redraw();
-                        },
-                        onSave: async (draft: Settings) => {
-                          await attrs.client.updateSettings(draft);
-                          currentSettings = draft;
-                          applyAppearance(draft);
-                        },
-                        onCancel: () => {
-                          if (currentSettings !== undefined) applyAppearance(currentSettings);
-                        },
-                        onTogglePlugin: (pluginId: PluginId, enabled: boolean) =>
-                          attrs.client.setPluginEnabled(pluginId, enabled),
-                        onRequestPluginLogs: (
-                          pluginId: PluginId,
-                        ): Promise<readonly PluginLogEntry[]> =>
-                          attrs.client.getPluginLogs(pluginId),
-                      }),
-                ]),
-              ],
-            ),
+                  onActivatePane: (paneId) => activatePane(attrs.client, paneId),
+                  onUpdateLayout: (layout) => updateLayout(attrs.client, layout),
+                  onSelectTab: (paneId, tabId) => activateTab(attrs.client, paneId, tabId),
+                  onCloseTab: (paneId, tabId) => requestCloseTab(attrs.client, paneId, tabId),
+                  onNewTab: (paneId) => openTab(attrs.client, paneId),
+                  registerFlush: (flush) => {
+                    flushPendingLayoutUpdate = flush;
+                  },
+                }),
           ]),
-        ]),
-        m('main.fm-workspace', [
-          workspace === undefined
-            ? m('.fm-workspace-loading', workspaceError ?? 'Loading workspace…')
-            : m(WorkspaceLayoutView, {
-                workspace,
-                paneContent: (paneId) =>
-                  paneContent(
-                    attrs.client,
-                    attrs.entryFormatSettings ?? loadedEntryFormatSettings,
-                    paneId,
+          clipboardMessage === undefined
+            ? undefined
+            : m('.fm-clipboard-message', { role: 'alert' }, clipboardMessage),
+          commandPaletteError === undefined
+            ? undefined
+            : m('.fm-command-palette-error', { role: 'alert' }, commandPaletteError),
+          m(CommandPalette, {
+            open: commandPaletteOpen,
+            actions: registeredActions,
+            recency: commandPaletteRecency,
+            context: actionContext(),
+            availabilityContext: commandAvailabilityContext(),
+            onClose: () => {
+              commandPaletteOpen = false;
+            },
+            onInvoke: invokePaletteAction,
+          }),
+          m(DirectoryContextMenu, {
+            open: contextMenu !== undefined,
+            x: contextMenu?.x ?? 0,
+            y: contextMenu?.y ?? 0,
+            actions:
+              contextMenu === undefined
+                ? []
+                : menuActionsForContext(
+                    registeredActions,
+                    commandAvailabilityContext(contextMenu.entries, contextMenu.paneId),
                   ),
-                onActivatePane: (paneId) => activatePane(attrs.client, paneId),
-                onUpdateLayout: (layout) => updateLayout(attrs.client, layout),
-                onSelectTab: (paneId, tabId) => activateTab(attrs.client, paneId, tabId),
-                onCloseTab: (paneId, tabId) => requestCloseTab(attrs.client, paneId, tabId),
-                onNewTab: (paneId) => openTab(attrs.client, paneId),
-                registerFlush: (flush) => {
-                  flushPendingLayoutUpdate = flush;
-                },
-              }),
-        ]),
-        clipboardMessage === undefined
-          ? undefined
-          : m('.fm-clipboard-message', { role: 'alert' }, clipboardMessage),
-        commandPaletteError === undefined
-          ? undefined
-          : m('.fm-command-palette-error', { role: 'alert' }, commandPaletteError),
-        m(CommandPalette, {
-          open: commandPaletteOpen,
-          actions: registeredActions,
-          recency: commandPaletteRecency,
-          context: actionContext(),
-          availabilityContext: commandAvailabilityContext(),
-          onClose: () => {
-            commandPaletteOpen = false;
-          },
-          onInvoke: invokePaletteAction,
-        }),
-        m(DirectoryContextMenu, {
-          open: contextMenu !== undefined,
-          x: contextMenu?.x ?? 0,
-          y: contextMenu?.y ?? 0,
-          actions:
-            contextMenu === undefined
-              ? []
-              : menuActionsForContext(
-                  registeredActions,
-                  commandAvailabilityContext(contextMenu.entries, contextMenu.paneId),
-                ),
-          onClose: () => {
-            contextMenu = undefined;
-          },
-          onInvoke: invokeContextMenuAction,
-        }),
-        m(OperationCentre, {
-          state: operations,
-          onCancel: (operationId) => {
-            operations = transitionOperationState(operations, operationId, 'cancelling');
-            void attrs.client.cancelOperation(operationId).catch(() => undefined);
-          },
-          onPause: (operationId) => {
-            operations = transitionOperationState(operations, operationId, 'paused');
-            void attrs.client.pauseOperation(operationId).catch(() => undefined);
-          },
-          onResume: (operationId) => {
-            operations = transitionOperationState(operations, operationId, 'running');
-            void attrs.client.resumeOperation(operationId).catch(() => undefined);
-          },
-          onDismiss: (operationId) => {
-            cancelAutoDismiss(operationId);
-            operations = dismissOperation(operations, operationId);
-          },
-        }),
-        m(CreateDirectoryDialog, {
-          open: createDirectoryOpen,
-          onCancel: () => {
-            createDirectoryOpen = false;
-            createDirectoryLocation = undefined;
-          },
-          onConfirm: (name: string) => {
-            const location = createDirectoryLocation ?? activeDirectory()?.location;
-            if (location === undefined) return;
-            createDirectoryOpen = false;
-            createDirectoryLocation = undefined;
-            pendingCreatedLocation = `${location.uri.replace(/\/$/u, '')}/${encodeURIComponent(name)}`;
-            void attrs.client
-              .startOperation({
-                type: 'createDirectory',
-                sources: [],
-                destination: location,
-                conflictPolicy: 'ask',
-                name,
-                createIntermediateDirectories: false,
-              })
-              .catch(() => {
-                pendingCreatedLocation = undefined;
-              });
-          },
-        }),
-        m(FindFilesDialog, {
-          open: findFilesOpen,
-          scopeLabel: findFilesRoot === undefined ? '' : pathFromUri(findFilesRoot.uri),
-          results: findFilesResults,
-          searching: findFilesSearching,
-          ...(findFilesError === undefined ? {} : { error: findFilesError }),
-          onSearch: (query: string) => startFindFilesSearch(query),
-          onCancel: () => closeFindFiles(),
-          onActivateResult: (entry: EntrySummary) => {
-            const paneId = activeDirectory()?.paneId ?? workspace?.activePaneId;
-            if (paneId === undefined) return;
-            closeFindFiles();
-            void navigation.navigate(paneId, parentLocation(entry.location), entry.name);
-          },
-        }),
-        m(PermanentDeleteDialog, {
-          open: pendingDelete !== undefined,
-          itemCount: pendingDelete?.progress.totalItems ?? 0,
-          totalBytes: pendingDelete?.progress.totalBytes ?? 0,
-          onCancel: () => {
-            if (pendingDelete !== undefined) void attrs.client.cancelOperation(pendingDelete.id);
-          },
-          onConfirm: () => {
-            if (pendingDelete !== undefined) {
-              void attrs.client.resolveConflict({
-                operationId: pendingDelete.id,
-                resolution: 'confirm',
-                applyToAllSimilar: false,
-              });
-            }
-          },
-        }),
-        m(ConflictDialog, {
-          conflict: pendingConflict,
-          onResolve: (resolution, applyToAllSimilar) => {
-            const conflict = pendingConflict;
-            if (conflict === undefined) return;
-            void attrs.client
-              .resolveConflict({
-                operationId: conflict.operationId,
-                resolution,
-                applyToAllSimilar,
-              })
-              .then(() => {
-                if (pendingConflict?.conflictId === conflict.conflictId) {
-                  pendingConflict = undefined;
-                  m.redraw();
-                }
-              });
-          },
-        }),
-        m(CloseLastTabDialog, {
-          open: closeTabConfirmation !== undefined,
-          onConfirm: () => {
-            const confirmation = closeTabConfirmation;
-            closeTabConfirmation = undefined;
-            if (confirmation !== undefined) {
-              performCloseTab(attrs.client, confirmation.paneId, confirmation.tabId);
-            }
-          },
-          onCancel: () => {
-            closeTabConfirmation = undefined;
-          },
-        }),
-        m(
-          '.fm-function-key-bar',
-          footerFunctionKeyBindings(
-            registeredActions,
-            currentSettings?.keybindings ?? {},
-            { scope: 'table', platform, runtime: attrs.runtime === 'http' ? 'browser' : 'desktop' },
-            (action) => evaluateActionAvailability(action, commandAvailabilityContext()).available,
-          ).map((binding) =>
-            m(
-              'span.fm-function-key',
+            onClose: () => {
+              contextMenu = undefined;
+            },
+            onInvoke: invokeContextMenuAction,
+          }),
+          m(OperationCentre, {
+            state: operations,
+            onCancel: (operationId) => {
+              operations = transitionOperationState(operations, operationId, 'cancelling');
+              void attrs.client.cancelOperation(operationId).catch(() => undefined);
+            },
+            onPause: (operationId) => {
+              operations = transitionOperationState(operations, operationId, 'paused');
+              void attrs.client.pauseOperation(operationId).catch(() => undefined);
+            },
+            onResume: (operationId) => {
+              operations = transitionOperationState(operations, operationId, 'running');
+              void attrs.client.resumeOperation(operationId).catch(() => undefined);
+            },
+            onDismiss: (operationId) => {
+              cancelAutoDismiss(operationId);
+              operations = dismissOperation(operations, operationId);
+            },
+          }),
+          m(CreateDirectoryDialog, {
+            open: createDirectoryOpen,
+            onCancel: () => {
+              createDirectoryOpen = false;
+              createDirectoryLocation = undefined;
+            },
+            onConfirm: (name: string) => {
+              const location = createDirectoryLocation ?? activeDirectory()?.location;
+              if (location === undefined) return;
+              createDirectoryOpen = false;
+              createDirectoryLocation = undefined;
+              pendingCreatedLocation = `${location.uri.replace(/\/$/u, '')}/${encodeURIComponent(name)}`;
+              void attrs.client
+                .startOperation({
+                  type: 'createDirectory',
+                  sources: [],
+                  destination: location,
+                  conflictPolicy: 'ask',
+                  name,
+                  createIntermediateDirectories: false,
+                })
+                .catch(() => {
+                  pendingCreatedLocation = undefined;
+                });
+            },
+          }),
+          m(FindFilesDialog, {
+            open: findFilesOpen,
+            scopeLabel: findFilesRoot === undefined ? '' : pathFromUri(findFilesRoot.uri),
+            results: findFilesResults,
+            searching: findFilesSearching,
+            ...(findFilesError === undefined ? {} : { error: findFilesError }),
+            onSearch: (query: string) => startFindFilesSearch(query),
+            onCancel: () => closeFindFiles(),
+            onActivateResult: (entry: EntrySummary) => {
+              const paneId = activeDirectory()?.paneId ?? workspace?.activePaneId;
+              if (paneId === undefined) return;
+              closeFindFiles();
+              void navigation.navigate(paneId, parentLocation(entry.location), entry.name);
+            },
+          }),
+          m(PermanentDeleteDialog, {
+            open: pendingDelete !== undefined,
+            itemCount: pendingDelete?.progress.totalItems ?? 0,
+            totalBytes: pendingDelete?.progress.totalBytes ?? 0,
+            onCancel: () => {
+              if (pendingDelete !== undefined) void attrs.client.cancelOperation(pendingDelete.id);
+            },
+            onConfirm: () => {
+              if (pendingDelete !== undefined) {
+                void attrs.client.resolveConflict({
+                  operationId: pendingDelete.id,
+                  resolution: 'confirm',
+                  applyToAllSimilar: false,
+                });
+              }
+            },
+          }),
+          m(ConflictDialog, {
+            conflict: pendingConflict,
+            onResolve: (resolution, applyToAllSimilar) => {
+              const conflict = pendingConflict;
+              if (conflict === undefined) return;
+              void attrs.client
+                .resolveConflict({
+                  operationId: conflict.operationId,
+                  resolution,
+                  applyToAllSimilar,
+                })
+                .then(() => {
+                  if (pendingConflict?.conflictId === conflict.conflictId) {
+                    pendingConflict = undefined;
+                    m.redraw();
+                  }
+                });
+            },
+          }),
+          m(CloseLastTabDialog, {
+            open: closeTabConfirmation !== undefined,
+            onConfirm: () => {
+              const confirmation = closeTabConfirmation;
+              closeTabConfirmation = undefined;
+              if (confirmation !== undefined) {
+                performCloseTab(attrs.client, confirmation.paneId, confirmation.tabId);
+              }
+            },
+            onCancel: () => {
+              closeTabConfirmation = undefined;
+            },
+          }),
+          m(
+            '.fm-function-key-bar',
+            footerFunctionKeyBindings(
+              registeredActions,
+              currentSettings?.keybindings ?? {},
               {
-                key: binding.actionId,
-                'aria-disabled': binding.actionAvailable ? undefined : 'true',
+                scope: 'table',
+                platform,
+                runtime: attrs.runtime === 'http' ? 'browser' : 'desktop',
               },
-              `${binding.shortcut} ${binding.title}`,
+              (action) =>
+                evaluateActionAvailability(action, commandAvailabilityContext()).available,
+            ).map((binding) =>
+              m(
+                'span.fm-function-key',
+                {
+                  key: binding.actionId,
+                  'aria-disabled': binding.actionAvailable ? undefined : 'true',
+                },
+                `${binding.shortcut} ${binding.title}`,
+              ),
             ),
           ),
-        ),
         ],
       );
     },

@@ -65,6 +65,12 @@
   font: inherit;
   line-height: 1;
   cursor: pointer;
+  opacity: 0;
+}
+
+.fm-pane-tab:hover .fm-pane-tab-close,
+.fm-pane-tab-close:focus-visible {
+  opacity: 1;
 }
 
 .fm-pane-tab-new {

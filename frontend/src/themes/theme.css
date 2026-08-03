@@ -100,7 +100,7 @@ body {
 
 .fm-app-shell {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  grid-template-rows: auto auto minmax(0, 1fr) auto auto;
   height: 100vh;
   min-width: 520px;
   overflow: hidden;
@@ -129,12 +129,26 @@ body {
 
 /*
  * macOS overlay title bar (tauri.conf.json titleBarStyle: Overlay + hiddenTitle):
- * the toolbar itself extends under the native traffic lights, so it needs room
- * for them instead of a separate OS-drawn title strip.
+ * reserves a row, coloured the same as the toolbar, for the native traffic lights,
+ * with our own centred title label -- the OS title is hidden since it doesn't
+ * centre reliably without an NSToolbar attached.
  */
-.fm-app-shell[data-mac-titlebar-overlay="true"] .fm-workspace-toolbar {
-  padding-left: 78px;
-  min-height: 28px;
+.fm-titlebar-spacer {
+  display: none;
+}
+
+.fm-app-shell[data-mac-titlebar-overlay="true"] .fm-titlebar-spacer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 22px;
+  background: var(--fm-surface-elevated);
+}
+
+.fm-titlebar-label {
+  color: var(--fm-text-muted);
+  font-size: 0.8em;
+  font-weight: 700;
 }
 
 .fm-workspace-toolbar > span {
