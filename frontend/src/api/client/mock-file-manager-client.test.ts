@@ -392,6 +392,7 @@ describe('MockFileManagerClient file range and content search methods', () => {
       query: 'ERROR',
       regex: false,
       caseSensitive: false,
+      wholeWord: false,
     });
 
     expect(result.matches.length).toBeGreaterThan(0);
@@ -407,16 +408,45 @@ describe('MockFileManagerClient file range and content search methods', () => {
       query: 'line \\d+ of',
       regex: true,
       caseSensitive: true,
+      wholeWord: false,
     });
 
     expect(result.matches.length).toBeGreaterThan(0);
+  });
+
+  it('excludes matches inside a larger word when wholeWord is set', async () => {
+    const client = new MockFileManagerClient();
+
+    const partial = await client.searchInFile({
+      location: LOCATION,
+      query: 'err',
+      regex: false,
+      caseSensitive: false,
+      wholeWord: false,
+    });
+    const wholeWord = await client.searchInFile({
+      location: LOCATION,
+      query: 'err',
+      regex: false,
+      caseSensitive: false,
+      wholeWord: true,
+    });
+
+    expect(partial.matches.length).toBeGreaterThan(0);
+    expect(wholeWord.matches).toHaveLength(0);
   });
 
   it('rejects an invalid regex query', async () => {
     const client = new MockFileManagerClient();
 
     await expect(
-      client.searchInFile({ location: LOCATION, query: '(', regex: true, caseSensitive: false }),
+      client.searchInFile({
+        location: LOCATION,
+        query: '(',
+        regex: true,
+        caseSensitive: false,
+        wholeWord: false,
+      }),
     ).rejects.toMatchObject({ code: 'invalidRequest' });
   });
 
@@ -424,7 +454,13 @@ describe('MockFileManagerClient file range and content search methods', () => {
     const client = new MockFileManagerClient();
 
     await expect(
-      client.searchInFile({ location: LOCATION, query: '', regex: false, caseSensitive: false }),
+      client.searchInFile({
+        location: LOCATION,
+        query: '',
+        regex: false,
+        caseSensitive: false,
+        wholeWord: false,
+      }),
     ).rejects.toMatchObject({ code: 'invalidRequest' });
   });
 });

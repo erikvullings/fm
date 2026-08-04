@@ -57,7 +57,8 @@ pub struct ReadFileRangeResponseDto {
     "location": {"providerId": "local", "uri": "file:///Users/erik/report.txt"},
     "query": "error",
     "regex": false,
-    "caseSensitive": false
+    "caseSensitive": false,
+    "wholeWord": false
 }))]
 pub struct SearchInFileRequestDto {
     /// The file to search within.
@@ -68,6 +69,10 @@ pub struct SearchInFileRequestDto {
     pub regex: bool,
     /// Whether the match is case-sensitive.
     pub case_sensitive: bool,
+    /// Whether a match must be flanked by non-word characters (or line start/end), like an
+    /// editor's "whole word" search toggle. Defaults to `false` for older clients that omit it.
+    #[serde(default)]
+    pub whole_word: bool,
 }
 
 /// One match found by a [`SearchInFileRequestDto`].
@@ -161,14 +166,29 @@ mod tests {
             query: "error".to_owned(),
             regex: false,
             case_sensitive: false,
+            whole_word: false,
         };
         let json = serde_json::to_string(&request).expect("serialization must succeed");
         assert!(json.contains("\"query\""));
         assert!(json.contains("\"regex\""));
         assert!(json.contains("\"caseSensitive\""));
+        assert!(json.contains("\"wholeWord\""));
         let parsed: SearchInFileRequestDto =
             serde_json::from_str(&json).expect("deserialization must succeed");
         assert_eq!(request, parsed);
+    }
+
+    #[test]
+    fn search_in_file_request_defaults_whole_word_to_false_when_omitted() {
+        let json = serde_json::json!({
+            "location": sample_location(),
+            "query": "error",
+            "regex": false,
+            "caseSensitive": false,
+        });
+        let parsed: SearchInFileRequestDto =
+            serde_json::from_value(json).expect("deserialization must succeed");
+        assert!(!parsed.whole_word);
     }
 
     #[test]

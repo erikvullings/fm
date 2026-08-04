@@ -44,6 +44,10 @@ pub enum ContentQuery {
         needle: String,
         /// Whether comparison is case-sensitive.
         case_sensitive: bool,
+        /// Whether a match must be flanked by non-word bytes (or line start/end); uses an
+        /// ASCII-only word-byte definition (alphanumeric or `_`), consistent with the ASCII-only
+        /// case folding documented above.
+        whole_word: bool,
     },
     /// A pre-validated regular expression, matched independently against each line's raw bytes.
     Regex(Box<Regex>),
@@ -63,7 +67,12 @@ pub enum ContentQueryError {
 impl ContentQuery {
     /// Validates and builds a query, mirroring the "regex opt-in and validated before use"
     /// convention already used for multi-rename (task 0072).
-    pub fn new(query: &str, regex: bool, case_sensitive: bool) -> Result<Self, ContentQueryError> {
+    pub fn new(
+        query: &str,
+        regex: bool,
+        case_sensitive: bool,
+        whole_word: bool,
+    ) -> Result<Self, ContentQueryError> {
         if query.is_empty() {
             return Err(ContentQueryError::EmptyQuery);
         }
@@ -73,6 +82,11 @@ impl ContentQuery {
             } else {
                 format!("(?i){query}")
             };
+            let pattern = if whole_word {
+                format!(r"\b(?:{pattern})\b")
+            } else {
+                pattern
+            };
             Regex::new(&pattern)
                 .map(|regex| Self::Regex(Box::new(regex)))
                 .map_err(|error| ContentQueryError::InvalidPattern(error.to_string()))
@@ -80,6 +94,7 @@ impl ContentQuery {
             Ok(Self::Substring {
                 needle: query.to_owned(),
                 case_sensitive,
+                whole_word,
             })
         }
     }
@@ -90,7 +105,8 @@ impl ContentQuery {
             Self::Substring {
                 needle,
                 case_sensitive,
-            } => find_substring_matches(line, needle.as_bytes(), *case_sensitive),
+                whole_word,
+            } => find_substring_matches(line, needle.as_bytes(), *case_sensitive, *whole_word),
             Self::Regex(regex) => regex
                 .find_iter(line)
                 .map(|m| (m.start(), m.end()))
@@ -99,10 +115,17 @@ impl ContentQuery {
     }
 }
 
+/// ASCII-only word-byte definition used by whole-word substring matching (see
+/// [`ContentQuery::Substring`]'s `whole_word` docs).
+fn is_word_byte(byte: u8) -> bool {
+    byte.is_ascii_alphanumeric() || byte == b'_'
+}
+
 fn find_substring_matches(
     haystack: &[u8],
     needle: &[u8],
     case_sensitive: bool,
+    whole_word: bool,
 ) -> Vec<(usize, usize)> {
     if needle.is_empty() || needle.len() > haystack.len() {
         return Vec::new();
@@ -117,7 +140,13 @@ fn find_substring_matches(
             window.eq_ignore_ascii_case(needle)
         };
         if is_match {
-            matches.push((start, start + needle.len()));
+            let end = start + needle.len();
+            let boundary_ok = !whole_word
+                || ((start == 0 || !is_word_byte(haystack[start - 1]))
+                    && (end == haystack.len() || !is_word_byte(haystack[end])));
+            if boundary_ok {
+                matches.push((start, end));
+            }
             start += needle.len();
         } else {
             start += 1;
@@ -276,7 +305,7 @@ mod tests {
     use super::*;
 
     fn query(text: &str) -> ContentQuery {
-        ContentQuery::new(text, false, false).expect("valid substring query")
+        ContentQuery::new(text, false, false, false).expect("valid substring query")
     }
 
     #[tokio::test]
@@ -331,7 +360,7 @@ mod tests {
     #[tokio::test]
     async fn case_sensitive_search_rejects_a_different_case() {
         let content = b"Hello World\n".to_vec();
-        let query = ContentQuery::new("world", false, true).expect("valid query");
+        let query = ContentQuery::new("world", false, true, false).expect("valid query");
         let outcome = search_content(content.as_slice(), &query, 100, &CancellationToken::new())
             .await
             .expect("search must succeed");
@@ -341,7 +370,7 @@ mod tests {
     #[tokio::test]
     async fn regex_query_matches_per_line() {
         let content = b"cat\ncar\ncow\n".to_vec();
-        let regex_query = ContentQuery::new(r"^ca", true, true).expect("valid regex");
+        let regex_query = ContentQuery::new(r"^ca", true, true, false).expect("valid regex");
         let outcome = search_content(
             content.as_slice(),
             &regex_query,
@@ -357,14 +386,48 @@ mod tests {
 
     #[tokio::test]
     async fn invalid_regex_is_rejected_before_any_scan() {
-        let error = ContentQuery::new("(unterminated", true, true).expect_err("must reject");
+        let error = ContentQuery::new("(unterminated", true, true, false).expect_err("must reject");
         assert!(matches!(error, ContentQueryError::InvalidPattern(_)));
     }
 
     #[tokio::test]
     async fn empty_query_is_rejected() {
-        let error = ContentQuery::new("", false, false).expect_err("must reject");
+        let error = ContentQuery::new("", false, false, false).expect_err("must reject");
         assert_eq!(error, ContentQueryError::EmptyQuery);
+    }
+
+    #[tokio::test]
+    async fn whole_word_substring_search_rejects_a_match_inside_a_larger_word() {
+        let content = b"cat concatenate cats\n".to_vec();
+        let whole_word_query =
+            ContentQuery::new("cat", false, false, true).expect("valid substring query");
+        let outcome = search_content(
+            content.as_slice(),
+            &whole_word_query,
+            100,
+            &CancellationToken::new(),
+        )
+        .await
+        .expect("search must succeed");
+        assert_eq!(outcome.matches.len(), 1);
+        assert_eq!(outcome.matches[0].match_start, 0);
+    }
+
+    #[tokio::test]
+    async fn whole_word_regex_search_rejects_a_match_inside_a_larger_word() {
+        let content = b"cat concatenate cats\n".to_vec();
+        let whole_word_query =
+            ContentQuery::new("cat", true, true, true).expect("valid regex query");
+        let outcome = search_content(
+            content.as_slice(),
+            &whole_word_query,
+            100,
+            &CancellationToken::new(),
+        )
+        .await
+        .expect("search must succeed");
+        assert_eq!(outcome.matches.len(), 1);
+        assert_eq!(outcome.matches[0].match_start, 0);
     }
 
     #[tokio::test]

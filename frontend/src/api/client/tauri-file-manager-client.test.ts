@@ -177,6 +177,7 @@ describe('TauriFileManagerClient', () => {
         query: 'error',
         regex: false,
         caseSensitive: false,
+        wholeWord: false,
       };
       const result = { matches: [{ lineNumber: 1, offset: 0, length: 5 }], truncated: false };
       invoke.mockResolvedValue(result);

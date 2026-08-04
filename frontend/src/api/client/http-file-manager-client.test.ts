@@ -459,6 +459,7 @@ describe('HttpFileManagerClient', () => {
         query: 'error',
         regex: false,
         caseSensitive: false,
+        wholeWord: false,
       };
 
       await expect(client.searchInFile(request, controller.signal)).resolves.toEqual(result);
@@ -478,6 +479,7 @@ describe('HttpFileManagerClient', () => {
           query: 'error',
           regex: false,
           caseSensitive: false,
+          wholeWord: false,
         }),
       ).rejects.toThrow('Unexpected searchInFile response status: 400');
     });

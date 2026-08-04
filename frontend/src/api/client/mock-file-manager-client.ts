@@ -242,6 +242,7 @@ function createMockWorkspace(id: WorkspaceId, name = 'Mock Workspace'): Workspac
 /** Strictly typed controls for the deterministic in-memory frontend adapter. */
 export class MockFileManagerClient implements FileManagerClient {
   readonly connection = new MutableEventStreamStatus();
+
   private readonly resynchronise = new EventStreamSignalRegistry();
   private readonly pageSize: number;
   private readonly seed: number;
@@ -935,9 +936,10 @@ export class MockFileManagerClient implements FileManagerClient {
    * substring/regex, case-(in)sensitive `ContentQuery` semantics closely enough for mock/dev use. */
   private buildLineMatcher(request: SearchInFileRequest): (line: string) => [number, number][] {
     if (request.regex) {
+      const source = request.wholeWord ? `\\b(?:${request.query})\\b` : request.query;
       let pattern: RegExp;
       try {
-        pattern = new RegExp(request.query, request.caseSensitive ? 'gu' : 'giu');
+        pattern = new RegExp(source, request.caseSensitive ? 'gu' : 'giu');
       } catch (error) {
         throw new MockClientError(
           'invalidRequest',
@@ -957,13 +959,20 @@ export class MockFileManagerClient implements FileManagerClient {
       };
     }
     const needle = request.caseSensitive ? request.query : request.query.toLowerCase();
+    const isWordChar = (char: string | undefined): boolean =>
+      char !== undefined && /[A-Za-z0-9_]/u.test(char);
     return (line) => {
       const haystack = request.caseSensitive ? line : line.toLowerCase();
       const found: [number, number][] = [];
       let from = 0;
       let index = haystack.indexOf(needle, from);
       while (index !== -1) {
-        found.push([index, index + needle.length]);
+        const boundaryOk =
+          !request.wholeWord ||
+          (!isWordChar(line[index - 1]) && !isWordChar(line[index + needle.length]));
+        if (boundaryOk) {
+          found.push([index, index + needle.length]);
+        }
         from = index + needle.length;
         index = haystack.indexOf(needle, from);
       }

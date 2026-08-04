@@ -125,6 +125,7 @@ export interface SearchInFileRequest {
   query: string;
   regex: boolean;
   caseSensitive: boolean;
+  wholeWord: boolean;
 }
 
 /** One match found by a {@link SearchInFileRequest}. */

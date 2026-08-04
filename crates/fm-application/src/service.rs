@@ -1367,9 +1367,13 @@ impl FileManagerService {
             .open_read(&entry, cancellation.clone())
             .await
             .map_err(ApplicationError::from)?;
-        let query =
-            fm_vfs::ContentQuery::new(&request.query, request.regex, request.case_sensitive)
-                .map_err(|error| ApplicationError::InvalidRequest(error.to_string()))?;
+        let query = fm_vfs::ContentQuery::new(
+            &request.query,
+            request.regex,
+            request.case_sensitive,
+            request.whole_word,
+        )
+        .map_err(|error| ApplicationError::InvalidRequest(error.to_string()))?;
         let outcome = fm_vfs::search_content(reader, &query, MAX_SEARCH_MATCHES, &cancellation)
             .await
             .map_err(ApplicationError::from)?;
@@ -3812,6 +3816,7 @@ mod tests {
                 query: "error".to_owned(),
                 regex: false,
                 case_sensitive: false,
+                whole_word: false,
             })
             .await
             .expect("search must succeed");
@@ -3820,6 +3825,27 @@ mod tests {
         assert_eq!(response.matches[0].line_number, 2);
         assert_eq!(response.matches[1].line_number, 3);
         assert!(!response.truncated);
+    }
+
+    #[tokio::test]
+    async fn search_in_file_whole_word_excludes_matches_inside_a_larger_word() {
+        let (dir, service) = service();
+        let target = dir.path().join("log.txt");
+        std::fs::write(&target, b"cat concatenate cats\n").expect("write fixture file");
+
+        let response = service
+            .search_in_file(SearchInFileRequestDto {
+                location: location_dto_for(&target),
+                query: "cat".to_owned(),
+                regex: false,
+                case_sensitive: false,
+                whole_word: true,
+            })
+            .await
+            .expect("search must succeed");
+
+        assert_eq!(response.matches.len(), 1);
+        assert_eq!(response.matches[0].offset, 0);
     }
 
     #[tokio::test]
@@ -3835,6 +3861,7 @@ mod tests {
                     query: "(unclosed".to_owned(),
                     regex: true,
                     case_sensitive: false,
+                    whole_word: false,
                 })
                 .await,
             Err(ApplicationError::InvalidRequest(_))
