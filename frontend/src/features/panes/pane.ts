@@ -203,6 +203,8 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
   let typeahead: TypeaheadState | undefined;
   let typeaheadTimer: ReturnType<typeof setTimeout> | undefined;
   let typeaheadError = false;
+  /** The path the current `typeahead` prefix was typed against; a path change resets it. */
+  let typeaheadPath: string | undefined;
   let renamingEntry: EntrySummary | undefined;
   let renameValue = '';
   let renameError: string | undefined;
@@ -336,6 +338,15 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
       clearTypeaheadTimer();
     },
     view: ({ attrs }) => {
+      // Entering a different directory (however navigation happened: opening an entry, ..,
+      // breadcrumb, back/forward, or switching tabs) makes any typed prefix meaningless for the
+      // new listing, and stale error highlighting to boot — reset it once per path change.
+      if (typeaheadPath !== attrs.path) {
+        typeaheadPath = attrs.path;
+        clearTypeaheadTimer();
+        typeahead = undefined;
+        typeaheadError = false;
+      }
       const ordinaryEntries = attrs.entries.filter((entry) => !isParentEntry(entry.id));
       const selectedCount = attrs.selectedEntryIds.size;
       const totalSelectedSize = selectedSize(ordinaryEntries, attrs.selectedEntryIds);

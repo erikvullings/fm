@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import { ApiError } from '../../api/fetch-mutator';
 import type { DirectorySnapshot, EntryId, WorkspaceProjection } from '../../models';
 import {
   createNavigationController,
@@ -144,6 +145,7 @@ function setup(initial = workspace()): {
       listDirectory: vi.fn(),
       navigatePane: vi.fn(),
       dispatchWorkspaceCommand: vi.fn(),
+      getWorkspace: vi.fn(),
     },
     getWorkspace: () => current,
     views: [],
@@ -270,6 +272,39 @@ describe('navigation controller', () => {
       expect.objectContaining({ location: nextLocation }),
       expect.any(AbortSignal),
     );
+  });
+
+  it('resyncs the local workspace revision on a conflict instead of leaving it stale forever', async () => {
+    const context = setup();
+    const staleWorkspace = context.getWorkspace();
+    const resynced = { ...staleWorkspace, revision: staleWorkspace.revision + 1 };
+    const conflict = new ApiError(409, {
+      code: 'workspaceRevisionConflict',
+      message: 'The workspace changed after this view was loaded.',
+      details: { workspaceId: staleWorkspace.id, expectedRevision: 1, actualRevision: 2 },
+    });
+    vi.mocked(context.client.dispatchWorkspaceCommand).mockRejectedValueOnce(conflict);
+    vi.mocked(context.client.getWorkspace).mockResolvedValueOnce(resynced);
+    const controller = createNavigationController({
+      client: context.client,
+      getWorkspace: context.getWorkspace,
+      replaceWorkspace: context.replaceWorkspace,
+      updatePane: (_paneId, _tabId, view) => context.views.push(view),
+    });
+
+    await controller.navigate('left', {
+      providerId: 'local',
+      uri: 'file:///home/erik/Documents',
+    });
+
+    // The failed navigation still reports an error to the pane...
+    expect(context.views.at(-1)?.state).toEqual({
+      type: 'error',
+      message: 'The workspace changed after this view was loaded.',
+    });
+    // ...but the local workspace projection is resynced so the *next* command (retry, parent,
+    // breadcrumb, ...) uses the correct revision instead of repeating the same conflict forever.
+    expect(context.getWorkspace().revision).toBe(resynced.revision);
   });
 
   it('forwards an optional preferredCursorName on navigate to updatePane', async () => {

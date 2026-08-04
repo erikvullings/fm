@@ -2,6 +2,12 @@ import type { FileManagerClient } from '../../api/client/file-manager-client';
 import { ApiError } from '../../api/fetch-mutator';
 import type { WorkspaceCommand, WorkspaceProjection } from '../../models';
 
+/** Client surface required to dispatch and, on conflict, reconcile a workspace command. */
+export type WorkspaceCommandClient = Pick<
+  FileManagerClient,
+  'dispatchWorkspaceCommand' | 'getWorkspace'
+>;
+
 type ReplaceProjection = (projection: WorkspaceProjection) => void;
 
 function isSafelyIdempotent(command: WorkspaceCommand): boolean {
@@ -30,7 +36,7 @@ export function isWorkspaceRevisionConflict(error: unknown): error is ApiError {
  * replaying commands whose effects could be duplicated.
  */
 export async function dispatchWorkspaceCommand(
-  client: FileManagerClient,
+  client: WorkspaceCommandClient,
   command: WorkspaceCommand,
   replaceProjection: ReplaceProjection,
   signal?: AbortSignal,

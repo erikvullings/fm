@@ -11,11 +11,12 @@ import type {
   WorkspaceCommand,
   WorkspaceProjection,
 } from '../../models';
+import { dispatchWorkspaceCommand } from '../workspace/dispatch-workspace-command';
 
 /** Client surface required by directory navigation. */
 export type NavigationClient = Pick<
   FileManagerClient,
-  'dispatchWorkspaceCommand' | 'listDirectory' | 'navigatePane'
+  'dispatchWorkspaceCommand' | 'getWorkspace' | 'listDirectory' | 'navigatePane'
 >;
 
 /** Renderable directory state for one pane, including paging information. */
@@ -269,14 +270,20 @@ export function createNavigationController(
       ...(location === undefined ? {} : { location }),
     };
     try {
-      const updated = await options.client.dispatchWorkspaceCommand(
+      // Goes through the resilient wrapper (not the raw client call) so a revision conflict
+      // still resyncs the local workspace projection via `options.replaceWorkspace` even though
+      // push/back/forward navigation isn't safe to silently retry — otherwise the local revision
+      // is left permanently stale and every subsequent navigation command in the workspace (any
+      // pane) keeps failing with the same conflict until something else happens to resync it.
+      const updated = await dispatchWorkspaceCommand(
+        options.client,
         command,
+        options.replaceWorkspace,
         request.controller.signal,
       );
       if (!isCurrent(paneId, tab.id, request)) {
         return;
       }
-      options.replaceWorkspace(updated);
       const updatedTab = activeTab(updated, paneId);
       if (updatedTab === undefined) {
         return;

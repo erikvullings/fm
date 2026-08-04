@@ -155,6 +155,16 @@ function mount(paneAttrs: PaneAttrs): void {
   m.mount(root, { view: () => m(Pane, paneAttrs) });
 }
 
+/** Mounts with `rerender(nextAttrs)` support, keeping the same `Pane` instance across updates. */
+function mountUpdating(initial: PaneAttrs): (next: PaneAttrs) => void {
+  let current = initial;
+  m.mount(root, { view: () => m(Pane, current) });
+  return (next) => {
+    current = next;
+    m.redraw.sync();
+  };
+}
+
 beforeEach(() => {
   root = document.createElement('div');
   document.body.appendChild(root);
@@ -552,6 +562,37 @@ describe('Pane navigation input', () => {
 
     expect(root.querySelector('.fm-typeahead-status')?.textContent).toBe('do');
     expect(onParent).not.toHaveBeenCalled();
+  });
+
+  it('resets typeahead once the pane navigates to a different directory', () => {
+    const rerender = mountUpdating(
+      attrs({
+        entries: [{ ...(entries[0] as EntrySummary), id: 'document', name: 'document.txt' }],
+      }),
+    );
+    const pane = root.querySelector<HTMLElement>('.fm-pane');
+
+    for (const typed of 'do') {
+      pane?.dispatchEvent(new KeyboardEvent('keydown', { key: typed, bubbles: true }));
+    }
+    m.redraw.sync();
+    expect(root.querySelector('.fm-typeahead-status')?.textContent).toBe('do');
+
+    // Entering "document.txt" (or any other navigation: parent, breadcrumb, back/forward, tab
+    // switch) changes the displayed path — the stale prefix from the old directory must not
+    // survive into the new one.
+    rerender(
+      attrs({
+        path: '/home/erik/document.txt',
+        entries: [{ ...(entries[1] as EntrySummary), id: 'nested', name: 'nested.txt' }],
+      }),
+    );
+
+    expect(root.querySelector('.fm-typeahead-status')).toBeNull();
+
+    pane?.dispatchEvent(new KeyboardEvent('keydown', { key: 'n', bubbles: true }));
+    m.redraw.sync();
+    expect(root.querySelector('.fm-typeahead-status')?.textContent).toBe('n');
   });
 
   it('clears typeahead and the file selection with Escape', () => {
