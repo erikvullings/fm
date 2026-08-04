@@ -271,7 +271,7 @@ describe('navigation controller', () => {
     );
   });
 
-  it('navigates with backend history mutation before opening the directory', async () => {
+  it('opens the destination before committing it to backend history', async () => {
     const context = setup();
     const next = workspace('file:///home/erik/Documents');
     const nextLocation = { providerId: 'local', uri: 'file:///home/erik/Documents' } as const;
@@ -299,6 +299,43 @@ describe('navigation controller', () => {
       expect.objectContaining({ location: nextLocation }),
       expect.any(AbortSignal),
     );
+  });
+
+  it('does not poison the tab location when opening an archive fails', async () => {
+    const context = setup();
+    const original = context.getWorkspace();
+    const archiveLocation = {
+      providerId: 'archive',
+      uri: 'archive://file%3A%2F%2F%2Fhome%2Ferik%2Fcomic.cbr!/',
+    } as const;
+    vi.mocked(context.client.dispatchWorkspaceCommand).mockResolvedValue(
+      workspace(archiveLocation.uri, archiveLocation.providerId),
+    );
+    vi.mocked(context.client.navigatePane).mockRejectedValue(
+      new ApiError(400, {
+        code: 'invalidRequest',
+        message: 'RAR archive browsing is not supported',
+      }),
+    );
+    const controller = createNavigationController({
+      client: context.client,
+      getWorkspace: context.getWorkspace,
+      replaceWorkspace: context.replaceWorkspace,
+      updatePane: (_paneId, _tabId, view) => context.views.push(view),
+    });
+
+    await controller.navigate('left', archiveLocation);
+
+    expect(context.client.navigatePane).toHaveBeenCalledWith(
+      expect.objectContaining({ location: expect.objectContaining({ uri: archiveLocation.uri }) }),
+      expect.any(AbortSignal),
+    );
+    expect(context.client.dispatchWorkspaceCommand).not.toHaveBeenCalled();
+    expect(context.getWorkspace()).toBe(original);
+    expect(context.views.at(-1)).toMatchObject({
+      state: { type: 'error', message: 'RAR archive browsing is not supported' },
+      location: original.panesById.left?.tabsById.tab?.location,
+    });
   });
 
   it('resyncs the local workspace revision on a conflict instead of leaving it stale forever', async () => {

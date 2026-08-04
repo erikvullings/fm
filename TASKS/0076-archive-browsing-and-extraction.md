@@ -127,3 +127,7 @@ not implement archive codecs or cryptography.
   is exposed as one read-only decompressed member, while gzip-compressed tar remains a folder tree.
   Fixed the directory viewport remeasurement after the selection metadata bar changes pane height,
   preventing a stale virtual-body height from creating an unnecessary scrollbar.
+- 2026-08-04 codex: Failed archive entry is now transactional from the user's perspective: an
+  explicit destination is listed before its location is committed to workspace history. Unsupported
+  RAR-backed CBR files therefore report the error without replacing the last usable tab location,
+  leaving retry, reload, and breadcrumb navigation operational.

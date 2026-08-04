@@ -301,6 +301,26 @@ export function createNavigationController(
       ...(location === undefined ? {} : { location }),
     };
     try {
+      // Explicit destinations can be validated without mutating workspace history. This keeps a
+      // failed archive open (for example an unsupported RAR-backed CBR) from replacing the tab's
+      // last usable location and poisoning retry, reload, and breadcrumb navigation.
+      const pendingSnapshot =
+        location === undefined
+          ? undefined
+          : await withArchiveCredential(location, () =>
+              options.client.navigatePane(
+                {
+                  workspaceId: workspace.id,
+                  paneId,
+                  requestId: request.id,
+                  location,
+                },
+                request.controller.signal,
+              ),
+            );
+      if (!isCurrent(paneId, tab.id, request)) {
+        return;
+      }
       // Goes through the resilient wrapper (not the raw client call) so a revision conflict
       // still resyncs the local workspace projection via `options.replaceWorkspace` even though
       // push/back/forward navigation isn't safe to silently retry — otherwise the local revision
@@ -319,26 +339,31 @@ export function createNavigationController(
       if (updatedTab === undefined) {
         return;
       }
-      const snapshot = await withArchiveCredential(updatedTab.location, () =>
-        options.client.navigatePane(
-          {
-            workspaceId: updated.id,
-            paneId,
-            requestId: request.id,
-            location: updatedTab.location,
-          },
-          request.controller.signal,
-        ),
-      );
+      const snapshot =
+        pendingSnapshot ??
+        (await withArchiveCredential(updatedTab.location, () =>
+          options.client.navigatePane(
+            {
+              workspaceId: updated.id,
+              paneId,
+              requestId: request.id,
+              location: updatedTab.location,
+            },
+            request.controller.signal,
+          ),
+        ));
       if (isCurrent(paneId, tab.id, request) && snapshot.requestId === request.id) {
         publish(paneId, tab.id, viewFromSnapshot(snapshot), preferredCursorName);
       }
     } catch (error: unknown) {
       if (isCurrent(paneId, tab.id, request)) {
+        const currentTab = options.getWorkspace();
         publish(paneId, tab.id, {
           state: { type: 'error', message: errorMessage(error) },
           entries: [],
-          location: location ?? tab.location,
+          location:
+            (currentTab === undefined ? undefined : activeTab(currentTab, paneId)?.location) ??
+            tab.location,
           requestId: request.id,
           hasMore: false,
         });
