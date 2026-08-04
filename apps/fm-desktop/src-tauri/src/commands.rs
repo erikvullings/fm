@@ -10,7 +10,8 @@ use fm_transport_dto::{
     ActionDescriptorDto, ActionResultDto, ApplicationErrorDto, CreateWorkspaceRequestDto,
     DirectorySnapshotDto, EntryMetadataDto, EntryMetadataRequest, InvokeActionRequestDto,
     ListDirectoryRequest, NavigateRequest, OperationDto, PluginDescriptorDto, PluginLogEntryDto,
-    ResolveOperationConflictRequestDto, RuntimeCapabilitiesDto, SettingsDto,
+    ReadFileRangeRequestDto, ReadFileRangeResponseDto, ResolveOperationConflictRequestDto,
+    RuntimeCapabilitiesDto, SearchInFileRequestDto, SearchInFileResponseDto, SettingsDto,
     StartOperationRequestDto, StartSearchRequestDto, StartSearchResponseDto, WorkspaceCommandDto,
     WorkspaceDto, WorkspaceSummaryDto,
 };
@@ -133,6 +134,34 @@ pub(crate) async fn get_entry_metadata(
         .get_entry_metadata(request)
         .await
         .map(Into::into)
+        .map_err(|error| error.into_dto(Uuid::new_v4()))
+}
+
+/// Reads one bounded byte range from a file through the same application
+/// service as Axum, for the in-app large file viewer (task 0088).
+#[tauri::command]
+pub(crate) async fn read_file_range(
+    state: State<'_, AppState>,
+    request: ReadFileRangeRequestDto,
+) -> Result<ReadFileRangeResponseDto, ApplicationErrorDto> {
+    state
+        .service
+        .read_file_range(request)
+        .await
+        .map_err(|error| error.into_dto(Uuid::new_v4()))
+}
+
+/// Searches a file's content through the same application service as Axum,
+/// for the in-app large file viewer (task 0088).
+#[tauri::command]
+pub(crate) async fn search_in_file(
+    state: State<'_, AppState>,
+    request: SearchInFileRequestDto,
+) -> Result<SearchInFileResponseDto, ApplicationErrorDto> {
+    state
+        .service
+        .search_in_file(request)
+        .await
         .map_err(|error| error.into_dto(Uuid::new_v4()))
 }
 

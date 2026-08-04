@@ -1296,6 +1296,7 @@ dependencies = [
  "bitflags 2.13.1",
  "fm-domain",
  "futures",
+ "regex",
  "serde",
  "thiserror 2.0.19",
  "tokio",

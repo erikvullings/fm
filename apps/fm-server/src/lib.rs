@@ -45,6 +45,8 @@ fn api_router() -> OpenApiRouter<AppState> {
         .routes(utoipa_axum::routes!(routes::directory::refresh_directory))
         .routes(utoipa_axum::routes!(routes::directory::navigate_pane))
         .routes(utoipa_axum::routes!(routes::directory::get_entry_metadata))
+        .routes(utoipa_axum::routes!(routes::files::read_file_range))
+        .routes(utoipa_axum::routes!(routes::files::search_in_file))
         .routes(utoipa_axum::routes!(routes::icons::get_file_icon))
         .routes(utoipa_axum::routes!(routes::search::start_search))
         .routes(utoipa_axum::routes!(routes::search::cancel_search))

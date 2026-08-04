@@ -128,6 +128,74 @@ async fn streams_a_file_to_a_temporary_name_then_commits_it_atomically() {
 }
 
 #[tokio::test]
+async fn read_range_seeks_without_reading_preceding_bytes() {
+    let root = tempdir().expect("temporary directory");
+    let path = root.path().join("range.bin");
+    fs::write(&path, b"0123456789").expect("source fixture");
+    let entry = EntryRef {
+        id: fm_domain::EntryId::new(),
+        location: Location::from_native_path(&path).expect("file location"),
+    };
+    let provider = LocalFileSystemProvider::new();
+
+    let mut reader = provider
+        .read_range(&entry, 4, Some(3), CancellationToken::new())
+        .await
+        .expect("open a bounded range");
+    let mut buffer = Vec::new();
+    reader.read_to_end(&mut buffer).await.expect("read range");
+    assert_eq!(buffer, b"456");
+
+    // `None` reads to the end of the entry from the given offset.
+    let mut reader = provider
+        .read_range(&entry, 7, None, CancellationToken::new())
+        .await
+        .expect("open an unbounded range");
+    let mut buffer = Vec::new();
+    reader.read_to_end(&mut buffer).await.expect("read range");
+    assert_eq!(buffer, b"789");
+}
+
+#[tokio::test]
+async fn read_range_requesting_more_than_available_returns_only_what_exists() {
+    let root = tempdir().expect("temporary directory");
+    let path = root.path().join("short.bin");
+    fs::write(&path, b"abc").expect("source fixture");
+    let entry = EntryRef {
+        id: fm_domain::EntryId::new(),
+        location: Location::from_native_path(&path).expect("file location"),
+    };
+    let provider = LocalFileSystemProvider::new();
+
+    let mut reader = provider
+        .read_range(&entry, 1, Some(1000), CancellationToken::new())
+        .await
+        .expect("open a range past EOF");
+    let mut buffer = Vec::new();
+    reader.read_to_end(&mut buffer).await.expect("read range");
+    assert_eq!(buffer, b"bc");
+}
+
+#[tokio::test]
+async fn read_range_rejects_an_already_cancelled_request() {
+    let root = tempdir().expect("temporary directory");
+    let path = root.path().join("cancel.bin");
+    fs::write(&path, b"data").expect("source fixture");
+    let entry = EntryRef {
+        id: fm_domain::EntryId::new(),
+        location: Location::from_native_path(&path).expect("file location"),
+    };
+    let provider = LocalFileSystemProvider::new();
+    let cancellation = CancellationToken::new();
+    cancellation.cancel();
+
+    assert!(matches!(
+        provider.read_range(&entry, 0, None, cancellation).await,
+        Err(VfsError::Cancelled)
+    ));
+}
+
+#[tokio::test]
 async fn rename_preserves_identity_and_never_overwrites() {
     let root = tempdir().expect("temporary directory");
     fs::write(root.path().join("before.txt"), b"source").expect("source fixture");
@@ -489,10 +557,13 @@ async fn metadata_is_separate_and_capabilities_are_truthful() {
             | ProviderCapabilities::WATCH
             | ProviderCapabilities::CREATE_DIRECTORY
             | ProviderCapabilities::RENAME
+            | ProviderCapabilities::MOVE
+            | ProviderCapabilities::DELETE
             | ProviderCapabilities::READ
             | ProviderCapabilities::WRITE
             | ProviderCapabilities::SET_TIMESTAMPS
             | ProviderCapabilities::SET_PERMISSIONS
+            | ProviderCapabilities::RANDOM_ACCESS
             | if cfg!(target_os = "macos") {
                 ProviderCapabilities::SERVER_SIDE_COPY
             } else {

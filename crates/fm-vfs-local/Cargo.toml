@@ -13,7 +13,7 @@ fm-domain.workspace = true
 fm-vfs = { path = "../fm-vfs" }
 futures.workspace = true
 notify.workspace = true
-tokio = { workspace = true, features = ["sync", "time"] }
+tokio = { workspace = true, features = ["fs", "io-util", "sync", "time"] }
 tokio-util.workspace = true
 uuid.workspace = true
 

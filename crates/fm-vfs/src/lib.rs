@@ -6,12 +6,17 @@
 //! than failing at call time.
 
 mod capabilities;
+mod content;
 mod error;
 mod provider;
 mod registry;
 mod types;
 
 pub use capabilities::ProviderCapabilities;
+pub use content::{
+    ContentMatch, ContentQuery, ContentQueryError, ContentSearchOutcome, looks_like_binary,
+    search_content,
+};
 pub use error::VfsError;
 pub use provider::FileSystemProvider;
 pub use registry::ProviderRegistry;

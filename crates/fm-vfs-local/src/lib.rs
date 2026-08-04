@@ -30,6 +30,7 @@ use fm_vfs::{
 };
 use futures::stream;
 use notify::{Event, RecursiveMode, Watcher};
+use tokio::io::{AsyncReadExt, AsyncSeekExt};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
@@ -64,7 +65,8 @@ impl FileSystemProvider for LocalFileSystemProvider {
             | ProviderCapabilities::WRITE
             | ProviderCapabilities::SERVER_SIDE_COPY
             | ProviderCapabilities::SET_TIMESTAMPS
-            | ProviderCapabilities::SET_PERMISSIONS;
+            | ProviderCapabilities::SET_PERMISSIONS
+            | ProviderCapabilities::RANDOM_ACCESS;
         capabilities | ProviderCapabilities::MOVE | ProviderCapabilities::DELETE
     }
 
@@ -329,6 +331,32 @@ impl FileSystemProvider for LocalFileSystemProvider {
             .await
             .map_err(|error| map_io_error(error, &entry.location.uri))?;
         Ok(Box::pin(file))
+    }
+
+    async fn read_range(
+        &self,
+        entry: &EntryRef,
+        offset: u64,
+        length: Option<u64>,
+        cancellation: CancellationToken,
+    ) -> Result<ProviderReadStream, VfsError> {
+        if cancellation.is_cancelled() {
+            return Err(VfsError::Cancelled);
+        }
+        let path = entry
+            .location
+            .to_native_path()
+            .map_err(|_| invalid_location(&entry.location))?;
+        let mut file = tokio::fs::File::open(path)
+            .await
+            .map_err(|error| map_io_error(error, &entry.location.uri))?;
+        file.seek(std::io::SeekFrom::Start(offset))
+            .await
+            .map_err(|error| map_io_error(error, &entry.location.uri))?;
+        Ok(match length {
+            Some(length) => Box::pin(file.take(length)),
+            None => Box::pin(file),
+        })
     }
 
     async fn open_write(

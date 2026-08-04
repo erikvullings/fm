@@ -8,6 +8,7 @@
 pub mod action;
 pub mod entry;
 pub mod error;
+pub mod files;
 pub mod health;
 pub mod location;
 pub mod operation;
@@ -29,6 +30,10 @@ pub use entry::{
     MediaMetadataDto, OwnershipInfoDto, PermissionsInfoDto,
 };
 pub use error::{ApplicationErrorCode, ApplicationErrorDto};
+pub use files::{
+    ReadFileRangeRequestDto, ReadFileRangeResponseDto, SearchInFileMatchDto,
+    SearchInFileRequestDto, SearchInFileResponseDto,
+};
 pub use health::{HealthDto, HealthStatusDto};
 pub use location::LocationDto;
 pub use operation::{

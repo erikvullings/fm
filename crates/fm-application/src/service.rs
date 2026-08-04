@@ -12,7 +12,7 @@ use async_trait::async_trait;
 use fm_domain::OperationId;
 use fm_domain::{
     ActionContextRequirements, ActionDescriptor, ActionId, ActionSource, DirectorySnapshot,
-    EntryKind, EntryMetadata, Location, PluginId,
+    EntryId, EntryKind, EntryMetadata, Location, PluginId,
 };
 use fm_events::{
     BackendEventPayload, EventAudience, EventBus, NotificationLevelPayload, NotificationPayload,
@@ -36,11 +36,15 @@ use fm_transport_dto::{
     DefaultPaneLayoutDto, EntryMetadataRequest, InvokeActionRequestDto, ListDirectoryRequest,
     NavigateRequest, OperationConflictPolicyDto, OperationDto, OperationKindDto,
     OperationProgressDto, OperationStateDto, PlatformKindDto, PluginLogEntryDto,
-    PluginPermissionsDto, ResolveOperationConflictRequestDto, RuntimeCapabilitiesDto,
-    RuntimeKindDto, SettingsDto, SizeFormatDto, StartOperationRequestDto, StartSearchRequestDto,
-    StartSearchResponseDto, ThemeDto, WorkspaceCommandDto, WorkspaceDto, WorkspaceSummaryDto,
+    PluginPermissionsDto, ReadFileRangeRequestDto, ReadFileRangeResponseDto,
+    ResolveOperationConflictRequestDto, RuntimeCapabilitiesDto, RuntimeKindDto,
+    SearchInFileMatchDto, SearchInFileRequestDto, SearchInFileResponseDto, SettingsDto,
+    SizeFormatDto, StartOperationRequestDto, StartSearchRequestDto, StartSearchResponseDto,
+    ThemeDto, WorkspaceCommandDto, WorkspaceDto, WorkspaceSummaryDto,
 };
-use fm_vfs::{EntryRef, FileSystemProvider, ProviderCapabilities, ProviderRegistry};
+use fm_vfs::{
+    EntryRef, FileSystemProvider, ProviderCapabilities, ProviderReadStream, ProviderRegistry,
+};
 use fm_vfs_local::LocalFileSystemProvider;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio_util::sync::CancellationToken;
@@ -1258,6 +1262,129 @@ impl FileManagerService {
         request: EntryMetadataRequest,
     ) -> Result<EntryMetadata, ApplicationError> {
         self.directories.metadata(request).await
+    }
+
+    /// Reads one bounded chunk of a file's raw bytes, for the in-app large
+    /// file viewer (task 0088).
+    ///
+    /// Uses [`FileSystemProvider::read_range`] directly when the provider
+    /// advertises [`ProviderCapabilities::RANDOM_ACCESS`]; otherwise falls
+    /// back to a sequential skip-read over [`FileSystemProvider::open_read`]
+    /// (a documented reduced-capability path - only [`ProviderCapabilities::READ`]
+    /// is required in that case).
+    pub async fn read_file_range(
+        &self,
+        request: ReadFileRangeRequestDto,
+    ) -> Result<ReadFileRangeResponseDto, ApplicationError> {
+        if request.length == 0 || request.length > MAX_RANGE_LENGTH {
+            return Err(ApplicationError::InvalidRequest(format!(
+                "length must be between 1 and {MAX_RANGE_LENGTH} bytes"
+            )));
+        }
+        let location: Location = request.location.into();
+        let provider = self
+            .providers
+            .resolve(&location)
+            .map_err(ApplicationError::from)?;
+        provider
+            .capabilities()
+            .require(ProviderCapabilities::READ)
+            .map_err(ApplicationError::from)?;
+        let entry = EntryRef {
+            id: EntryId::new(),
+            location,
+        };
+        let cancellation = CancellationToken::new();
+        let mut reader: ProviderReadStream = if provider
+            .capabilities()
+            .contains(ProviderCapabilities::RANDOM_ACCESS)
+        {
+            provider
+                .read_range(
+                    &entry,
+                    request.offset,
+                    Some(request.length),
+                    cancellation.clone(),
+                )
+                .await
+                .map_err(ApplicationError::from)?
+        } else {
+            let mut sequential = provider
+                .open_read(&entry, cancellation.clone())
+                .await
+                .map_err(ApplicationError::from)?;
+            skip_bytes(&mut sequential, request.offset)
+                .await
+                .map_err(read_stream_error)?;
+            sequential
+        };
+        let mut data = vec![0_u8; request.length as usize];
+        let mut filled = 0_usize;
+        while filled < data.len() {
+            let read = reader
+                .read(&mut data[filled..])
+                .await
+                .map_err(read_stream_error)?;
+            if read == 0 {
+                break;
+            }
+            filled += read;
+        }
+        data.truncate(filled);
+        let eof = (filled as u64) < request.length;
+        let probably_binary = (request.offset == 0).then(|| fm_vfs::looks_like_binary(&data));
+        Ok(ReadFileRangeResponseDto {
+            offset: request.offset,
+            length: data.len() as u64,
+            data,
+            eof,
+            probably_binary,
+        })
+    }
+
+    /// Searches a single file's content for a substring or regex, for the
+    /// in-app large file viewer (task 0088). Only requires
+    /// [`ProviderCapabilities::READ`], so it works for every provider.
+    pub async fn search_in_file(
+        &self,
+        request: SearchInFileRequestDto,
+    ) -> Result<SearchInFileResponseDto, ApplicationError> {
+        let location: Location = request.location.into();
+        let provider = self
+            .providers
+            .resolve(&location)
+            .map_err(ApplicationError::from)?;
+        provider
+            .capabilities()
+            .require(ProviderCapabilities::READ)
+            .map_err(ApplicationError::from)?;
+        let entry = EntryRef {
+            id: EntryId::new(),
+            location,
+        };
+        let cancellation = CancellationToken::new();
+        let reader = provider
+            .open_read(&entry, cancellation.clone())
+            .await
+            .map_err(ApplicationError::from)?;
+        let query =
+            fm_vfs::ContentQuery::new(&request.query, request.regex, request.case_sensitive)
+                .map_err(|error| ApplicationError::InvalidRequest(error.to_string()))?;
+        let outcome = fm_vfs::search_content(reader, &query, MAX_SEARCH_MATCHES, &cancellation)
+            .await
+            .map_err(ApplicationError::from)?;
+        Ok(SearchInFileResponseDto {
+            matches: outcome
+                .matches
+                .into_iter()
+                .map(|found| SearchInFileMatchDto {
+                    line_number: found.line_number,
+                    offset: found.match_start,
+                    length: found.match_len,
+                })
+                .collect(),
+            truncated: outcome.truncated,
+        })
     }
 
     /// Starts a cancellable recursive filename search over one or more
@@ -2614,6 +2741,33 @@ fn copy_stream_error(error: std::io::Error) -> ExecutionError {
     .into()
 }
 
+/// Maximum bytes returned by a single [`FileManagerService::read_file_range`] call (task 0088).
+const MAX_RANGE_LENGTH: u64 = 1_048_576;
+
+/// Maximum matches returned by a single [`FileManagerService::search_in_file`] call (task 0088).
+const MAX_SEARCH_MATCHES: usize = 5_000;
+
+fn read_stream_error(error: std::io::Error) -> ApplicationError {
+    ApplicationError::from(fm_vfs::VfsError::Io {
+        message: error.to_string(),
+    })
+}
+
+/// Discards `remaining` bytes from `reader`, for providers without random-access reads.
+/// Stops early at EOF (a request offset past the end of the file yields an empty range).
+async fn skip_bytes(reader: &mut ProviderReadStream, mut remaining: u64) -> std::io::Result<()> {
+    let mut buffer = [0_u8; 64 * 1024];
+    while remaining > 0 {
+        let chunk = remaining.min(buffer.len() as u64) as usize;
+        let read = reader.read(&mut buffer[..chunk]).await?;
+        if read == 0 {
+            break;
+        }
+        remaining -= read as u64;
+    }
+    Ok(())
+}
+
 #[async_trait]
 impl OperationExecutor for RenameExecutor {
     async fn plan(
@@ -3555,6 +3709,136 @@ mod tests {
         assert!(capabilities.plugins);
         assert!(!capabilities.server_administration);
         assert!(capabilities.clipboard);
+    }
+
+    fn location_dto_for(path: &std::path::Path) -> fm_transport_dto::LocationDto {
+        Location::from_native_path(path)
+            .expect("path must convert to a location")
+            .into()
+    }
+
+    #[tokio::test]
+    async fn read_file_range_reads_the_requested_bytes_at_an_offset() {
+        let (dir, service) = service();
+        let target = dir.path().join("report.txt");
+        std::fs::write(&target, b"0123456789").expect("write fixture file");
+
+        let response = service
+            .read_file_range(ReadFileRangeRequestDto {
+                location: location_dto_for(&target),
+                offset: 4,
+                length: 3,
+            })
+            .await
+            .expect("range read must succeed");
+
+        assert_eq!(response.data, b"456");
+        assert_eq!(response.offset, 4);
+        assert_eq!(response.length, 3);
+        assert!(!response.eof);
+        assert_eq!(response.probably_binary, None);
+    }
+
+    #[tokio::test]
+    async fn read_file_range_reports_eof_and_sniffs_binary_only_at_offset_zero() {
+        let (dir, service) = service();
+        let target = dir.path().join("short.bin");
+        std::fs::write(&target, [b'a', b'b', 0, b'c']).expect("write fixture file");
+
+        let first_chunk = service
+            .read_file_range(ReadFileRangeRequestDto {
+                location: location_dto_for(&target),
+                offset: 0,
+                length: 1000,
+            })
+            .await
+            .expect("range read must succeed");
+        assert_eq!(first_chunk.data, [b'a', b'b', 0, b'c']);
+        assert!(first_chunk.eof);
+        assert_eq!(first_chunk.probably_binary, Some(true));
+
+        let later_chunk = service
+            .read_file_range(ReadFileRangeRequestDto {
+                location: location_dto_for(&target),
+                offset: 2,
+                length: 2,
+            })
+            .await
+            .expect("range read must succeed");
+        assert_eq!(later_chunk.probably_binary, None);
+    }
+
+    #[tokio::test]
+    async fn read_file_range_rejects_a_zero_or_oversized_length() {
+        let (dir, service) = service();
+        let target = dir.path().join("report.txt");
+        std::fs::write(&target, b"contents").expect("write fixture file");
+
+        assert!(matches!(
+            service
+                .read_file_range(ReadFileRangeRequestDto {
+                    location: location_dto_for(&target),
+                    offset: 0,
+                    length: 0,
+                })
+                .await,
+            Err(ApplicationError::InvalidRequest(_))
+        ));
+        assert!(matches!(
+            service
+                .read_file_range(ReadFileRangeRequestDto {
+                    location: location_dto_for(&target),
+                    offset: 0,
+                    length: MAX_RANGE_LENGTH + 1,
+                })
+                .await,
+            Err(ApplicationError::InvalidRequest(_))
+        ));
+    }
+
+    #[tokio::test]
+    async fn search_in_file_finds_substring_matches_across_lines() {
+        let (dir, service) = service();
+        let target = dir.path().join("log.txt");
+        std::fs::write(
+            &target,
+            b"first line\nsecond ERROR line\nthird error line\n",
+        )
+        .expect("write fixture file");
+
+        let response = service
+            .search_in_file(SearchInFileRequestDto {
+                location: location_dto_for(&target),
+                query: "error".to_owned(),
+                regex: false,
+                case_sensitive: false,
+            })
+            .await
+            .expect("search must succeed");
+
+        assert_eq!(response.matches.len(), 2);
+        assert_eq!(response.matches[0].line_number, 2);
+        assert_eq!(response.matches[1].line_number, 3);
+        assert!(!response.truncated);
+    }
+
+    #[tokio::test]
+    async fn search_in_file_rejects_an_invalid_regex() {
+        let (dir, service) = service();
+        let target = dir.path().join("log.txt");
+        std::fs::write(&target, b"contents").expect("write fixture file");
+
+        assert!(matches!(
+            service
+                .search_in_file(SearchInFileRequestDto {
+                    location: location_dto_for(&target),
+                    query: "(unclosed".to_owned(),
+                    regex: true,
+                    case_sensitive: false,
+                })
+                .await,
+            Err(ApplicationError::InvalidRequest(_))
+        ));
     }
 
     /// A platform adapter test double reporting a hand-picked, non-uniform

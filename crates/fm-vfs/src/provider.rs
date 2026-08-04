@@ -91,6 +91,27 @@ pub trait FileSystemProvider: Send + Sync {
         cancellation: CancellationToken,
     ) -> Result<ProviderReadStream, VfsError>;
 
+    /// Opens a bounded byte range of an entry as a streaming reader (task 0088), for random-access
+    /// consumers such as a large-file viewer that must not read from the start of the file to
+    /// reach an arbitrary offset.
+    ///
+    /// `length` bounds how many bytes the returned stream yields; `None` reads to the end of the
+    /// entry. The default implementation reports [`ProviderCapabilities::RANDOM_ACCESS`] as
+    /// unsupported; callers without that capability may fall back to skip-reading through
+    /// [`Self::open_read`] instead (a documented reduced-capability path, see task 0088).
+    async fn read_range(
+        &self,
+        entry: &EntryRef,
+        offset: u64,
+        length: Option<u64>,
+        cancellation: CancellationToken,
+    ) -> Result<ProviderReadStream, VfsError> {
+        let _ = (entry, offset, length, cancellation);
+        Err(VfsError::UnsupportedCapability {
+            capability: ProviderCapabilities::RANDOM_ACCESS,
+        })
+    }
+
     /// Opens a destination as a streaming writer.
     async fn open_write(
         &self,
