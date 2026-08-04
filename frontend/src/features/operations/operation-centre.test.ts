@@ -204,4 +204,20 @@ describe('OperationCentre states', () => {
     const result = root.querySelector('[data-operation-id="cancelled"] .fm-operation-result');
     expect(result?.textContent).toBe('Cancelled after 2 / 4 items (1 KiB / 2 KiB).');
   });
+
+  it('renders nothing when there are no operations', () => {
+    m.mount(root, {
+      view: () =>
+        m(OperationCentre, {
+          state: createOperationsState([]),
+          onCancel: vi.fn(),
+          onPause: vi.fn(),
+          onResume: vi.fn(),
+          onDismiss: vi.fn(),
+        }),
+    });
+
+    expect(root.querySelector('.fm-operation-centre')).toBeNull();
+    expect(root.textContent).toBe('');
+  });
 });

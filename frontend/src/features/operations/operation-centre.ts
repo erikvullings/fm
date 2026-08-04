@@ -49,7 +49,7 @@ export const OperationCentre: Component<OperationCentreAttrs> = {
       .filter((operation): operation is Operation => operation !== undefined)
       .sort((left, right) => left.createdAt.localeCompare(right.createdAt));
     if (operations.length === 0) {
-      return m('.fm-operation-centre', { 'aria-label': 'Operation centre' }, 'No operations');
+      return null;
     }
     return m(
       '.fm-operation-centre',

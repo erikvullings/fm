@@ -251,7 +251,7 @@ describe('AppShell', () => {
     expect(root.querySelector('.fm-app-bar')).toBeNull();
     expect(root.querySelector('.fm-workspace-toolbar')).not.toBeNull();
     expect(root.querySelector('.fm-navigation-controls')).not.toBeNull();
-    expect(root.querySelector('.fm-operation-centre')).not.toBeNull();
+    expect(root.querySelector('.fm-operation-centre')).toBeNull();
     expect(root.querySelector('.fm-function-key-bar')?.textContent).toContain('F5 Copy');
     expect(root.querySelector('.fm-function-key-bar')?.textContent).toContain('F6 Move');
   });
