@@ -215,7 +215,7 @@ export const FileViewer: FactoryComponent<FileViewerAttrs> = () => ({
         m(
           'button.fm-file-viewer-close',
           { type: 'button', 'aria-label': 'Close viewer', onclick: attrs.onClose },
-          closeIcon({ size: 14 }),
+          closeIcon({ size: 13 }),
         ),
       ]),
       state.status === 'ready' && state.content.kind === 'text'

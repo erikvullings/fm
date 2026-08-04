@@ -390,14 +390,6 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
       const ordinaryEntries = attrs.entries.filter((entry) => !isParentEntry(entry.id));
       const selectedCount = attrs.selectedEntryIds.size;
       const totalSelectedSize = selectedSize(ordinaryEntries, attrs.selectedEntryIds);
-      // `attrs.totalKnownEntries` counts the synthetic ".." row the same way `attrs.entries`
-      // does (app-shell adds +1 for it), while `ordinaryEntries` never includes that row —
-      // subtract the same adjustment so the two counts stay comparable.
-      const parentEntryAdjustment = attrs.entries.length - ordinaryEntries.length;
-      const knownTotalEntries =
-        attrs.totalKnownEntries === undefined
-          ? undefined
-          : attrs.totalKnownEntries - parentEntryAdjustment;
       return m(
         'section.fm-pane',
         {
@@ -809,11 +801,7 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
             m(
               'span',
               attrs.filterQuery.trim() === ''
-                ? `${listingSummary(ordinaryEntries)}${
-                    knownTotalEntries !== undefined && knownTotalEntries > ordinaryEntries.length
-                      ? ` (${ordinaryEntries.length} of ${knownTotalEntries} loaded)`
-                      : ''
-                  }`
+                ? listingSummary(ordinaryEntries)
                 : `${listingSummary(ordinaryEntries)} (${ordinaryEntries.length} of ${attrs.totalEntryCount} shown${
                     attrs.hasMore === true ? ', more available' : ''
                   })`,

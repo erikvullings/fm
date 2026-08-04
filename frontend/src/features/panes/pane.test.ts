@@ -371,10 +371,11 @@ describe('Pane quick filter', () => {
     expect(root.querySelector('.fm-pane-status')?.textContent).toContain('3 KB in 2 files');
   });
 
-  it('shows the real known total (not just the loaded count) while more pages remain unfiltered', () => {
+  it('never exposes pagination progress in the status bar, even while more pages remain unfiltered', () => {
     mount(attrs({ filterQuery: '', totalKnownEntries: 459 }));
     const status = root.querySelector('.fm-pane-status')?.textContent;
-    expect(status).toContain('3 KB in 2 files (2 of 459 loaded)');
+    expect(status).toContain('3 KB in 2 files');
+    expect(status).not.toContain('loaded');
 
     mount(attrs({ filterQuery: '', totalKnownEntries: 2 }));
     expect(root.querySelector('.fm-pane-status')?.textContent).toContain('3 KB in 2 files');
