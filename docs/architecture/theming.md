@@ -164,7 +164,7 @@ icon-theme plugin appears automatically, with no core-repo change required to ad
 `plugins/catppuccin-icons/` is a real, distributable plugin package built entirely with this
 mechanism — a worked example for third-party theme authors:
 
-```
+```bash
 plugins/catppuccin-icons/
 ├── plugin.toml       # id = "catppuccin.icons", contributions.icon_theme = true, no entrypoint
 ├── icon-theme.json   # iconDefinitions + file/folder/symlink + fileExtensions + mimePrefixes
@@ -176,4 +176,3 @@ Each SVG is a standalone `<svg viewBox="0 0 16 16">...</svg>` document vendored 
 MIT-licensed [`catppuccin/vscode-icons`](https://github.com/catppuccin/vscode-icons) project (see
 `plugin.toml` for the full attribution). Adding or updating a theme is purely a matter of shipping
 this kind of package — no PR into this repository, no TypeScript, no rebuild.
-
