@@ -411,4 +411,40 @@ describe('DirectoryTable rows', () => {
     );
     expect(grid?.scrollTop).toBeGreaterThan(0);
   });
+
+  it('re-scrolls to a pinned cursor once the source grows, even though the cursor index itself is unchanged', () => {
+    // Regression test: `moveCursorTo`/edge:'last' can land the cursor on an index that
+    // exceeds what's loaded so far (the source reports its eventual total via
+    // `totalKnownEntries` before every page has arrived). The first sync clamps the
+    // scroll target to whatever was available; once later pages arrive the entryCount
+    // grows but `cursorIndex` never changes again, so tracking cursorIndex alone would
+    // never trigger a re-sync, permanently stranding the viewport short of the real
+    // last entry (visually appearing unscrolled, even though the cursor is logically
+    // correct).
+    const entries = Array.from({ length: 500 }, (_, index) =>
+      entry({ id: `entry-${index}`, name: `entry-${index}.txt` }),
+    );
+    let loadedCount = 60;
+    m.mount(root, {
+      view: () =>
+        m(DirectoryTable, {
+          state: { type: 'loaded' },
+          source: entryArraySource(entries.slice(0, loadedCount), loadedCount),
+          cursorIndex: 459,
+          viewportHeight: 120,
+        }),
+    });
+
+    expect(root.querySelector('.fm-cursor-row')).toBeNull();
+
+    loadedCount = 500;
+    m.redraw.sync();
+
+    const grid = root.querySelector<HTMLElement>('[role="grid"]');
+    expect(root.querySelector('[aria-live="polite"]')?.textContent).toContain(
+      'Focused entry-459.txt',
+    );
+    expect(root.querySelector('.fm-cursor-row')?.textContent).toContain('entry-459.txt');
+    expect(grid?.scrollTop).toBeGreaterThan(8_000);
+  });
 });

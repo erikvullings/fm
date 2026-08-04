@@ -1333,6 +1333,76 @@ describe('tabs per pane (task 0069)', () => {
     expect(activePane()?.textContent).toContain('generated-');
   });
 
+  it('reuses a fully-loaded tab snapshot instead of truncating it back to the first page on Ctrl+Tab away and back', async () => {
+    // Regression test: task 0069's acceptance criteria says switching tabs must reuse the
+    // previous snapshot "if still valid", not unconditionally refetch. A prior bug had
+    // `activateTab` always call `navigation.load()` on reactivation, which replaced an
+    // already-fully-loaded large directory's entries with just a freshly refetched first page,
+    // while leaving the cursor pointed at an entry (e.g. the true last entry, selected via End)
+    // that no longer existed in the truncated array — visually emptying the pane even though the
+    // footer still reported that entry as selected.
+    const client = new MockFileManagerClient({ pageSize: 100, latencyMs: 5 });
+    m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
+    await vi.waitFor(() => expect(root.textContent).toContain('Documents'));
+
+    function selectedTabIndex(): number {
+      return [...(activePane()?.querySelectorAll<HTMLElement>('[role="tab"]') ?? [])].findIndex(
+        (tab) => tab.getAttribute('aria-selected') === 'true',
+      );
+    }
+
+    activePane()
+      ?.querySelector<HTMLElement>('.fm-breadcrumb-edit-target')
+      ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    m.redraw.sync();
+    const pathInput = activePane()?.querySelector<HTMLInputElement>('.fm-path-input');
+    if (pathInput === undefined || pathInput === null) throw new Error('path input missing');
+    pathInput.value = '/large/1000';
+    pathInput.dispatchEvent(new InputEvent('input', { bubbles: true }));
+    pathInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    await vi.waitFor(() => expect(activePane()?.textContent).toContain('generated-0000000'));
+
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 't', ctrlKey: true, bubbles: true }),
+    );
+    await vi.waitFor(() => expect(activePane()?.querySelectorAll('[role="tab"]')).toHaveLength(2));
+    await vi.waitFor(() => expect(selectedTabIndex()).toBe(1));
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Tab', ctrlKey: true, shiftKey: true, bubbles: true }),
+    );
+    await vi.waitFor(() => expect(selectedTabIndex()).toBe(0));
+    await vi.waitFor(() => expect(activePane()?.textContent).toContain('generated-0000000'));
+
+    // Press End and wait for every page to actually finish loading this time.
+    activePane()?.dispatchEvent(new KeyboardEvent('keydown', { key: 'End', bubbles: true }));
+    await vi.waitFor(
+      () =>
+        expect(activePane()?.querySelector('.fm-cursor-row')?.textContent).toContain(
+          'generated-0000999',
+        ),
+      { timeout: 10_000 },
+    );
+    const lastRowBefore = activePane()?.querySelector('.fm-cursor-row')?.textContent;
+    expect(lastRowBefore).toContain('generated-0000999');
+
+    // Switch away and back — the tab was already fully loaded, so this must reuse that snapshot.
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Tab', ctrlKey: true, bubbles: true }),
+    );
+    await vi.waitFor(() => expect(selectedTabIndex()).toBe(1));
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Tab', ctrlKey: true, shiftKey: true, bubbles: true }),
+    );
+    await vi.waitFor(() => expect(selectedTabIndex()).toBe(0));
+
+    // The cursor row must still be visible on the true last entry — not silently truncated back
+    // down to the first fetched page with an orphaned cursor and a blank-looking viewport.
+    const cursorRow = activePane()?.querySelector('.fm-cursor-row');
+    expect(cursorRow).not.toBeNull();
+    expect(cursorRow?.textContent).toContain('generated-0000999');
+    expect(activePane()?.querySelectorAll('.fm-directory-row').length).toBeGreaterThan(0);
+  });
+
   it('reopens the most recently closed tab with Ctrl+Shift+T', async () => {
     const client = new MockFileManagerClient();
     const dispatchWorkspaceCommand = vi.spyOn(client, 'dispatchWorkspaceCommand');

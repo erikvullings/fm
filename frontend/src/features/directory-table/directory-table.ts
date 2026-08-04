@@ -295,30 +295,67 @@ export const DirectoryTable: FactoryComponent<DirectoryTableAttrs> = () => {
   let rowHeight = DEFAULT_ROW_HEIGHT;
   let scrollTop = 0;
   let previousCursorIndex: number | undefined;
+  // The correct scroll target for a given cursorIndex depends on the entry
+  // count too: while `loadAllPages` progressively appends pages, the cursor can
+  // jump to (and stay pinned at) the last index before every page has arrived,
+  // so the very first sync computes a scrollTop clamped to a small, partial
+  // entryCount. Once later pages arrive the entryCount grows but cursorIndex is
+  // unchanged, so tracking cursorIndex alone would never re-trigger a resync,
+  // leaving the viewport stuck short of the real last entry.
+  let previousEntryCount: number | undefined;
   let refreshTimer: ReturnType<typeof setInterval> | undefined;
+  // When the cursor jumps to an index that requires a large scrollTop while the
+  // DOM's scrollable content is still sized for the *previous* render (e.g. right
+  // after switching back to a tab whose directory is much longer than whatever
+  // tab was showing a moment ago), the browser silently clamps the assignment to
+  // fit the stale (smaller) content height. `previousCursorIndex` alone can't
+  // detect that: it already recorded the intended index, so nothing would retry
+  // the scroll once Mithril patches the content to its real (larger) height.
+  // `pendingCursorIndex` tracks that a post-patch recheck is still owed.
+  let pendingCursorIndex: number | undefined;
 
-  function syncCursor(attrs: DirectoryTableAttrs): void {
-    if (
-      element === undefined ||
-      attrs.cursorIndex === undefined ||
-      attrs.cursorIndex === previousCursorIndex ||
-      attrs.source === undefined
-    ) {
-      return;
-    }
-    previousCursorIndex = attrs.cursorIndex;
+  function applyScrollForCursor(attrs: DirectoryTableAttrs, cursorIndex: number): void {
+    if (element === undefined || attrs.source === undefined) return;
     const nextScrollTop = scrollOffsetForIndex({
-      index: attrs.cursorIndex,
+      index: cursorIndex,
       entryCount: attrs.source.length,
       rowHeight,
       scrollTop: element.scrollTop,
       viewportHeight: attrs.viewportHeight ?? (element.clientHeight || DEFAULT_VIEWPORT_HEIGHT),
     });
-    if (nextScrollTop === element.scrollTop) {
+    if (nextScrollTop !== element.scrollTop) {
+      element.scrollTop = nextScrollTop;
+    }
+    // Read back the value the browser actually applied rather than assuming the
+    // assignment stuck: if the content wasn't tall enough yet, the browser clamps
+    // it and `scrollTop` must reflect that reality, not the intended target.
+    scrollTop = element.scrollTop;
+    pendingCursorIndex = scrollTop === nextScrollTop ? undefined : cursorIndex;
+  }
+
+  function syncCursor(attrs: DirectoryTableAttrs): void {
+    if (element === undefined || attrs.cursorIndex === undefined || attrs.source === undefined) {
       return;
     }
-    element.scrollTop = nextScrollTop;
-    scrollTop = nextScrollTop;
+    const entryCount = attrs.source.length;
+    if (attrs.cursorIndex === previousCursorIndex && entryCount === previousEntryCount) {
+      return;
+    }
+    previousCursorIndex = attrs.cursorIndex;
+    previousEntryCount = entryCount;
+    applyScrollForCursor(attrs, attrs.cursorIndex);
+  }
+
+  /** Re-verifies the scroll position once Mithril has patched the DOM with this
+   * render's (possibly newly grown) content height, correcting any scrollTop
+   * clamped during `syncCursor`'s pre-patch attempt. Returns whether a redraw is
+   * needed to re-render the row window at the corrected position. */
+  function recheckScroll(attrs: DirectoryTableAttrs): boolean {
+    if (pendingCursorIndex === undefined || element === undefined) return false;
+    const cursorIndex = pendingCursorIndex;
+    const before = scrollTop;
+    applyScrollForCursor(attrs, cursorIndex);
+    return scrollTop !== before;
   }
 
   return {
@@ -486,6 +523,9 @@ export const DirectoryTable: FactoryComponent<DirectoryTableAttrs> = () => {
               },
               onupdate: (vnode: VnodeDOM) => {
                 element = vnode.dom as HTMLElement;
+                if (recheckScroll(vnode.attrs as DirectoryTableAttrs)) {
+                  m.redraw();
+                }
               },
               onscroll: (event: Event) => {
                 const target = event.currentTarget as HTMLElement;

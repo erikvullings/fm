@@ -1418,6 +1418,12 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     const pane = workspace.panesById[paneId];
     if (pane === undefined || pane.activeTabId === tabId) return;
     const previousTabId = pane.activeTabId;
+    // Task 0069's acceptance criteria: "switching tabs is instant: the previous snapshot is
+    // reused if still valid, otherwise refetched." Capture whether we already have one for the
+    // tab being activated *before* dispatching, so an unconditional reload doesn't truncate an
+    // already-fully-loaded large directory back down to its first page and strand the cursor on
+    // an entry that briefly no longer exists in the (temporarily shorter) entries array.
+    const hasCachedSnapshot = directories.get(tabKey(paneId, tabId))?.state.type === 'loaded';
     void dispatchWorkspaceCommand(
       client,
       {
@@ -1430,7 +1436,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       (next) => {
         replaceWorkspace(next);
         navigation.abort(paneId, previousTabId);
-        void navigation.load(paneId);
+        if (!hasCachedSnapshot) void navigation.load(paneId);
       },
     ).catch(() => undefined);
   }
