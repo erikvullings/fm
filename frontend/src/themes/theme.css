@@ -123,6 +123,49 @@ textarea {
   overflow: hidden;
 }
 
+/*
+ * Pinned by row number rather than left to auto-placement: the mac-only
+ * titlebar spacer only exists in the DOM in Tauri overlay mode, and
+ * mithril-materialized's ModalPanel-based dialogs (command palette, context
+ * menu, create-directory, find-files, permanent-delete) always render an
+ * always-present `.modal-container` wrapper regardless of open/closed state.
+ * Without explicit rows, that variable element count shifts these four
+ * structural rows by one track depending on which dialogs/spacer happen to be
+ * present, which previously let the operation centre grab the workspace's
+ * intended `minmax(0, 1fr)` track and balloon to fill the screen.
+ */
+.fm-titlebar-spacer {
+  grid-row: 1;
+}
+
+.fm-workspace-toolbar {
+  grid-row: 2;
+}
+
+main.fm-workspace {
+  grid-row: 3;
+}
+
+.fm-operation-centre {
+  grid-row: 4;
+}
+
+.fm-function-key-bar {
+  grid-row: 5;
+}
+
+/*
+ * ModalPanel's outer wrapper carries no styling of its own -- only its
+ * `.modal-overlay`/`.modal` children are `position: fixed` -- so left
+ * unstyled it's a normal block-level grid item, perturbing sibling row
+ * assignment above. `display: contents` removes it from grid-item
+ * generation while leaving its fixed-position children rendering exactly
+ * where they already positioned themselves.
+ */
+.modal-container {
+  display: contents;
+}
+
 .fm-workspace-toolbar,
 .fm-function-key-bar,
 .fm-operation-centre {
