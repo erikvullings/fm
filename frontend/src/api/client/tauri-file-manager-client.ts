@@ -8,6 +8,7 @@ import type {
   DirectorySnapshot,
   EntryMetadata,
   EntryMetadataRequest,
+  FileRangeChunk,
   InvokeActionRequest,
   ListDirectoryRequest,
   NavigateRequest,
@@ -16,8 +17,11 @@ import type {
   PluginDescriptor,
   PluginId,
   PluginLogEntry,
+  ReadFileRangeRequest,
   ResolveConflictRequest,
   RuntimeCapabilities,
+  SearchInFileRequest,
+  SearchInFileResult,
   Settings,
   StartOperationRequest,
   StartSearchRequest,
@@ -146,6 +150,14 @@ export class TauriFileManagerClient implements FileManagerClient {
     _signal?: AbortSignal,
   ): Promise<EntryMetadata> {
     return entryMetadataFromDto(await invoke<EntryMetadataDto>('get_entry_metadata', { request }));
+  }
+
+  readFileRange(request: ReadFileRangeRequest, _signal?: AbortSignal): Promise<FileRangeChunk> {
+    return invoke<FileRangeChunk>('read_file_range', { request });
+  }
+
+  searchInFile(request: SearchInFileRequest, _signal?: AbortSignal): Promise<SearchInFileResult> {
+    return invoke<SearchInFileResult>('search_in_file', { request });
   }
 
   startOperation(request: StartOperationRequest, _signal?: AbortSignal): Promise<Operation> {

@@ -9,6 +9,7 @@ import type {
   DirectorySnapshot,
   EntryMetadata,
   EntryMetadataRequest,
+  FileRangeChunk,
   InvokeActionRequest,
   ListDirectoryRequest,
   Location,
@@ -18,8 +19,12 @@ import type {
   PluginDescriptor,
   PluginId,
   PluginLogEntry,
+  ReadFileRangeRequest,
   ResolveConflictRequest,
   RuntimeCapabilities,
+  SearchInFileMatch,
+  SearchInFileRequest,
+  SearchInFileResult,
   Settings,
   StartOperationRequest,
   StartSearchRequest,
@@ -65,6 +70,8 @@ export type MockClientMethod =
   | 'listDirectory'
   | 'getEntryMetadata'
   | 'getFileIcon'
+  | 'readFileRange'
+  | 'searchInFile'
   | 'startOperation'
   | 'listOperations'
   | 'cancelOperation'
@@ -123,6 +130,25 @@ function matchesQuery(name: string, query: string): boolean {
     .replace(/\*/g, '.*')
     .replace(/\?/g, '.');
   return new RegExp(`^${pattern}$`).test(name.toLowerCase());
+}
+
+/**
+ * Deterministically generates plausible multi-line text content for a mock file uri, so the
+ * in-app large file viewer (task 0088) has something non-trivial to lazily fetch and search over
+ * without real file bytes existing anywhere in the fixture tree.
+ */
+function syntheticFileContent(uri: string): Uint8Array {
+  let seed = 0;
+  for (let index = 0; index < uri.length; index += 1) {
+    seed = (seed * 31 + uri.charCodeAt(index)) >>> 0;
+  }
+  const lineCount = 2_000 + (seed % 3_000);
+  const lines: string[] = [];
+  for (let index = 0; index < lineCount; index += 1) {
+    const marker = index % 97 === 0 ? ' ERROR' : '';
+    lines.push(`line ${index} of ${uri}${marker}`);
+  }
+  return new TextEncoder().encode(`${lines.join('\n')}\n`);
 }
 
 /**
@@ -256,6 +282,7 @@ export class MockFileManagerClient implements FileManagerClient {
   private searchSequence = 0;
   private eventSequence = 0;
   private readonly searches = new Map<string, { cancelled: boolean }>();
+  private readonly fileContents = new Map<string, Uint8Array>();
 
   constructor(options: MockFileManagerClientOptions = {}) {
     this.pageSize = options.pageSize ?? 100;
@@ -571,6 +598,54 @@ export class MockFileManagerClient implements FileManagerClient {
     }));
   }
 
+  readFileRange(request: ReadFileRangeRequest, signal?: AbortSignal): Promise<FileRangeChunk> {
+    return this.perform('readFileRange', signal, () => {
+      if (request.length <= 0) {
+        throw new MockClientError('invalidRequest', 'length must be a positive number of bytes');
+      }
+      const bytes = this.fileContentFor(request.location.uri);
+      const end = Math.min(bytes.length, request.offset + request.length);
+      const slice = bytes.slice(request.offset, Math.max(request.offset, end));
+      return {
+        data: Array.from(slice),
+        offset: request.offset,
+        length: slice.length,
+        eof: end >= bytes.length,
+        ...(request.offset === 0 ? { probablyBinary: false } : {}),
+      };
+    });
+  }
+
+  searchInFile(request: SearchInFileRequest, signal?: AbortSignal): Promise<SearchInFileResult> {
+    return this.perform('searchInFile', signal, () => {
+      if (request.query.length === 0) {
+        throw new MockClientError('invalidRequest', 'search query must not be empty');
+      }
+      const matchesOnLine = this.buildLineMatcher(request);
+      const text = new TextDecoder().decode(this.fileContentFor(request.location.uri));
+      const lines = text.split('\n');
+      const matches: SearchInFileMatch[] = [];
+      let truncated = false;
+      let fileOffset = 0;
+      for (let lineIndex = 0; lineIndex < lines.length && !truncated; lineIndex += 1) {
+        const line = lines[lineIndex] ?? '';
+        for (const [start, end] of matchesOnLine(line)) {
+          if (matches.length >= 5_000) {
+            truncated = true;
+            break;
+          }
+          matches.push({
+            lineNumber: lineIndex + 1,
+            offset: fileOffset + start,
+            length: end - start,
+          });
+        }
+        fileOffset += line.length + 1;
+      }
+      return { matches, truncated };
+    });
+  }
+
   startOperation(request: StartOperationRequest, signal?: AbortSignal): Promise<Operation> {
     return this.perform('startOperation', signal, () => {
       this.operationSequence += 1;
@@ -845,6 +920,55 @@ export class MockFileManagerClient implements FileManagerClient {
       throw new MockClientError('operationNotFound', `No mock operation with id ${operationId}`);
     }
     return operation;
+  }
+
+  private fileContentFor(uri: string): Uint8Array {
+    let content = this.fileContents.get(uri);
+    if (content === undefined) {
+      content = syntheticFileContent(uri);
+      this.fileContents.set(uri, content);
+    }
+    return content;
+  }
+
+  /** Builds a per-line match finder for a search request, mirroring the backend's
+   * substring/regex, case-(in)sensitive `ContentQuery` semantics closely enough for mock/dev use. */
+  private buildLineMatcher(request: SearchInFileRequest): (line: string) => [number, number][] {
+    if (request.regex) {
+      let pattern: RegExp;
+      try {
+        pattern = new RegExp(request.query, request.caseSensitive ? 'gu' : 'giu');
+      } catch (error) {
+        throw new MockClientError(
+          'invalidRequest',
+          `invalid regular expression: ${(error as Error).message}`,
+        );
+      }
+      return (line) => {
+        const found: [number, number][] = [];
+        pattern.lastIndex = 0;
+        let match = pattern.exec(line);
+        while (match !== null) {
+          found.push([match.index, match.index + match[0].length]);
+          pattern.lastIndex = match[0].length === 0 ? match.index + 1 : pattern.lastIndex;
+          match = pattern.exec(line);
+        }
+        return found;
+      };
+    }
+    const needle = request.caseSensitive ? request.query : request.query.toLowerCase();
+    return (line) => {
+      const haystack = request.caseSensitive ? line : line.toLowerCase();
+      const found: [number, number][] = [];
+      let from = 0;
+      let index = haystack.indexOf(needle, from);
+      while (index !== -1) {
+        found.push([index, index + needle.length]);
+        from = index + needle.length;
+        index = haystack.indexOf(needle, from);
+      }
+      return found;
+    };
   }
 
   private async perform<T>(

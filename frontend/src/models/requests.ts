@@ -1,3 +1,6 @@
+import type { ReadFileRangeResponseDto } from '../api/generated/models/readFileRangeResponseDto';
+import type { SearchInFileMatchDto } from '../api/generated/models/searchInFileMatchDto';
+import type { SearchInFileResponseDto } from '../api/generated/models/searchInFileResponseDto';
 import type { SortDescriptorDto } from '../api/generated/models/sortDescriptorDto';
 import type { ActionInvocationContext } from './action';
 import type { ActionId, EntryId, OperationId, PaneId } from './ids';
@@ -94,3 +97,38 @@ export interface StartSearchResult {
   searchId: string;
   location: Location;
 }
+
+/**
+ * Requests a byte range from a single file (`POST /api/v1/files/range`,
+ * task 0088), mirroring `fm_transport_dto::ReadFileRangeRequestDto`.
+ */
+export interface ReadFileRangeRequest {
+  location: Location;
+  offset: number;
+  length: number;
+}
+
+/**
+ * One chunk of a file's content, mirroring
+ * `fm_transport_dto::ReadFileRangeResponseDto`. Field shapes match the wire
+ * DTO exactly, so no separate mapper is needed.
+ */
+export type FileRangeChunk = ReadFileRangeResponseDto;
+
+/**
+ * Searches a single file's content for a substring or regex
+ * (`POST /api/v1/files/search`, task 0088), mirroring
+ * `fm_transport_dto::SearchInFileRequestDto`.
+ */
+export interface SearchInFileRequest {
+  location: Location;
+  query: string;
+  regex: boolean;
+  caseSensitive: boolean;
+}
+
+/** One match found by a {@link SearchInFileRequest}. */
+export type SearchInFileMatch = SearchInFileMatchDto;
+
+/** The result of a {@link SearchInFileRequest}. */
+export type SearchInFileResult = SearchInFileResponseDto;

@@ -1833,6 +1833,98 @@
           }
         ]
       },
+      "ReadFileRangeRequestDto": {
+        "description": "Requests a byte range from a single file (`POST /api/v1/files/range`).",
+        "example": {
+          "length": 65536,
+          "location": {
+            "providerId": "local",
+            "uri": "file:///Users/erik/report.txt"
+          },
+          "offset": 0
+        },
+        "properties": {
+          "length": {
+            "description": "The number of bytes to read, capped server-side to a maximum chunk\nsize; requesting more than remains in the file returns fewer bytes.",
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "location": {
+            "$ref": "#/components/schemas/LocationDto",
+            "description": "The file to read from."
+          },
+          "offset": {
+            "description": "The zero-based byte offset to start reading at.",
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "location",
+          "offset",
+          "length"
+        ],
+        "type": "object"
+      },
+      "ReadFileRangeResponseDto": {
+        "description": "One chunk of a file's content, starting at `offset`.",
+        "example": {
+          "data": [
+            72,
+            101,
+            108,
+            108,
+            111
+          ],
+          "eof": true,
+          "length": 5,
+          "offset": 0,
+          "probablyBinary": false
+        },
+        "properties": {
+          "data": {
+            "description": "The chunk's raw bytes.",
+            "items": {
+              "format": "int32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "type": "array"
+          },
+          "eof": {
+            "description": "Whether this chunk reached the end of the file.",
+            "type": "boolean"
+          },
+          "length": {
+            "description": "The number of bytes actually returned; may be less than requested if\nthe file ends before `offset + length`.",
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "offset": {
+            "description": "The byte offset the chunk starts at (echoes the request).",
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "probablyBinary": {
+            "description": "A NUL-byte sniff of the file's start, only populated when `offset`\nis `0`; `None` for later chunks of the same file.",
+            "type": [
+              "boolean",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "data",
+          "offset",
+          "length",
+          "eof"
+        ],
+        "type": "object"
+      },
       "ResolveOperationConflictRequestDto": {
         "description": "Reserved conflict-resolution request for the dialog introduced by task 0045.",
         "properties": {
@@ -1941,6 +2033,102 @@
           "mock"
         ],
         "type": "string"
+      },
+      "SearchInFileMatchDto": {
+        "description": "One match found by a [`SearchInFileRequestDto`].",
+        "example": {
+          "length": 5,
+          "lineNumber": 12,
+          "offset": 34
+        },
+        "properties": {
+          "length": {
+            "description": "The match's length in bytes.",
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "lineNumber": {
+            "description": "The one-based line number the match starts on.",
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "offset": {
+            "description": "The byte offset within the file the match starts at.",
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "lineNumber",
+          "offset",
+          "length"
+        ],
+        "type": "object"
+      },
+      "SearchInFileRequestDto": {
+        "description": "Searches for a substring or regex within a single file's content\n(`POST /api/v1/files/search`).",
+        "example": {
+          "caseSensitive": false,
+          "location": {
+            "providerId": "local",
+            "uri": "file:///Users/erik/report.txt"
+          },
+          "query": "error",
+          "regex": false
+        },
+        "properties": {
+          "caseSensitive": {
+            "description": "Whether the match is case-sensitive.",
+            "type": "boolean"
+          },
+          "location": {
+            "$ref": "#/components/schemas/LocationDto",
+            "description": "The file to search within."
+          },
+          "query": {
+            "description": "The substring or regex pattern to search for.",
+            "type": "string"
+          },
+          "regex": {
+            "description": "Whether `query` is a regular expression rather than a plain substring.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "location",
+          "query",
+          "regex",
+          "caseSensitive"
+        ],
+        "type": "object"
+      },
+      "SearchInFileResponseDto": {
+        "description": "The result of a content search within a single file.",
+        "example": {
+          "matches": [],
+          "truncated": false
+        },
+        "properties": {
+          "matches": {
+            "description": "Matches found, in file order, up to a server-side cap.",
+            "items": {
+              "$ref": "#/components/schemas/SearchInFileMatchDto"
+            },
+            "type": "array"
+          },
+          "truncated": {
+            "description": "Whether the result was cut off before scanning the whole file because\nthe match cap was reached.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "matches",
+          "truncated"
+        ],
+        "type": "object"
       },
       "SettingsDto": {
         "description": "Versioned global settings. Live workspace content is deliberately absent.",
@@ -3091,6 +3279,122 @@
           }
         },
         "summary": "Streams every event visible to the explicit local development session."
+      }
+    },
+    "/api/v1/files/range": {
+      "post": {
+        "operationId": "readFileRange",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReadFileRangeRequestDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadFileRangeResponseDto"
+                }
+              }
+            },
+            "description": "The requested byte range"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationErrorDto"
+                }
+              }
+            },
+            "description": "The request was invalid"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationErrorDto"
+                }
+              }
+            },
+            "description": "The file is unreadable"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationErrorDto"
+                }
+              }
+            },
+            "description": "The file does not exist"
+          }
+        },
+        "summary": "Reads one bounded byte range from a single file."
+      }
+    },
+    "/api/v1/files/search": {
+      "post": {
+        "operationId": "searchInFile",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SearchInFileRequestDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchInFileResponseDto"
+                }
+              }
+            },
+            "description": "Matches found in the file"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationErrorDto"
+                }
+              }
+            },
+            "description": "The request was invalid"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationErrorDto"
+                }
+              }
+            },
+            "description": "The file is unreadable"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationErrorDto"
+                }
+              }
+            },
+            "description": "The file does not exist"
+          }
+        },
+        "summary": "Searches a single file's content for a substring or regex."
       }
     },
     "/api/v1/health": {

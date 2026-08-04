@@ -24,6 +24,8 @@ const requestListPlugins = vi.fn();
 const requestEnablePlugin = vi.fn();
 const requestDisablePlugin = vi.fn();
 const requestGetPluginLogs = vi.fn();
+const requestReadFileRange = vi.fn();
+const requestSearchInFile = vi.fn();
 const requestGetFileIcon = vi.fn();
 
 vi.mock('../generated/file-manager-api', () => ({
@@ -49,6 +51,8 @@ vi.mock('../generated/file-manager-api', () => ({
   enablePlugin: (...args: unknown[]) => requestEnablePlugin(...args),
   disablePlugin: (...args: unknown[]) => requestDisablePlugin(...args),
   getPluginLogs: (...args: unknown[]) => requestGetPluginLogs(...args),
+  readFileRange: (...args: unknown[]) => requestReadFileRange(...args),
+  searchInFile: (...args: unknown[]) => requestSearchInFile(...args),
   getFileIcon: (...args: unknown[]) => requestGetFileIcon(...args),
 }));
 
@@ -103,6 +107,8 @@ afterEach(() => {
   requestEnablePlugin.mockReset();
   requestDisablePlugin.mockReset();
   requestGetPluginLogs.mockReset();
+  requestReadFileRange.mockReset();
+  requestSearchInFile.mockReset();
   requestGetFileIcon.mockReset();
 });
 
@@ -399,6 +405,81 @@ describe('HttpFileManagerClient', () => {
       await expect(client.cancelSearch('search-1')).rejects.toThrow(
         'Unexpected cancelSearch response status: 404',
       );
+    });
+  });
+
+  describe('file range and content search methods', () => {
+    it('reads a byte range from a file', async () => {
+      const chunk = {
+        data: [1, 2, 3],
+        offset: 0,
+        length: 3,
+        eof: false,
+        probablyBinary: false,
+      };
+      requestReadFileRange.mockResolvedValue({ status: 200, data: chunk, headers: new Headers() });
+      const client = new HttpFileManagerClient();
+      const controller = new AbortController();
+      const request = {
+        location: { providerId: 'local', uri: 'file:///report.txt' },
+        offset: 0,
+        length: 3,
+      };
+
+      await expect(client.readFileRange(request, controller.signal)).resolves.toEqual(chunk);
+      expect(requestReadFileRange).toHaveBeenCalledWith(
+        request,
+        expect.objectContaining({ signal: controller.signal }),
+      );
+    });
+
+    it('rejects an unexpected readFileRange response status', async () => {
+      requestReadFileRange.mockResolvedValue({ status: 400, headers: new Headers(), data: {} });
+      const client = new HttpFileManagerClient();
+
+      await expect(
+        client.readFileRange({
+          location: { providerId: 'local', uri: 'file:///report.txt' },
+          offset: 0,
+          length: 3,
+        }),
+      ).rejects.toThrow('Unexpected readFileRange response status: 400');
+    });
+
+    it('searches a file for content matches', async () => {
+      const result = {
+        matches: [{ lineNumber: 1, offset: 0, length: 5 }],
+        truncated: false,
+      };
+      requestSearchInFile.mockResolvedValue({ status: 200, data: result, headers: new Headers() });
+      const client = new HttpFileManagerClient();
+      const controller = new AbortController();
+      const request = {
+        location: { providerId: 'local', uri: 'file:///report.txt' },
+        query: 'error',
+        regex: false,
+        caseSensitive: false,
+      };
+
+      await expect(client.searchInFile(request, controller.signal)).resolves.toEqual(result);
+      expect(requestSearchInFile).toHaveBeenCalledWith(
+        request,
+        expect.objectContaining({ signal: controller.signal }),
+      );
+    });
+
+    it('rejects an unexpected searchInFile response status', async () => {
+      requestSearchInFile.mockResolvedValue({ status: 400, headers: new Headers(), data: {} });
+      const client = new HttpFileManagerClient();
+
+      await expect(
+        client.searchInFile({
+          location: { providerId: 'local', uri: 'file:///report.txt' },
+          query: 'error',
+          regex: false,
+          caseSensitive: false,
+        }),
+      ).rejects.toThrow('Unexpected searchInFile response status: 400');
     });
   });
 

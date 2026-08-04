@@ -6,6 +6,7 @@ import type {
   DirectorySnapshot,
   EntryMetadata,
   EntryMetadataRequest,
+  FileRangeChunk,
   InvokeActionRequest,
   ListDirectoryRequest,
   NavigateRequest,
@@ -14,8 +15,11 @@ import type {
   PluginDescriptor,
   PluginId,
   PluginLogEntry,
+  ReadFileRangeRequest,
   ResolveConflictRequest,
   RuntimeCapabilities,
+  SearchInFileRequest,
+  SearchInFileResult,
   Settings,
   StartOperationRequest,
   StartSearchRequest,
@@ -91,6 +95,12 @@ export interface FileManagerClient {
 
   /** Lazily fetches a native PNG icon; unsupported/failure is a themed-icon fallback. */
   getFileIcon(sampleLocationUri: string, signal?: AbortSignal): Promise<Uint8Array | undefined>;
+
+  /** Reads one bounded byte range from a file, for the in-app large file viewer (task 0088). */
+  readFileRange(request: ReadFileRangeRequest, signal?: AbortSignal): Promise<FileRangeChunk>;
+
+  /** Searches a single file's content, for the in-app large file viewer (task 0088). */
+  searchInFile(request: SearchInFileRequest, signal?: AbortSignal): Promise<SearchInFileResult>;
 
   startOperation(request: StartOperationRequest, signal?: AbortSignal): Promise<Operation>;
 

@@ -156,6 +156,37 @@ describe('TauriFileManagerClient', () => {
     });
   });
 
+  describe('file range and content search methods', () => {
+    it('invokes read_file_range and returns the chunk', async () => {
+      const request = {
+        location: { providerId: 'local', uri: 'file:///report.txt' },
+        offset: 0,
+        length: 3,
+      };
+      const chunk = { data: [1, 2, 3], offset: 0, length: 3, eof: false, probablyBinary: false };
+      invoke.mockResolvedValue(chunk);
+      const client = new TauriFileManagerClient();
+
+      await expect(client.readFileRange(request)).resolves.toEqual(chunk);
+      expect(invoke).toHaveBeenCalledWith('read_file_range', { request });
+    });
+
+    it('invokes search_in_file and returns the matches', async () => {
+      const request = {
+        location: { providerId: 'local', uri: 'file:///report.txt' },
+        query: 'error',
+        regex: false,
+        caseSensitive: false,
+      };
+      const result = { matches: [{ lineNumber: 1, offset: 0, length: 5 }], truncated: false };
+      invoke.mockResolvedValue(result);
+      const client = new TauriFileManagerClient();
+
+      await expect(client.searchInFile(request)).resolves.toEqual(result);
+      expect(invoke).toHaveBeenCalledWith('search_in_file', { request });
+    });
+  });
+
   describe('workspace methods', () => {
     it('invokes get_workspace and normalizes the result', async () => {
       invoke.mockResolvedValue({

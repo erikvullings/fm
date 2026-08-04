@@ -337,3 +337,94 @@ describe('MockFileManagerClient search methods', () => {
     });
   });
 });
+
+describe('MockFileManagerClient file range and content search methods', () => {
+  const LOCATION = { providerId: 'file', uri: 'mock:///report.txt' } as const;
+
+  it('reads a bounded byte range and reports probablyBinary only at offset zero', async () => {
+    const client = new MockFileManagerClient();
+
+    const first = await client.readFileRange({ location: LOCATION, offset: 0, length: 16 });
+    const second = await client.readFileRange({ location: LOCATION, offset: 16, length: 16 });
+
+    expect(first.data).toHaveLength(16);
+    expect(first.offset).toBe(0);
+    expect(first.eof).toBe(false);
+    expect(first.probablyBinary).toBe(false);
+    expect(second.probablyBinary).toBeUndefined();
+  });
+
+  it('returns the same synthetic content across repeated reads of the same location', async () => {
+    const client = new MockFileManagerClient();
+
+    const first = await client.readFileRange({ location: LOCATION, offset: 0, length: 32 });
+    const second = await client.readFileRange({ location: LOCATION, offset: 0, length: 32 });
+
+    expect(second.data).toEqual(first.data);
+  });
+
+  it('reports eof once a range reaches the end of the synthetic content', async () => {
+    const client = new MockFileManagerClient();
+    const probe = await client.readFileRange({ location: LOCATION, offset: 0, length: 1 });
+    // The synthetic content is deterministic per uri; find its end by requesting a huge range.
+    const whole = await client.readFileRange({
+      location: LOCATION,
+      offset: 0,
+      length: 10_000_000,
+    });
+    expect(whole.eof).toBe(true);
+    expect(probe.eof).toBe(false);
+  });
+
+  it('rejects a zero-length range request', async () => {
+    const client = new MockFileManagerClient();
+
+    await expect(
+      client.readFileRange({ location: LOCATION, offset: 0, length: 0 }),
+    ).rejects.toMatchObject({ code: 'invalidRequest' });
+  });
+
+  it('finds case-insensitive substring matches by line', async () => {
+    const client = new MockFileManagerClient();
+
+    const result = await client.searchInFile({
+      location: LOCATION,
+      query: 'ERROR',
+      regex: false,
+      caseSensitive: false,
+    });
+
+    expect(result.matches.length).toBeGreaterThan(0);
+    expect(result.matches[0]).toMatchObject({ length: 5 });
+    expect(result.truncated).toBe(false);
+  });
+
+  it('finds regex matches', async () => {
+    const client = new MockFileManagerClient();
+
+    const result = await client.searchInFile({
+      location: LOCATION,
+      query: 'line \\d+ of',
+      regex: true,
+      caseSensitive: true,
+    });
+
+    expect(result.matches.length).toBeGreaterThan(0);
+  });
+
+  it('rejects an invalid regex query', async () => {
+    const client = new MockFileManagerClient();
+
+    await expect(
+      client.searchInFile({ location: LOCATION, query: '(', regex: true, caseSensitive: false }),
+    ).rejects.toMatchObject({ code: 'invalidRequest' });
+  });
+
+  it('rejects an empty search query', async () => {
+    const client = new MockFileManagerClient();
+
+    await expect(
+      client.searchInFile({ location: LOCATION, query: '', regex: false, caseSensitive: false }),
+    ).rejects.toMatchObject({ code: 'invalidRequest' });
+  });
+});

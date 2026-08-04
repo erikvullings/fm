@@ -6,6 +6,7 @@ import type {
   DirectorySnapshot,
   EntryMetadata,
   EntryMetadataRequest,
+  FileRangeChunk,
   InvokeActionRequest,
   ListDirectoryRequest,
   NavigateRequest,
@@ -15,8 +16,11 @@ import type {
   PluginIconTheme,
   PluginId,
   PluginLogEntry,
+  ReadFileRangeRequest,
   ResolveConflictRequest,
   RuntimeCapabilities,
+  SearchInFileRequest,
+  SearchInFileResult,
   Settings,
   StartOperationRequest,
   StartSearchRequest,
@@ -49,8 +53,10 @@ import {
   getPluginIconThemeAsset as requestPluginIconThemeAsset,
   getPluginLogs as requestPluginLogs,
   listPlugins as requestPlugins,
+  readFileRange as requestReadFileRange,
   getRuntimeCapabilities as requestRuntimeCapabilities,
   cancelSearch as requestSearchCancel,
+  searchInFile as requestSearchInFile,
   startSearch as requestSearchStart,
   getSettings as requestSettings,
   updateSettings as requestSettingsUpdate,
@@ -238,6 +244,34 @@ export class HttpFileManagerClient implements FileManagerClient {
       throw new Error(`Unexpected getEntryMetadata response status: ${response.status}`);
     }
     return entryMetadataFromDto(response.data);
+  }
+
+  async readFileRange(
+    request: ReadFileRangeRequest,
+    signal?: AbortSignal,
+  ): Promise<FileRangeChunk> {
+    const response = await requestReadFileRange(
+      request,
+      signal !== undefined ? { signal } : undefined,
+    );
+    if (response.status !== 200) {
+      throw new Error(`Unexpected readFileRange response status: ${response.status}`);
+    }
+    return response.data;
+  }
+
+  async searchInFile(
+    request: SearchInFileRequest,
+    signal?: AbortSignal,
+  ): Promise<SearchInFileResult> {
+    const response = await requestSearchInFile(
+      request,
+      signal !== undefined ? { signal } : undefined,
+    );
+    if (response.status !== 200) {
+      throw new Error(`Unexpected searchInFile response status: ${response.status}`);
+    }
+    return response.data;
   }
 
   async startOperation(request: StartOperationRequest, signal?: AbortSignal): Promise<Operation> {

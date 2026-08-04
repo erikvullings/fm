@@ -22,8 +22,12 @@ import type {
   OperationPageDto,
   PluginDescriptorDto,
   PluginLogEntryDto,
+  ReadFileRangeRequestDto,
+  ReadFileRangeResponseDto,
   ResolveOperationConflictRequestDto,
   RuntimeCapabilitiesDto,
+  SearchInFileRequestDto,
+  SearchInFileResponseDto,
   SettingsDto,
   StartOperationRequestDto,
   StartSearchRequestDto,
@@ -309,6 +313,112 @@ export const subscribeEvents = async ( options?: Parameters<typeof fetchMutator>
     method: 'GET'
 
 
+  }
+);}
+
+
+
+export type readFileRangeResponse200 = {
+  data: ReadFileRangeResponseDto
+  status: 200
+}
+
+export type readFileRangeResponse400 = {
+  data: ApplicationErrorDto
+  status: 400
+}
+
+export type readFileRangeResponse403 = {
+  data: ApplicationErrorDto
+  status: 403
+}
+
+export type readFileRangeResponse404 = {
+  data: ApplicationErrorDto
+  status: 404
+}
+
+export type readFileRangeResponseSuccess = (readFileRangeResponse200) & {
+  headers: Headers;
+};
+export type readFileRangeResponseError = (readFileRangeResponse400 | readFileRangeResponse403 | readFileRangeResponse404) & {
+  headers: Headers;
+};
+
+export type readFileRangeResponse = (readFileRangeResponseSuccess | readFileRangeResponseError)
+
+export const getReadFileRangeUrl = () => {
+
+
+
+
+  return `/api/v1/files/range`
+}
+
+/**
+ * @summary Reads one bounded byte range from a single file.
+ */
+export const readFileRange = async (readFileRangeRequestDto: ReadFileRangeRequestDto, options?: Parameters<typeof fetchMutator>[1]): Promise<readFileRangeResponse> => {
+
+  return fetchMutator<readFileRangeResponse>(getReadFileRangeUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(readFileRangeRequestDto)
+  }
+);}
+
+
+
+export type searchInFileResponse200 = {
+  data: SearchInFileResponseDto
+  status: 200
+}
+
+export type searchInFileResponse400 = {
+  data: ApplicationErrorDto
+  status: 400
+}
+
+export type searchInFileResponse403 = {
+  data: ApplicationErrorDto
+  status: 403
+}
+
+export type searchInFileResponse404 = {
+  data: ApplicationErrorDto
+  status: 404
+}
+
+export type searchInFileResponseSuccess = (searchInFileResponse200) & {
+  headers: Headers;
+};
+export type searchInFileResponseError = (searchInFileResponse400 | searchInFileResponse403 | searchInFileResponse404) & {
+  headers: Headers;
+};
+
+export type searchInFileResponse = (searchInFileResponseSuccess | searchInFileResponseError)
+
+export const getSearchInFileUrl = () => {
+
+
+
+
+  return `/api/v1/files/search`
+}
+
+/**
+ * @summary Searches a single file's content for a substring or regex.
+ */
+export const searchInFile = async (searchInFileRequestDto: SearchInFileRequestDto, options?: Parameters<typeof fetchMutator>[1]): Promise<searchInFileResponse> => {
+
+  return fetchMutator<searchInFileResponse>(getSearchInFileUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(searchInFileRequestDto)
   }
 );}
 

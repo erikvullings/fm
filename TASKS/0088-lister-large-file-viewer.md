@@ -1,9 +1,9 @@
 # 0088 Lister-style instant large-file viewer with lazy search
 
-Status: open
+Status: in_progress
 Priority: low
 Owner: unassigned
-Agent: unassigned
+Agent: copilot
 Area: cross-cutting
 Depends on: 0087
 
@@ -73,3 +73,38 @@ Existing building blocks and gaps, confirmed by inspection:
   UI surface — if 0071 already ships a preview panel shell, extend it rather than duplicating.
 
 ## Agent Notes
+- 2026-08-04: Backend complete and verified (`cargo build/test/clippy/fmt` clean across the
+  workspace): `fm-vfs` gained `FileSystemProvider::read_range` (default impl returns
+  `UnsupportedCapability{RANDOM_ACCESS}`) and a new `fm_vfs::content` module (`ContentQuery`,
+  `search_content`, `looks_like_binary`) generic over any `AsyncRead`, so it works for every
+  provider with just `READ` (no `RANDOM_ACCESS` needed) and is reusable by task 0089.
+  `fm-vfs-local` implements `read_range` via seek+take and advertises `RANDOM_ACCESS`
+  ([crates/fm-vfs-local/src/lib.rs](../crates/fm-vfs-local/src/lib.rs)). New DTOs in
+  [crates/fm-transport-dto/src/files.rs](../crates/fm-transport-dto/src/files.rs)
+  (`ReadFileRangeRequestDto`/`ResponseDto`, `SearchInFileRequestDto`/`ResponseDto`) — confirmed via
+  Orval regen that `data: Vec<u8>` serializes as a plain JSON number array (`number[]` in
+  TypeScript), so no base64 dependency was added. New `FileManagerService::read_file_range` (falls
+  back to sequential skip-read for providers without `RANDOM_ACCESS`; caps length at
+  `MAX_RANGE_LENGTH` = 1 MiB; `probablyBinary` only sniffed at offset 0) and
+  `::search_in_file` (caps at `MAX_SEARCH_MATCHES` = 5000, `truncated` flag) in
+  [crates/fm-application/src/service.rs](../crates/fm-application/src/service.rs). New HTTP routes
+  `POST /api/v1/files/range` / `/files/search` in
+  [apps/fm-server/src/routes/files.rs](../apps/fm-server/src/routes/files.rs) and mirrored Tauri
+  commands `read_file_range`/`search_in_file` in
+  [apps/fm-desktop/src-tauri/src/commands.rs](../apps/fm-desktop/src-tauri/src/commands.rs).
+  Fixed one pre-existing unrelated bug found along the way (a capability-set assertion in
+  `fm-vfs-local`'s `metadata_is_separate_and_capabilities_are_truthful` test was missing
+  `MOVE`/`DELETE`, confirmed via `git stash` to predate this work). Left one other pre-existing,
+  unrelated, environment-dependent failure untouched: `plugin_routes.rs`'s
+  `list_plugins_starts_empty_and_unknown_enablement_is_not_found` (also confirmed via `git stash`
+  to fail on unmodified `main`).
+  Frontend: added `readFileRange`/`searchInFile` to `FileManagerClient`
+  ([frontend/src/api/client/file-manager-client.ts](../frontend/src/api/client/file-manager-client.ts))
+  and implemented all three adapters (http/mock/tauri) with dedicated tests. The mock adapter has
+  no real file content in its fixture tree, so it generates deterministic synthetic per-uri text
+  content for both methods to exercise against. `tsc --noEmit` and Biome are clean; full frontend
+  vitest suite passes.
+  Remaining for this task: the LRU chunk cache, the virtualized viewer component itself (windowing,
+  lazy chunk fetch, search-driven scroll-to-match), and the F3 `core.view` frontend wiring
+  (intercept before the existing default-open dispatch, falling back to it for binary/unsupported
+  content) — none of that frontend UI has been built yet.
