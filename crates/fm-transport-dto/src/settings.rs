@@ -103,6 +103,8 @@ pub struct SettingsDto {
     pub plugin_settings: Value,
     /// Optional terminal command.
     pub terminal_command: Option<String>,
+    /// Optional text-editor command for `core.edit`; `None` uses the platform default.
+    pub editor_command: Option<String>,
     /// Locations inherited by new panes.
     pub default_start_locations: Vec<String>,
     /// Directory-entry icon set: `"generic"` for the built-in glyphs, or a discovered plugin's id.

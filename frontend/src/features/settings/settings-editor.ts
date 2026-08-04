@@ -286,6 +286,19 @@ export const SettingsEditor: FactoryComponent<SettingsEditorAttrs> = () => {
           }),
         ]),
 
+        m('.row', m('h4.fm-settings-section-heading.col.s12', 'Editor')),
+        m('.row', [
+          m(TextInput, {
+            label: 'Editor command',
+            value: activeDraft.editorCommand ?? '',
+            placeholder: 'System default',
+            oninput: (value: string) =>
+              update(current, { editorCommand: value.trim().length === 0 ? null : value }),
+            onchange: (value: string) =>
+              update(current, { editorCommand: value.trim().length === 0 ? null : value }),
+          }),
+        ]),
+
         m('.row', m('h4.fm-settings-section-heading.col.s12', 'Keybindings')),
         conflicts.length === 0
           ? undefined

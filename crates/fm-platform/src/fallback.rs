@@ -70,6 +70,12 @@ mod tests {
             })
         ));
         assert!(matches!(
+            adapter.open_in_text_editor(path, None),
+            Err(PlatformError::Unsupported {
+                capability: PlatformCapabilities::OPEN_WITH_DEFAULT_APPLICATION
+            })
+        ));
+        assert!(matches!(
             adapter.read_clipboard_file_references(),
             Err(PlatformError::Unsupported {
                 capability: PlatformCapabilities::CLIPBOARD_FILE_REFERENCES

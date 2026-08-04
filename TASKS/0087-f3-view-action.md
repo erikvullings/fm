@@ -1,6 +1,6 @@
 # 0087 F3 view action
 
-Status: open
+Status: done
 Priority: medium
 Owner: unassigned
 Agent: unassigned
@@ -34,3 +34,22 @@ it exists, without changing the shortcut, title, or footer wiring.
   output.
 
 ## Agent Notes
+- `core.view` registered in `crates/fm-application/src/action.rs`: category `fileOperations`,
+  shortcut `F3`, gated by `capability_gated_single_selection(open_available)` — identical shape to
+  `core.open`. Dispatches via the existing `PlatformActionKind::Open` arm (maps `"core.view"` to
+  `Open` in `platform_action_kind`, `crates/fm-application/src/service.rs`), i.e. it currently opens
+  with the default application, exactly as this task's Context specifies as the intentional task
+  0088 stopgap. No new platform capability was added.
+- Added `core.view` to `fixtures/mock-responses/actions.json` (title `View`, shortcut `F3`,
+  `contextRequirements: {}`) and to the `mock-file-manager-client.test.ts` action-id-order
+  assertion (hand-maintained fixture order, kept in sync manually).
+- Frontend: added `core.view` (alongside `core.edit`) to `platformActionParameters` and
+  `SELECTION_ACTION_IDS` in `crates/../frontend/src/features/commands/availability.ts` so it's
+  treated identically to `core.open` for command-palette/context-menu invocation and availability
+  gating.
+- Bundled with tasks 0086/0087 together (per the user's explicit request): a Marta-style
+  `Ctrl+Enter`/`Cmd+Enter` shortcut on `core.openWith` — see task 0086's Agent Notes for the full
+  design/verification writeup (shared implementation across both tasks).
+- Verified: full Rust workspace `cargo test`/`cargo clippy -D warnings`/`cargo fmt --check`, and
+  full frontend `tsc --noEmit`/`vitest run` (465 tests) pass. See task 0086's Agent Notes for the
+  list of independently-confirmed pre-existing unrelated failures left untouched.

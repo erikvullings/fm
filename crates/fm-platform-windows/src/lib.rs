@@ -63,6 +63,14 @@ impl PlatformAdapter for WindowsPlatformAdapter {
         self.fallback.open_terminal(path, command_override)
     }
 
+    fn open_in_text_editor(
+        &self,
+        path: &Path,
+        command_override: Option<&str>,
+    ) -> Result<(), PlatformError> {
+        self.fallback.open_in_text_editor(path, command_override)
+    }
+
     fn read_clipboard_file_references(&self) -> Result<Vec<PathBuf>, PlatformError> {
         self.fallback.read_clipboard_file_references()
     }
@@ -135,6 +143,16 @@ mod tests {
         assert_eq!(
             adapter.open_terminal(path, None).unwrap_err().to_string(),
             fallback.open_terminal(path, None).unwrap_err().to_string()
+        );
+        assert_eq!(
+            adapter
+                .open_in_text_editor(path, None)
+                .unwrap_err()
+                .to_string(),
+            fallback
+                .open_in_text_editor(path, None)
+                .unwrap_err()
+                .to_string()
         );
         assert_eq!(
             adapter

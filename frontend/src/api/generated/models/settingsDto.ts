@@ -26,6 +26,11 @@ export interface SettingsDto {
   defaultPaneLayout: DefaultPaneLayoutDto;
   /** Locations inherited by new panes. */
   defaultStartLocations: string[];
+  /**
+     * Optional text-editor command for `core.edit`; `None` uses the platform default.
+     * @nullable
+     */
+  editorCommand?: string | null;
   /** Enabled plugin identifiers. */
   enabledPlugins: string[];
   /**

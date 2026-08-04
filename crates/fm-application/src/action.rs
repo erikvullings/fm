@@ -176,7 +176,19 @@ fn capability_gated_selection(feature_available: bool) -> ActionContextRequireme
 /// `core.open`: no platform adapter exposes a distinct "choose application"
 /// binding yet, so it currently behaves identically to `core.open` (opens
 /// with the default application) - a documented gap, not silently
-/// over-claimed. `core.copyPath` and `core.copyRelativePath` have no backend
+/// over-claimed. `core.openWith` additionally carries a `Ctrl+Enter`
+/// (`Cmd+Enter` on macOS, via [`primary`]) shortcut, matching the Marta file
+/// manager's "open with" convention, alongside its existing command-palette-
+/// only binding. `core.view` (task 0087) is a stopgap that also shares the
+/// same capability and dispatch as `core.open`, documented on
+/// [`crate::FileManagerService`]'s platform dispatch: task 0088
+/// tracks the real in-app viewer it will switch to without changing the
+/// shortcut, title or footer wiring. `core.edit` (task 0086) opens the
+/// selected file in a text editor rather than its default application,
+/// gated by the same capability since no platform adapter exposes a
+/// distinct "text editor" capability bit yet (see
+/// [`fm_platform::PlatformAdapter::open_in_text_editor`]'s doc comment).
+/// `core.copyPath` and `core.copyRelativePath` have no backend
 /// feature yet (the system-clipboard/relative-path work tracked alongside
 /// this task), so they stay registered as permanently unavailable.
 ///
@@ -220,6 +232,20 @@ fn core_actions(capabilities: PlatformCapabilities) -> Vec<ActionDescriptor> {
             capability_gated_single_selection(open_available),
         ),
         core_action(
+            "core.view",
+            "View",
+            "fileOperations",
+            vec![key("F3")],
+            capability_gated_single_selection(open_available),
+        ),
+        core_action(
+            "core.edit",
+            "Edit",
+            "fileOperations",
+            vec![key("F4")],
+            capability_gated_single_selection(open_available),
+        ),
+        core_action(
             "core.parent",
             "Parent Directory",
             "navigation",
@@ -244,7 +270,7 @@ fn core_actions(capabilities: PlatformCapabilities) -> Vec<ActionDescriptor> {
             "core.openWith",
             "Open With…",
             "fileOperations",
-            Vec::new(),
+            vec![primary("Enter")],
             capability_gated_single_selection(open_available),
         ),
         core_action(
@@ -516,6 +542,8 @@ mod tests {
 
         for expected in [
             "core.open",
+            "core.view",
+            "core.edit",
             "core.parent",
             "core.switchPane",
             "core.openWith",
@@ -575,6 +603,8 @@ mod tests {
         context.selected_entry_ids.push(fm_domain::EntryId::new());
         for id in [
             "core.open",
+            "core.view",
+            "core.edit",
             "core.openWith",
             "core.revealInSystemFileManager",
             "core.trash",
@@ -606,6 +636,8 @@ mod tests {
             .push(fm_domain::EntryId::new());
         for id in [
             "core.open",
+            "core.view",
+            "core.edit",
             "core.openWith",
             "core.revealInSystemFileManager",
             "core.trash",
@@ -635,6 +667,8 @@ mod tests {
             .push(fm_domain::EntryId::new());
         for id in [
             "core.open",
+            "core.view",
+            "core.edit",
             "core.openWith",
             "core.revealInSystemFileManager",
             "core.trash",
@@ -702,6 +736,48 @@ mod tests {
             delete.default_shortcuts,
             vec![key("F8"), key("Delete")],
             "delete must keep the bare keys unchanged when trash is unavailable"
+        );
+    }
+
+    #[test]
+    fn view_and_edit_default_to_f3_and_f4_between_open_and_openwith() {
+        let registry = ActionRegistry::with_core_actions(PlatformCapabilities::empty());
+        let view = registry
+            .get(&ActionId::new("core.view"))
+            .expect("core.view must be registered");
+        assert_eq!(
+            view.default_shortcuts,
+            vec![key("F3")],
+            "core.view must default to F3 (Total Commander convention)"
+        );
+        let edit = registry
+            .get(&ActionId::new("core.edit"))
+            .expect("core.edit must be registered");
+        assert_eq!(
+            edit.default_shortcuts,
+            vec![key("F4")],
+            "core.edit must default to F4 (Total Commander convention)"
+        );
+    }
+
+    #[test]
+    fn open_with_defaults_to_ctrl_or_cmd_enter_alongside_open() {
+        let registry = ActionRegistry::with_core_actions(PlatformCapabilities::empty());
+        let open = registry
+            .get(&ActionId::new("core.open"))
+            .expect("core.open must be registered");
+        assert_eq!(
+            open.default_shortcuts,
+            vec![key("Enter")],
+            "core.open must keep its bare Enter shortcut"
+        );
+        let open_with = registry
+            .get(&ActionId::new("core.openWith"))
+            .expect("core.openWith must be registered");
+        assert_eq!(
+            open_with.default_shortcuts,
+            vec![primary("Enter")],
+            "core.openWith must default to the Marta-style Ctrl+Enter (Cmd+Enter on macOS) shortcut"
         );
     }
 

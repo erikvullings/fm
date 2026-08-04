@@ -16,6 +16,7 @@ export interface Settings {
   readonly enabledPlugins: readonly string[];
   readonly pluginSettings: Readonly<Record<string, unknown>>;
   readonly terminalCommand: string | null;
+  readonly editorCommand: string | null;
   readonly defaultStartLocations: readonly string[];
   readonly iconTheme: string;
 }

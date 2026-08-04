@@ -13,6 +13,10 @@
 //! 0061) shells out to `open <path>`; there is no distinct native "choose an
 //! application" picker wired up, so `core.openWith` currently behaves the
 //! same as `core.open` (documented gap, see task 0061 Agent Notes).
+//! `open_in_text_editor` (task 0086) shells out to `open -t <path>`, macOS's
+//! own "always open in the default text editor" flag, or `open -a <override>
+//! <path>` when an editor command is configured - a genuine distinct binding,
+//! unlike `open_with_default_application`/`open_terminal`'s shared gap above.
 
 #![cfg(target_os = "macos")]
 // Native AppKit/Foundation bindings are inherently FFI: `objc2` message sends
@@ -180,6 +184,35 @@ impl PlatformAdapter for MacosPlatformAdapter {
         } else {
             Err(PlatformError::Io {
                 message: format!("{app} launch exited with {status}"),
+            })
+        }
+    }
+
+    fn open_in_text_editor(
+        &self,
+        path: &Path,
+        command_override: Option<&str>,
+    ) -> Result<(), PlatformError> {
+        let target = command_override.unwrap_or("the default text editor");
+        let status = match command_override {
+            Some(app) => std::process::Command::new("open")
+                .arg("-a")
+                .arg(app)
+                .arg(path)
+                .status(),
+            None => std::process::Command::new("open")
+                .arg("-t")
+                .arg(path)
+                .status(),
+        }
+        .map_err(|error| PlatformError::Io {
+            message: format!("failed to launch {target}: {error}"),
+        })?;
+        if status.success() {
+            Ok(())
+        } else {
+            Err(PlatformError::Io {
+                message: format!("{target} launch exited with {status}"),
             })
         }
     }
@@ -418,6 +451,33 @@ mod tests {
         let message = error.to_string();
         assert!(
             message.contains("Definitely Not An Installed App"),
+            "error must name the overridden app, not the default: {message}"
+        );
+    }
+
+    #[test]
+    fn open_in_text_editor_uses_open_dash_t_without_an_override() {
+        let command = std::process::Command::new("open")
+            .arg("-t")
+            .arg(Path::new("/tmp/fm-platform-macos-edit-test.txt"))
+            .get_args()
+            .map(std::ffi::OsStr::to_os_string)
+            .collect::<Vec<_>>();
+        let expected: Vec<std::ffi::OsString> =
+            vec!["-t".into(), "/tmp/fm-platform-macos-edit-test.txt".into()];
+        assert_eq!(command, expected);
+    }
+
+    #[test]
+    fn open_in_text_editor_uses_the_command_override_as_the_open_dash_a_target() {
+        let dir = tempdir().expect("temp dir");
+
+        let error = MacosPlatformAdapter::new()
+            .open_in_text_editor(dir.path(), Some("Definitely Not An Installed Editor"))
+            .expect_err("a bogus override app must fail, not silently open the default editor");
+        let message = error.to_string();
+        assert!(
+            message.contains("Definitely Not An Installed Editor"),
             "error must name the overridden app, not the default: {message}"
         );
     }

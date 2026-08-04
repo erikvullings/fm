@@ -418,6 +418,46 @@ describe('AppShell', () => {
     });
   });
 
+  it('invokes core.openWith on the selected file with Ctrl+Enter (Marta shortcut, task 0086/0087)', async () => {
+    const client = new MockFileManagerClient();
+    const invokeAction = vi.spyOn(client, 'invokeAction');
+    m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
+    await vi.waitFor(() => expect(root.textContent).toContain('.env'));
+    const activePane = root.querySelector<HTMLElement>('[data-active="true"] > .fm-pane');
+    const file = [...(activePane?.querySelectorAll<HTMLElement>('.fm-directory-row') ?? [])].find(
+      (row) => row.textContent?.includes('.env'),
+    );
+    file?.click();
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, bubbles: true }),
+    );
+
+    await vi.waitFor(() => expect(invokeAction).toHaveBeenCalledOnce());
+    expect(invokeAction.mock.calls[0]?.[0]).toMatchObject({
+      actionId: 'core.openWith',
+      parameters: { uri: 'mock:///.env' },
+    });
+  });
+
+  it('invokes core.edit on the selected file with F4', async () => {
+    const client = new MockFileManagerClient();
+    const invokeAction = vi.spyOn(client, 'invokeAction');
+    m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
+    await vi.waitFor(() => expect(root.textContent).toContain('.env'));
+    const activePane = root.querySelector<HTMLElement>('[data-active="true"] > .fm-pane');
+    const file = [...(activePane?.querySelectorAll<HTMLElement>('.fm-directory-row') ?? [])].find(
+      (row) => row.textContent?.includes('.env'),
+    );
+    file?.click();
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'F4', bubbles: true }));
+
+    await vi.waitFor(() => expect(invokeAction).toHaveBeenCalledOnce());
+    expect(invokeAction.mock.calls[0]?.[0]).toMatchObject({
+      actionId: 'core.edit',
+      parameters: { uri: 'mock:///.env' },
+    });
+  });
+
   it('cuts a selection, dims it, and pastes the move into the active pane', async () => {
     const client = new MockFileManagerClient();
     const startOperation = vi.spyOn(client, 'startOperation');
@@ -795,6 +835,7 @@ describe('AppShell', () => {
       enabledPlugins: ['mock.archive'],
       pluginSettings: {},
       terminalCommand: null,
+      editorCommand: null,
       defaultStartLocations: [],
       iconTheme: 'mock.archive',
     });

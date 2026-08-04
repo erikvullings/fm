@@ -1125,9 +1125,10 @@ impl FileManagerService {
         })
     }
 
-    /// Dispatches `core.open`/`core.openWith`/`core.revealInSystemFileManager`/
-    /// `core.openTerminal` directly to the injected platform adapter (task
-    /// 0061), rather than through the operation engine.
+    /// Dispatches `core.open`/`core.openWith`/`core.view`/`core.edit`/
+    /// `core.revealInSystemFileManager`/`core.openTerminal` directly to the
+    /// injected platform adapter (task 0061), rather than through the
+    /// operation engine.
     ///
     /// The backend cannot resolve an opaque [`fm_domain::EntryId`] back to a
     /// path (there is no entry registry, mirroring plugin action invocation,
@@ -1160,6 +1161,16 @@ impl FileManagerService {
         let result = match kind {
             PlatformActionKind::Open => self.platform.open_with_default_application(&path),
             PlatformActionKind::Reveal => self.platform.reveal_in_file_manager(&path),
+            PlatformActionKind::EditInTextEditor => {
+                let command_override = self
+                    .settings
+                    .lock()
+                    .unwrap_or_else(|error| error.into_inner())
+                    .editor_command
+                    .clone();
+                self.platform
+                    .open_in_text_editor(&path, command_override.as_deref())
+            }
             PlatformActionKind::OpenTerminal => {
                 let command_override = self
                     .settings
@@ -2730,21 +2741,25 @@ fn mutating_operation_kind(id: &ActionId) -> Option<OperationKindDto> {
 }
 
 /// Which platform adapter method an action dispatches to (task 0061).
-/// `core.openWith` shares [`PlatformActionKind::Open`] with `core.open`: no
-/// platform adapter exposes a distinct "choose application" binding yet (see
-/// `core_actions`'s doc comment in `action.rs`).
+/// `core.openWith` and `core.view` share [`PlatformActionKind::Open`] with
+/// `core.open`: no platform adapter exposes a distinct "choose application"
+/// binding yet (see `core_actions`'s doc comment in `action.rs`), and
+/// `core.view` (task 0087) is an explicit stopgap for a real viewer (task
+/// 0088).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum PlatformActionKind {
     Open,
     Reveal,
     OpenTerminal,
+    EditInTextEditor,
 }
 
 /// Maps an action id to the platform adapter operation it dispatches to
 /// (task 0061), or `None` for actions with no platform-adapter effect.
 fn platform_action_kind(id: &ActionId) -> Option<PlatformActionKind> {
     match id.as_str() {
-        "core.open" | "core.openWith" => Some(PlatformActionKind::Open),
+        "core.open" | "core.openWith" | "core.view" => Some(PlatformActionKind::Open),
+        "core.edit" => Some(PlatformActionKind::EditInTextEditor),
         "core.revealInSystemFileManager" => Some(PlatformActionKind::Reveal),
         "core.openTerminal" => Some(PlatformActionKind::OpenTerminal),
         _ => None,
@@ -2997,6 +3012,7 @@ fn settings_to_dto(settings: Settings) -> SettingsDto {
         plugin_settings: serde_json::to_value(settings.plugin_settings)
             .unwrap_or_else(|_| serde_json::Value::Object(serde_json::Map::new())),
         terminal_command: settings.terminal_command,
+        editor_command: settings.editor_command,
         default_start_locations: settings.default_start_locations,
         icon_theme: settings.icon_theme,
     }
@@ -3040,6 +3056,7 @@ fn settings_from_dto(settings: SettingsDto) -> Settings {
         enabled_plugins: settings.enabled_plugins,
         plugin_settings: serde_json::from_value(settings.plugin_settings).unwrap_or_default(),
         terminal_command: settings.terminal_command,
+        editor_command: settings.editor_command,
         default_start_locations: settings.default_start_locations,
         icon_theme: settings.icon_theme,
     }
@@ -3567,6 +3584,7 @@ mod tests {
         opened: Mutex<Vec<PathBuf>>,
         revealed: Mutex<Vec<PathBuf>>,
         terminals: Mutex<Vec<(PathBuf, Option<String>)>>,
+        edited: Mutex<Vec<(PathBuf, Option<String>)>>,
         trashed: Mutex<Vec<PathBuf>>,
         open_error: Mutex<Option<fm_platform::PlatformError>>,
         trash_error: Mutex<Option<fm_platform::PlatformError>>,
@@ -3579,6 +3597,7 @@ mod tests {
                 opened: Mutex::new(Vec::new()),
                 revealed: Mutex::new(Vec::new()),
                 terminals: Mutex::new(Vec::new()),
+                edited: Mutex::new(Vec::new()),
                 trashed: Mutex::new(Vec::new()),
                 open_error: Mutex::new(None),
                 trash_error: Mutex::new(None),
@@ -3648,6 +3667,18 @@ mod tests {
             command_override: Option<&str>,
         ) -> Result<(), fm_platform::PlatformError> {
             self.terminals
+                .lock()
+                .expect("lock must not be poisoned")
+                .push((path.to_path_buf(), command_override.map(str::to_owned)));
+            Ok(())
+        }
+
+        fn open_in_text_editor(
+            &self,
+            path: &Path,
+            command_override: Option<&str>,
+        ) -> Result<(), fm_platform::PlatformError> {
+            self.edited
                 .lock()
                 .expect("lock must not be poisoned")
                 .push((path.to_path_buf(), command_override.map(str::to_owned)));
@@ -3764,6 +3795,82 @@ mod tests {
         assert_eq!(
             adapter.terminals.lock().unwrap().as_slice(),
             [(dir.path().to_path_buf(), Some("alacritty".to_owned()))]
+        );
+    }
+
+    #[test]
+    fn invoke_action_views_the_uri_parameters_path_with_the_default_application() {
+        // core.view (task 0087) is a documented stopgap that dispatches
+        // exactly like core.open until a real in-app viewer (task 0088) exists.
+        let (dir, service, adapter) = service_with_recording_adapter();
+        let target = dir.path().join("report.pdf");
+        let uri = Location::from_native_path(&target)
+            .expect("path must convert to a location")
+            .uri;
+
+        service
+            .invoke_action(
+                "core.view".to_owned(),
+                InvokeActionRequestDto {
+                    parameters: Some(serde_json::json!({ "uri": uri })),
+                    context: single_selection_context(),
+                },
+                None,
+            )
+            .expect("core.view must dispatch to the platform adapter");
+
+        assert_eq!(adapter.opened.lock().unwrap().as_slice(), [target]);
+    }
+
+    #[test]
+    fn invoke_action_edit_opens_the_uri_parameters_path_in_a_text_editor() {
+        let (dir, service, adapter) = service_with_recording_adapter();
+        let target = dir.path().join("notes.txt");
+        let uri = Location::from_native_path(&target)
+            .expect("path must convert to a location")
+            .uri;
+
+        service
+            .invoke_action(
+                "core.edit".to_owned(),
+                InvokeActionRequestDto {
+                    parameters: Some(serde_json::json!({ "uri": uri })),
+                    context: single_selection_context(),
+                },
+                None,
+            )
+            .expect("core.edit must dispatch to the platform adapter");
+
+        assert_eq!(adapter.edited.lock().unwrap().as_slice(), [(target, None)]);
+    }
+
+    #[test]
+    fn invoke_action_edit_forwards_the_configured_editor_command_override() {
+        let (dir, service, adapter) = service_with_recording_adapter();
+        let mut settings = service.get_settings();
+        settings.editor_command = Some("code --wait".to_owned());
+        service
+            .update_settings(settings)
+            .expect("settings update must succeed");
+        let target = dir.path().join("notes.txt");
+        let uri = Location::from_native_path(&target)
+            .expect("path must convert to a location")
+            .uri;
+
+        service
+            .invoke_action(
+                "core.edit".to_owned(),
+                InvokeActionRequestDto {
+                    parameters: Some(serde_json::json!({ "uri": uri })),
+                    context: single_selection_context(),
+                },
+                None,
+            )
+            .expect("core.edit must dispatch to the platform adapter");
+
+        assert_eq!(
+            adapter.edited.lock().unwrap().as_slice(),
+            [(target, Some("code --wait".to_owned()))]
         );
     }
 
@@ -3978,6 +4085,23 @@ mod tests {
             terminal_error.code(),
             fm_transport_dto::ApplicationErrorCode::ActionUnavailable
         );
+
+        for action_id in ["core.view", "core.edit"] {
+            let error = service
+                .invoke_action(
+                    action_id.to_owned(),
+                    InvokeActionRequestDto {
+                        parameters: Some(serde_json::json!({ "uri": "file:///tmp/report.pdf" })),
+                        context: context.clone(),
+                    },
+                    None,
+                )
+                .expect_err("view/edit have no native access in browser/server mode");
+            assert_eq!(
+                error.code(),
+                fm_transport_dto::ApplicationErrorCode::ActionUnavailable
+            );
+        }
     }
 
     #[test]

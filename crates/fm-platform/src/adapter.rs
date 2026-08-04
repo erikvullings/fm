@@ -79,6 +79,24 @@ pub trait PlatformAdapter: Send + Sync {
         })
     }
 
+    /// Opens an entry in a text editor (task 0086), rather than its OS
+    /// default application - e.g. opening a `.jpg` should still open a
+    /// text/hex editor, not an image viewer.
+    ///
+    /// `command_override` is the configured editor setting (specification
+    /// §26); `None` falls back to this adapter's default
+    /// [`PlatformAdapter::open_with_default_application`] (a documented gap
+    /// for adapters with no distinct text-editor association, not a silent
+    /// over-claim - see `fm-application`'s `core_actions` doc comment).
+    fn open_in_text_editor(
+        &self,
+        path: &Path,
+        command_override: Option<&str>,
+    ) -> Result<(), PlatformError> {
+        let _ = command_override;
+        self.open_with_default_application(path)
+    }
+
     /// Reads the file paths currently referenced on the OS clipboard.
     fn read_clipboard_file_references(&self) -> Result<Vec<PathBuf>, PlatformError> {
         Err(PlatformError::Unsupported {

@@ -894,12 +894,13 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
   }
 
   /**
-   * `core.open`/`core.openWith`/`core.revealInSystemFileManager` act on a
-   * single entry and `core.openTerminal` acts on the current directory
-   * (task 0061); the backend cannot resolve an opaque `EntryId` back to a
-   * path itself (there is no server-side entry registry, mirroring plugin
-   * action invocation), so the frontend must supply the target as an
-   * explicit `{ uri }` parameter built from the already-loaded `Location`.
+   * `core.open`/`core.view`/`core.edit`/`core.openWith`/
+   * `core.revealInSystemFileManager` act on a single entry and
+   * `core.openTerminal` acts on the current directory (task 0061); the
+   * backend cannot resolve an opaque `EntryId` back to a path itself (there
+   * is no server-side entry registry, mirroring plugin action invocation),
+   * so the frontend must supply the target as an explicit `{ uri }`
+   * parameter built from the already-loaded `Location`.
    */
   function platformActionParameters(
     actionId: string,
@@ -908,6 +909,8 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
   ): { uri: string } | undefined {
     if (
       actionId === 'core.open' ||
+      actionId === 'core.view' ||
+      actionId === 'core.edit' ||
       actionId === 'core.openWith' ||
       actionId === 'core.revealInSystemFileManager'
     ) {
@@ -1259,6 +1262,31 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       if (workspace === undefined) return;
       event.preventDefault();
       reopenClosedTab(attrsClient, workspace.activePaneId);
+      return;
+    }
+    if (
+      dispatchedAction === 'core.view' ||
+      dispatchedAction === 'core.edit' ||
+      dispatchedAction === 'core.openWith'
+    ) {
+      const active = activeDirectory();
+      const selection =
+        active === undefined ? undefined : selections.get(activeTabKey(active.paneId));
+      const directory =
+        active === undefined ? undefined : directories.get(activeTabKey(active.paneId));
+      const selected = directory?.entries.filter(
+        (entry) => selection?.selectedEntryIds.includes(entry.id) === true,
+      );
+      const parameters = platformActionParameters(
+        dispatchedAction,
+        selected ?? [],
+        directory?.location,
+      );
+      if (parameters !== undefined) {
+        event.preventDefault();
+        invokeActionById(dispatchedAction, parameters, actionContext());
+      }
+      return;
     }
   }
 

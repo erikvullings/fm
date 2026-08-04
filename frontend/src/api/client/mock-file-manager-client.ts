@@ -243,6 +243,7 @@ export class MockFileManagerClient implements FileManagerClient {
     enabledPlugins: [],
     pluginSettings: {},
     terminalCommand: null,
+    editorCommand: null,
     defaultStartLocations: [],
     iconTheme: 'generic',
   };

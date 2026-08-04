@@ -130,6 +130,24 @@ describe('command availability', () => {
     ]);
   });
 
+  it('includes core.view and core.edit in the selection-context menu (tasks 0087/0086)', () => {
+    const actions = [
+      action('core.open', { requiresSingleSelection: true }),
+      action('core.view', { requiresSingleSelection: true }),
+      action('core.edit', { requiresSingleSelection: true }),
+      action('core.createDirectory'),
+    ];
+
+    const menu = menuActionsForContext(actions, context({ selectedEntries: [entry('file')] }));
+
+    expect(menu.map((item) => item.action.id)).toEqual(['core.open', 'core.view', 'core.edit']);
+    expect(menu).toEqual([
+      { action: actions[0], available: true },
+      { action: actions[1], available: true },
+      { action: actions[2], available: true },
+    ]);
+  });
+
   it('keeps core.trash available for a read-only selection, unlike core.delete (task 0043)', () => {
     const actions = [
       action('core.trash', { requiresSelection: true }),

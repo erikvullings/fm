@@ -1975,6 +1975,13 @@
             },
             "type": "array"
           },
+          "editorCommand": {
+            "description": "Optional text-editor command for `core.edit`; `None` uses the platform default.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "enabledPlugins": {
             "description": "Enabled plugin identifiers.",
             "items": {

@@ -462,6 +462,7 @@ function settingsFromDto(settings: SettingsDto): Settings {
   return {
     ...settings,
     terminalCommand: settings.terminalCommand ?? null,
+    editorCommand: settings.editorCommand ?? null,
   };
 }
 

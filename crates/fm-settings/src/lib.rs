@@ -124,6 +124,9 @@ pub struct Settings {
     pub plugin_settings: BTreeMap<String, Value>,
     /// Optional terminal executable or command.
     pub terminal_command: Option<String>,
+    /// Optional text-editor executable or command for `core.edit` (task 0086); `None` falls back
+    /// to the platform adapter's default text-editor association.
+    pub editor_command: Option<String>,
     /// Locations inherited by newly created panes.
     pub default_start_locations: Vec<String>,
     /// Directory-entry icon set: `"generic"` for the built-in glyphs, or a discovered plugin's id
@@ -154,6 +157,7 @@ impl Default for Settings {
             enabled_plugins: Vec::new(),
             plugin_settings: BTreeMap::new(),
             terminal_command: None,
+            editor_command: None,
             default_start_locations: Vec::new(),
             icon_theme: GENERIC_ICON_THEME.to_owned(),
         }
@@ -312,6 +316,7 @@ mod tests {
             enabled_plugins: vec!["archive".into()],
             plugin_settings: [("archive".into(), serde_json::json!({"level": 3}))].into(),
             terminal_command: Some("alacritty".into()),
+            editor_command: Some("code --wait".into()),
             default_start_locations: vec!["file:///tmp".into()],
             icon_theme: "catppuccin".into(),
             ..Settings::default()

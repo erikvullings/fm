@@ -23,6 +23,8 @@ const LOCATION_ACTION_IDS = new Set([
 
 const SELECTION_ACTION_IDS = new Set([
   'core.open',
+  'core.view',
+  'core.edit',
   'core.openWith',
   'core.revealInSystemFileManager',
   'core.copy',
