@@ -61,6 +61,8 @@ pub enum SizeFormat {
 /// Reserved `icon_theme` value selecting the built-in generic glyphs, rather than a distributable
 /// icon theme plugin's id (task 0095).
 pub const GENERIC_ICON_THEME: &str = "generic";
+const LEGACY_CATPPUCCIN_ICON_THEME: &str = "catppuccin";
+const CATPPUCCIN_ICON_THEME_PLUGIN: &str = "catppuccin.icons";
 
 /// Default choice for file-operation conflicts.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -278,6 +280,22 @@ fn migrate(bytes: &[u8]) -> Result<Settings, serde_json::Error> {
             "unsupported settings schema version",
         ));
     }
+    if value.get("iconTheme").and_then(Value::as_str) == Some(LEGACY_CATPPUCCIN_ICON_THEME) {
+        value["iconTheme"] = Value::from(CATPPUCCIN_ICON_THEME_PLUGIN);
+        if !value.get("enabledPlugins").is_some_and(Value::is_array) {
+            value["enabledPlugins"] = Value::Array(Vec::new());
+        }
+        let enabled = value
+            .get_mut("enabledPlugins")
+            .and_then(Value::as_array_mut)
+            .expect("enabledPlugins was initialized as an array");
+        if !enabled
+            .iter()
+            .any(|plugin| plugin.as_str() == Some(CATPPUCCIN_ICON_THEME_PLUGIN))
+        {
+            enabled.push(Value::from(CATPPUCCIN_ICON_THEME_PLUGIN));
+        }
+    }
     serde_json::from_value(value)
 }
 
@@ -318,13 +336,32 @@ mod tests {
             terminal_command: Some("alacritty".into()),
             editor_command: Some("code --wait".into()),
             default_start_locations: vec!["file:///tmp".into()],
-            icon_theme: "catppuccin".into(),
+            icon_theme: "sample.icons".into(),
             ..Settings::default()
         };
 
         store.save(&settings).expect("save settings");
 
         assert_eq!(store.load().expect("load settings").settings, settings);
+    }
+
+    #[test]
+    fn migrates_the_legacy_catppuccin_theme_to_the_enabled_plugin() {
+        let settings = migrate(
+            br#"{
+                "schemaVersion": 2,
+                "iconTheme": "catppuccin",
+                "enabledPlugins": []
+            }"#,
+        )
+        .expect("migrate legacy icon theme");
+
+        assert_eq!(settings.icon_theme, CATPPUCCIN_ICON_THEME_PLUGIN);
+        assert!(
+            settings
+                .enabled_plugins
+                .contains(&CATPPUCCIN_ICON_THEME_PLUGIN.to_owned())
+        );
     }
 
     #[test]

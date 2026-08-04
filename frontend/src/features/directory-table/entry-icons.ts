@@ -81,6 +81,23 @@ export function createDefaultEntryIconRegistry(): EntryIconRegistry {
  */
 export const entryIconRegistry: EntryIconRegistry = createDefaultEntryIconRegistry();
 
+/** Whether an entry has a more specific themed icon than its kind-level fallback. */
+export function hasSpecificEntryIcon(
+  entry: EntrySummary,
+  registry: EntryIconRegistry = entryIconRegistry,
+): boolean {
+  const defaultKindRenderer =
+    entry.kind === 'directory' ? folderIcon : entry.kind === 'symlink' ? symlinkIcon : fileIcon;
+  if ((registry.kindIcons.get(entry.kind) ?? fileIcon) !== defaultKindRenderer) return true;
+  if (entry.kind !== 'file') return false;
+  const extension = entry.extension?.toLowerCase();
+  if (extension !== undefined && registry.extensionIcons.has(extension)) return true;
+  return (
+    entry.mimeType !== undefined &&
+    [...registry.mimePrefixIcons.keys()].some((prefix) => entry.mimeType?.startsWith(prefix))
+  );
+}
+
 /** Restores `registry` to the built-in generic icon set, undoing any installed theme plugin. */
 export function restoreDefaultIconTheme(registry: EntryIconRegistry = entryIconRegistry): void {
   const defaults = createDefaultEntryIconRegistry();

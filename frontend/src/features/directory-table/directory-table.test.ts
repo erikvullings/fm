@@ -57,6 +57,8 @@ describe('DirectoryTable states', () => {
 
     const icon = root.querySelector<HTMLImageElement>('img.fm-native-entry-icon');
     expect(icon?.src).toBe('data:image/png;base64,iVBORw==');
+    expect(icon?.width).toBe(16);
+    expect(icon?.height).toBe(16);
     expect(root.querySelector('.fm-entry-icon:not(.fm-native-entry-icon)')).toBeNull();
   });
 

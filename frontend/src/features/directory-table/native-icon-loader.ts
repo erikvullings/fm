@@ -3,6 +3,7 @@ import m from 'mithril';
 import type { FileManagerClient } from '../../api/client/file-manager-client';
 import type { EntrySummary } from '../../models';
 import { isParentEntry } from '../panes/parent-entry';
+import { hasSpecificEntryIcon } from './entry-icons';
 
 type IconClient = Pick<FileManagerClient, 'getFileIcon'>;
 
@@ -29,6 +30,7 @@ export class NativeIconLoader {
   ) {}
 
   iconDataUri(entry: EntrySummary): string | undefined {
+    if (hasSpecificEntryIcon(entry)) return undefined;
     const key = cacheKey(entry);
     if (key === undefined) return undefined;
     if (this.icons.has(key)) return this.icons.get(key);

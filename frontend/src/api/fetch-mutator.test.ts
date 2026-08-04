@@ -60,6 +60,25 @@ describe('fetchMutator', () => {
     expect(new Uint8Array(await result.data.arrayBuffer())).toEqual(bytes);
   });
 
+  it('keeps SVG icon-theme assets as text for sanitization and rendering', async () => {
+    const svg = '<svg viewBox="0 0 16 16"><path d="M1 1h2v2z" /></svg>';
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(svg, {
+          status: 200,
+          headers: { 'content-type': 'image/svg+xml' },
+        }),
+      ),
+    );
+
+    const result = await fetchMutator<{ status: number; data: string; headers: Headers }>(
+      '/api/v1/plugins/catppuccin.icons/icon-theme/asset?path=icons%2Ffolder.svg',
+    );
+
+    expect(result.data).toBe(svg);
+  });
+
   it('prefixes the request URL with the configured base URL override', async () => {
     const fetchSpy = vi.fn().mockResolvedValue(jsonResponse(200, { status: 'ok' }));
     vi.stubGlobal('fetch', fetchSpy);

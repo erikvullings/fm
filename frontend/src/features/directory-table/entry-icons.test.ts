@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { archiveIcon, fileIcon, folderIcon, imageIcon, symlinkIcon } from '../../components/icons';
 import type { EntrySummary } from '../../models';
-import { createDefaultEntryIconRegistry, entryIcon, resolveEntryIcon } from './entry-icons';
+import {
+  createDefaultEntryIconRegistry,
+  entryIcon,
+  hasSpecificEntryIcon,
+  resolveEntryIcon,
+} from './entry-icons';
 
 function entry(overrides: Partial<EntrySummary> = {}): EntrySummary {
   return {
@@ -43,6 +48,22 @@ describe('resolveEntryIcon', () => {
   it('falls back to the generic file icon for unknown extensions and MIME types', () => {
     expect(resolveEntryIcon(entry({ extension: 'xyz' }), registry)).toBe(fileIcon);
     expect(resolveEntryIcon(entry(), registry)).toBe(fileIcon);
+  });
+
+  it('distinguishes specific theme mappings from generic kind fallbacks', () => {
+    expect(hasSpecificEntryIcon(entry({ extension: 'png' }), registry)).toBe(true);
+    expect(
+      hasSpecificEntryIcon(entry({ extension: 'bin', mimeType: 'image/custom' }), registry),
+    ).toBe(true);
+    expect(hasSpecificEntryIcon(entry({ extension: 'unknown' }), registry)).toBe(false);
+    expect(hasSpecificEntryIcon(entry({ kind: 'directory' }), registry)).toBe(false);
+
+    const themedFolder = () => 'themed-folder';
+    const themedFile = () => 'themed-file';
+    registry.kindIcons.set('directory', themedFolder);
+    registry.kindIcons.set('file', themedFile);
+    expect(hasSpecificEntryIcon(entry({ kind: 'directory' }), registry)).toBe(true);
+    expect(hasSpecificEntryIcon(entry({ extension: 'unknown' }), registry)).toBe(true);
   });
 
   it('lets a theme override an extension without editing directory-table.ts', () => {

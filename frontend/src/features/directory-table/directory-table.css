@@ -143,6 +143,12 @@
   color: var(--fm-text-muted);
 }
 
+img.fm-native-entry-icon {
+  width: 16px;
+  height: 16px;
+  object-fit: contain;
+}
+
 .fm-directory-cell > input[type="text"]:not(.browser-default).fm-inline-rename-input {
   box-sizing: border-box;
   width: 100%;

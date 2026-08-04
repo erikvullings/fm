@@ -73,6 +73,9 @@ async function readBody(response: Response): Promise<unknown> {
     return undefined;
   }
   const contentType = response.headers.get('content-type') ?? '';
+  if (contentType.includes('image/svg+xml')) {
+    return response.text();
+  }
   if (contentType.includes('image/')) {
     return response.blob();
   }

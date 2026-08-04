@@ -131,6 +131,8 @@ const INITIAL_COLUMNS: readonly DirectoryColumnDescriptor[] = [
           ? entryIcon(entry, { className: 'fm-entry-icon' })
           : m('img.fm-entry-icon.fm-native-entry-icon', {
               src: nativeIconLoader.iconDataUri(entry),
+              width: 16,
+              height: 16,
               alt: '',
               'aria-hidden': 'true',
             }),
