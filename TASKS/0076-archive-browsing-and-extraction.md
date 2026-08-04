@@ -135,3 +135,6 @@ not implement archive codecs or cryptography.
   leaves an archive root for its containing local directory, while breadcrumbs display the outer
   filesystem path plus archive/inner segments and map each click to either a local or archive
   location as appropriate.
+- 2026-08-04 codex: Removed the one-pixel overflow on short archive listings by pinning the
+  accessibility cursor announcement inside the directory viewport instead of letting its static
+  position fall immediately after the full-height virtual body.

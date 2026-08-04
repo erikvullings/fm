@@ -44,6 +44,17 @@ afterEach(() => {
 });
 
 describe('DirectoryTable states', () => {
+  it('pins its hidden cursor announcement inside the scroll viewport', () => {
+    mount({ state: { type: 'loaded' }, source: entryArraySource([entry()]), viewportHeight: 120 });
+
+    const status = root.querySelector<HTMLElement>('.fm-visually-hidden');
+    expect(status).not.toBeNull();
+    if (status === null) return;
+    const style = getComputedStyle(status);
+    expect(style.top).toBe('0px');
+    expect(style.left).toBe('0px');
+  });
+
   it('overlays a loaded native icon and otherwise keeps the themed icon', () => {
     const nativeIconLoader = {
       iconDataUri: vi.fn().mockReturnValue('data:image/png;base64,iVBORw=='),

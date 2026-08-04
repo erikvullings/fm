@@ -581,7 +581,12 @@ export const DirectoryTable: FactoryComponent<DirectoryTableAttrs> = () => {
                 ),
               m(
                 '.fm-visually-hidden',
-                { role: 'status', 'aria-live': 'polite', 'aria-atomic': 'true' },
+                {
+                  role: 'status',
+                  'aria-live': 'polite',
+                  'aria-atomic': 'true',
+                  style: { top: '0', left: '0' },
+                },
                 cursorEntry === undefined ? '' : `Focused ${cursorEntry.name}`,
               ),
             ],
