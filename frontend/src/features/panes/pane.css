@@ -6,6 +6,7 @@
    * metadata) can never be auto-placed into the flexible directory-table row - see the
    * per-class `grid-row` pins below.
    */
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: auto auto auto minmax(0, 1fr) auto auto;
   min-width: 0;
   /* border: 1px solid var(--fm-border); */

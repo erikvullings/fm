@@ -146,3 +146,7 @@ not implement archive codecs or cryptography.
   limits. Comic aliases remain content-driven: ZIP-backed CBR/CBZ files use `zip`, RAR-backed files
   use `rars`, and ZIP reader probing now accepts legal archives with prepended stubs instead of
   requiring `PK` at byte zero.
+- 2026-08-04 codex: Constrained each pane's content grid to its assigned split width so archive
+  tables, borders, scrollbars, and the F3 image viewer cannot paint across the adjacent pane. RAR
+  page reads now stop decoding immediately after the requested member, while still decoding the
+  required prefix for solid archives.

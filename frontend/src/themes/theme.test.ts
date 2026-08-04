@@ -7,6 +7,11 @@ const directoryTableCss = readFileSync(
   join(process.cwd(), 'src/features/directory-table/directory-table.css'),
   'utf8',
 );
+const paneCss = readFileSync(join(process.cwd(), 'src/features/panes/pane.css'), 'utf8');
+const fileViewerCss = readFileSync(
+  join(process.cwd(), 'src/features/preview/file-viewer.css'),
+  'utf8',
+);
 
 const REQUIRED_TOKENS = [
   '--fm-background',
@@ -136,5 +141,10 @@ describe('theme stylesheet', () => {
 
   it('keeps the arrow cursor over directory rows', () => {
     expect(directoryTableCss).toMatch(/\.fm-directory-row\s*[,{][^}]*cursor:\s*default/s);
+  });
+
+  it('keeps directory and viewer content inside its pane grid track', () => {
+    expect(paneCss).toMatch(/\.fm-pane\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)/s);
+    expect(fileViewerCss).toMatch(/\.fm-file-viewer\s*\{[^}]*min-width:\s*0/s);
   });
 });

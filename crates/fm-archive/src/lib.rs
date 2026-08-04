@@ -883,16 +883,24 @@ fn read_rar_entry(
 
     let output = Arc::new(Mutex::new(Vec::new()));
     let selected = output.clone();
-    archive
-        .extract_to(password.map(str::as_bytes), |meta| {
-            let name = String::from_utf8_lossy(meta.name_bytes()).replace('\\', "/");
-            if name.trim_end_matches('/') == inner {
-                Ok(Box::new(SharedBuffer(selected.clone())))
-            } else {
-                Ok(Box::new(std::io::sink()))
-            }
-        })
-        .map_err(rar_error)?;
+    let mut selected_complete = false;
+    let result = archive.extract_to(password.map(str::as_bytes), |meta| {
+        if selected_complete {
+            return Err(rars::Error::Cancelled);
+        }
+        let name = String::from_utf8_lossy(meta.name_bytes()).replace('\\', "/");
+        if name.trim_end_matches('/') == inner {
+            selected_complete = true;
+            Ok(Box::new(SharedBuffer(selected.clone())))
+        } else {
+            Ok(Box::new(std::io::sink()))
+        }
+    });
+    if let Err(error) = result
+        && !(selected_complete && rar_cancelled(&error))
+    {
+        return Err(rar_error(error));
+    }
     let bytes = output
         .lock()
         .unwrap_or_else(|error| error.into_inner())
@@ -1340,6 +1348,16 @@ fn rar_error(error: rars::Error) -> VfsError {
         other => VfsError::Io {
             message: format!("invalid RAR archive: {other}"),
         },
+    }
+}
+
+fn rar_cancelled(error: &rars::Error) -> bool {
+    match error {
+        rars::Error::Cancelled => true,
+        rars::Error::AtArchiveOffset { source, .. } | rars::Error::AtEntry { source, .. } => {
+            rar_cancelled(source)
+        }
+        _ => false,
     }
 }
 fn io_error(error: std::io::Error, path: &Path) -> VfsError {

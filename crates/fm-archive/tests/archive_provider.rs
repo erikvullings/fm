@@ -240,6 +240,54 @@ async fn rar_comic_is_navigable_and_read_only() {
 }
 
 #[tokio::test]
+async fn reading_a_rar_comic_page_does_not_extract_later_pages() {
+    let root = tempdir().expect("temporary root");
+    let archive_path = root.path().join("comic.cbr");
+    let mut bytes = Rar50Writer::new(WriterOptions::default())
+        .stored_entries(&[
+            StoredEntry {
+                name: b"001.jpg",
+                data: b"first image bytes",
+                mtime: Some(0),
+                attributes: 0x20,
+                host_os: 3,
+            },
+            StoredEntry {
+                name: b"002.jpg",
+                data: b"second image bytes",
+                mtime: Some(0),
+                attributes: 0x20,
+                host_os: 3,
+            },
+        ])
+        .finish()
+        .expect("build RAR fixture");
+    let trailing_page = bytes
+        .windows(b"second image bytes".len())
+        .position(|window| window == b"second image bytes")
+        .expect("find trailing page payload");
+    bytes[trailing_page] ^= 0xff;
+    std::fs::write(&archive_path, bytes).expect("write RAR fixture");
+
+    let provider = ArchiveFileSystemProvider::new();
+    let mut reader = provider
+        .open_read(
+            &fm_vfs::EntryRef {
+                id: fm_domain::EntryId::new(),
+                location: zip_location(&archive_path)
+                    .join("001.jpg")
+                    .expect("page location"),
+            },
+            CancellationToken::new(),
+        )
+        .await
+        .expect("read first page without decoding trailing page");
+    let mut content = Vec::new();
+    reader.read_to_end(&mut content).await.expect("read page");
+    assert_eq!(content, b"first image bytes");
+}
+
+#[tokio::test]
 async fn committing_a_staged_file_transactionally_adds_it_to_a_zip() {
     let root = tempdir().expect("temporary root");
     let archive_path = root.path().join("sample.zip");
