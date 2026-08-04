@@ -15,6 +15,10 @@ const ZOOM_STEP = 1.25;
 const ZOOM_MIN = 0.1;
 const ZOOM_MAX = 8;
 
+/** Delay before an edit to the search query/options triggers a search, so rapid typing doesn't
+ * fire one request per keystroke. */
+const SEARCH_DEBOUNCE_MS = 200;
+
 /** The currently loaded text window, and whether more can be loaded in either direction. */
 export interface FileViewerTextContent {
   readonly kind: 'text';
@@ -111,6 +115,7 @@ export function createFileViewerController(
   let activeController: AbortController | undefined;
   let current: FileViewerState = { status: 'loading', entry };
   let search: FileViewerSearchState | undefined;
+  let searchDebounceTimer: ReturnType<typeof setTimeout> | undefined;
 
   function publish(next: FileViewerState): void {
     current = next;
@@ -233,6 +238,27 @@ export function createFileViewerController(
     if (current.status === 'ready') {
       publish({ ...current, search });
     }
+    if (searchDebounceTimer !== undefined) {
+      clearTimeout(searchDebounceTimer);
+      searchDebounceTimer = undefined;
+    }
+    if (search.query.trim() === '') {
+      // Nothing to search - clear any stale results immediately rather than waiting on the debounce.
+      search = {
+        ...search,
+        matches: [],
+        truncated: false,
+        currentMatchIndex: undefined,
+        searching: false,
+        error: undefined,
+      };
+      if (current.status === 'ready') publish({ ...current, search });
+      return;
+    }
+    searchDebounceTimer = setTimeout(() => {
+      searchDebounceTimer = undefined;
+      void runSearch();
+    }, SEARCH_DEBOUNCE_MS);
   }
 
   async function jumpToMatch(index: number): Promise<void> {
@@ -273,6 +299,10 @@ export function createFileViewerController(
   }
 
   async function runSearch(): Promise<void> {
+    if (searchDebounceTimer !== undefined) {
+      clearTimeout(searchDebounceTimer);
+      searchDebounceTimer = undefined;
+    }
     const options_ = search ?? DEFAULT_SEARCH_STATE;
     if (options_.query.trim() === '') return;
     search = { ...options_, searching: true, error: undefined };
@@ -364,6 +394,10 @@ export function createFileViewerController(
     dispose: () => {
       disposed = true;
       activeController?.abort();
+      if (searchDebounceTimer !== undefined) {
+        clearTimeout(searchDebounceTimer);
+        searchDebounceTimer = undefined;
+      }
     },
   };
 }

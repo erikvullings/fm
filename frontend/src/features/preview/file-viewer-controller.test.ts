@@ -196,6 +196,69 @@ describe('file viewer controller', () => {
     });
   });
 
+  it('runs a debounced search automatically as the query is edited, without requiring runSearch', async () => {
+    vi.useFakeTimers();
+    try {
+      const context = setup();
+      vi.mocked(context.client.readFileRange).mockResolvedValueOnce({
+        data: Array.from('start\n', (char) => char.charCodeAt(0)),
+        offset: 0,
+        length: 6,
+        eof: false,
+      });
+      const controller = createFileViewerController({
+        client: context.client,
+        entry: entry(),
+        update: (state) => context.states.push(state),
+      });
+      await vi.waitFor(() => expect(context.states.at(-1)?.status).toBe('ready'), {
+        timeout: 1000,
+        interval: 1,
+      });
+
+      vi.mocked(context.client.searchInFile).mockResolvedValue({ matches: [], truncated: false });
+      controller.setSearchOptions({ query: 'cat' });
+      expect(context.client.searchInFile).not.toHaveBeenCalled();
+
+      await vi.advanceTimersByTimeAsync(200);
+      expect(context.client.searchInFile).toHaveBeenCalledTimes(1);
+      expect(context.client.searchInFile).toHaveBeenCalledWith(
+        {
+          location: entry().location,
+          query: 'cat',
+          regex: false,
+          caseSensitive: false,
+          wholeWord: false,
+        },
+        expect.any(AbortSignal),
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('clears stale matches immediately once the query is emptied, without waiting on the debounce', async () => {
+    const context = setup();
+    vi.mocked(context.client.readFileRange).mockResolvedValueOnce({
+      data: Array.from('start\n', (char) => char.charCodeAt(0)),
+      offset: 0,
+      length: 6,
+      eof: false,
+    });
+    const controller = createFileViewerController({
+      client: context.client,
+      entry: entry(),
+      update: (state) => context.states.push(state),
+    });
+    await vi.waitFor(() => expect(context.states.at(-1)?.status).toBe('ready'));
+
+    controller.setSearchOptions({
+      query: '',
+    });
+    const last = context.states.at(-1);
+    expect(last).toMatchObject({ search: { query: '', matches: [] } });
+  });
+
   it('wraps around when navigating past the last match', async () => {
     const context = setup();
     vi.mocked(context.client.readFileRange).mockResolvedValueOnce({

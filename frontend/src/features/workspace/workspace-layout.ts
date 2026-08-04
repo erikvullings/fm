@@ -240,7 +240,21 @@ export const WorkspaceLayoutView: FactoryComponent<WorkspaceLayoutViewAttrs> = (
         tabindex: active ? 0 : -1,
         oncreate: ({ dom }) => paneElements.set(paneId, dom as HTMLElement),
         onremove: () => paneElements.delete(paneId),
-        onclick: () => focusAndActivate(attrs, paneId),
+        onclick: (event: MouseEvent) => {
+          // Clicking an interactive control (e.g. the file viewer's search box) must not steal
+          // focus back to the directory table - only activate the pane, keep the DOM focus as-is.
+          if (
+            event.target instanceof HTMLInputElement ||
+            event.target instanceof HTMLTextAreaElement ||
+            event.target instanceof HTMLSelectElement ||
+            event.target instanceof HTMLButtonElement ||
+            (event.target instanceof HTMLElement && event.target.isContentEditable)
+          ) {
+            attrs.onActivatePane(paneId);
+            return;
+          }
+          focusAndActivate(attrs, paneId);
+        },
         onkeydown: (event: KeyboardEvent) => {
           if (
             event.target instanceof HTMLInputElement ||

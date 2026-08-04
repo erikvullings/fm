@@ -62,13 +62,22 @@
   background: var(--fm-surface-elevated);
 }
 
-.fm-file-viewer-search-input {
+.fm-file-viewer-search > input[type="text"]:not(.browser-default).fm-file-viewer-search-input {
+  box-sizing: border-box;
   flex: 1;
   min-width: 0;
+  margin: 0;
   border: 1px solid var(--fm-border);
+  border-radius: 0;
   background: var(--fm-surface);
   color: inherit;
-  font: inherit;
+  font-family: var(--fm-font-family);
+  font-size: var(--fm-font-size);
+  font-weight: normal;
+  line-height: inherit;
+  height: var(--fm-row-height);
+  padding: 0 0.5rem;
+  box-shadow: none;
 }
 
 .fm-file-viewer-search-toggle {
