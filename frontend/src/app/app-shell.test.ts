@@ -1077,6 +1077,62 @@ describe('AppShell', () => {
     );
   });
 
+  it('enters a local archive as a folder with Enter', async () => {
+    const client = new MockFileManagerClient();
+    const originalListDirectory = client.listDirectory.bind(client);
+    vi.spyOn(client, 'listDirectory').mockImplementation(async (request, signal) => {
+      const snapshot = await originalListDirectory(request, signal);
+      if (request.location.uri !== 'mock:///') return snapshot;
+      return {
+        ...snapshot,
+        entries: [
+          ...snapshot.entries,
+          {
+            id: 'archive-file',
+            location: { providerId: 'local', uri: 'file:///tmp/photos.zip' },
+            name: 'photos.zip',
+            kind: 'file',
+            hidden: false,
+            readOnly: false,
+            metadataRevision: 0,
+          },
+        ],
+        totalKnownEntries: (snapshot.totalKnownEntries ?? snapshot.entries.length) + 1,
+      };
+    });
+    const navigatePane = vi.spyOn(client, 'navigatePane').mockImplementation(async (request) => ({
+      paneId: request.paneId,
+      requestId: request.requestId,
+      revision: 1,
+      location: request.location,
+      writable: true,
+      entries: [],
+      totalKnownEntries: 0,
+      hasMore: false,
+      loadingState: { type: 'loaded' },
+    }));
+    m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
+    await vi.waitFor(() => expect(root.textContent).toContain('photos.zip'));
+
+    const archiveRow = [...root.querySelectorAll<HTMLElement>('.fm-directory-row')].find((row) =>
+      row.textContent?.includes('photos.zip'),
+    );
+    archiveRow?.click();
+    m.redraw.sync();
+    archiveRow
+      ?.closest<HTMLElement>('.fm-pane')
+      ?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+
+    await vi.waitFor(() =>
+      expect(navigatePane).toHaveBeenCalledWith(
+        expect.objectContaining({
+          location: { providerId: 'archive', uri: 'archive:///tmp/photos.zip!/' },
+        }),
+        expect.any(AbortSignal),
+      ),
+    );
+  });
+
   it('reveals the selected entry via the context menu, passing its uri as a parameter (task 0061)', async () => {
     const client = new MockFileManagerClient();
     const invokeAction = vi.spyOn(client, 'invokeAction');

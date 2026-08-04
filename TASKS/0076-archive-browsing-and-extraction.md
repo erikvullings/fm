@@ -118,3 +118,7 @@ not implement archive codecs or cryptography.
   implemented. Password-protected 7z behavior, credential retry for file viewing/operations, and
   explicit engine conflict/multi-selection fixtures also still need coverage before all acceptance
   criteria can be claimed.
+- 2026-08-04 codex: Local ZIP, 7z, RAR and tar-family files now enter their `archive://...!/`
+  root through the normal entry activation path, so both Enter and double-click show archive
+  contents in the existing folder pane. Ordinary files continue through `core.open`; recursively
+  entering an archive stored inside another archive remains intentionally out of scope.

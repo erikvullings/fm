@@ -39,6 +39,7 @@ import {
   type EntryMetadataLoader,
   type EntryMetadataView,
 } from '../features/entry-metadata/entry-metadata-loader';
+import { archiveRootForEntry } from '../features/navigation/archive-location';
 import { ArchivePasswordDialog } from '../features/navigation/archive-password-dialog';
 import {
   createNavigationController,
@@ -1745,16 +1746,17 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       onBack: () => navigation.back(paneId),
       onForward: () => navigation.forward(paneId),
       onParent: () => navigation.parent(paneId),
-      onOpenEntry: (entry) =>
-        isParentEntry(entry.id)
-          ? navigation.parent(paneId)
-          : entry.kind === 'directory'
-            ? navigation.navigate(paneId, entry.location)
-            : invokeActionById(
-                'core.open',
-                { uri: entry.location.uri },
-                { paneId, selectedEntryIds: [entry.id], cursorEntryId: entry.id },
-              ),
+      onOpenEntry: (entry) => {
+        if (isParentEntry(entry.id)) return navigation.parent(paneId);
+        if (entry.kind === 'directory') return navigation.navigate(paneId, entry.location);
+        const archiveRoot = archiveRootForEntry(entry);
+        if (archiveRoot !== undefined) return navigation.navigate(paneId, archiveRoot);
+        return invokeActionById(
+          'core.open',
+          { uri: entry.location.uri },
+          { paneId, selectedEntryIds: [entry.id], cursorEntryId: entry.id },
+        );
+      },
       onSelectionAction: (action: SelectionAction) => {
         if (key === undefined) return;
         if (action.type === 'moveCursorTo' && action.edge === 'last' && directory.hasMore) {
