@@ -138,3 +138,6 @@ not implement archive codecs or cryptography.
 - 2026-08-04 codex: Removed the one-pixel overflow on short archive listings by pinning the
   accessibility cursor announcement inside the directory viewport instead of letting its static
   position fall immediately after the full-height virtual body.
+- 2026-08-04 codex: Fixed the remaining short-list scrollbar by clipping the final alternating
+  filler stripe to the viewport remainder instead of rendering a full row after rounding its count
+  up. A rendered 113px viewport now has equal client and scroll heights.

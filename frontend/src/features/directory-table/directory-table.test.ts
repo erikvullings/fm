@@ -114,6 +114,18 @@ describe('DirectoryTable states', () => {
 });
 
 describe('DirectoryTable rows', () => {
+  it('clips the final filler stripe to the unused viewport height', () => {
+    mount({
+      state: { type: 'loaded' },
+      source: entryArraySource([entry()]),
+      viewportHeight: 113,
+    });
+
+    const fillers = root.querySelectorAll<HTMLElement>('.fm-directory-row-filler');
+    expect(fillers).toHaveLength(5);
+    expect(fillers.item(4).style.height).toBe('13px');
+  });
+
   it('renders the themed icon matching each entry kind and extension', () => {
     mount({
       state: { type: 'loaded' },

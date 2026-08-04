@@ -489,6 +489,8 @@ export const DirectoryTable: FactoryComponent<DirectoryTableAttrs> = () => {
         const fillerCount = Math.max(0, Math.ceil((viewportHeight - contentHeight) / rowHeight));
         for (let i = 0; i < fillerCount; i += 1) {
           const index = source.length + i;
+          const fillerTop = contentHeight + i * rowHeight;
+          const fillerHeight = Math.min(rowHeight, viewportHeight - fillerTop);
           rows.push(
             m('.fm-directory-row-filler', {
               key: `filler-${i}`,
@@ -499,7 +501,8 @@ export const DirectoryTable: FactoryComponent<DirectoryTableAttrs> = () => {
                 attrs.onContextMenu?.(undefined, event.clientX, event.clientY);
               },
               style: {
-                transform: `translateY(${contentHeight + i * rowHeight}px)`,
+                height: `${fillerHeight}px`,
+                transform: `translateY(${fillerTop}px)`,
                 gridTemplateColumns: gridTemplate(columns.length),
               },
             }),
