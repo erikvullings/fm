@@ -278,7 +278,6 @@ describe('Pane status bar', () => {
     const status = root.querySelector('.fm-pane-status')?.textContent;
     expect(status).toContain('3 KB in 2 files');
     expect(status).toContain('1 KB in 1 selected');
-    expect(status).toContain('Name ascending');
   });
 
   it('marks active and inactive panes for selection styling', () => {

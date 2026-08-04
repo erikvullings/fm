@@ -828,7 +828,6 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
                       : ''
                   }`,
                 ),
-            m('span', `Sort: ${attrs.sortLabel}`),
             typeahead === undefined
               ? undefined
               : m(
