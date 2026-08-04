@@ -17,6 +17,7 @@ license = "MIT OR Apache-2.0"
 
 # Internal crates, versioned together with the rest of the workspace.
 fm-application = { path = "crates/fm-application" }
+fm-archive = { path = "crates/fm-archive" }
 fm-domain = { path = "crates/fm-domain" }
 fm-events = { path = "crates/fm-events" }
 fm-operations = { path = "crates/fm-operations" }
@@ -57,6 +58,8 @@ reqwest = { version = "0.13.4", default-features = false, features = [
 ] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
+sevenz-rust2 = { version = "0.21.3", default-features = false, features = ["aes256", "compress", "util"] }
+tar = "0.4"
 tempfile = "3.15.0"
 thiserror = "2.0.19"
 tauri = "2"
@@ -83,6 +86,11 @@ utoipa = { version = "5.5.0", features = ["chrono", "uuid"] }
 utoipa-axum = "0.2.0"
 utoipa-swagger-ui = { version = "9.0.2", features = ["axum"] }
 uuid = { version = "1.24.0", features = ["serde", "v4", "v5"] }
+zip = { version = "8.6.0", default-features = false, features = ["aes-crypto", "deflate", "deflate64", "time"] }
+zeroize = "1.8.2"
+flate2 = "1"
+bzip2 = "0.6"
+xz2 = "0.1"
 toml = "1.0.6"
 walkdir = "2.5.0"
 

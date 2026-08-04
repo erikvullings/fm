@@ -53,6 +53,21 @@ pub enum VfsError {
         /// Capability required by the rejected operation.
         capability: ProviderCapabilities,
     },
+    /// An archive entry would escape its virtual root if materialized.
+    #[error("archive contains an unsafe entry path")]
+    UnsafeArchiveEntry,
+    /// Archive expansion exceeded a configured safety limit.
+    #[error("archive resource limit exceeded: {kind}")]
+    ArchiveResourceLimit {
+        /// Stable, non-secret description of the exceeded limit.
+        kind: &'static str,
+    },
+    /// The archive is encrypted and no session credential is available.
+    #[error("archive credential required")]
+    CredentialRequired,
+    /// The cached or supplied archive credential was rejected.
+    #[error("archive credential is invalid")]
+    InvalidCredential,
     /// The caller cancelled the operation.
     #[error("operation cancelled")]
     Cancelled,
@@ -91,6 +106,10 @@ impl VfsError {
             Self::NotADirectory { .. } => "notADirectory",
             Self::IsADirectory { .. } => "isADirectory",
             Self::UnsupportedCapability { .. } => "unsupportedCapability",
+            Self::UnsafeArchiveEntry => "unsafeArchiveEntry",
+            Self::ArchiveResourceLimit { .. } => "archiveResourceLimit",
+            Self::CredentialRequired => "credentialRequired",
+            Self::InvalidCredential => "invalidCredential",
             Self::Cancelled => "cancelled",
             Self::Io { .. } => "io",
             Self::InvalidLocation { .. } => "invalidLocation",

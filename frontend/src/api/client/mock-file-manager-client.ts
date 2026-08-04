@@ -4,6 +4,7 @@ import pluginFixtures from '../../../../fixtures/mock-responses/plugins.json';
 import type {
   ActionDescriptor,
   ActionResult,
+  ArchiveCredentialRequest,
   BackendEvent,
   CreateWorkspaceRequest,
   DirectorySnapshot,
@@ -70,6 +71,7 @@ export type MockClientMethod =
   | 'listDirectory'
   | 'getEntryMetadata'
   | 'getFileIcon'
+  | 'cacheArchivePassword'
   | 'readFileRange'
   | 'searchInFile'
   | 'startOperation'
@@ -243,6 +245,9 @@ function createMockWorkspace(id: WorkspaceId, name = 'Mock Workspace'): Workspac
 export class MockFileManagerClient implements FileManagerClient {
   readonly connection = new MutableEventStreamStatus();
 
+  cacheArchivePassword(_request: ArchiveCredentialRequest, signal?: AbortSignal): Promise<void> {
+    return this.perform('cacheArchivePassword', signal, () => undefined);
+  }
   private readonly resynchronise = new EventStreamSignalRegistry();
   private readonly pageSize: number;
   private readonly seed: number;

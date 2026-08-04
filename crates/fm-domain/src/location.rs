@@ -22,9 +22,11 @@ const LOCAL_PROVIDER: &str = "local";
 const LOCAL_SCHEME: &str = "file";
 const SEARCH_PROVIDER: &str = "search";
 const SEARCH_SCHEME: &str = "search";
+const ARCHIVE_PROVIDER: &str = "archive";
+const ARCHIVE_SCHEME: &str = "archive";
 const SEARCH_AUTHORITY: &str = "local";
 /// Schemes named by the specification but not yet backed by a provider.
-const RESERVED_SCHEMES: &[&str] = &["archive", "sftp"];
+const RESERVED_SCHEMES: &[&str] = &["sftp"];
 
 /// A provider-neutral pointer to a location.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -107,6 +109,10 @@ impl Location {
             validate_search_uri(uri)?;
             return Ok(Self::new(ProviderId::new(SEARCH_PROVIDER), uri));
         }
+        if scheme == ARCHIVE_SCHEME {
+            ParsedArchiveUri::parse(uri)?;
+            return Ok(Self::new(ProviderId::new(ARCHIVE_PROVIDER), uri));
+        }
         if RESERVED_SCHEMES.contains(&scheme) {
             return Err(LocationError::UnsupportedProvider(scheme.to_owned()));
         }
@@ -170,6 +176,9 @@ impl Location {
 
     /// Returns the parent without string concatenation, or `None` for a root.
     pub fn parent(&self) -> Result<Option<Self>, LocationError> {
+        if self.provider_id.as_str() == ARCHIVE_PROVIDER {
+            return ParsedArchiveUri::parse(&self.uri)?.parent();
+        }
         self.ensure_local()?;
         let mut parsed = ParsedFileUri::parse(&self.uri)?;
         parsed.validate_segments()?;
@@ -181,6 +190,10 @@ impl Location {
 
     /// Appends one validated native name as a complete path segment.
     pub fn join(&self, name: &str) -> Result<Self, LocationError> {
+        if self.provider_id.as_str() == ARCHIVE_PROVIDER {
+            validate_name(name)?;
+            return ParsedArchiveUri::parse(&self.uri)?.join(name);
+        }
         self.ensure_local()?;
         validate_name(name)?;
         let mut parsed = ParsedFileUri::parse(&self.uri)?;
@@ -191,6 +204,9 @@ impl Location {
 
     /// Returns the decoded final path segment.
     pub fn name(&self) -> Result<String, LocationError> {
+        if self.provider_id.as_str() == ARCHIVE_PROVIDER {
+            return ParsedArchiveUri::parse(&self.uri)?.name();
+        }
         self.ensure_local()?;
         let parsed = ParsedFileUri::parse(&self.uri)?;
         parsed.validate_segments()?;
@@ -216,6 +232,90 @@ impl Location {
 struct ParsedFileUri {
     authority: String,
     segments: Vec<Vec<u8>>,
+}
+
+#[derive(Debug)]
+struct ParsedArchiveUri {
+    outer: String,
+    inner_segments: Vec<Vec<u8>>,
+}
+
+impl ParsedArchiveUri {
+    fn parse(uri: &str) -> Result<Self, LocationError> {
+        let remainder = uri
+            .strip_prefix("archive://")
+            .ok_or(LocationError::InvalidUri)?;
+        if remainder.contains(['?', '#']) {
+            return Err(LocationError::InvalidUri);
+        }
+        let (outer, inner) = remainder.split_once('!').ok_or(LocationError::InvalidUri)?;
+        if outer.is_empty() || outer.contains('!') {
+            return Err(LocationError::InvalidUri);
+        }
+        let outer_file_uri = format!("file://{outer}");
+        let parsed_outer = ParsedFileUri::parse(&outer_file_uri)?;
+        parsed_outer.validate_segments()?;
+        if parsed_outer.segments.is_empty() {
+            return Err(LocationError::InvalidUri);
+        }
+        let inner = if inner.is_empty() {
+            ""
+        } else {
+            inner.strip_prefix('/').ok_or(LocationError::InvalidUri)?
+        };
+        let inner_segments = if inner.is_empty() {
+            Vec::new()
+        } else {
+            inner
+                .split('/')
+                .map(|segment| {
+                    let decoded = percent_decode(segment)?;
+                    let name = String::from_utf8(decoded.clone())
+                        .map_err(|_| LocationError::InvalidUnicode)?;
+                    validate_name(&name)?;
+                    Ok(decoded)
+                })
+                .collect::<Result<Vec<_>, LocationError>>()?
+        };
+        Ok(Self {
+            outer: outer.to_owned(),
+            inner_segments,
+        })
+    }
+
+    fn into_location(self) -> Location {
+        let inner = self
+            .inner_segments
+            .iter()
+            .map(|segment| percent_encode(segment))
+            .collect::<Vec<_>>()
+            .join("/");
+        let separator = if inner.is_empty() { "" } else { "/" };
+        Location::new(
+            ProviderId::new(ARCHIVE_PROVIDER),
+            format!("archive://{}!{separator}{inner}", self.outer),
+        )
+    }
+
+    fn join(mut self, name: &str) -> Result<Location, LocationError> {
+        self.inner_segments.push(name.as_bytes().to_vec());
+        Ok(self.into_location())
+    }
+
+    fn parent(mut self) -> Result<Option<Location>, LocationError> {
+        if self.inner_segments.pop().is_none() {
+            return Ok(None);
+        }
+        Ok(Some(self.into_location()))
+    }
+
+    fn name(&self) -> Result<String, LocationError> {
+        let segment = self
+            .inner_segments
+            .last()
+            .ok_or_else(|| LocationError::InvalidName("archive root has no name".to_owned()))?;
+        String::from_utf8(segment.clone()).map_err(|_| LocationError::InvalidUnicode)
+    }
 }
 
 impl ParsedFileUri {
@@ -306,6 +406,7 @@ fn provider_for_scheme(scheme: &str) -> Result<&'static str, LocationError> {
     match scheme {
         LOCAL_SCHEME => Ok(LOCAL_PROVIDER),
         SEARCH_SCHEME => Ok(SEARCH_PROVIDER),
+        ARCHIVE_SCHEME => Ok(ARCHIVE_PROVIDER),
         scheme if RESERVED_SCHEMES.contains(&scheme) => {
             Err(LocationError::UnsupportedProvider(scheme.to_owned()))
         }

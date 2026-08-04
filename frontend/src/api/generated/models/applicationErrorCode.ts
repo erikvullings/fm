@@ -19,6 +19,8 @@ export const ApplicationErrorCode = {
   destinationAlreadyExists: 'destinationAlreadyExists',
   providerUnavailable: 'providerUnavailable',
   operationCancelled: 'operationCancelled',
+  credentialRequired: 'credentialRequired',
+  invalidCredential: 'invalidCredential',
   workspaceRevisionConflict: 'workspaceRevisionConflict',
   actionNotFound: 'actionNotFound',
   actionUnavailable: 'actionUnavailable',

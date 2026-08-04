@@ -6,14 +6,12 @@ use fm_domain::{Location, LocationError, ProviderId};
 use proptest::prelude::*;
 
 #[test]
-fn parses_local_uri_and_rejects_reserved_and_unknown_providers() {
+fn parses_local_archive_and_search_uris_and_rejects_unknown_providers() {
     let location = Location::parse("file:///Users/erik/Documents").unwrap();
     assert_eq!(location.provider_id, ProviderId::new("local"));
 
-    assert_eq!(
-        Location::parse("archive:///tmp/example.zip!/docs"),
-        Err(LocationError::UnsupportedProvider("archive".to_owned()))
-    );
+    let archive = Location::parse("archive:///tmp/example.zip!/docs").unwrap();
+    assert_eq!(archive.provider_id, ProviderId::new("archive"));
     let search = Location::parse("search://local/11111111-1111-4111-8111-111111111111").unwrap();
     assert_eq!(search.provider_id, ProviderId::new("search"));
     assert_eq!(
@@ -28,6 +26,31 @@ fn parses_local_uri_and_rejects_reserved_and_unknown_providers() {
         Location::parse("https://example.test"),
         Err(LocationError::UnknownProvider("https".to_owned()))
     );
+}
+
+#[test]
+fn archive_locations_support_safe_inner_path_navigation() {
+    let root = Location::parse("archive:///tmp/example.zip!").unwrap();
+    let docs = root.join("docs").unwrap();
+    let report = docs.join("Q4 report.txt").unwrap();
+
+    assert_eq!(docs.uri, "archive:///tmp/example.zip!/docs");
+    assert_eq!(report.name().unwrap(), "Q4 report.txt");
+    assert_eq!(report.parent().unwrap(), Some(docs));
+    assert_eq!(root.parent().unwrap(), None);
+    assert_eq!(
+        root.join("../escape"),
+        Err(LocationError::InvalidName("../escape".to_owned()))
+    );
+    assert_eq!(
+        Location::parse("archive:///tmp/example.zip!/../escape"),
+        Err(LocationError::InvalidName("..".to_owned()))
+    );
+    assert_eq!(
+        Location::parse("archive:///tmp/example.zip/docs"),
+        Err(LocationError::InvalidUri)
+    );
+    assert!(root.to_native_path().is_err());
 }
 
 #[test]

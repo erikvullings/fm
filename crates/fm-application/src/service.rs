@@ -9,6 +9,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
+use fm_archive::ArchiveFileSystemProvider;
 use fm_domain::OperationId;
 use fm_domain::{
     ActionContextRequirements, ActionDescriptor, ActionId, ActionSource, DirectorySnapshot,
@@ -72,6 +73,7 @@ pub struct FileManagerService {
     workspaces: WorkspaceService<JsonFileWorkspaceRepository>,
     directories: DirectoryService,
     providers: ProviderRegistry,
+    archive_provider: Arc<ArchiveFileSystemProvider>,
     events: EventBus,
     settings_store: SettingsStore,
     settings: Mutex<Settings>,
@@ -307,6 +309,8 @@ impl FileManagerService {
         let settings_directory = settings_directory.into();
         let mut providers = ProviderRegistry::new();
         providers.register(Arc::new(LocalFileSystemProvider));
+        let archive_provider = Arc::new(ArchiveFileSystemProvider::new());
+        providers.register(archive_provider.clone());
         let search_store = Arc::new(SearchResultsStore::new());
         providers.register(Arc::new(SearchFileSystemProvider::new(Arc::clone(
             &search_store,
@@ -349,6 +353,7 @@ impl FileManagerService {
             )),
             directories,
             providers,
+            archive_provider,
             events: events.clone(),
             settings_store,
             settings: Mutex::new(loaded.settings),
@@ -405,7 +410,8 @@ impl FileManagerService {
                     .resolve(&parent)
                     .map_err(ApplicationError::from)?;
                 provider
-                    .capabilities()
+                    .capabilities_for(&parent)
+                    .map_err(ApplicationError::from)?
                     .require(ProviderCapabilities::CREATE_DIRECTORY)
                     .map_err(ApplicationError::from)?;
                 Arc::new(CreateDirectoryExecutor {
@@ -435,7 +441,8 @@ impl FileManagerService {
                     ));
                 }
                 provider
-                    .capabilities()
+                    .capabilities_for(&source)
+                    .map_err(ApplicationError::from)?
                     .require(ProviderCapabilities::RENAME)
                     .map_err(ApplicationError::from)?;
                 Arc::new(RenameExecutor {
@@ -458,7 +465,8 @@ impl FileManagerService {
                     .resolve(&destination_directory)
                     .map_err(ApplicationError::from)?;
                 destination_provider
-                    .capabilities()
+                    .capabilities_for(&destination_directory)
+                    .map_err(ApplicationError::from)?
                     .require(ProviderCapabilities::WRITE)
                     .map_err(ApplicationError::from)?;
                 let mut copies = Vec::new();
@@ -469,7 +477,8 @@ impl FileManagerService {
                         .resolve(&source)
                         .map_err(ApplicationError::from)?;
                     source_provider
-                        .capabilities()
+                        .capabilities_for(&source)
+                        .map_err(ApplicationError::from)?
                         .require(ProviderCapabilities::READ)
                         .map_err(ApplicationError::from)?;
                     copies.push(CopyExecutor {
@@ -595,7 +604,8 @@ impl FileManagerService {
                         .resolve(&location)
                         .map_err(ApplicationError::from)?;
                     provider
-                        .capabilities()
+                        .capabilities_for(&location)
+                        .map_err(ApplicationError::from)?
                         .require(ProviderCapabilities::DELETE)
                         .map_err(ApplicationError::from)?;
                     providers.insert(location.provider_id.clone(), provider);
@@ -1232,6 +1242,19 @@ impl FileManagerService {
         self.operations.republish_pending_conflicts();
     }
 
+    /// Supplies an archive credential to the backend-session cache.
+    ///
+    /// The secret is passed directly to the provider and is never added to operation history or
+    /// an event payload.
+    pub fn cache_archive_password(
+        &self,
+        request: fm_transport_dto::ArchiveCredentialRequestDto,
+    ) -> Result<(), ApplicationError> {
+        self.archive_provider
+            .cache_password(&Location::from(request.location), request.password)
+            .map_err(ApplicationError::from)
+    }
+
     /// Lists one page of a directory.
     pub async fn list_directory(
         &self,
@@ -1287,16 +1310,18 @@ impl FileManagerService {
             .resolve(&location)
             .map_err(ApplicationError::from)?;
         provider
-            .capabilities()
+            .capabilities_for(&location)
+            .map_err(ApplicationError::from)?
             .require(ProviderCapabilities::READ)
             .map_err(ApplicationError::from)?;
         let entry = EntryRef {
             id: EntryId::new(),
-            location,
+            location: location.clone(),
         };
         let cancellation = CancellationToken::new();
         let mut reader: ProviderReadStream = if provider
-            .capabilities()
+            .capabilities_for(&location)
+            .map_err(ApplicationError::from)?
             .contains(ProviderCapabilities::RANDOM_ACCESS)
         {
             provider
@@ -1355,7 +1380,8 @@ impl FileManagerService {
             .resolve(&location)
             .map_err(ApplicationError::from)?;
         provider
-            .capabilities()
+            .capabilities_for(&location)
+            .map_err(ApplicationError::from)?
             .require(ProviderCapabilities::READ)
             .map_err(ApplicationError::from)?;
         let entry = EntryRef {
@@ -2245,8 +2271,12 @@ impl OperationExecutor for CopyExecutor {
             .destination_directory
             .join(&root_name)
             .map_err(|error| ExecutionError::Failed(error.to_string()))?;
-        fm_operations::validate_paths(&source.location, &root_destination, cfg!(not(windows)))
-            .map_err(|error| ExecutionError::Failed(error.to_string()))?;
+        // Descendant/same-entry checks are meaningful only within one provider. Cross-provider
+        // copies (including local ↔ archive) have disjoint namespaces by construction.
+        if source.location.provider_id == root_destination.provider_id {
+            fm_operations::validate_paths(&source.location, &root_destination, cfg!(not(windows)))
+                .map_err(|error| ExecutionError::Failed(error.to_string()))?;
+        }
         let root_source_uri = source.location.uri.clone();
         let mut stack = vec![(summary, root_destination)];
         let mut items = Vec::new();
@@ -2479,9 +2509,16 @@ impl OperationExecutor for CopyExecutor {
             .clone();
         directories.reverse();
         for (source, destination) in directories {
-            self.destination_provider
-                .preserve_metadata(&source, &destination, cancellation.clone())
-                .await?;
+            if source.location.provider_id == destination.location.provider_id
+                && self
+                    .destination_provider
+                    .capabilities_for(&destination.location)?
+                    .contains(ProviderCapabilities::SET_TIMESTAMPS)
+            {
+                self.destination_provider
+                    .preserve_metadata(&source, &destination, cancellation.clone())
+                    .await?;
+            }
         }
         Ok(())
     }
@@ -2632,7 +2669,12 @@ impl CopyExecutor {
                     &destination,
                     fm_vfs::CopyCommitOptions {
                         overwrite,
-                        preserve_metadata: true,
+                        preserve_metadata: self.source_provider.id()
+                            == self.destination_provider.id()
+                            && self
+                                .destination_provider
+                                .capabilities_for(&destination)?
+                                .contains(ProviderCapabilities::SET_TIMESTAMPS),
                     },
                     cancellation.clone(),
                 )

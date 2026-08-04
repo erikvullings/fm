@@ -1,6 +1,7 @@
 import type {
   ActionDescriptor,
   ActionResult,
+  ArchiveCredentialRequest,
   BackendEvent,
   CreateWorkspaceRequest,
   DirectorySnapshot,
@@ -38,6 +39,7 @@ import { SseEventStream } from '../events/sse-event-stream';
 import {
   invokeAction as requestActionInvocation,
   listActions as requestActions,
+  cacheArchivePassword as requestArchivePasswordCache,
   resolveOperationConflict as requestConflictResolution,
   listDirectory as requestDirectory,
   getEntryMetadata as requestEntryMetadata,
@@ -87,6 +89,19 @@ import type { FileManagerClient } from './file-manager-client';
 export class HttpFileManagerClient implements FileManagerClient {
   private readonly eventStream = new SseEventStream();
   readonly connection = this.eventStream.status;
+
+  async cacheArchivePassword(
+    request: ArchiveCredentialRequest,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    const response = await requestArchivePasswordCache(
+      request,
+      signal === undefined ? undefined : { signal },
+    );
+    if (response.status !== 204) {
+      throw new Error(`Unexpected cacheArchivePassword response status: ${response.status}`);
+    }
+  }
   async getRuntimeCapabilities(signal?: AbortSignal): Promise<RuntimeCapabilities> {
     const response = await requestRuntimeCapabilities(
       signal !== undefined ? { signal } : undefined,

@@ -214,6 +214,8 @@
           "destinationAlreadyExists",
           "providerUnavailable",
           "operationCancelled",
+          "credentialRequired",
+          "invalidCredential",
           "workspaceRevisionConflict",
           "actionNotFound",
           "actionUnavailable",
@@ -258,6 +260,25 @@
           "code",
           "message",
           "requestId"
+        ],
+        "type": "object"
+      },
+      "ArchiveCredentialRequestDto": {
+        "description": "Supplies a password for one archive to the current backend session.",
+        "properties": {
+          "location": {
+            "$ref": "#/components/schemas/LocationDto",
+            "description": "Any location within the target archive; only the outer archive identity is cached."
+          },
+          "password": {
+            "description": "Password to cache in backend memory. Transport adapters must not log request bodies.",
+            "format": "password",
+            "type": "string"
+          }
+        },
+        "required": [
+          "location",
+          "password"
         ],
         "type": "object"
       },
@@ -2077,7 +2098,8 @@
             "uri": "file:///Users/erik/report.txt"
           },
           "query": "error",
-          "regex": false
+          "regex": false,
+          "wholeWord": false
         },
         "properties": {
           "caseSensitive": {
@@ -2094,6 +2116,10 @@
           },
           "regex": {
             "description": "Whether `query` is a regular expression rather than a plain substring.",
+            "type": "boolean"
+          },
+          "wholeWord": {
+            "description": "Whether a match must be flanked by non-word characters (or line start/end), like an\neditor's \"whole word\" search toggle. Defaults to `false` for older clients that omit it.",
             "type": "boolean"
           }
         },
@@ -3094,6 +3120,37 @@
             "description": ""
           }
         }
+      }
+    },
+    "/api/v1/archives/credential": {
+      "post": {
+        "operationId": "cacheArchivePassword",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ArchiveCredentialRequestDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Credential cached for this backend session"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationErrorDto"
+                }
+              }
+            },
+            "description": "The archive location was invalid"
+          }
+        },
+        "summary": "Caches an archive password for this backend session only."
       }
     },
     "/api/v1/directories/list": {

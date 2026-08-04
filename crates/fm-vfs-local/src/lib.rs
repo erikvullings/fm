@@ -393,10 +393,6 @@ impl FileSystemProvider for LocalFileSystemProvider {
         if cancellation.is_cancelled() {
             return Err(VfsError::Cancelled);
         }
-        let source_path = source
-            .location
-            .to_native_path()
-            .map_err(|_| invalid_location(&source.location))?;
         let temporary_path = temporary
             .to_native_path()
             .map_err(|_| invalid_location(temporary))?;
@@ -404,6 +400,10 @@ impl FileSystemProvider for LocalFileSystemProvider {
             .to_native_path()
             .map_err(|_| invalid_location(destination))?;
         if options.preserve_metadata {
+            let source_path = source
+                .location
+                .to_native_path()
+                .map_err(|_| invalid_location(&source.location))?;
             preserve_copy_metadata(&source_path, &temporary_path, &source.location.uri).await?;
         }
         if options.overwrite {

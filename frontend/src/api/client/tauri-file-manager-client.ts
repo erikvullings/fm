@@ -3,6 +3,7 @@ import { invoke } from '@tauri-apps/api/core';
 import type {
   ActionDescriptor,
   ActionResult,
+  ArchiveCredentialRequest,
   BackendEvent,
   CreateWorkspaceRequest,
   DirectorySnapshot,
@@ -50,6 +51,10 @@ import type { FileManagerClient } from './file-manager-client';
 export class TauriFileManagerClient implements FileManagerClient {
   private readonly eventStream = new TauriEventStream();
   readonly connection = this.eventStream.status;
+
+  cacheArchivePassword(request: ArchiveCredentialRequest, _signal?: AbortSignal): Promise<void> {
+    return invoke<void>('cache_archive_password', { request });
+  }
 
   async getRuntimeCapabilities(_signal?: AbortSignal): Promise<RuntimeCapabilities> {
     return invoke<RuntimeCapabilities>('get_runtime_capabilities');

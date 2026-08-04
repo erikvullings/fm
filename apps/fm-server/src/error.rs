@@ -56,6 +56,9 @@ fn status_for(error: &ApplicationError) -> StatusCode {
         ApplicationError::DestinationAlreadyExists => StatusCode::CONFLICT,
         ApplicationError::ProviderUnavailable => StatusCode::SERVICE_UNAVAILABLE,
         ApplicationError::OperationCancelled => StatusCode::CONFLICT,
+        ApplicationError::CredentialRequired | ApplicationError::InvalidCredential => {
+            StatusCode::BAD_REQUEST
+        }
         ApplicationError::WorkspaceRevisionConflict { .. } => StatusCode::CONFLICT,
         ApplicationError::ActionNotFound(_) => StatusCode::NOT_FOUND,
         ApplicationError::ActionUnavailable(_) => StatusCode::CONFLICT,

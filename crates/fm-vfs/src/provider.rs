@@ -21,6 +21,12 @@ pub trait FileSystemProvider: Send + Sync {
     /// Reports the operations this provider currently supports.
     fn capabilities(&self) -> ProviderCapabilities;
 
+    /// Reports capabilities for a concrete location when a provider contains backends with
+    /// different support levels. Providers with uniform behavior inherit the static result.
+    fn capabilities_for(&self, _location: &Location) -> Result<ProviderCapabilities, VfsError> {
+        Ok(self.capabilities())
+    }
+
     /// Lists one page of a directory.
     async fn list(
         &self,

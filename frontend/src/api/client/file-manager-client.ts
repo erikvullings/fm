@@ -1,6 +1,7 @@
 import type {
   ActionDescriptor,
   ActionResult,
+  ArchiveCredentialRequest,
   BackendEvent,
   CreateWorkspaceRequest,
   DirectorySnapshot,
@@ -92,6 +93,8 @@ export interface FileManagerClient {
   listDirectory(request: ListDirectoryRequest, signal?: AbortSignal): Promise<DirectorySnapshot>;
 
   getEntryMetadata(request: EntryMetadataRequest, signal?: AbortSignal): Promise<EntryMetadata>;
+
+  cacheArchivePassword(request: ArchiveCredentialRequest, signal?: AbortSignal): Promise<void>;
 
   /** Lazily fetches a native PNG icon; unsupported/failure is a themed-icon fallback. */
   getFileIcon(sampleLocationUri: string, signal?: AbortSignal): Promise<Uint8Array | undefined>;

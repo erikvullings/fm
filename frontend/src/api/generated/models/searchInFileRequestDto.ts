@@ -17,4 +17,9 @@ export interface SearchInFileRequestDto {
   query: string;
   /** Whether `query` is a regular expression rather than a plain substring. */
   regex: boolean;
+  /**
+     * Whether a match must be flanked by non-word characters (or line start/end), like an
+     * editor's "whole word" search toggle. Defaults to `false` for older clients that omit it.
+     */
+  wholeWord?: boolean;
 }

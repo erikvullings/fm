@@ -97,9 +97,18 @@ impl CycleDetector {
 }
 
 fn normalized_path(location: &Location) -> Result<PathBuf, SafetyError> {
-    let path = location
-        .to_native_path()
-        .map_err(|_| SafetyError::IncomparableLocations)?;
+    let path = if location.provider_id.as_str() == "archive" {
+        PathBuf::from(
+            location
+                .uri
+                .strip_prefix("archive://")
+                .ok_or(SafetyError::IncomparableLocations)?,
+        )
+    } else {
+        location
+            .to_native_path()
+            .map_err(|_| SafetyError::IncomparableLocations)?
+    };
     let mut normalized = PathBuf::new();
     for component in path.components() {
         match component {

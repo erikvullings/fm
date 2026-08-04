@@ -32,6 +32,12 @@ pub enum ApplicationError {
     /// The operation was cancelled by the caller.
     #[error("operation cancelled")]
     OperationCancelled,
+    /// The archive is encrypted and needs a password for this backend session.
+    #[error("archive password required")]
+    CredentialRequired,
+    /// The supplied archive password was rejected.
+    #[error("archive password is incorrect")]
+    InvalidCredential,
     /// A workspace mutation's `expected_revision` no longer matches the
     /// stored revision (spec §5.3.10).
     #[error("The workspace changed after this view was loaded.")]
@@ -73,6 +79,8 @@ impl ApplicationError {
             Self::DestinationAlreadyExists => ApplicationErrorCode::DestinationAlreadyExists,
             Self::ProviderUnavailable => ApplicationErrorCode::ProviderUnavailable,
             Self::OperationCancelled => ApplicationErrorCode::OperationCancelled,
+            Self::CredentialRequired => ApplicationErrorCode::CredentialRequired,
+            Self::InvalidCredential => ApplicationErrorCode::InvalidCredential,
             Self::WorkspaceRevisionConflict { .. } => {
                 ApplicationErrorCode::WorkspaceRevisionConflict
             }
@@ -159,7 +167,11 @@ impl From<VfsError> for ApplicationError {
             | VfsError::UnsupportedCapability { .. } => {
                 Self::InvalidRequest("the requested filesystem operation is not valid".to_owned())
             }
-            VfsError::Io { .. } => Self::Internal,
+            VfsError::CredentialRequired => Self::CredentialRequired,
+            VfsError::InvalidCredential => Self::InvalidCredential,
+            VfsError::Io { .. }
+            | VfsError::UnsafeArchiveEntry
+            | VfsError::ArchiveResourceLimit { .. } => Self::Internal,
         }
     }
 }
@@ -191,6 +203,14 @@ mod tests {
             (
                 ApplicationError::OperationCancelled,
                 ApplicationErrorCode::OperationCancelled,
+            ),
+            (
+                ApplicationError::CredentialRequired,
+                ApplicationErrorCode::CredentialRequired,
+            ),
+            (
+                ApplicationError::InvalidCredential,
+                ApplicationErrorCode::InvalidCredential,
             ),
             (
                 ApplicationError::WorkspaceRevisionConflict {

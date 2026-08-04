@@ -6,6 +6,17 @@ use utoipa::ToSchema;
 
 use crate::location::LocationDto;
 
+/// Supplies a password for one archive to the current backend session.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ArchiveCredentialRequestDto {
+    /// Any location within the target archive; only the outer archive identity is cached.
+    pub location: LocationDto,
+    /// Password to cache in backend memory. Transport adapters must not log request bodies.
+    #[schema(value_type = String, format = Password)]
+    pub password: String,
+}
+
 /// Requests a byte range from a single file (`POST /api/v1/files/range`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]

@@ -31,8 +31,8 @@ pub use entry::{
 };
 pub use error::{ApplicationErrorCode, ApplicationErrorDto};
 pub use files::{
-    ReadFileRangeRequestDto, ReadFileRangeResponseDto, SearchInFileMatchDto,
-    SearchInFileRequestDto, SearchInFileResponseDto,
+    ArchiveCredentialRequestDto, ReadFileRangeRequestDto, ReadFileRangeResponseDto,
+    SearchInFileMatchDto, SearchInFileRequestDto, SearchInFileResponseDto,
 };
 pub use health::{HealthDto, HealthStatusDto};
 pub use location::LocationDto;

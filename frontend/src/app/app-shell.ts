@@ -39,6 +39,7 @@ import {
   type EntryMetadataLoader,
   type EntryMetadataView,
 } from '../features/entry-metadata/entry-metadata-loader';
+import { ArchivePasswordDialog } from '../features/navigation/archive-password-dialog';
 import {
   createNavigationController,
   type NavigationController,
@@ -196,6 +197,14 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
   let flushPendingLayoutUpdate: (() => void) | undefined;
   let createDirectoryOpen = false;
   let createDirectoryLocation: Location | undefined;
+  let pendingArchiveCredential:
+    | {
+        readonly location: Location;
+        readonly invalid: boolean;
+        readonly resolve: (supplied: boolean) => void;
+      }
+    | undefined;
+  let archiveCredentialError: string | undefined;
   let findFilesOpen = false;
   let findFilesRoot: Location | undefined;
   let findFilesSearchId: string | undefined;
@@ -1938,6 +1947,14 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
         client: attrs.client,
         getWorkspace: () => workspace,
         replaceWorkspace: (next) => replaceWorkspace(next),
+        requestArchivePassword: (location, invalid) => {
+          pendingArchiveCredential?.resolve(false);
+          archiveCredentialError = undefined;
+          return new Promise<boolean>((resolve) => {
+            pendingArchiveCredential = { location, invalid, resolve };
+            m.redraw();
+          });
+        },
         updatePane: (paneId, tabId, view, preferredCursorName) => {
           const key = tabKey(paneId, tabId);
           const previous = directories.get(key);
@@ -2013,6 +2030,8 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
 
     onremove: () => {
       removed = true;
+      pendingArchiveCredential?.resolve(false);
+      pendingArchiveCredential = undefined;
       document.removeEventListener('keydown', handleGlobalKeydown);
       systemThemeQuery?.removeEventListener('change', handleSystemThemeChange);
       if (operationFrame !== undefined) cancelAnimationFrame(operationFrame);
@@ -2344,6 +2363,40 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
                 })
                 .catch(() => {
                   pendingCreatedLocation = undefined;
+                });
+            },
+          }),
+          m(ArchivePasswordDialog, {
+            open: pendingArchiveCredential !== undefined,
+            invalid: pendingArchiveCredential?.invalid ?? false,
+            archiveLabel:
+              pendingArchiveCredential === undefined
+                ? ''
+                : pathFromUri(pendingArchiveCredential.location.uri),
+            ...(archiveCredentialError === undefined ? {} : { error: archiveCredentialError }),
+            onCancel: () => {
+              const pending = pendingArchiveCredential;
+              pendingArchiveCredential = undefined;
+              archiveCredentialError = undefined;
+              pending?.resolve(false);
+            },
+            onConfirm: (password: string) => {
+              const pending = pendingArchiveCredential;
+              if (pending === undefined) return;
+              void attrs.client
+                .cacheArchivePassword({ location: pending.location, password })
+                .then(() => {
+                  if (pendingArchiveCredential === pending) {
+                    pendingArchiveCredential = undefined;
+                    archiveCredentialError = undefined;
+                    pending.resolve(true);
+                    m.redraw();
+                  }
+                })
+                .catch((error: unknown) => {
+                  archiveCredentialError =
+                    error instanceof Error ? error.message : 'Unable to cache archive password';
+                  m.redraw();
                 });
             },
           }),

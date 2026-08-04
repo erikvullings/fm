@@ -6,6 +6,7 @@ import type {
   ActionDescriptorDto,
   ActionResultDto,
   ApplicationErrorDto,
+  ArchiveCredentialRequestDto,
   CreateWorkspaceRequestDto,
   DeleteWorkspaceParams,
   DirectorySnapshotDto,
@@ -118,6 +119,49 @@ export const invokeAction = async (actionId: string,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
     body: JSON.stringify(invokeActionRequestDto)
+  }
+);}
+
+
+
+export type cacheArchivePasswordResponse204 = {
+  data: void
+  status: 204
+}
+
+export type cacheArchivePasswordResponse400 = {
+  data: ApplicationErrorDto
+  status: 400
+}
+
+export type cacheArchivePasswordResponseSuccess = (cacheArchivePasswordResponse204) & {
+  headers: Headers;
+};
+export type cacheArchivePasswordResponseError = (cacheArchivePasswordResponse400) & {
+  headers: Headers;
+};
+
+export type cacheArchivePasswordResponse = (cacheArchivePasswordResponseSuccess | cacheArchivePasswordResponseError)
+
+export const getCacheArchivePasswordUrl = () => {
+
+
+
+
+  return `/api/v1/archives/credential`
+}
+
+/**
+ * @summary Caches an archive password for this backend session only.
+ */
+export const cacheArchivePassword = async (archiveCredentialRequestDto: ArchiveCredentialRequestDto, options?: Parameters<typeof fetchMutator>[1]): Promise<cacheArchivePasswordResponse> => {
+
+  return fetchMutator<cacheArchivePasswordResponse>(getCacheArchivePasswordUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(archiveCredentialRequestDto)
   }
 );}
 

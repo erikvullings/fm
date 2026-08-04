@@ -9,7 +9,7 @@ import {
   parentLocation,
 } from './navigation';
 
-function workspace(uri = 'file:///home/erik'): WorkspaceProjection {
+function workspace(uri = 'file:///home/erik', providerId = 'local'): WorkspaceProjection {
   return {
     id: 'workspace',
     name: 'Workspace',
@@ -25,7 +25,7 @@ function workspace(uri = 'file:///home/erik'): WorkspaceProjection {
           tab: {
             id: 'tab',
             title: 'erik',
-            location: { providerId: 'local', uri },
+            location: { providerId, uri },
             canNavigateBack: true,
             canNavigateForward: true,
             view: {
@@ -186,6 +186,33 @@ describe('navigation controller', () => {
     await loading;
     expect(context.views.at(-1)?.entries[0]?.name).toBe('Documents');
     expect(context.client.listDirectory).toHaveBeenCalledOnce();
+  });
+
+  it('requests an archive credential and retries the same listing', async () => {
+    const archive = { providerId: 'archive', uri: 'archive:///tmp/secret.zip!/' } as const;
+    const context = setup(workspace(archive.uri, archive.providerId));
+    vi.mocked(context.client.listDirectory)
+      .mockRejectedValueOnce(
+        new ApiError(400, { code: 'credentialRequired', message: 'archive password required' }),
+      )
+      .mockImplementationOnce(async (request) => snapshot(request.requestId, archive.uri, []));
+    const requestArchivePassword = vi.fn().mockResolvedValue(true);
+    const controller = createNavigationController({
+      client: context.client,
+      getWorkspace: context.getWorkspace,
+      replaceWorkspace: context.replaceWorkspace,
+      updatePane: (_paneId, _tabId, view) => context.views.push(view),
+      requestArchivePassword,
+    });
+
+    await controller.load('left');
+
+    expect(requestArchivePassword).toHaveBeenCalledWith(
+      expect.objectContaining({ uri: archive.uri }),
+      false,
+    );
+    expect(context.client.listDirectory).toHaveBeenCalledTimes(2);
+    expect(context.views.at(-1)?.state).toEqual({ type: 'loaded' });
   });
 
   it('keeps the current directory visible while a different folder loads', async () => {

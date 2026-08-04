@@ -197,7 +197,7 @@ impl DirectoryService {
             pane_id,
             request_id: request.request_id,
             revision: state.revision,
-            location,
+            location: location.clone(),
             writable,
             entries: full_entries[offset..end].to_vec(),
             total_known_entries: Some(full_entries.len() as u64),
@@ -211,7 +211,8 @@ impl DirectoryService {
 
         if first_page
             && provider
-                .capabilities()
+                .capabilities_for(&location)
+                .unwrap_or_else(|_| provider.capabilities())
                 .contains(fm_vfs::ProviderCapabilities::WATCH)
         {
             let receiver = self

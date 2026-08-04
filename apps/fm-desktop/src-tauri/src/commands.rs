@@ -7,16 +7,28 @@ use uuid::Uuid;
 
 use fm_domain::OperationId;
 use fm_transport_dto::{
-    ActionDescriptorDto, ActionResultDto, ApplicationErrorDto, CreateWorkspaceRequestDto,
-    DirectorySnapshotDto, EntryMetadataDto, EntryMetadataRequest, InvokeActionRequestDto,
-    ListDirectoryRequest, NavigateRequest, OperationDto, PluginDescriptorDto, PluginLogEntryDto,
-    ReadFileRangeRequestDto, ReadFileRangeResponseDto, ResolveOperationConflictRequestDto,
-    RuntimeCapabilitiesDto, SearchInFileRequestDto, SearchInFileResponseDto, SettingsDto,
-    StartOperationRequestDto, StartSearchRequestDto, StartSearchResponseDto, WorkspaceCommandDto,
-    WorkspaceDto, WorkspaceSummaryDto,
+    ActionDescriptorDto, ActionResultDto, ApplicationErrorDto, ArchiveCredentialRequestDto,
+    CreateWorkspaceRequestDto, DirectorySnapshotDto, EntryMetadataDto, EntryMetadataRequest,
+    InvokeActionRequestDto, ListDirectoryRequest, NavigateRequest, OperationDto,
+    PluginDescriptorDto, PluginLogEntryDto, ReadFileRangeRequestDto, ReadFileRangeResponseDto,
+    ResolveOperationConflictRequestDto, RuntimeCapabilitiesDto, SearchInFileRequestDto,
+    SearchInFileResponseDto, SettingsDto, StartOperationRequestDto, StartSearchRequestDto,
+    StartSearchResponseDto, WorkspaceCommandDto, WorkspaceDto, WorkspaceSummaryDto,
 };
 
 use crate::{AppState, event_stream::EventSubscriptionRegistry};
+
+/// Caches an archive password for the lifetime of this desktop backend session.
+#[tauri::command]
+pub(crate) fn cache_archive_password(
+    state: State<'_, AppState>,
+    request: ArchiveCredentialRequestDto,
+) -> Result<(), ApplicationErrorDto> {
+    state
+        .service
+        .cache_archive_password(request)
+        .map_err(|error| error.into_dto(Uuid::new_v4()))
+}
 
 /// Starts one ordered EventBus-to-IPC channel subscription for this window.
 #[tauri::command]

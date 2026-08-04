@@ -23,6 +23,10 @@ pub enum ApplicationErrorCode {
     ProviderUnavailable,
     /// The operation was cancelled by the caller.
     OperationCancelled,
+    /// The archive is encrypted and needs a password for this backend session.
+    CredentialRequired,
+    /// The supplied archive password was rejected.
+    InvalidCredential,
     /// A workspace mutation's `expected_revision` no longer matches the
     /// stored revision (spec §5.3.10).
     WorkspaceRevisionConflict,

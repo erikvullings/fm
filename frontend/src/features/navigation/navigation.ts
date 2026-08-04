@@ -38,6 +38,8 @@ export interface NavigationControllerOptions {
   readonly client: NavigationClient;
   readonly getWorkspace: () => WorkspaceProjection | undefined;
   readonly replaceWorkspace: (workspace: WorkspaceProjection) => void;
+  /** Prompts for a session-only archive password; resolves false when cancelled. */
+  readonly requestArchivePassword?: (location: Location, invalid: boolean) => Promise<boolean>;
   /**
    * `preferredCursorName`, when set, is the entry name the pane's cursor
    * should land on instead of the listing's first entry (e.g. the child
@@ -74,6 +76,12 @@ interface ActiveRequest {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : 'Unable to load directory';
+}
+
+function applicationErrorCode(error: unknown): string | undefined {
+  if (typeof error !== 'object' || error === null) return undefined;
+  const code = (error as { readonly code?: unknown }).code;
+  return typeof code === 'string' ? code : undefined;
 }
 
 function activeTab(workspace: WorkspaceProjection, paneId: PaneId) {
@@ -126,6 +134,27 @@ export function createNavigationController(
   // via `begin()` and restarting from scratch — otherwise a fast scroll can cancel-and-restart
   // the fetch forever, so it never completes.
   const pendingNextPage = new Map<string, Promise<void>>();
+
+  async function withArchiveCredential<T>(
+    location: Location,
+    operation: () => Promise<T>,
+  ): Promise<T> {
+    for (;;) {
+      try {
+        return await operation();
+      } catch (error: unknown) {
+        const code = applicationErrorCode(error);
+        if (
+          location.providerId !== 'archive' ||
+          options.requestArchivePassword === undefined ||
+          (code !== 'credentialRequired' && code !== 'invalidCredential') ||
+          !(await options.requestArchivePassword(location, code === 'invalidCredential'))
+        ) {
+          throw error;
+        }
+      }
+    }
+  }
 
   function begin(paneId: PaneId, tabId: TabId): ActiveRequest {
     const key = tabKey(paneId, tabId);
@@ -220,9 +249,11 @@ export function createNavigationController(
     const request = begin(paneId, tab.id);
     publish(paneId, tab.id, loadingView(paneId, tab.id, request, tab.location));
     try {
-      const snapshot = await options.client.listDirectory(
-        requestFor(workspace, paneId, request.id, tab.location, tab),
-        request.controller.signal,
+      const snapshot = await withArchiveCredential(tab.location, () =>
+        options.client.listDirectory(
+          requestFor(workspace, paneId, request.id, tab.location, tab),
+          request.controller.signal,
+        ),
       );
       if (isCurrent(paneId, tab.id, request) && snapshot.requestId === request.id) {
         publish(paneId, tab.id, viewFromSnapshot(snapshot));
@@ -288,14 +319,16 @@ export function createNavigationController(
       if (updatedTab === undefined) {
         return;
       }
-      const snapshot = await options.client.navigatePane(
-        {
-          workspaceId: updated.id,
-          paneId,
-          requestId: request.id,
-          location: updatedTab.location,
-        },
-        request.controller.signal,
+      const snapshot = await withArchiveCredential(updatedTab.location, () =>
+        options.client.navigatePane(
+          {
+            workspaceId: updated.id,
+            paneId,
+            requestId: request.id,
+            location: updatedTab.location,
+          },
+          request.controller.signal,
+        ),
       );
       if (isCurrent(paneId, tab.id, request) && snapshot.requestId === request.id) {
         publish(paneId, tab.id, viewFromSnapshot(snapshot), preferredCursorName);

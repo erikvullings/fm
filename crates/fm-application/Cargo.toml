@@ -11,6 +11,7 @@ async-trait.workspace = true
 chrono.workspace = true
 dirs.workspace = true
 fm-domain.workspace = true
+fm-archive.workspace = true
 fm-events.workspace = true
 fm-operations.workspace = true
 fm-platform.workspace = true
@@ -34,3 +35,4 @@ workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
+zip.workspace = true

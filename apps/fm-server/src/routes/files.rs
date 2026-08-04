@@ -1,16 +1,40 @@
 //! Thin byte-range read and content-search REST handlers for the in-app
 //! large file viewer (task 0088).
 
-use axum::Json;
 use axum::extract::{Extension, State};
+use axum::{Json, http::StatusCode};
 use fm_transport_dto::{
-    ApplicationErrorDto, ReadFileRangeRequestDto, ReadFileRangeResponseDto, SearchInFileRequestDto,
-    SearchInFileResponseDto,
+    ApplicationErrorDto, ArchiveCredentialRequestDto, ReadFileRangeRequestDto,
+    ReadFileRangeResponseDto, SearchInFileRequestDto, SearchInFileResponseDto,
 };
 use tower_http::request_id::RequestId;
 
 use crate::error::{ApiError, extract_request_id};
 use crate::state::AppState;
+
+/// Caches an archive password for this backend session only.
+#[utoipa::path(
+    post,
+    path = "/api/v1/archives/credential",
+    operation_id = "cacheArchivePassword",
+    request_body = ArchiveCredentialRequestDto,
+    responses(
+        (status = 204, description = "Credential cached for this backend session"),
+        (status = 400, description = "The archive location was invalid", body = ApplicationErrorDto),
+    )
+)]
+pub(crate) async fn cache_archive_password(
+    State(state): State<AppState>,
+    Extension(request_id): Extension<RequestId>,
+    Json(request): Json<ArchiveCredentialRequestDto>,
+) -> Result<StatusCode, ApiError> {
+    let request_id = extract_request_id(&request_id);
+    state
+        .service
+        .cache_archive_password(request)
+        .map(|()| StatusCode::NO_CONTENT)
+        .map_err(|error| ApiError::new(error, request_id))
+}
 
 /// Reads one bounded byte range from a single file.
 #[utoipa::path(

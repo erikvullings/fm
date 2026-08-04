@@ -46,6 +46,12 @@ export interface EntryMetadataRequest {
   location: Location;
 }
 
+/** Supplies an archive password to the backend-session-only credential cache. */
+export interface ArchiveCredentialRequest {
+  location: Location;
+  password: string;
+}
+
 /**
  * Starts a mutating operation (spec §17). No backend DTO exists yet
  * (operations land in tasks 0037+); fields mirror the domain `Operation`
