@@ -1,5 +1,5 @@
 import m, { type FactoryComponent } from 'mithril';
-import { ModalPanel, Switch } from 'mithril-materialized';
+import { FlatButton, ModalPanel, Switch } from 'mithril-materialized';
 
 import type { PluginDescriptor, PluginId, PluginLogEntry, PluginPermissions } from '../../models';
 
@@ -90,44 +90,56 @@ export const PluginManagement: FactoryComponent<PluginManagementAttrs> = () => {
           ? m('.fm-plugin-empty', 'No plugins discovered.')
           : attrs.plugins.map((plugin) =>
               m('article.fm-plugin-row', { 'data-plugin-id': plugin.id }, [
-                m('.fm-plugin-summary', [
-                  m('strong', plugin.name),
-                  m('span.fm-plugin-version', `v${plugin.version}`),
-                  m('span.fm-plugin-description', plugin.description),
-                  m(Switch, {
-                    className: 'fm-plugin-toggle',
-                    label: `${plugin.name} enabled`,
-                    checked: plugin.enabled,
-                    left: 'Off',
-                    right: 'On',
-                    onchange: (checked: boolean) => handleToggle(attrs, plugin.id, checked),
-                  }),
+                m('.row.fm-plugin-summary', [
+                  m('strong.col.s12', plugin.name),
+                  m('span.fm-plugin-version.col.s12', `v${plugin.version}`),
+                  m('p.fm-plugin-description.col.s12', plugin.description),
                   m(
-                    'button.fm-plugin-view-log',
-                    { type: 'button', onclick: () => openLogs(attrs, plugin.id) },
-                    'View log',
+                    '.col.s12',
+                    m('.row', { style: { marginBottom: 0 } }, [
+                      m(Switch, {
+                        className: 'fm-plugin-toggle col s6',
+                        label: `${plugin.name} enabled`,
+                        checked: plugin.enabled,
+                        left: 'Off',
+                        right: 'On',
+                        onchange: (checked: boolean) => handleToggle(attrs, plugin.id, checked),
+                      }),
+                      m(FlatButton, {
+                        className: 'fm-plugin-view-log right',
+                        label: 'View log',
+                        onclick: () => openLogs(attrs, plugin.id),
+                      }),
+                    ]),
                   ),
                 ]),
                 plugin.diagnostic === undefined
                   ? undefined
-                  : m('.fm-plugin-diagnostic', { role: 'alert' }, plugin.diagnostic),
+                  : m('.fm-plugin-diagnostic.col.s12', { role: 'alert' }, plugin.diagnostic),
                 toggleErrors[plugin.id] === undefined
                   ? undefined
-                  : m('.fm-plugin-toggle-error', { role: 'alert' }, toggleErrors[plugin.id]),
+                  : m(
+                      '.fm-plugin-toggle-error.col.s12',
+                      { role: 'alert' },
+                      toggleErrors[plugin.id],
+                    ),
                 plugin.permissions === undefined
                   ? undefined
                   : m(
-                      'ul.fm-plugin-permissions',
-                      { 'aria-label': `${plugin.name} permissions` },
-                      PERMISSION_LABELS.map(({ key, label }) => {
-                        const permissions = plugin.permissions as PluginPermissions;
-                        const granted = isGranted(permissions, key);
-                        const detail = grantedDetail(permissions, key);
-                        return m('li.fm-plugin-permission', { 'data-granted': String(granted) }, [
-                          m('span.fm-plugin-permission-state', granted ? '✓' : '✗'),
-                          m('span', detail === undefined ? label : `${label}: ${detail}`),
-                        ]);
-                      }),
+                      '.col.s12',
+                      m(
+                        'ul.fm-plugin-permissions',
+                        { 'aria-label': `${plugin.name} permissions` },
+                        PERMISSION_LABELS.map(({ key, label }) => {
+                          const permissions = plugin.permissions as PluginPermissions;
+                          const granted = isGranted(permissions, key);
+                          const detail = grantedDetail(permissions, key);
+                          return m('li.fm-plugin-permission', { 'data-granted': String(granted) }, [
+                            m('span.fm-plugin-permission-state', granted ? '✓' : '✗'),
+                            m('span', detail === undefined ? label : `${label}: ${detail}`),
+                          ]);
+                        }),
+                      ),
                     ),
               ]),
             ),

@@ -657,6 +657,59 @@ describe('AppShell', () => {
     expect(themeButton('Auto')).toBeInstanceOf(HTMLButtonElement);
   });
 
+  it('persists a changed setting and closes the dialog when Save is clicked', async () => {
+    const client = new MockFileManagerClient();
+    const updateSettings = vi.spyOn(client, 'updateSettings');
+    m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
+    await openAppearanceSettings();
+
+    themeButton('Dark').click();
+    m.redraw.sync();
+    root.querySelector<HTMLButtonElement>('.fm-settings-save')?.click();
+    m.redraw.sync();
+
+    await vi.waitFor(() => expect(updateSettings).toHaveBeenCalledTimes(1));
+    expect(updateSettings.mock.calls[0]?.[0]?.theme).toBe('dark');
+    expect(root.querySelector<HTMLDetailsElement>('.fm-settings-disclosure')?.open).toBe(false);
+    expect(document.documentElement.dataset.theme).toBe('dark');
+  });
+
+  it('reverts a previewed setting and closes the dialog when Cancel is clicked', async () => {
+    const client = new MockFileManagerClient();
+    const updateSettings = vi.spyOn(client, 'updateSettings');
+    m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
+    await openAppearanceSettings();
+
+    themeButton('Dark').click();
+    m.redraw.sync();
+    expect(document.documentElement.dataset.theme).toBe('dark');
+
+    root.querySelector<HTMLButtonElement>('.fm-settings-cancel')?.click();
+    m.redraw.sync();
+
+    expect(updateSettings).not.toHaveBeenCalled();
+    expect(root.querySelector<HTMLDetailsElement>('.fm-settings-disclosure')?.open).toBe(false);
+    expect(document.documentElement.hasAttribute('data-theme')).toBe(false);
+  });
+
+  it('reverts a previewed setting when the dialog is dismissed via the close button', async () => {
+    const client = new MockFileManagerClient();
+    const updateSettings = vi.spyOn(client, 'updateSettings');
+    m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
+    await openAppearanceSettings();
+
+    themeButton('Dark').click();
+    m.redraw.sync();
+    expect(document.documentElement.dataset.theme).toBe('dark');
+
+    root.querySelector<HTMLButtonElement>('[aria-label="Close settings"]')?.click();
+    m.redraw.sync();
+
+    expect(updateSettings).not.toHaveBeenCalled();
+    expect(root.querySelector<HTMLDetailsElement>('.fm-settings-disclosure')?.open).toBe(false);
+    expect(document.documentElement.hasAttribute('data-theme')).toBe(false);
+  });
+
   it('lists discovered plugins inside the settings editor', async () => {
     const client = new MockFileManagerClient();
     m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });

@@ -174,6 +174,8 @@ function isAutoDismissibleState(state: OperationState): boolean {
 export const AppShell: FactoryComponent<AppShellAttrs> = () => {
   let theme: Theme = DEFAULT_THEME;
   let currentSettings: Settings | undefined;
+  let settingsDisclosureElement: HTMLDetailsElement | undefined;
+  let settingsDialogOpen = false;
   let registeredActions: readonly ActionDescriptor[] = [];
   let plugins: readonly PluginDescriptor[] = [];
   let installedIconThemeId: string | undefined;
@@ -300,6 +302,20 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     ThemeManager.setTheme(theme);
     applyIconTheme(settings.iconTheme);
     syncTauriWindowBackground();
+  }
+
+  /**
+   * Closes the settings disclosure (Save/Cancel/close-button/outside-click all route through
+   * here). Reverts any unsaved live preview back to `currentSettings` directly, rather than
+   * relying on the `<details>` element's `toggle` event to fire for a scripted close — some DOM
+   * implementations only dispatch it for user-driven summary clicks (see the `ontoggle` listener
+   * below, which covers that path).
+   */
+  function closeSettingsDialog(): void {
+    settingsDialogOpen = false;
+    if (currentSettings !== undefined) applyAppearance(currentSettings);
+    if (settingsDisclosureElement !== undefined) settingsDisclosureElement.open = false;
+    m.redraw();
   }
 
   /**
@@ -2003,74 +2019,93 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
                 }),
               ]),
             ]),
-            m('details.fm-settings-disclosure', [
-              m(
-                'summary.fm-settings-button',
-                { 'aria-label': 'Settings', 'data-tooltip': 'Settings' },
-                settingsIcon(),
-              ),
-              m(
-                '.fm-settings-editor',
-                {
-                  role: 'dialog',
-                  'aria-label': 'Settings',
-                  onclick: (event: MouseEvent) => {
-                    if (event.target === event.currentTarget) {
-                      const disclosure = (event.currentTarget as HTMLElement).closest('details');
-                      if (disclosure instanceof HTMLDetailsElement) disclosure.open = false;
-                    }
-                  },
+            m(
+              'details.fm-settings-disclosure',
+              {
+                oncreate: ({ dom }) => {
+                  settingsDisclosureElement = dom as HTMLDetailsElement;
                 },
-                [
-                  m('.fm-settings-editor-panel', [
-                    m('.fm-settings-editor-heading', [
-                      m('strong', 'Settings'),
-                      m(
-                        'button',
-                        {
-                          type: 'button',
-                          'aria-label': 'Close settings',
-                          onclick: (event: MouseEvent) => {
-                            const disclosure = (event.currentTarget as HTMLElement).closest(
-                              'details',
-                            );
-                            if (disclosure instanceof HTMLDetailsElement) disclosure.open = false;
+                onremove: () => {
+                  settingsDisclosureElement = undefined;
+                },
+                ontoggle: (event: Event) => {
+                  // Catches the native user-driven summary click (both opening the dialog, and
+                  // re-closing it by clicking the summary again while open); scripted closes go
+                  // through `closeSettingsDialog` above instead.
+                  settingsDialogOpen = (event.currentTarget as HTMLDetailsElement).open;
+                  if (!settingsDialogOpen && currentSettings !== undefined) {
+                    applyAppearance(currentSettings);
+                  }
+                  m.redraw();
+                },
+              },
+              [
+                m(
+                  'summary.fm-settings-button',
+                  { 'aria-label': 'Settings', 'data-tooltip': 'Settings' },
+                  settingsIcon(),
+                ),
+                m(
+                  '.fm-settings-editor',
+                  {
+                    role: 'dialog',
+                    'aria-label': 'Settings',
+                    onclick: (event: MouseEvent) => {
+                      if (event.target === event.currentTarget) {
+                        closeSettingsDialog();
+                      }
+                    },
+                  },
+                  [
+                    m('.fm-settings-editor-panel', [
+                      m('.fm-settings-editor-heading', [
+                        m('strong', 'Settings'),
+                        m(
+                          'button',
+                          {
+                            type: 'button',
+                            'aria-label': 'Close settings',
+                            onclick: () => closeSettingsDialog(),
                           },
-                        },
-                        closeIcon(),
-                      ),
+                          closeIcon(),
+                        ),
+                      ]),
+                      currentSettings === undefined
+                        ? m('p', 'Loading settings…')
+                        : settingsDialogOpen
+                          ? m(SettingsEditor, {
+                              settings: currentSettings,
+                              actions: registeredActions,
+                              platform,
+                              runtime: keybindingRuntime,
+                              plugins,
+                              onPreview: (draft: Settings) => {
+                                applyAppearance(draft);
+                                m.redraw();
+                              },
+                              onSave: async (draft: Settings) => {
+                                await attrs.client.updateSettings(draft);
+                                currentSettings = draft;
+                                applyAppearance(draft);
+                                closeSettingsDialog();
+                              },
+                              onCancel: () => {
+                                if (currentSettings !== undefined) applyAppearance(currentSettings);
+                                closeSettingsDialog();
+                              },
+                              onTogglePlugin: (pluginId: PluginId, enabled: boolean) =>
+                                attrs.client.setPluginEnabled(pluginId, enabled),
+                              onRequestPluginLogs: (
+                                pluginId: PluginId,
+                              ): Promise<readonly PluginLogEntry[]> =>
+                                attrs.client.getPluginLogs(pluginId),
+                            })
+                          : undefined,
                     ]),
-                    currentSettings === undefined
-                      ? m('p', 'Loading settings…')
-                      : m(SettingsEditor, {
-                          settings: currentSettings,
-                          actions: registeredActions,
-                          platform,
-                          runtime: keybindingRuntime,
-                          plugins,
-                          onPreview: (draft: Settings) => {
-                            applyAppearance(draft);
-                            m.redraw();
-                          },
-                          onSave: async (draft: Settings) => {
-                            await attrs.client.updateSettings(draft);
-                            currentSettings = draft;
-                            applyAppearance(draft);
-                          },
-                          onCancel: () => {
-                            if (currentSettings !== undefined) applyAppearance(currentSettings);
-                          },
-                          onTogglePlugin: (pluginId: PluginId, enabled: boolean) =>
-                            attrs.client.setPluginEnabled(pluginId, enabled),
-                          onRequestPluginLogs: (
-                            pluginId: PluginId,
-                          ): Promise<readonly PluginLogEntry[]> =>
-                            attrs.client.getPluginLogs(pluginId),
-                        }),
-                  ]),
-                ],
-              ),
-            ]),
+                  ],
+                ),
+              ],
+            ),
           ]),
           m('main.fm-workspace', [
             workspace === undefined

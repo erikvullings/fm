@@ -328,6 +328,15 @@ main.fm-workspace {
   margin-bottom: 0.5rem;
 }
 
+.fm-settings-editor-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 1rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--fm-border);
+}
+
 .fm-workspace-disclosure {
   position: relative;
 }
@@ -686,14 +695,6 @@ input[type="text"].fm-command-palette-input {
   color: var(--fm-text-muted);
 }
 
-.fm-plugin-description {
-  flex: 1 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .fm-plugin-toggle {
   margin: 0;
 }
@@ -717,6 +718,7 @@ input[type="text"].fm-command-palette-input {
   flex-wrap: wrap;
   gap: 0.35rem 0.75rem;
   margin: 0.35rem 0 0;
+  margin-left: 8px;
   padding: 0;
   list-style: none;
 }
