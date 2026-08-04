@@ -6,7 +6,7 @@
 use std::{
     collections::{BTreeMap, HashMap},
     fs::File,
-    io::{Cursor, Read},
+    io::{Cursor, Read, Seek, SeekFrom},
     path::{Component, Path, PathBuf},
     sync::Mutex,
 };
@@ -513,6 +513,7 @@ fn list_zip(archive_path: &Path, requested: &str) -> Result<Vec<RawEntry>, VfsEr
 enum ArchiveFormat {
     Zip,
     SevenZip,
+    Gzip,
     Tar(TarCompression),
     Rar,
 }
@@ -536,7 +537,17 @@ fn detect_format(archive_path: &Path) -> Result<ArchiveFormat, VfsError> {
     } else if magic[..count].starts_with(ZIP_MAGIC) {
         Ok(ArchiveFormat::Zip)
     } else if magic[..count].starts_with(GZIP_MAGIC) {
-        Ok(ArchiveFormat::Tar(TarCompression::Gzip))
+        let file = File::open(archive_path).map_err(|error| io_error(error, archive_path))?;
+        let mut decoder = flate2::read::GzDecoder::new(file).take(262);
+        let mut decompressed_magic = Vec::with_capacity(262);
+        decoder
+            .read_to_end(&mut decompressed_magic)
+            .map_err(|error| io_error(error, archive_path))?;
+        if decompressed_magic.len() >= 262 && &decompressed_magic[257..262] == b"ustar" {
+            Ok(ArchiveFormat::Tar(TarCompression::Gzip))
+        } else {
+            Ok(ArchiveFormat::Gzip)
+        }
     } else if magic[..count].starts_with(BZIP2_MAGIC) {
         Ok(ArchiveFormat::Tar(TarCompression::Bzip2))
     } else if magic[..count].starts_with(XZ_MAGIC) {
@@ -571,9 +582,46 @@ fn list_archive(
     match detect_format(archive_path)? {
         ArchiveFormat::Zip => list_zip(archive_path, requested),
         ArchiveFormat::SevenZip => list_seven_zip(archive_path, requested, password),
+        ArchiveFormat::Gzip => list_gzip(archive_path, requested),
         ArchiveFormat::Tar(compression) => list_tar(archive_path, requested, compression),
         ArchiveFormat::Rar => unsupported(ProviderCapabilities::LIST),
     }
+}
+
+fn gzip_entry_name(archive_path: &Path) -> Result<String, VfsError> {
+    let file_name = archive_path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| VfsError::Io {
+            message: "gzip filename is not valid Unicode".into(),
+        })?;
+    let name = file_name
+        .get(..file_name.len().saturating_sub(3))
+        .filter(|_| file_name.to_ascii_lowercase().ends_with(".gz"))
+        .filter(|name| !name.is_empty())
+        .unwrap_or("content");
+    safe_stored_path(name, false)
+}
+
+fn gzip_uncompressed_size(archive_path: &Path) -> Result<u64, VfsError> {
+    let mut file = File::open(archive_path).map_err(|error| io_error(error, archive_path))?;
+    file.seek(SeekFrom::End(-4))
+        .map_err(|error| io_error(error, archive_path))?;
+    let mut trailer = [0_u8; 4];
+    file.read_exact(&mut trailer)
+        .map_err(|error| io_error(error, archive_path))?;
+    Ok(u64::from(u32::from_le_bytes(trailer)))
+}
+
+fn list_gzip(archive_path: &Path, requested: &str) -> Result<Vec<RawEntry>, VfsError> {
+    if !requested.is_empty() {
+        return Ok(Vec::new());
+    }
+    Ok(vec![RawEntry {
+        name: gzip_entry_name(archive_path)?,
+        kind: EntryKind::File,
+        size: Some(gzip_uncompressed_size(archive_path)?),
+    }])
 }
 
 fn tar_reader(archive_path: &Path, compression: TarCompression) -> Result<Box<dyn Read>, VfsError> {
@@ -713,9 +761,37 @@ fn read_archive_entry(
             check_limits(entry.size, entry.compressed_size, limits)?;
             reader.read_file(inner).map_err(seven_zip_error)
         }
+        ArchiveFormat::Gzip => read_gzip_entry(archive_path, inner, limits),
         ArchiveFormat::Tar(compression) => read_tar_entry(archive_path, inner, limits, compression),
         ArchiveFormat::Rar => unsupported(ProviderCapabilities::READ),
     }
+}
+
+fn read_gzip_entry(
+    archive_path: &Path,
+    inner: &str,
+    limits: ArchiveLimits,
+) -> Result<Vec<u8>, VfsError> {
+    if inner != gzip_entry_name(archive_path)? {
+        return Err(VfsError::NotFound {
+            location: inner.to_owned(),
+        });
+    }
+    let compressed = std::fs::metadata(archive_path)
+        .map_err(|error| io_error(error, archive_path))?
+        .len();
+    let file = File::open(archive_path).map_err(|error| io_error(error, archive_path))?;
+    let limit = limits.max_uncompressed_entry_bytes.saturating_add(1);
+    let mut decoder = flate2::read::GzDecoder::new(file).take(limit);
+    let mut bytes = Vec::new();
+    decoder
+        .read_to_end(&mut bytes)
+        .map_err(|error| io_error(error, archive_path))?;
+    let uncompressed = u64::try_from(bytes.len()).map_err(|_| VfsError::ArchiveResourceLimit {
+        kind: "uncompressedEntryBytes",
+    })?;
+    check_limits(uncompressed, compressed, limits)?;
+    Ok(bytes)
 }
 
 fn read_tar_entry(

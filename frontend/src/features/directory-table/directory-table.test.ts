@@ -365,6 +365,32 @@ describe('DirectoryTable rows', () => {
     expect(originalRow?.textContent).toContain('renamed.txt');
   });
 
+  it('remeasures its viewport after a sibling info bar changes the post-layout height', async () => {
+    mount({ state: { type: 'loaded' }, source: entryArraySource([entry()]) });
+    const grid = root.querySelector<HTMLElement>('[role="grid"]');
+    if (grid === null) throw new Error('directory grid was not rendered');
+
+    Object.defineProperty(grid, 'clientHeight', { configurable: true, value: 300 });
+    m.redraw.sync();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    m.redraw.sync();
+    expect(root.querySelector<HTMLElement>('.fm-directory-body')?.style.height).toBe('300px');
+
+    let measurements = 0;
+    Object.defineProperty(grid, 'clientHeight', {
+      configurable: true,
+      get: () => (measurements++ === 0 ? 300 : 278),
+    });
+    const redraw = vi.spyOn(m, 'redraw');
+    m.redraw.sync();
+    expect(redraw).toHaveBeenCalledOnce();
+    redraw.mockRestore();
+
+    await vi.waitFor(() =>
+      expect(root.querySelector<HTMLElement>('.fm-directory-body')?.style.height).toBe('278px'),
+    );
+  });
+
   it('requests another page when scrolling reaches the loaded end', () => {
     const onEndReached = vi.fn();
     mount({

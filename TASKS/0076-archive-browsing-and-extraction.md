@@ -122,3 +122,8 @@ not implement archive codecs or cryptography.
   root through the normal entry activation path, so both Enter and double-click show archive
   contents in the existing folder pane. Ordinary files continue through `core.open`; recursively
   entering an archive stored inside another archive remains intentionally out of scope.
+- 2026-08-04 codex: Added comic-book archive aliases (`.cbz` and `.cbr`) and standalone `.gz`
+  activation. Content detection still selects ZIP versus RAR for comic archives; standalone gzip
+  is exposed as one read-only decompressed member, while gzip-compressed tar remains a folder tree.
+  Fixed the directory viewport remeasurement after the selection metadata bar changes pane height,
+  preventing a stale virtual-body height from creating an unnecessary scrollbar.

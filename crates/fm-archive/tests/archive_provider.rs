@@ -91,6 +91,54 @@ async fn tar_family_is_detected_by_content_and_navigable_read_only() {
 }
 
 #[tokio::test]
+async fn standalone_gzip_is_exposed_as_a_single_read_only_file() {
+    let root = tempdir().expect("temporary root");
+    let archive_path = root.path().join("chapter.txt.gz");
+    let mut gzip = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+    gzip.write_all(b"comic chapter")
+        .expect("write gzip fixture");
+    std::fs::write(&archive_path, gzip.finish().expect("finish gzip fixture"))
+        .expect("write standalone gzip");
+    let provider = ArchiveFileSystemProvider::new();
+    let archive_root = zip_location(&archive_path);
+
+    let page = provider
+        .list(
+            &archive_root,
+            ListOptions::default(),
+            CancellationToken::new(),
+        )
+        .await
+        .expect("list standalone gzip");
+    assert_eq!(page.entries.len(), 1);
+    assert_eq!(page.entries[0].name, "chapter.txt");
+    assert_eq!(page.entries[0].kind, EntryKind::File);
+
+    let mut reader = provider
+        .open_read(
+            &fm_vfs::EntryRef {
+                id: page.entries[0].id,
+                location: archive_root.join("chapter.txt").expect("entry location"),
+            },
+            CancellationToken::new(),
+        )
+        .await
+        .expect("read gzip member");
+    let mut content = Vec::new();
+    reader
+        .read_to_end(&mut content)
+        .await
+        .expect("read content");
+    assert_eq!(content, b"comic chapter");
+    assert!(
+        !provider
+            .capabilities_for(&archive_root)
+            .expect("gzip capabilities")
+            .contains(ProviderCapabilities::WRITE)
+    );
+}
+
+#[tokio::test]
 async fn rar_is_recognized_but_advertises_no_unsupported_features() {
     let root = tempdir().expect("temporary root");
     let archive_path = root.path().join("archive.bin");

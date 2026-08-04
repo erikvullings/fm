@@ -540,7 +540,9 @@ export const DirectoryTable: FactoryComponent<DirectoryTableAttrs> = () => {
               },
               onupdate: (vnode: VnodeDOM) => {
                 element = vnode.dom as HTMLElement;
-                if (recheckScroll(vnode.attrs as DirectoryTableAttrs)) {
+                const heightChangedAfterLayout =
+                  attrs.viewportHeight === undefined && element.clientHeight !== viewportHeight;
+                if (heightChangedAfterLayout || recheckScroll(vnode.attrs as DirectoryTableAttrs)) {
                   m.redraw();
                 }
               },

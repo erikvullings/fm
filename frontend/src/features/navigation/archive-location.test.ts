@@ -15,15 +15,22 @@ function entry(name: string, uri = `file:///tmp/${name}`): EntrySummary {
 }
 
 describe('archiveRootForEntry', () => {
-  it.each(['photos.zip', 'backup.7z', 'old.RAR', 'files.tar', 'files.tar.gz', 'files.tbz2'])(
-    'maps %s to its folder-like archive root',
-    (name) => {
-      expect(archiveRootForEntry(entry(name))).toEqual({
-        providerId: 'archive',
-        uri: `archive:///tmp/${name}!/`,
-      });
-    },
-  );
+  it.each([
+    'photos.zip',
+    'backup.7z',
+    'old.RAR',
+    'comic.cbz',
+    'comic.cbr',
+    'files.tar',
+    'files.tar.gz',
+    'files.tbz2',
+    'document.txt.gz',
+  ])('maps %s to its folder-like archive root', (name) => {
+    expect(archiveRootForEntry(entry(name))).toEqual({
+      providerId: 'archive',
+      uri: `archive:///tmp/${name}!/`,
+    });
+  });
 
   it('leaves ordinary files and non-local entries to the normal open action', () => {
     expect(archiveRootForEntry(entry('notes.txt'))).toBeUndefined();

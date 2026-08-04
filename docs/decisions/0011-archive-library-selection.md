@@ -27,6 +27,7 @@ The implemented capability matrix is:
 | 7z | content signature | yes | AES read | no; typed read-only result |
 | tar | `ustar` header | yes | not applicable | no; typed read-only result |
 | tar.gz | gzip signature | yes | not applicable | no; typed read-only result |
+| standalone gzip | gzip signature plus decompressed-header check | single member | not applicable | no; typed read-only result |
 | tar.bz2 | bzip2 signature | yes | not applicable | no; typed read-only result |
 | tar.xz | xz signature | yes | not applicable | no; typed read-only result |
 | RAR 4/5 | content signature | no | no | no capabilities advertised |
