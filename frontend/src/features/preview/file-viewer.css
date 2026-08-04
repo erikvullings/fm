@@ -10,7 +10,7 @@
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  min-height: var(--fm-row-height);
+  height: var(--fm-row-height);
   padding: 0 0.5rem;
   border-bottom: 1px solid var(--fm-border);
   background: var(--fm-surface-elevated);
@@ -74,7 +74,7 @@
   display: flex;
   align-items: center;
   gap: 0.35rem;
-  min-height: var(--fm-row-height);
+  height: var(--fm-row-height);
   padding: 0 0.5rem;
   border-bottom: 1px solid var(--fm-border);
   background: var(--fm-surface-elevated);
@@ -89,6 +89,7 @@
   border-bottom: 0;
   color: inherit;
   font-family: var(--fm-font-family);
+  font-size: inherit;
   font-weight: normal;
   line-height: inherit;
   height: var(--fm-row-height);
@@ -97,10 +98,14 @@
 }
 
 .fm-file-viewer-search-toggle {
+  box-sizing: border-box;
+  height: var(--fm-row-height);
+  padding: 0 0.35rem;
   border: 1px solid var(--fm-border);
   background: var(--fm-surface);
   color: var(--fm-text-muted);
   font: inherit;
+  line-height: 1;
   cursor: pointer;
 }
 
@@ -119,9 +124,14 @@
 }
 
 .fm-file-viewer-search-nav {
+  box-sizing: border-box;
+  height: var(--fm-row-height);
+  padding: 0 0.35rem;
   border: 1px solid var(--fm-border);
   background: var(--fm-surface);
   color: inherit;
+  font: inherit;
+  line-height: 1;
   cursor: pointer;
 }
 
