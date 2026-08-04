@@ -78,3 +78,66 @@ the host owns rendering and maps the `sample.fileAge` sample to its compact age
 formatter and raw modification-timestamp sort key. This uses no per-row filesystem
 calls. A failed or timed-out column declaration is omitted from the plugin listing,
 so its table cells remain empty and the directory table continues working.
+
+## Icon theme contribution
+
+A directory-entry icon theme runs no code and needs no `entrypoint` — set
+`contributions.icon_theme = true` and add a sibling `icon-theme.json`:
+
+```toml
+id = "example.icons"
+name = "Example Icons"
+version = "1.0.0"
+api_version = "1"
+description = "A directory-entry icon theme"
+
+[contributions]
+icon_theme = true
+```
+
+```json
+{
+  "iconDefinitions": {
+    "folder": { "iconPath": "icons/folder.svg" },
+    "file": { "iconPath": "icons/file.svg" },
+    "symlink": { "iconPath": "icons/symlink.svg" },
+    "rust": { "iconPath": "icons/rust.svg" }
+  },
+  "folder": "folder",
+  "file": "file",
+  "symlink": "symlink",
+  "fileExtensions": { "rs": "rust" },
+  "mimePrefixes": { "image/": "file" }
+}
+```
+
+- `iconDefinitions` is a map from an arbitrary, theme-local key to an `iconPath`, an SVG asset
+  path relative to the plugin directory. `iconPath` must not be absolute and must not contain a
+  `..` component — discovery rejects (disables) the whole plugin otherwise, so an icon theme can
+  only ever reference its own files.
+- `folder`, `file`, and `symlink` set the default icon definition key used for each entry kind.
+  `fileExtensions` maps a lowercased, dot-less extension (e.g. `"rs"`, not `".rs"` or `"RS"`) to a
+  definition key; `mimePrefixes` maps a MIME type prefix (e.g. `"image/"`) to one. Every key
+  referenced by any of these five fields must exist in `iconDefinitions`, and `iconDefinitions`
+  must not be empty — both reject the manifest otherwise.
+- All five top-level fields besides `iconDefinitions` are optional; omit whichever kinds/mappings
+  your theme doesn't customize; the built-in default is used for anything left unset.
+- Resolution precedence in the frontend (`resolveEntryIcon`, `entry-icons.ts`): directories and
+  symlinks always use `folder`/`symlink`. Files try `fileExtensions` first, then the first
+  `mimePrefixes` entry whose prefix matches the entry's MIME type (insertion order), then `file`.
+- Icon assets must be SVG. They are fetched over the plugin icon-theme asset endpoint (HTTP route
+  and Tauri command, both path-contained to the plugin's own directory) and sanitized in the
+  frontend (`svg-sanitizer.ts`) before rendering — only `<svg>`, `<path>`, `<g>`, `<circle>`,
+  `<rect>`, `<polygon>` elements and a small allow-list of presentation attributes survive;
+  `<script>`, `<foreignObject>`, `on*` handlers, and `href`/`xlink:href` are stripped regardless
+  of nesting depth. Keep icons to that element set — anything else is silently removed, not an
+  error.
+- An icon theme is listed in the Settings editor's "Directory icon theme" picker as soon as its
+  plugin is discovered (valid `plugin.toml` + `icon-theme.json`), even before the plugin is
+  enabled — labeled "(plugin disabled)" in that case. Selecting it only takes visual effect once
+  the plugin is enabled; the asset-serving endpoint refuses to serve any icon for a disabled
+  plugin, so the directory table falls back to the built-in generic icons until then.
+
+See `plugins/catppuccin-icons/` for a complete real-world example (28 icon definitions, extension
+and MIME mappings, vendored SVGs). For the fuller design rationale (security model, discovery,
+serving), see [`docs/architecture/theming.md`](../architecture/theming.md#distributable-icon-theme-plugins-task-0095).

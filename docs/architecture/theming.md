@@ -125,8 +125,14 @@ The theme's JSON and each referenced SVG are served read-only, strictly containe
 own directory — an `HTTP GET /api/v1/plugins/{pluginId}/icon-theme/asset?path=...` route
 (`fm-server`) and an equivalent Tauri `get_plugin_icon_theme_asset` command, both backed by
 `Service::plugin_icon_theme_asset`, which rejects any `path` that is not one of the theme's
-declared icon paths (including path-traversal attempts). `PluginDescriptorDto` carries the plugin's
-icon theme (id + definitions) so the frontend can list it without a second discovery mechanism.
+declared icon paths (including path-traversal attempts), **and requires the plugin to be
+currently enabled** — a disabled plugin's assets 404 even if the path is otherwise valid.
+`PluginDescriptorDto` carries the plugin's icon theme (id + definitions) so the frontend can list
+it without a second discovery mechanism; unlike asset serving, listing is gated only on the
+plugin being validly discovered (`is_valid()`), not on enablement, so a theme can be previewed/
+selected in Settings before its plugin is enabled — the Settings Editor labels it "(plugin
+disabled)" in that case, and the directory table falls back to the built-in generic icons until
+the plugin is actually enabled.
 
 #### Security: sanitizing third-party SVGs
 
