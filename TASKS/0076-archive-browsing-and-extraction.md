@@ -141,3 +141,8 @@ not implement archive codecs or cryptography.
 - 2026-08-04 codex: Fixed the remaining short-list scrollbar by clipping the final alternating
   filler stripe to the viewport remainder instead of rendering a full row after rounding its count
   up. A rendered 113px viewport now has equal client and scroll heights.
+- 2026-08-04 codex: Added read-only RAR comic browsing and page reads through the pure-Rust,
+  MIT/Apache-2.0 `rars` crate, including the existing per-session password flow and archive safety
+  limits. Comic aliases remain content-driven: ZIP-backed CBR/CBZ files use `zip`, RAR-backed files
+  use `rars`, and ZIP reader probing now accepts legal archives with prepended stubs instead of
+  requiring `PK` at byte zero.

@@ -6,9 +6,9 @@
 use std::{
     collections::{BTreeMap, HashMap},
     fs::File,
-    io::{Cursor, Read, Seek, SeekFrom},
+    io::{Cursor, Read, Seek, SeekFrom, Write},
     path::{Component, Path, PathBuf},
-    sync::Mutex,
+    sync::{Arc, Mutex},
 };
 
 use async_trait::async_trait;
@@ -109,9 +109,6 @@ impl FileSystemProvider for ArchiveFileSystemProvider {
     fn capabilities_for(&self, location: &Location) -> Result<ProviderCapabilities, VfsError> {
         let archive_path = ParsedArchiveLocation::parse(location)?.archive_path;
         let format = detect_format(&archive_path)?;
-        if format == ArchiveFormat::Rar {
-            return Ok(ProviderCapabilities::empty());
-        }
         let mut capabilities = self.capabilities();
         if format == ArchiveFormat::Zip {
             capabilities |= ProviderCapabilities::WRITE
@@ -509,6 +506,69 @@ fn list_zip(archive_path: &Path, requested: &str) -> Result<Vec<RawEntry>, VfsEr
     Ok(values)
 }
 
+fn open_rar(archive_path: &Path, password: Option<&str>) -> Result<rars::Archive, VfsError> {
+    rars::ArchiveReader::read_path_with_options(
+        archive_path,
+        rars::ArchiveReadOptions::with_optional_password(password.map(str::as_bytes)),
+    )
+    .map_err(rar_error)
+}
+
+fn list_rar(
+    archive_path: &Path,
+    requested: &str,
+    password: Option<&str>,
+) -> Result<Vec<RawEntry>, VfsError> {
+    let archive = open_rar(archive_path, password)?;
+    let prefix = if requested.is_empty() {
+        String::new()
+    } else {
+        format!("{requested}/")
+    };
+    let mut children: HashMap<String, RawEntry> = HashMap::new();
+    for member in archive.members() {
+        let name = std::str::from_utf8(member.meta.name_bytes()).map_err(|_| VfsError::Io {
+            message: "RAR entry name is not valid UTF-8".into(),
+        })?;
+        let path = safe_stored_path(name, member.meta.is_directory)?;
+        let Some(remainder) = path.strip_prefix(&prefix) else {
+            continue;
+        };
+        if remainder.is_empty() {
+            continue;
+        }
+        let mut parts = remainder.split('/');
+        let child_name = parts.next().unwrap_or_default();
+        if child_name.is_empty() {
+            continue;
+        }
+        let is_directory = parts.next().is_some() || member.meta.is_directory;
+        let candidate = RawEntry {
+            name: child_name.to_owned(),
+            kind: if is_directory {
+                EntryKind::Directory
+            } else {
+                EntryKind::File
+            },
+            size: (!is_directory).then_some(member.meta.unpacked_size),
+        };
+        match children.get(child_name) {
+            Some(existing) if existing.kind != candidate.kind => {
+                return Err(VfsError::Io {
+                    message: "archive contains conflicting duplicate entry names".into(),
+                });
+            }
+            Some(_) => {}
+            None => {
+                children.insert(child_name.to_owned(), candidate);
+            }
+        }
+    }
+    let mut values: Vec<_> = children.into_values().collect();
+    values.sort_by(|left, right| left.name.cmp(&right.name));
+    Ok(values)
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum ArchiveFormat {
     Zip,
@@ -556,6 +616,14 @@ fn detect_format(archive_path: &Path) -> Result<ArchiveFormat, VfsError> {
         Ok(ArchiveFormat::Rar)
     } else if count >= 262 && &magic[257..262] == b"ustar" {
         Ok(ArchiveFormat::Tar(TarCompression::None))
+    } else if File::open(archive_path)
+        .map_err(|error| io_error(error, archive_path))
+        .and_then(|file| zip::ZipArchive::new(file).map_err(zip_error))
+        .is_ok()
+    {
+        Ok(ArchiveFormat::Zip)
+    } else if rars::ArchiveReader::read_path(archive_path).is_ok() {
+        Ok(ArchiveFormat::Rar)
     } else {
         Err(VfsError::Io {
             message: "unsupported or unrecognized archive format".into(),
@@ -584,7 +652,7 @@ fn list_archive(
         ArchiveFormat::SevenZip => list_seven_zip(archive_path, requested, password),
         ArchiveFormat::Gzip => list_gzip(archive_path, requested),
         ArchiveFormat::Tar(compression) => list_tar(archive_path, requested, compression),
-        ArchiveFormat::Rar => unsupported(ProviderCapabilities::LIST),
+        ArchiveFormat::Rar => list_rar(archive_path, requested, password),
     }
 }
 
@@ -763,8 +831,73 @@ fn read_archive_entry(
         }
         ArchiveFormat::Gzip => read_gzip_entry(archive_path, inner, limits),
         ArchiveFormat::Tar(compression) => read_tar_entry(archive_path, inner, limits, compression),
-        ArchiveFormat::Rar => unsupported(ProviderCapabilities::READ),
+        ArchiveFormat::Rar => read_rar_entry(archive_path, inner, limits, password),
     }
+}
+
+#[derive(Clone)]
+struct SharedBuffer(Arc<Mutex<Vec<u8>>>);
+
+impl Write for SharedBuffer {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        self.0
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .extend_from_slice(bytes);
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+fn read_rar_entry(
+    archive_path: &Path,
+    inner: &str,
+    limits: ArchiveLimits,
+    password: Option<&str>,
+) -> Result<Vec<u8>, VfsError> {
+    let archive = open_rar(archive_path, password)?;
+    let mut found = false;
+    for member in archive.members() {
+        let name = std::str::from_utf8(member.meta.name_bytes()).map_err(|_| VfsError::Io {
+            message: "RAR entry name is not valid UTF-8".into(),
+        })?;
+        let path = safe_stored_path(name, member.meta.is_directory)?;
+        check_limits(member.meta.unpacked_size, member.meta.packed_size, limits)?;
+        if path == inner {
+            if member.meta.is_directory {
+                return Err(VfsError::IsADirectory {
+                    location: inner.to_owned(),
+                });
+            }
+            found = true;
+        }
+    }
+    if !found {
+        return Err(VfsError::NotFound {
+            location: inner.to_owned(),
+        });
+    }
+
+    let output = Arc::new(Mutex::new(Vec::new()));
+    let selected = output.clone();
+    archive
+        .extract_to(password.map(str::as_bytes), |meta| {
+            let name = String::from_utf8_lossy(meta.name_bytes()).replace('\\', "/");
+            if name.trim_end_matches('/') == inner {
+                Ok(Box::new(SharedBuffer(selected.clone())))
+            } else {
+                Ok(Box::new(std::io::sink()))
+            }
+        })
+        .map_err(rar_error)?;
+    let bytes = output
+        .lock()
+        .unwrap_or_else(|error| error.into_inner())
+        .clone();
+    Ok(bytes)
 }
 
 fn read_gzip_entry(
@@ -1194,6 +1327,18 @@ fn seven_zip_error(error: sevenz_rust2::Error) -> VfsError {
         sevenz_rust2::Error::MaybeBadPassword(_) => VfsError::InvalidCredential,
         other => VfsError::Io {
             message: format!("invalid 7z archive: {other}"),
+        },
+    }
+}
+fn rar_error(error: rars::Error) -> VfsError {
+    match error {
+        rars::Error::NeedPassword => VfsError::CredentialRequired,
+        rars::Error::WrongPasswordOrCorruptData => VfsError::InvalidCredential,
+        rars::Error::AtArchiveOffset { source, .. } | rars::Error::AtEntry { source, .. } => {
+            rar_error(*source)
+        }
+        other => VfsError::Io {
+            message: format!("invalid RAR archive: {other}"),
         },
     }
 }

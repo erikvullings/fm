@@ -12,6 +12,7 @@ bzip2.workspace = true
 flate2.workspace = true
 fm-domain.workspace = true
 fm-vfs.workspace = true
+rars.workspace = true
 sevenz-rust2.workspace = true
 tar.workspace = true
 thiserror.workspace = true

@@ -5,6 +5,7 @@ use std::io::Write;
 use fm_archive::{ArchiveFileSystemProvider, ArchiveLimits};
 use fm_domain::{EntryKind, Location};
 use fm_vfs::{FileSystemProvider, ListOptions, ProviderCapabilities, VfsError};
+use rars::rar50::{Rar50Writer, StoredEntry, WriterOptions};
 use tempfile::tempdir;
 use tokio::io::AsyncReadExt;
 use tokio::io::AsyncWriteExt;
@@ -15,6 +16,60 @@ fn zip_location(path: &std::path::Path) -> Location {
     let file = Location::from_native_path(path).expect("temporary path is absolute");
     Location::parse(&format!("archive://{}!", &file.uri["file://".len()..]))
         .expect("archive URI is valid")
+}
+
+#[tokio::test]
+async fn zip_comic_aliases_are_detected_by_content_and_navigable() {
+    let root = tempdir().expect("temporary root");
+    for name in ["comic.cbz", "comic.cbr"] {
+        let archive_path = root.path().join(name);
+        let file = std::fs::File::create(&archive_path).expect("create comic fixture");
+        let mut writer = ZipWriter::new(file);
+        writer
+            .start_file("001.jpg", SimpleFileOptions::default())
+            .expect("start comic page");
+        writer.write_all(b"image bytes").expect("write comic page");
+        writer.finish().expect("finish comic fixture");
+
+        let page = ArchiveFileSystemProvider::new()
+            .list(
+                &zip_location(&archive_path),
+                ListOptions::default(),
+                CancellationToken::new(),
+            )
+            .await
+            .expect("list ZIP comic alias");
+        assert_eq!(page.entries.len(), 1, "fixture {name}");
+        assert_eq!(page.entries[0].name, "001.jpg", "fixture {name}");
+    }
+}
+
+#[tokio::test]
+async fn zip_comic_with_a_prepended_stub_is_detected_by_reader_fallback() {
+    let root = tempdir().expect("temporary root");
+    let archive_path = root.path().join("comic.cbz");
+    let mut bytes = b"comic launcher stub".to_vec();
+    {
+        let mut cursor = std::io::Cursor::new(&mut bytes);
+        cursor.set_position(cursor.get_ref().len() as u64);
+        let mut writer = ZipWriter::new(cursor);
+        writer
+            .start_file("001.jpg", SimpleFileOptions::default())
+            .expect("start comic page");
+        writer.write_all(b"image bytes").expect("write comic page");
+        writer.finish().expect("finish comic fixture");
+    }
+    std::fs::write(&archive_path, bytes).expect("write comic fixture");
+
+    let page = ArchiveFileSystemProvider::new()
+        .list(
+            &zip_location(&archive_path),
+            ListOptions::default(),
+            CancellationToken::new(),
+        )
+        .await
+        .expect("list ZIP comic with prepended bytes");
+    assert_eq!(page.entries[0].name, "001.jpg");
 }
 
 fn tar_bytes() -> Vec<u8> {
@@ -139,27 +194,49 @@ async fn standalone_gzip_is_exposed_as_a_single_read_only_file() {
 }
 
 #[tokio::test]
-async fn rar_is_recognized_but_advertises_no_unsupported_features() {
+async fn rar_comic_is_navigable_and_read_only() {
     let root = tempdir().expect("temporary root");
-    let archive_path = root.path().join("archive.bin");
-    std::fs::write(&archive_path, b"Rar!\x1a\x07\x01\0fixture").expect("write RAR signature");
+    let archive_path = root.path().join("comic.cbr");
+    let bytes = Rar50Writer::new(WriterOptions::default())
+        .stored_entries(&[StoredEntry {
+            name: b"pages/001.jpg",
+            data: b"image bytes",
+            mtime: Some(0),
+            attributes: 0x20,
+            host_os: 3,
+        }])
+        .finish()
+        .expect("build RAR fixture");
+    std::fs::write(&archive_path, bytes).expect("write RAR fixture");
     let provider = ArchiveFileSystemProvider::new();
     let location = zip_location(&archive_path);
 
-    assert_eq!(
-        provider
-            .capabilities_for(&location)
-            .expect("detect RAR capabilities"),
-        ProviderCapabilities::empty()
-    );
-    let result = provider
-        .list(&location, ListOptions::default(), CancellationToken::new())
-        .await;
-    assert!(matches!(
-        result,
-        Err(VfsError::UnsupportedCapability { capability })
-            if capability == ProviderCapabilities::LIST
-    ));
+    let capabilities = provider
+        .capabilities_for(&location)
+        .expect("detect RAR capabilities");
+    assert!(capabilities.contains(ProviderCapabilities::LIST));
+    assert!(capabilities.contains(ProviderCapabilities::READ));
+    assert!(!capabilities.contains(ProviderCapabilities::WRITE));
+
+    let pages = location.join("pages").expect("pages location");
+    let page = provider
+        .list(&pages, ListOptions::default(), CancellationToken::new())
+        .await
+        .expect("list RAR comic");
+    assert_eq!(page.entries[0].name, "001.jpg");
+    let mut reader = provider
+        .open_read(
+            &fm_vfs::EntryRef {
+                id: page.entries[0].id,
+                location: pages.join("001.jpg").expect("page location"),
+            },
+            CancellationToken::new(),
+        )
+        .await
+        .expect("read RAR comic page");
+    let mut content = Vec::new();
+    reader.read_to_end(&mut content).await.expect("read page");
+    assert_eq!(content, b"image bytes");
 }
 
 #[tokio::test]
