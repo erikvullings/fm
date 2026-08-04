@@ -108,3 +108,38 @@ Existing building blocks and gaps, confirmed by inspection:
   lazy chunk fetch, search-driven scroll-to-match), and the F3 `core.view` frontend wiring
   (intercept before the existing default-open dispatch, falling back to it for binary/unsupported
   content) — none of that frontend UI has been built yet.
+- 2026-08-04: F3 wiring complete. `app-shell.ts` intercepts `core.view` before the existing
+  combined open/edit/open-with dispatch: for a single selected non-parent file entry with another
+  pane present, it opens a new `FileViewer` (via `createFileViewerController` from
+  [file-viewer-controller.ts](../frontend/src/features/preview/file-viewer-controller.ts)) in the
+  *opposite* pane, replacing that pane's directory-listing surface entirely (`viewerContent`,
+  threaded through `WorkspacePaneContent`/`workspace-layout.ts`/`pane.ts`); falls through to the
+  pre-existing default-open dispatch for directories, multi-select, or a single-pane workspace.
+  Deliberately does no synchronous binary-detection before opening — the viewer surfaces its own
+  "Preview not available" state for unsupported content rather than falling back to OS-open, kept
+  simple per the task's own scope note. Two new integration tests in
+  [app-shell.test.ts](../frontend/src/app/app-shell.test.ts) cover opening via F3 and closing via
+  the viewer's close button. Fixed one bug found while exercising this against real files: a
+  "Maximum call stack size exceeded" for images ≥1 MiB in
+  [content-preview.ts](../frontend/src/features/preview/content-preview.ts)'s
+  `readFullImageDataUri` — it spread each 1 MiB chunk's `number[]` into `chunks.push(...chunk.data)`,
+  exceeding V8's spread-argument limit; fixed by accumulating `Uint8Array` segments and a single
+  `Uint8Array.set` copy pass instead (regression test uses a realistic full-size 1 MiB buffer, since
+  a small fixture would not have caught this).
+  Also found and fixed, while live-testing against a real ~460-entry directory, an unrelated
+  pre-existing bug (confirmed via `git stash` to predate this session's changes): the pane status
+  bar showed only the loaded-so-far entry count (e.g. "256 entries") instead of the real backend
+  total when no quick filter was active, making a directory with more pages look capped/broken
+  before the user ever scrolled — even though pagination itself (backend and virtualization) was
+  verified correct end-to-end via direct `curl` against `/api/v1/directories/list` and a live
+  scroll-to-bottom test. Fixed in
+  [pane.ts](../frontend/src/features/panes/pane.ts) to show `"${loaded} of ${realTotal} entries
+  (loading more…)"` while more pages are pending.
+  Per explicit product direction this session, task 0071's automatic cursor-driven preview panel
+  was also removed (see [TASKS/0071](0071-file-preview-architecture.md) Agent Notes) — F3 is now
+  the sole preview trigger, which this task's viewer already provided.
+  Verified: `tsc --noEmit` clean, Biome clean, full frontend vitest suite green (529/529 after the
+  0071 panel removal).
+  Remaining for this task: the LRU chunk cache is implicit in the controller's existing chunk
+  fetching but not separately benchmarked; backend `cargo fmt`/`clippy`/`test` re-confirmation for
+  this session's (frontend-only) changes was not re-run since no Rust files were touched.

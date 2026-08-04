@@ -373,6 +373,15 @@ describe('Pane quick filter', () => {
     expect(root.querySelector('.fm-pane-status')?.textContent).toContain('2 entries');
   });
 
+  it('shows the real known total (not just the loaded count) while more pages remain unfiltered', () => {
+    mount(attrs({ filterQuery: '', totalKnownEntries: 459 }));
+    const status = root.querySelector('.fm-pane-status')?.textContent;
+    expect(status).toContain('2 of 459 entries (loading more…)');
+
+    mount(attrs({ filterQuery: '', totalKnownEntries: 2 }));
+    expect(root.querySelector('.fm-pane-status')?.textContent).toContain('2 entries');
+  });
+
   it('reports hidden-but-selected entries alongside the plain selected count', () => {
     mount(
       attrs({

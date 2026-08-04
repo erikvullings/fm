@@ -60,6 +60,8 @@ export interface WorkspacePaneContent {
   readonly onFilterClose: () => void;
   readonly onRename: (entry: EntrySummary, name: string) => void | Promise<void>;
   readonly onContextMenu?: (entries: readonly EntrySummary[], x: number, y: number) => void;
+  /** When set, replaces the pane's directory-listing surface with this content (task 0088). */
+  readonly viewerContent?: m.Children;
 }
 
 /** Inputs for the recursive workspace layout renderer. */
@@ -311,6 +313,7 @@ export const WorkspaceLayoutView: FactoryComponent<WorkspaceLayoutViewAttrs> = (
           ? {}
           : { nativeIconLoader: content.nativeIconLoader }),
         metadata: content.metadata,
+        ...(content.viewerContent === undefined ? {} : { viewerContent: content.viewerContent }),
         active,
         platform: content.platform,
         ...(content.keybindingRuntime === undefined

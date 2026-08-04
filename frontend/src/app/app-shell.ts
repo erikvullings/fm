@@ -58,6 +58,12 @@ import { PermanentDeleteDialog } from '../features/operations/permanent-delete-d
 import { CloseLastTabDialog } from '../features/panes/close-last-tab-dialog';
 import { isParentEntry, withParentEntry } from '../features/panes/parent-entry';
 import { cycledTabIndex, tabIdForJump } from '../features/panes/tab-navigation';
+import { FileViewer } from '../features/preview/file-viewer';
+import {
+  createFileViewerController,
+  type FileViewerController,
+  type FileViewerState,
+} from '../features/preview/file-viewer-controller';
 import { filterEntries, hiddenSelectedEntryCount } from '../features/quick-filter/quick-filter';
 import { FindFilesDialog } from '../features/search/find-files-dialog';
 import type { SelectionPlatform } from '../features/selection/keybindings';
@@ -220,6 +226,14 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
   const selections = new Map<string, SelectionState>();
   const metadataLoaders = new Map<string, EntryMetadataLoader>();
   const metadataViews = new Map<string, EntryMetadataView>();
+  /**
+   * The Lister-style viewer (task 0088) opened for a pane via F3 `core.view` — keyed by `PaneId`
+   * (not `${paneId}:${tabId}`) since it replaces the whole pane's surface regardless of tab.
+   */
+  const viewerByPane = new Map<
+    PaneId,
+    { readonly controller: FileViewerController; state: FileViewerState }
+  >();
   const sortedEntries = new Map<
     string,
     {
@@ -503,6 +517,30 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     return loader;
   }
 
+  /** Opens the Lister-style viewer (task 0088) for `entry` in `paneId`, replacing any viewer
+   * already open there. */
+  function openViewer(client: FileManagerClient, paneId: PaneId, entry: EntrySummary): void {
+    viewerByPane.get(paneId)?.controller.dispose();
+    const controller = createFileViewerController({
+      client,
+      entry,
+      update: (state) => {
+        const existing = viewerByPane.get(paneId);
+        if (existing === undefined) return;
+        existing.state = state;
+        m.redraw();
+      },
+    });
+    viewerByPane.set(paneId, { controller, state: { status: 'loading', entry } });
+    m.redraw();
+  }
+
+  function closeViewer(paneId: PaneId): void {
+    viewerByPane.get(paneId)?.controller.dispose();
+    viewerByPane.delete(paneId);
+    m.redraw();
+  }
+
   function locationForPath(current: Location, path: string): Location {
     const url = new URL(current.uri);
     url.pathname = path.startsWith('~') ? path : path.replaceAll('\\', '/');
@@ -533,6 +571,8 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       for (const tabId of outgoing.panesById[paneId]?.tabOrder ?? []) {
         clearTabState(paneId, tabId);
       }
+      viewerByPane.get(paneId)?.controller.dispose();
+      viewerByPane.delete(paneId);
     }
   }
 
@@ -1278,6 +1318,33 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       reopenClosedTab(attrsClient, workspace.activePaneId);
       return;
     }
+    if (dispatchedAction === 'core.view') {
+      const active = activeDirectory();
+      const selection =
+        active === undefined ? undefined : selections.get(activeTabKey(active.paneId));
+      const directory =
+        active === undefined ? undefined : directories.get(activeTabKey(active.paneId));
+      const selected = directory?.entries.filter(
+        (entry) => selection?.selectedEntryIds.includes(entry.id) === true,
+      );
+      const viewEntry = selected?.length === 1 ? selected[0] : undefined;
+      const otherPaneId = workspace?.paneOrder.find((paneId) => paneId !== active?.paneId);
+      // Only intercept single-file selections into the in-app viewer (task 0088); directories,
+      // multi-selections, and single-pane workspaces (no opposite pane to open into) fall through
+      // to the generic core.view/core.edit/core.openWith block below, which opens the OS default
+      // application instead. The viewer itself shows "Preview not available" for content that
+      // turns out to be binary once its first chunk is fetched, rather than falling back further.
+      if (
+        viewEntry !== undefined &&
+        viewEntry.kind === 'file' &&
+        !isParentEntry(viewEntry.id) &&
+        otherPaneId !== undefined
+      ) {
+        event.preventDefault();
+        openViewer(attrsClient, otherPaneId, viewEntry);
+        return;
+      }
+    }
     if (
       dispatchedAction === 'core.view' ||
       dispatchedAction === 'core.edit' ||
@@ -1740,9 +1807,9 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
             const next = reduceSelection(selections.get(key) ?? selection, action, loadedEntryIds);
             selections.set(key, next);
             const cursorEntry = loadedEntries.find((entry) => entry.id === next.cursorEntryId);
-            void metadataLoader(client, key).select(
-              cursorEntry === undefined || isParentEntry(cursorEntry.id) ? undefined : cursorEntry,
-            );
+            const metadataCursorEntry =
+              cursorEntry === undefined || isParentEntry(cursorEntry.id) ? undefined : cursorEntry;
+            void metadataLoader(client, key).select(metadataCursorEntry);
             m.redraw();
           });
           return;
@@ -1750,9 +1817,9 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
         const next = reduceSelection(selection, action, entryIds);
         selections.set(key, next);
         const cursorEntry = entries.find((entry) => entry.id === next.cursorEntryId);
-        void metadataLoader(client, key).select(
-          cursorEntry === undefined || isParentEntry(cursorEntry.id) ? undefined : cursorEntry,
-        );
+        const metadataCursorEntry =
+          cursorEntry === undefined || isParentEntry(cursorEntry.id) ? undefined : cursorEntry;
+        void metadataLoader(client, key).select(metadataCursorEntry);
         m.redraw();
       },
       onRetry: () => navigation.retry(paneId),
@@ -1832,6 +1899,27 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
         });
       },
       onContextMenu: (entries, x, y) => openContextMenu(paneId, entries, x, y),
+      ...(viewerByPane.has(paneId)
+        ? {
+            viewerContent: (() => {
+              const viewer = viewerByPane.get(paneId);
+              if (viewer === undefined) return undefined;
+              return m(FileViewer, {
+                state: viewer.state,
+                onLoadMore: () => void viewer.controller.loadMore(),
+                onSearchQueryChange: (query) => viewer.controller.setSearchOptions({ query }),
+                onSearchOptionChange: (patch) => viewer.controller.setSearchOptions(patch),
+                onRunSearch: () => void viewer.controller.runSearch(),
+                onNextMatch: () => void viewer.controller.goToNextMatch(),
+                onPreviousMatch: () => void viewer.controller.goToPreviousMatch(),
+                onZoomIn: () => viewer.controller.zoomIn(),
+                onZoomOut: () => viewer.controller.zoomOut(),
+                onResetZoom: () => viewer.controller.resetZoom(),
+                onClose: () => closeViewer(paneId),
+              });
+            })(),
+          }
+        : {}),
     };
   }
 

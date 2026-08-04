@@ -1,9 +1,47 @@
 .fm-pane {
   display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr) auto auto;
+  /*
+   * Every conceptual row gets its own always-present, explicitly numbered track (auto-sized
+   * tracks with no content collapse to 0 height) so optional siblings (quick filter, entry
+   * metadata) can never be auto-placed into the flexible directory-table row - see the
+   * per-class `grid-row` pins below.
+   */
+  grid-template-rows: auto auto auto minmax(0, 1fr) auto auto;
   min-width: 0;
   /* border: 1px solid var(--fm-border); */
   background: var(--fm-surface);
+}
+
+.fm-pane-tabs {
+  grid-row: 1;
+}
+
+.fm-breadcrumb,
+.fm-path-editor {
+  grid-row: 2;
+}
+
+.fm-quick-filter {
+  grid-row: 3;
+}
+
+.fm-pane > .fm-directory-table,
+.fm-pane > .fm-directory-state {
+  grid-row: 4;
+}
+
+.fm-entry-metadata {
+  grid-row: 5;
+}
+
+.fm-pane-status {
+  grid-row: 6;
+}
+
+.fm-pane-viewer {
+  display: flex;
+  flex-direction: column;
+  grid-template-rows: none;
 }
 
 /* .fm-pane[data-active="true"] {

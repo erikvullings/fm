@@ -484,6 +484,47 @@ describe('AppShell', () => {
     });
   });
 
+  it('opens the Lister viewer in the opposite pane with F3 (task 0088)', async () => {
+    const client = new MockFileManagerClient();
+    const invokeAction = vi.spyOn(client, 'invokeAction');
+    m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
+    await vi.waitFor(() => expect(root.textContent).toContain('.env'));
+    const activePane = root.querySelector<HTMLElement>('[data-active="true"] > .fm-pane');
+    const file = [...(activePane?.querySelectorAll<HTMLElement>('.fm-directory-row') ?? [])].find(
+      (row) => row.textContent?.includes('.env'),
+    );
+    file?.click();
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'F3', bubbles: true }));
+
+    await vi.waitFor(() => expect(root.querySelector('.fm-file-viewer')).not.toBeNull());
+    // The viewer replaces the OPPOSITE pane's surface, leaving the active pane's directory
+    // listing (and its selection) untouched, and never falls back to the OS-open action.
+    expect(root.querySelector('[data-active="true"] > .fm-pane .fm-file-viewer')).toBeNull();
+    const inactivePane = root.querySelector('[data-active="false"] > .fm-pane');
+    expect(inactivePane?.classList.contains('fm-pane-viewer')).toBe(true);
+    expect(inactivePane?.querySelector('.fm-file-viewer')?.textContent).toContain('.env');
+    expect(invokeAction).not.toHaveBeenCalled();
+  });
+
+  it('closes the Lister viewer via its close button', async () => {
+    const client = new MockFileManagerClient();
+    m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
+    await vi.waitFor(() => expect(root.textContent).toContain('.env'));
+    const activePane = root.querySelector<HTMLElement>('[data-active="true"] > .fm-pane');
+    const file = [...(activePane?.querySelectorAll<HTMLElement>('.fm-directory-row') ?? [])].find(
+      (row) => row.textContent?.includes('.env'),
+    );
+    file?.click();
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'F3', bubbles: true }));
+    await vi.waitFor(() => expect(root.querySelector('.fm-file-viewer')).not.toBeNull());
+
+    root.querySelector<HTMLButtonElement>('.fm-file-viewer-close')?.click();
+
+    await vi.waitFor(() => expect(root.querySelector('.fm-file-viewer')).toBeNull());
+    const inactivePane = root.querySelector('[data-active="false"] > .fm-pane');
+    expect(inactivePane?.classList.contains('fm-pane-viewer')).toBe(false);
+  });
+
   it('shows a brief toast instead of invoking a permanently browser-unavailable action from its shortcut', async () => {
     const client = new MockFileManagerClient();
     vi.spyOn(client, 'listActions').mockResolvedValue([

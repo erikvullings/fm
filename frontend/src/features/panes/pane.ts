@@ -104,6 +104,9 @@ export interface PaneAttrs {
   readonly onSortChange: (sort: readonly SortDescriptor[]) => void;
   readonly onRename: (entry: EntrySummary, name: string) => void | Promise<void>;
   readonly onContextMenu: (entries: readonly EntrySummary[], x: number, y: number) => void;
+  /** When set, replaces the entire directory-listing surface with this content (task 0088's
+   * Lister-style viewer, opened in the opposite pane). */
+  readonly viewerContent?: m.Children;
 }
 
 function isEditableTarget(target: EventTarget | null): boolean {
@@ -340,6 +343,15 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
       clearTypeaheadTimer();
     },
     view: ({ attrs }) => {
+      if (attrs.viewerContent !== undefined) {
+        // Bypasses the directory-listing grid entirely (tabs/breadcrumb/table/status) - the
+        // Lister-style viewer (task 0088) owns its own header/body layout via `.fm-pane-viewer`.
+        return m(
+          'section.fm-pane.fm-pane-viewer',
+          { 'data-active': String(attrs.active), tabindex: -1 },
+          attrs.viewerContent,
+        );
+      }
       // Entering a different directory (however navigation happened: opening an entry, ..,
       // breadcrumb, back/forward, or switching tabs) makes any typed prefix meaningless for the
       // new listing, and stale error highlighting to boot — reset it once per path change.
@@ -352,6 +364,14 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
       const ordinaryEntries = attrs.entries.filter((entry) => !isParentEntry(entry.id));
       const selectedCount = attrs.selectedEntryIds.size;
       const totalSelectedSize = selectedSize(ordinaryEntries, attrs.selectedEntryIds);
+      // `attrs.totalKnownEntries` counts the synthetic ".." row the same way `attrs.entries`
+      // does (app-shell adds +1 for it), while `ordinaryEntries` never includes that row —
+      // subtract the same adjustment so the two counts stay comparable.
+      const parentEntryAdjustment = attrs.entries.length - ordinaryEntries.length;
+      const knownTotalEntries =
+        attrs.totalKnownEntries === undefined
+          ? undefined
+          : attrs.totalKnownEntries - parentEntryAdjustment;
       return m(
         'section.fm-pane',
         {
@@ -763,7 +783,9 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
             m(
               'span',
               attrs.filterQuery.trim() === ''
-                ? `${ordinaryEntries.length} ${ordinaryEntries.length === 1 ? 'entry' : 'entries'}`
+                ? knownTotalEntries !== undefined && knownTotalEntries > ordinaryEntries.length
+                  ? `${ordinaryEntries.length} of ${knownTotalEntries} entries (loading more…)`
+                  : `${ordinaryEntries.length} ${ordinaryEntries.length === 1 ? 'entry' : 'entries'}`
                 : `${ordinaryEntries.length} of ${attrs.totalEntryCount} shown${
                     attrs.hasMore === true ? ' (more available)' : ''
                   }`,
