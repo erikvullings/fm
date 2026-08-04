@@ -24,6 +24,7 @@ const requestListPlugins = vi.fn();
 const requestEnablePlugin = vi.fn();
 const requestDisablePlugin = vi.fn();
 const requestGetPluginLogs = vi.fn();
+const requestGetFileIcon = vi.fn();
 
 vi.mock('../generated/file-manager-api', () => ({
   getRuntimeCapabilities: (...args: unknown[]) => getRuntimeCapabilities(...args),
@@ -48,6 +49,7 @@ vi.mock('../generated/file-manager-api', () => ({
   enablePlugin: (...args: unknown[]) => requestEnablePlugin(...args),
   disablePlugin: (...args: unknown[]) => requestDisablePlugin(...args),
   getPluginLogs: (...args: unknown[]) => requestGetPluginLogs(...args),
+  getFileIcon: (...args: unknown[]) => requestGetFileIcon(...args),
 }));
 
 const { HttpFileManagerClient } = await import('./http-file-manager-client');
@@ -101,9 +103,38 @@ afterEach(() => {
   requestEnablePlugin.mockReset();
   requestDisablePlugin.mockReset();
   requestGetPluginLogs.mockReset();
+  requestGetFileIcon.mockReset();
 });
 
 describe('HttpFileManagerClient', () => {
+  describe('getFileIcon', () => {
+    it('returns binary icon bytes and forwards cancellation', async () => {
+      const bytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
+      requestGetFileIcon.mockResolvedValue({
+        status: 200,
+        data: new Blob([bytes], { type: 'image/png' }),
+        headers: new Headers({ 'content-type': 'image/png' }),
+      });
+      const controller = new AbortController();
+      const client = new HttpFileManagerClient();
+
+      await expect(client.getFileIcon('file:///report.pdf', controller.signal)).resolves.toEqual(
+        bytes,
+      );
+      expect(requestGetFileIcon).toHaveBeenCalledWith(
+        { uri: 'file:///report.pdf' },
+        expect.objectContaining({ signal: controller.signal }),
+      );
+    });
+
+    it('silently returns undefined for unsupported hosts and fetch failures', async () => {
+      requestGetFileIcon.mockRejectedValue(new Error('not found'));
+      const client = new HttpFileManagerClient();
+
+      await expect(client.getFileIcon('file:///report.pdf')).resolves.toBeUndefined();
+    });
+  });
+
   describe('getRuntimeCapabilities', () => {
     it('maps the generated client response data to the frontend model (happy path)', async () => {
       const fixture = fixtureCapabilities();

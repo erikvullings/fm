@@ -64,6 +64,7 @@ export type MockClientMethod =
   | 'navigatePane'
   | 'listDirectory'
   | 'getEntryMetadata'
+  | 'getFileIcon'
   | 'startOperation'
   | 'listOperations'
   | 'cancelOperation'
@@ -85,6 +86,7 @@ export interface MockFileManagerClientOptions {
   loadingLocations?: readonly string[];
   latencyMs?: number;
   failures?: Partial<Record<MockClientMethod, Error>>;
+  nativeIconExtensions?: readonly string[];
 }
 
 function fixtureEntry(
@@ -220,6 +222,7 @@ export class MockFileManagerClient implements FileManagerClient {
   private readonly loadingLocations: ReadonlySet<string>;
   private readonly latencyMs: number;
   private readonly failures: Partial<Record<MockClientMethod, Error>>;
+  private readonly nativeIconExtensions: ReadonlySet<string>;
   private readonly listeners = new Set<(event: BackendEvent) => void>();
   private readonly scriptedEvents: BackendEvent[] = [];
   private readonly operations = new Map<OperationId, Operation>();
@@ -260,13 +263,16 @@ export class MockFileManagerClient implements FileManagerClient {
     this.loadingLocations = new Set(options.loadingLocations);
     this.latencyMs = options.latencyMs ?? 0;
     this.failures = options.failures ?? {};
+    this.nativeIconExtensions = new Set(
+      options.nativeIconExtensions?.map((extension) => extension.toLowerCase()),
+    );
   }
 
   getRuntimeCapabilities(signal?: AbortSignal): Promise<RuntimeCapabilities> {
     return this.perform('getRuntimeCapabilities', signal, () => ({
       clipboard: false,
       nativeDragOut: false,
-      nativeFileIcons: false,
+      nativeFileIcons: this.nativeIconExtensions.size > 0,
       nativeMenus: false,
       nativeThumbnails: false,
       openTerminal: false,
@@ -281,6 +287,18 @@ export class MockFileManagerClient implements FileManagerClient {
 
   getSettings(signal?: AbortSignal): Promise<Settings> {
     return this.perform('getSettings', signal, () => structuredClone(this.settings));
+  }
+
+  getFileIcon(sampleLocationUri: string, signal?: AbortSignal): Promise<Uint8Array | undefined> {
+    return this.perform('getFileIcon', signal, () => {
+      const pathname = new URL(sampleLocationUri).pathname;
+      const name = pathname.slice(pathname.lastIndexOf('/') + 1);
+      const extension = name.includes('.')
+        ? name.slice(name.lastIndexOf('.') + 1).toLowerCase()
+        : '';
+      if (!this.nativeIconExtensions.has(extension)) return undefined;
+      return new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+    });
   }
 
   updateSettings(settings: Settings, signal?: AbortSignal): Promise<Settings> {

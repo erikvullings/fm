@@ -51,6 +51,17 @@ export class TauriFileManagerClient implements FileManagerClient {
     return invoke<RuntimeCapabilities>('get_runtime_capabilities');
   }
 
+  async getFileIcon(
+    sampleLocationUri: string,
+    _signal?: AbortSignal,
+  ): Promise<Uint8Array | undefined> {
+    try {
+      return new Uint8Array(await invoke<number[]>('get_file_icon', { uri: sampleLocationUri }));
+    } catch {
+      return undefined;
+    }
+  }
+
   getSettings(_signal?: AbortSignal): Promise<Settings> {
     return invoke<Settings>('get_settings');
   }

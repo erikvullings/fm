@@ -50,6 +50,18 @@ pub(crate) fn get_runtime_capabilities(state: State<'_, AppState>) -> RuntimeCap
     state.service.runtime_capabilities()
 }
 
+/// Returns the same native PNG bytes as `GET /api/v1/icons`.
+#[tauri::command]
+pub(crate) fn get_file_icon(
+    state: State<'_, AppState>,
+    uri: String,
+) -> Result<Vec<u8>, ApplicationErrorDto> {
+    state
+        .service
+        .file_icon(&uri)
+        .map_err(|error| error.into_dto(Uuid::new_v4()))
+}
+
 /// Returns the same settings document as `GET /api/v1/settings`.
 #[tauri::command]
 pub(crate) fn get_settings(state: State<'_, AppState>) -> SettingsDto {

@@ -35,6 +35,21 @@ afterEach(() => {
 });
 
 describe('TauriFileManagerClient', () => {
+  describe('getFileIcon', () => {
+    it('converts the Tauri byte array and silently falls back on errors', async () => {
+      invoke.mockResolvedValueOnce([0x89, 0x50, 0x4e, 0x47]);
+      const client = new TauriFileManagerClient();
+
+      await expect(client.getFileIcon('file:///report.pdf')).resolves.toEqual(
+        new Uint8Array([0x89, 0x50, 0x4e, 0x47]),
+      );
+      expect(invoke).toHaveBeenCalledWith('get_file_icon', { uri: 'file:///report.pdf' });
+
+      invoke.mockRejectedValueOnce(new Error('unsupported'));
+      await expect(client.getFileIcon('file:///report.pdf')).resolves.toBeUndefined();
+    });
+  });
+
   describe('getRuntimeCapabilities', () => {
     it('invokes the get_runtime_capabilities command and returns its result', async () => {
       const fixture = fixtureCapabilities();

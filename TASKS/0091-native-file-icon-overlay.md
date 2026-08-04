@@ -1,6 +1,6 @@
 # 0091 Native file icon overlay (backend-served, layered over 0085)
 
-Status: open
+Status: done
 Priority: low
 Owner: unassigned
 Agent: unassigned
@@ -142,3 +142,14 @@ baseline needs to change for this — it stays the fallback, always-available la
   service method, error mapping, Tauri payload shape, and — found during 0085's own investigation —
   a real correctness risk in `fetch-mutator.ts`'s binary-response handling that must be fixed as
   part of this task, not worked around).
+- 2026-08-04 Codex: Implemented the application service, PNG HTTP route, Tauri command, regenerated
+  OpenAPI/Orval client, binary-safe fetch mutator, all three frontend transports, and a
+  capability-gated lazy loader that caches by normalized extension and preserves the 0085 themed
+  fallback during loading or failure. `pnpm run lint`, frontend tests (489 passed, 1 skipped),
+  script tests (29 passed), route integration tests, and the Tauri command test pass. OpenAPI and
+  Orval regeneration is byte-identical. The full `cargo test --workspace` run is otherwise green
+  but remains blocked by unrelated concurrent icon-theme work: `fm-plugin-runtime`'s
+  `discovers_the_real_catppuccin_icons_plugin_package` expects 27 definitions while the package now
+  contains 31. Native icon bytes were exercised on macOS by the existing platform-adapter tests;
+  Windows was not manually exercised and correctly retains the themed fallback through its false
+  capability/unsupported adapter.

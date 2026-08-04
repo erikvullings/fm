@@ -37,6 +37,7 @@ import {
   resolveOperationConflict as requestConflictResolution,
   listDirectory as requestDirectory,
   getEntryMetadata as requestEntryMetadata,
+  getFileIcon as requestFileIcon,
   navigatePane as requestNavigation,
   cancelOperation as requestOperationCancel,
   pauseOperation as requestOperationPause,
@@ -85,6 +86,22 @@ export class HttpFileManagerClient implements FileManagerClient {
       signal !== undefined ? { signal } : undefined,
     );
     return response.data;
+  }
+
+  async getFileIcon(
+    sampleLocationUri: string,
+    signal?: AbortSignal,
+  ): Promise<Uint8Array | undefined> {
+    try {
+      const response = await requestFileIcon(
+        { uri: sampleLocationUri },
+        signal === undefined ? undefined : { signal },
+      );
+      if (response.status !== 200) return undefined;
+      return new Uint8Array(await response.data.arrayBuffer());
+    } catch {
+      return undefined;
+    }
   }
 
   async getSettings(signal?: AbortSignal): Promise<Settings> {

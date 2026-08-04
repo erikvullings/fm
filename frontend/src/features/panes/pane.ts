@@ -14,6 +14,7 @@ import {
   DirectoryTable,
   entryArraySource,
 } from '../directory-table/directory-table';
+import type { NativeIconLoader } from '../directory-table/native-icon-loader';
 import {
   DEFAULT_ENTRY_FORMAT_SETTINGS,
   type EntryFormatSettings,
@@ -63,6 +64,7 @@ export interface PaneAttrs {
   readonly sort: readonly SortDescriptor[];
   readonly formatSettings?: EntryFormatSettings;
   readonly pluginColumns?: readonly DirectoryColumnDescriptor[];
+  readonly nativeIconLoader?: NativeIconLoader;
   readonly metadata: EntryMetadataView;
   readonly selectedEntryIds: ReadonlySet<EntryId>;
   readonly cutEntryIds: ReadonlySet<EntryId>;
@@ -654,6 +656,9 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
             sort: attrs.sort,
             ...(attrs.pluginColumns === undefined ? {} : { pluginColumns: attrs.pluginColumns }),
             ...(attrs.formatSettings === undefined ? {} : { formatSettings: attrs.formatSettings }),
+            ...(attrs.nativeIconLoader === undefined
+              ? {}
+              : { nativeIconLoader: attrs.nativeIconLoader }),
             label: `${attrs.tabTitle} directory`,
             ...(renamingEntry === undefined ? {} : { renamingEntryId: renamingEntry.id }),
             renameValue,

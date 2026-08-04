@@ -39,6 +39,27 @@ describe('fetchMutator', () => {
     expect(result.headers).toBeInstanceOf(Headers);
   });
 
+  it('preserves binary image bytes without UTF-8 text decoding', async () => {
+    const bytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0xff, 0x00]);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(bytes, {
+          status: 200,
+          headers: { 'content-type': 'image/png' },
+        }),
+      ),
+    );
+
+    const result = await fetchMutator<{
+      status: number;
+      data: Blob;
+      headers: Headers;
+    }>('/api/v1/icons?uri=file%3A%2F%2F%2Freport.pdf');
+
+    expect(new Uint8Array(await result.data.arrayBuffer())).toEqual(bytes);
+  });
+
   it('prefixes the request URL with the configured base URL override', async () => {
     const fetchSpy = vi.fn().mockResolvedValue(jsonResponse(200, { status: 'ok' }));
     vi.stubGlobal('fetch', fetchSpy);

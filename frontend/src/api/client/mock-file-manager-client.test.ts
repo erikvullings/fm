@@ -79,6 +79,14 @@ describe('MockFileManagerClient directories', () => {
 });
 
 describe('MockFileManagerClient API', () => {
+  it('returns deterministic native icon bytes only for configured extensions', async () => {
+    const client = new MockFileManagerClient({ nativeIconExtensions: ['pdf'] });
+
+    expect((await client.getRuntimeCapabilities()).nativeFileIcons).toBe(true);
+    await expect(client.getFileIcon('mock:///report.PDF')).resolves.toEqual(expect.any(Uint8Array));
+    await expect(client.getFileIcon('mock:///notes.txt')).resolves.toBeUndefined();
+  });
+
   it('provides deterministic capabilities, workspace, metadata, actions, and plugins', async () => {
     const client = new MockFileManagerClient();
 

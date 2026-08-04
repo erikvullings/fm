@@ -72,11 +72,14 @@ async function readBody(response: Response): Promise<unknown> {
   if (response.status === 204 || response.status === 205 || response.status === 304) {
     return undefined;
   }
+  const contentType = response.headers.get('content-type') ?? '';
+  if (contentType.includes('image/')) {
+    return response.blob();
+  }
   const text = await response.text();
   if (text.length === 0) {
     return undefined;
   }
-  const contentType = response.headers.get('content-type') ?? '';
   if (!contentType.includes('application/json')) {
     return text;
   }

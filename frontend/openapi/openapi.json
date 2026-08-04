@@ -3111,6 +3111,60 @@
         "summary": "Reports that the backend process is running and able to serve requests."
       }
     },
+    "/api/v1/icons": {
+      "get": {
+        "operationId": "getFileIcon",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "uri",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "image/png": {}
+            },
+            "description": "Native file icon PNG"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationErrorDto"
+                }
+              }
+            },
+            "description": "The location URI was invalid"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationErrorDto"
+                }
+              }
+            },
+            "description": "No native icon is available"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationErrorDto"
+                }
+              }
+            },
+            "description": "The platform icon lookup failed"
+          }
+        },
+        "summary": "Returns PNG bytes from the active platform adapter, if supported."
+      }
+    },
     "/api/v1/navigation/open": {
       "post": {
         "operationId": "navigatePane",

@@ -13,6 +13,7 @@ import type {
   WorkspaceProjection,
 } from '../../models';
 import type { DirectoryColumnDescriptor } from '../directory-table/directory-table';
+import type { NativeIconLoader } from '../directory-table/native-icon-loader';
 import type { EntryFormatSettings } from '../entry-formatting/entry-formatting';
 import type { EntryMetadataView } from '../entry-metadata/entry-metadata-loader';
 import { Pane } from '../panes/pane';
@@ -38,6 +39,7 @@ export interface WorkspacePaneContent {
   readonly filterQuery: string;
   readonly formatSettings?: EntryFormatSettings;
   readonly pluginColumns?: readonly DirectoryColumnDescriptor[];
+  readonly nativeIconLoader?: NativeIconLoader;
   readonly metadata: EntryMetadataView;
   readonly cursorIndex?: number;
   readonly platform: SelectionPlatform;
@@ -305,6 +307,9 @@ export const WorkspaceLayoutView: FactoryComponent<WorkspaceLayoutViewAttrs> = (
         filterQuery: content.filterQuery,
         ...(content.formatSettings === undefined ? {} : { formatSettings: content.formatSettings }),
         ...(content.pluginColumns === undefined ? {} : { pluginColumns: content.pluginColumns }),
+        ...(content.nativeIconLoader === undefined
+          ? {}
+          : { nativeIconLoader: content.nativeIconLoader }),
         metadata: content.metadata,
         active,
         platform: content.platform,

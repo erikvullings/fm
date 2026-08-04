@@ -9,6 +9,7 @@ import {
 import { isParentEntry } from '../panes/parent-entry';
 import { fileAgeColumn } from '../plugin-columns/file-age-column';
 import { entryIcon } from './entry-icons';
+import type { NativeIconLoader } from './native-icon-loader';
 import { calculateVisibleWindow, scrollOffsetForIndex } from './windowing';
 import './directory-table.css';
 
@@ -56,6 +57,7 @@ export interface DirectoryTableAttrs {
   readonly sort?: readonly SortDescriptor[];
   readonly onSortChange?: (sort: readonly SortDescriptor[]) => void;
   readonly formatSettings?: EntryFormatSettings;
+  readonly nativeIconLoader?: NativeIconLoader;
   /** Enabled declarative plugin columns, already validated by the host. */
   readonly pluginColumns?: readonly DirectoryColumnDescriptor[];
   readonly onCursorChange?: (index: number, modifiers?: CursorClickModifiers) => void;
@@ -106,6 +108,7 @@ export interface DirectoryColumnDescriptor {
     nameMatchPrefix?: string,
     formatSettings?: EntryFormatSettings,
     now?: number,
+    nativeIconLoader?: NativeIconLoader,
   ): m.Children;
 }
 
@@ -114,7 +117,7 @@ const INITIAL_COLUMNS: readonly DirectoryColumnDescriptor[] = [
     id: 'core.name',
     label: 'Name',
     cellClass: 'fm-directory-name',
-    render: (entry, nameMatchPrefix) => {
+    render: (entry, nameMatchPrefix, _formatSettings, _now, nativeIconLoader) => {
       const statuses = [
         entry.hidden ? 'Hidden' : undefined,
         entry.kind === 'symlink' ? 'Link' : undefined,
@@ -124,7 +127,13 @@ const INITIAL_COLUMNS: readonly DirectoryColumnDescriptor[] = [
           ? -1
           : entry.name.toLocaleLowerCase().indexOf(nameMatchPrefix.toLocaleLowerCase());
       return [
-        entryIcon(entry, { className: 'fm-entry-icon' }),
+        nativeIconLoader?.iconDataUri(entry) === undefined
+          ? entryIcon(entry, { className: 'fm-entry-icon' })
+          : m('img.fm-entry-icon.fm-native-entry-icon', {
+              src: nativeIconLoader.iconDataUri(entry),
+              alt: '',
+              'aria-hidden': 'true',
+            }),
         m('span.fm-entry-name', [
           matchIndex < 0 || nameMatchPrefix === undefined
             ? entry.name
@@ -461,7 +470,13 @@ export const DirectoryTable: FactoryComponent<DirectoryTableAttrs> = () => {
                           ? undefined
                           : m('.fm-inline-rename-error', { role: 'alert' }, attrs.renameError),
                       ]
-                    : column.render(entry, attrs.nameMatchPrefix, attrs.formatSettings, now),
+                    : column.render(
+                        entry,
+                        attrs.nameMatchPrefix,
+                        attrs.formatSettings,
+                        now,
+                        attrs.nativeIconLoader,
+                      ),
                 ),
               ),
             ),

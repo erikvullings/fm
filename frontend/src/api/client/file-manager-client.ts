@@ -89,6 +89,9 @@ export interface FileManagerClient {
 
   getEntryMetadata(request: EntryMetadataRequest, signal?: AbortSignal): Promise<EntryMetadata>;
 
+  /** Lazily fetches a native PNG icon; unsupported/failure is a themed-icon fallback. */
+  getFileIcon(sampleLocationUri: string, signal?: AbortSignal): Promise<Uint8Array | undefined>;
+
   startOperation(request: StartOperationRequest, signal?: AbortSignal): Promise<Operation>;
 
   listOperations(signal?: AbortSignal): Promise<Operation[]>;

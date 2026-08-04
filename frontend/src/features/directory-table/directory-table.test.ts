@@ -9,6 +9,7 @@ import {
   entryArraySource,
   SAMPLE_FILE_AGE_COLUMN,
 } from './directory-table';
+import type { NativeIconLoader } from './native-icon-loader';
 
 let root: HTMLElement;
 
@@ -43,6 +44,22 @@ afterEach(() => {
 });
 
 describe('DirectoryTable states', () => {
+  it('overlays a loaded native icon and otherwise keeps the themed icon', () => {
+    const nativeIconLoader = {
+      iconDataUri: vi.fn().mockReturnValue('data:image/png;base64,iVBORw=='),
+    } as unknown as NativeIconLoader;
+    mount({
+      state: { type: 'loaded' },
+      source: entryArraySource([entry()]),
+      viewportHeight: 120,
+      nativeIconLoader,
+    });
+
+    const icon = root.querySelector<HTMLImageElement>('img.fm-native-entry-icon');
+    expect(icon?.src).toBe('data:image/png;base64,iVBORw==');
+    expect(root.querySelector('.fm-entry-icon:not(.fm-native-entry-icon)')).toBeNull();
+  });
+
   it('renders bounded loading placeholders with an accessible status', () => {
     mount({ state: { type: 'loading' }, viewportHeight: 120 });
 

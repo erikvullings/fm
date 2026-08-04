@@ -29,6 +29,7 @@ import {
 } from '../features/commands/availability';
 import { ContextMenu as DirectoryContextMenu } from '../features/commands/context-menu';
 import { SAMPLE_FILE_AGE_COLUMN } from '../features/directory-table/directory-table';
+import { NativeIconLoader } from '../features/directory-table/native-icon-loader';
 import {
   DEFAULT_ENTRY_FORMAT_SETTINGS,
   type EntryFormatSettings,
@@ -198,6 +199,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
   let commandPaletteOpen = false;
   let commandPaletteError: string | undefined;
   let openTerminalSupported = false;
+  let nativeIconLoader: NativeIconLoader | undefined;
   let contextMenu:
     | {
         readonly paneId: PaneId;
@@ -593,6 +595,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       const capabilities = await client.getRuntimeCapabilities(workspaceRequest.signal);
       platform = capabilities.platform;
       openTerminalSupported = capabilities.openTerminal;
+      nativeIconLoader = capabilities.nativeFileIcons ? new NativeIconLoader(client) : undefined;
       const { loaded, summaries } = await openOrCreateDefaultWorkspace(
         client,
         workspaceRequest.signal,
@@ -1643,6 +1646,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       filterOpen: key === undefined ? false : quickFilterOpenFor(key, tab),
       filterQuery: quickFilterQuery,
       formatSettings: entryFormatSettings,
+      ...(nativeIconLoader === undefined ? {} : { nativeIconLoader }),
       pluginColumns:
         plugins.some(
           (plugin) =>

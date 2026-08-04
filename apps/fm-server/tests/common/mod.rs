@@ -26,6 +26,7 @@ pub(crate) struct TestServer {
 }
 
 impl TestServer {
+    #[allow(dead_code)]
     pub(crate) async fn spawn() -> Self {
         let workspace_directory =
             tempfile::tempdir().expect("must create a temp workspace directory");
@@ -43,6 +44,15 @@ impl TestServer {
             config.settings_directory.clone(),
             event_bus.clone(),
         ));
+        Self::spawn_with_service(config, service, workspace_directory).await
+    }
+
+    pub(crate) async fn spawn_with_service(
+        config: ServerConfig,
+        service: Arc<FileManagerService>,
+        workspace_directory: tempfile::TempDir,
+    ) -> Self {
+        let event_bus = service.event_bus().clone();
         let session = fm_server::DevelopmentSession::new();
         let router =
             fm_server::build_router_with_service_and_session(&config, service, session.clone());

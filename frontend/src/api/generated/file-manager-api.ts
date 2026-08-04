@@ -11,6 +11,7 @@ import type {
   DirectorySnapshotDto,
   EntryMetadataDto,
   EntryMetadataRequest,
+  GetFileIconParams,
   GetPluginIconThemeAssetParams,
   HealthDto,
   InvokeActionRequestDto,
@@ -339,6 +340,66 @@ export const getGetHealthUrl = () => {
 export const getHealth = async ( options?: Parameters<typeof fetchMutator>[1]): Promise<getHealthResponse> => {
 
   return fetchMutator<getHealthResponse>(getGetHealthUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+export type getFileIconResponse200 = {
+  data: Blob
+  status: 200
+}
+
+export type getFileIconResponse400 = {
+  data: ApplicationErrorDto
+  status: 400
+}
+
+export type getFileIconResponse404 = {
+  data: ApplicationErrorDto
+  status: 404
+}
+
+export type getFileIconResponse502 = {
+  data: ApplicationErrorDto
+  status: 502
+}
+
+export type getFileIconResponseSuccess = (getFileIconResponse200) & {
+  headers: Headers;
+};
+export type getFileIconResponseError = (getFileIconResponse400 | getFileIconResponse404 | getFileIconResponse502) & {
+  headers: Headers;
+};
+
+export type getFileIconResponse = (getFileIconResponseSuccess | getFileIconResponseError)
+
+export const getGetFileIconUrl = (params: GetFileIconParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/icons?${stringifiedParams}` : `/api/v1/icons`
+}
+
+/**
+ * @summary Returns PNG bytes from the active platform adapter, if supported.
+ */
+export const getFileIcon = async (params: GetFileIconParams, options?: Parameters<typeof fetchMutator>[1]): Promise<getFileIconResponse> => {
+
+  return fetchMutator<getFileIconResponse>(getGetFileIconUrl(params),
   {
     ...options,
     method: 'GET'

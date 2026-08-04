@@ -1238,6 +1238,7 @@ dependencies = [
  "fm-application",
  "fm-domain",
  "fm-events",
+ "fm-platform",
  "fm-transport-dto",
  "futures",
  "reqwest",

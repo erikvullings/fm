@@ -1319,6 +1319,16 @@ impl FileManagerService {
         }
     }
 
+    /// Returns the active platform adapter's PNG icon for one sample entry.
+    /// The adapter owns extension-level caching; this service deliberately
+    /// adds no second cache layer (task 0091).
+    pub fn file_icon(&self, uri: &str) -> Result<Vec<u8>, ApplicationError> {
+        let path = Location::parse(uri)
+            .and_then(|location| location.to_native_path())
+            .map_err(|error| ApplicationError::InvalidRequest(format!("invalid `uri`: {error}")))?;
+        self.platform.file_icon(&path).map_err(map_file_icon_error)
+    }
+
     /// Runs the workspace startup lifecycle (spec §5.3.7): selects an
     /// explicitly requested workspace, otherwise the last-active one,
     /// otherwise creates a default.
@@ -2779,6 +2789,15 @@ fn map_platform_error(action_id: &ActionId, error: fm_platform::PlatformError) -
         fm_platform::PlatformError::Unsupported { .. } => {
             ApplicationError::ActionUnavailable(action_id.clone())
         }
+        other => ApplicationError::PlatformOperationFailed(other.to_string()),
+    }
+}
+
+/// Missing native icon support is an expected fallback condition rather than
+/// a host failure; genuine platform errors remain visible as a 502/IPC error.
+fn map_file_icon_error(error: fm_platform::PlatformError) -> ApplicationError {
+    match error {
+        fm_platform::PlatformError::Unsupported { .. } => ApplicationError::NotFound,
         other => ApplicationError::PlatformOperationFailed(other.to_string()),
     }
 }

@@ -31,6 +31,7 @@ export * from './entryMetadataDtoPluginFields';
 export * from './entryMetadataRequest';
 export * from './entryRefDto';
 export * from './entrySummaryDto';
+export * from './getFileIconParams';
 export * from './getPluginIconThemeAssetParams';
 export * from './healthDto';
 export * from './healthStatusDto';
