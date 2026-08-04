@@ -79,7 +79,7 @@ describe('AppShell', () => {
     });
     expect(root.querySelector('.fm-pane-tabs')).not.toBeNull();
     expect(root.querySelector('.fm-breadcrumb')).not.toBeNull();
-    expect(root.querySelector('.fm-pane-status')?.textContent).toContain('entries');
+    expect(root.querySelector('.fm-pane-status')?.textContent).toContain('Sort:');
   });
 
   it('selects a row and opens its directory with Enter', async () => {

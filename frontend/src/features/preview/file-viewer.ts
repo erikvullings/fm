@@ -51,7 +51,7 @@ function renderSearchBar(
       {
         type: 'button',
         title: 'Match case',
-        'aria-pressed': search?.caseSensitive === true,
+        'aria-pressed': search?.caseSensitive === true ? 'true' : 'false',
         onclick: () =>
           attrs.onSearchOptionChange({ caseSensitive: search?.caseSensitive !== true }),
       },
@@ -62,7 +62,7 @@ function renderSearchBar(
       {
         type: 'button',
         title: 'Match whole word',
-        'aria-pressed': search?.wholeWord === true,
+        'aria-pressed': search?.wholeWord === true ? 'true' : 'false',
         onclick: () => attrs.onSearchOptionChange({ wholeWord: search?.wholeWord !== true }),
       },
       'Ab',
@@ -72,7 +72,7 @@ function renderSearchBar(
       {
         type: 'button',
         title: 'Use regular expression',
-        'aria-pressed': search?.regex === true,
+        'aria-pressed': search?.regex === true ? 'true' : 'false',
         onclick: () => attrs.onSearchOptionChange({ regex: search?.regex !== true }),
       },
       '.*',
@@ -215,7 +215,7 @@ export const FileViewer: FactoryComponent<FileViewerAttrs> = () => ({
         m(
           'button.fm-file-viewer-close',
           { type: 'button', 'aria-label': 'Close viewer', onclick: attrs.onClose },
-          closeIcon(),
+          closeIcon({ size: 14 }),
         ),
       ]),
       state.status === 'ready' && state.content.kind === 'text'

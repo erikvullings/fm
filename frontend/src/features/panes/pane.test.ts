@@ -276,9 +276,8 @@ describe('Pane status bar', () => {
     mount(attrs({ selectedEntryIds: new Set<EntryId>(['one' as EntryId]) }));
 
     const status = root.querySelector('.fm-pane-status')?.textContent;
-    expect(status).toContain('2 entries');
-    expect(status).toContain('1 selected');
-    expect(status).toContain('1 KB');
+    expect(status).toContain('3 KB in 2 files');
+    expect(status).toContain('1 KB in 1 selected');
     expect(status).toContain('Name ascending');
   });
 
@@ -366,20 +365,20 @@ describe('Pane quick filter', () => {
       }),
     );
     expect(root.querySelector('.fm-pane-status')?.textContent).toContain(
-      '1 of 2 shown (more available)',
+      '1 KB in 1 file (1 of 2 shown, more available)',
     );
 
     mount(attrs({ filterOpen: false, filterQuery: '' }));
-    expect(root.querySelector('.fm-pane-status')?.textContent).toContain('2 entries');
+    expect(root.querySelector('.fm-pane-status')?.textContent).toContain('3 KB in 2 files');
   });
 
   it('shows the real known total (not just the loaded count) while more pages remain unfiltered', () => {
     mount(attrs({ filterQuery: '', totalKnownEntries: 459 }));
     const status = root.querySelector('.fm-pane-status')?.textContent;
-    expect(status).toContain('2 of 459 entries (loading more…)');
+    expect(status).toContain('3 KB in 2 files (2 of 459 loaded)');
 
     mount(attrs({ filterQuery: '', totalKnownEntries: 2 }));
-    expect(root.querySelector('.fm-pane-status')?.textContent).toContain('2 entries');
+    expect(root.querySelector('.fm-pane-status')?.textContent).toContain('3 KB in 2 files');
   });
 
   it('reports hidden-but-selected entries alongside the plain selected count', () => {
@@ -390,12 +389,12 @@ describe('Pane quick filter', () => {
       }),
     );
     expect(root.querySelector('.fm-pane-status')?.textContent).toContain(
-      '2 selected (1 hidden by filter)',
+      '3 KB in 2 selected (1 hidden by filter)',
     );
 
     mount(attrs({ selectedEntryIds: new Set<EntryId>(['one'] as EntryId[]) }));
     const status = root.querySelector('.fm-pane-status')?.textContent;
-    expect(status).toContain('1 selected');
+    expect(status).toContain('1 KB in 1 selected');
     expect(status).not.toContain('hidden by filter');
   });
 });

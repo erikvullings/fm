@@ -231,7 +231,7 @@ export const CommandPalette: FactoryComponent<CommandPaletteAttrs> = () => {
                         {
                           id: `command-palette-option-${index}`,
                           role: 'option',
-                          'aria-selected': index === activeIndex,
+                          'aria-selected': index === activeIndex ? 'true' : 'false',
                           'aria-disabled': item.available ? undefined : 'true',
                           class: index === activeIndex ? 'fm-command-palette-active' : undefined,
                           onclick: () => invoke(attrs, item),

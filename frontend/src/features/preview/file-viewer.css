@@ -21,11 +21,29 @@
   min-width: 0;
   text-overflow: ellipsis;
   white-space: nowrap;
+  box-sizing: border-box;
+  flex: 1;
+  padding: 0 0.5rem;
+  color: var(--fm-text-muted);
+  font-family: var(--fm-font-family);
+  font-size: var(--fm-font-size);
+  font-weight: normal;
+  line-height: inherit;
+  margin: 0;
+  border-bottom: 0;
+  box-shadow: none;
+  height: var(--fm-row-height);
 }
 
 .fm-file-viewer-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   flex: 0 0 auto;
   margin-inline-start: auto;
+  width: var(--fm-row-height);
+  height: var(--fm-row-height);
+  padding: 0;
   border: 0;
   background: transparent;
   color: inherit;
@@ -67,9 +85,7 @@
   flex: 1;
   min-width: 0;
   margin: 0;
-  border: 1px solid var(--fm-border);
-  border-radius: 0;
-  background: var(--fm-surface);
+  border-bottom: 0;
   color: inherit;
   font-family: var(--fm-font-family);
   font-size: var(--fm-font-size);

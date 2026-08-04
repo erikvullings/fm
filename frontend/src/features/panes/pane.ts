@@ -198,6 +198,32 @@ function sizeLabel(bytes: number): string {
   return `${new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 }).format(value)} ${units[unitIndex]}`;
 }
 
+/** Aggregates the currently listed (loaded/shown) entries into a Marta-style status summary:
+ * total size of files plus separate file/folder counts. Symlinks are counted as files since
+ * they're visually indistinguishable from them in the table. */
+function listingSummary(entries: readonly EntrySummary[]): string {
+  let fileCount = 0;
+  let folderCount = 0;
+  let totalSize = 0;
+  for (const entry of entries) {
+    if (entry.kind === 'directory') {
+      folderCount += 1;
+    } else {
+      fileCount += 1;
+      totalSize += entry.size ?? 0;
+    }
+  }
+  const filesPart = `${fileCount} ${fileCount === 1 ? 'file' : 'files'}`;
+  const foldersPart = `${folderCount} ${folderCount === 1 ? 'folder' : 'folders'}`;
+  const countsText =
+    folderCount === 0
+      ? filesPart
+      : fileCount === 0
+        ? foldersPart
+        : `${filesPart}, and ${foldersPart}`;
+  return `${sizeLabel(totalSize)} in ${countsText}`;
+}
+
 /** Compact pane containing its single tab, path controls, directory grid, and status. */
 export const Pane: FactoryComponent<PaneAttrs> = () => {
   let editing = false;
@@ -783,20 +809,25 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
             m(
               'span',
               attrs.filterQuery.trim() === ''
-                ? knownTotalEntries !== undefined && knownTotalEntries > ordinaryEntries.length
-                  ? `${ordinaryEntries.length} of ${knownTotalEntries} entries (loading more…)`
-                  : `${ordinaryEntries.length} ${ordinaryEntries.length === 1 ? 'entry' : 'entries'}`
-                : `${ordinaryEntries.length} of ${attrs.totalEntryCount} shown${
-                    attrs.hasMore === true ? ' (more available)' : ''
+                ? `${listingSummary(ordinaryEntries)}${
+                    knownTotalEntries !== undefined && knownTotalEntries > ordinaryEntries.length
+                      ? ` (${ordinaryEntries.length} of ${knownTotalEntries} loaded)`
+                      : ''
+                  }`
+                : `${listingSummary(ordinaryEntries)} (${ordinaryEntries.length} of ${attrs.totalEntryCount} shown${
+                    attrs.hasMore === true ? ', more available' : ''
+                  })`,
+            ),
+            selectedCount === 0
+              ? undefined
+              : m(
+                  'span',
+                  `${sizeLabel(totalSelectedSize)} in ${selectedCount} selected${
+                    attrs.hiddenSelectedCount > 0
+                      ? ` (${attrs.hiddenSelectedCount} hidden by filter)`
+                      : ''
                   }`,
-            ),
-            m(
-              'span',
-              attrs.hiddenSelectedCount > 0
-                ? `${selectedCount} selected (${attrs.hiddenSelectedCount} hidden by filter)`
-                : `${selectedCount} selected`,
-            ),
-            m('span', `${sizeLabel(totalSelectedSize)} selected`),
+                ),
             m('span', `Sort: ${attrs.sortLabel}`),
             typeahead === undefined
               ? undefined
