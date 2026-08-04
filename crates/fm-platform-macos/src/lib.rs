@@ -10,13 +10,16 @@
 //! resolved), Quick Look previews, Finder tags, extended attributes and
 //! drag-to-Finder (drag is task 0062). Clipboard file references stay
 //! delegated to the fallback adapter. `open_with_default_application` (task
-//! 0061) shells out to `open <path>`; there is no distinct native "choose an
-//! application" picker wired up, so `core.openWith` currently behaves the
-//! same as `core.open` (documented gap, see task 0061 Agent Notes).
-//! `open_in_text_editor` (task 0086) shells out to `open -t <path>`, macOS's
-//! own "always open in the default text editor" flag, or `open -a <override>
-//! <path>` when an editor command is configured - a genuine distinct binding,
-//! unlike `open_with_default_application`/`open_terminal`'s shared gap above.
+//! 0061) shells out to `open <path>`. `open_with_chooser` (task 0061
+//! follow-up) shows the native "choose application" dialog via `osascript`
+//! (the path is passed as an `argv` element, never interpolated into the
+//! script text, so it can't be used for AppleScript/shell injection);
+//! cancelling the dialog is caught inside the script (AppleScript error
+//! -128) and treated as a successful no-op, not a failure. `open_in_text_editor`
+//! (task 0086) shells out to `open -t <path>`, macOS's own "always open in
+//! the default text editor" flag, or `open -a <override> <path>` when an
+//! editor command is configured - a genuine distinct binding, unlike
+//! `open_with_default_application`/`open_terminal`'s shared gap above.
 
 #![cfg(target_os = "macos")]
 // Native AppKit/Foundation bindings are inherently FFI: `objc2` message sends
@@ -75,6 +78,39 @@ fn path_to_str(path: &Path) -> Result<&str, PlatformError> {
     path.to_str().ok_or_else(|| PlatformError::Io {
         message: "path is not valid UTF-8".to_owned(),
     })
+}
+
+/// Builds (without running) the `osascript` invocation behind
+/// [`MacosPlatformAdapter::open_with_chooser`], factored out so tests can
+/// assert on its arguments without ever popping the interactive dialog.
+///
+/// `path` is passed as a trailing `argv` element, never interpolated into
+/// the `-e` script text, so it can't be used for AppleScript/shell
+/// injection; cancelling `choose application` raises AppleScript error -128,
+/// caught inside the script and treated as a successful no-op.
+fn open_with_chooser_command(path: &Path) -> std::process::Command {
+    let mut command = std::process::Command::new("osascript");
+    command
+        .arg("-e")
+        .arg("on run argv")
+        .arg("-e")
+        .arg("set targetPath to item 1 of argv")
+        .arg("-e")
+        .arg("try")
+        .arg("-e")
+        .arg("set chosenApp to (choose application)")
+        .arg("-e")
+        .arg("on error number -128")
+        .arg("-e")
+        .arg("return")
+        .arg("-e")
+        .arg("end try")
+        .arg("-e")
+        .arg("tell application \"Finder\" to open (POSIX file targetPath) using chosenApp")
+        .arg("-e")
+        .arg("end run")
+        .arg(path);
+    command
 }
 
 fn fetch_icon_png(path: &Path) -> Result<Vec<u8>, PlatformError> {
@@ -213,6 +249,26 @@ impl PlatformAdapter for MacosPlatformAdapter {
         } else {
             Err(PlatformError::Io {
                 message: format!("{target} launch exited with {status}"),
+            })
+        }
+    }
+
+    fn open_with_chooser(&self, path: &Path) -> Result<(), PlatformError> {
+        let output =
+            open_with_chooser_command(path)
+                .output()
+                .map_err(|error| PlatformError::Io {
+                    message: format!("failed to launch the Open With chooser: {error}"),
+                })?;
+        if output.status.success() {
+            Ok(())
+        } else {
+            Err(PlatformError::Io {
+                message: format!(
+                    "Open With chooser exited with {}: {}",
+                    output.status,
+                    String::from_utf8_lossy(&output.stderr).trim()
+                ),
             })
         }
     }
@@ -479,6 +535,38 @@ mod tests {
         assert!(
             message.contains("Definitely Not An Installed Editor"),
             "error must name the overridden app, not the default: {message}"
+        );
+    }
+
+    #[test]
+    fn open_with_chooser_passes_the_path_as_a_trailing_argv_element_never_interpolated() {
+        // Not executed: `choose application` pops a real, blocking system
+        // dialog with no way for an automated test to dismiss it, so this
+        // only asserts on the constructed command (the actual dialog is
+        // manually verified inside a running desktop app, see Agent Notes).
+        let path = Path::new("/tmp/weird \"quotes\" & caf\u{00e9}.txt");
+        let command = open_with_chooser_command(path);
+        assert_eq!(command.get_program(), "osascript");
+
+        let args: Vec<std::ffi::OsString> = command
+            .get_args()
+            .map(std::ffi::OsStr::to_os_string)
+            .collect();
+        assert_eq!(
+            args.last(),
+            Some(&std::ffi::OsString::from(path)),
+            "the path must be the last argv element, passed verbatim"
+        );
+        for script_fragment in &args[..args.len() - 1] {
+            assert!(
+                !script_fragment.to_string_lossy().contains("caf\u{00e9}"),
+                "the path must never be embedded inside an -e script fragment: {script_fragment:?}"
+            );
+        }
+        assert!(
+            args.iter()
+                .any(|arg| arg.to_string_lossy().contains("-128")),
+            "cancelling `choose application` (AppleScript error -128) must be handled inside the script"
         );
     }
 }

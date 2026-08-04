@@ -149,3 +149,60 @@ Depends on: 0059, 0060
     pre-existing uncommitted one-line change (`import { type FileManagerClient }` ->
     `import type { FileManagerClient }`), which predates tonight's work and is unrelated to this
     task - not staged, not committed.
+- 2026-08-04 copilot: Closed the `core.openWith` gap noted above (reported by the user after
+  testing task 0086/0087's Ctrl+Enter/Cmd+Enter shortcut in the real Tauri desktop app: "CMD+ENTER
+  should display the open with system dialog instead of acting as the viewer").
+  - Added `PlatformAdapter::open_with_chooser(&self, path: &Path) -> Result<(), PlatformError>`
+    (`fm-platform/src/adapter.rs`), with a default impl falling back to
+    `open_with_default_application` (mirrors `open_in_text_editor`'s precedent from task 0086) -
+    reuses the existing `OPEN_WITH_DEFAULT_APPLICATION` capability bit rather than adding a new one
+    (no adapter needs to advertise this distinctly; it degrades gracefully).
+  - `MacosPlatformAdapter::open_with_chooser` shells out to `osascript` running an
+    `on run argv ... end run` script that calls AppleScript's `choose application` (the OS's native
+    app-picker dialog) and then `tell application "Finder" to open (POSIX file targetPath) using
+    chosenApp`. The target path is passed as a genuine trailing `argv` element (via
+    `Command::arg(path)`), never interpolated into the `-e` script text, to rule out AppleScript/
+    shell injection (OWASP concern) - verified by a unit test
+    (`open_with_chooser_passes_the_path_as_a_trailing_argv_element_never_interpolated`) asserting
+    the path only ever appears as the final argv element and never inside any `-e` fragment.
+    Cancelling the dialog raises AppleScript error -128, caught inside the script
+    (`on error number -128 / return`) and treated as a successful no-op, not a failure.
+  - `WindowsPlatformAdapter` and `FallbackPlatformAdapter` both delegate/report-unsupported for
+    `open_with_chooser` exactly like every other method (task 0060's real Explorer integration,
+    not yet done, will need a real Windows implementation - the correct native mechanism is
+    `rundll32.exe shell32.dll,OpenAs_RunDLL <path>`, not implemented here to keep this crate's
+    scope consistent with its current 100%-delegation state).
+  - `fm-application/src/service.rs`: added `PlatformActionKind::OpenWithChooser`; `core.openWith`
+    now maps to it (split out of the `core.open`/`core.view` shared `Open` arm) and dispatches to
+    `self.platform.open_with_chooser(&path)` instead of `open_with_default_application` - so
+    `core.open`/`core.view` and `core.openWith` are now genuinely distinct dispatch targets, not
+    just distinct action ids sharing one behavior. Updated `action.rs`'s `core_actions` doc comment
+    to stop claiming `core.openWith` "currently behaves identically to core.open" now that macOS
+    has a real chooser. Test: `invoke_action_open_with_shows_the_chooser_not_the_default_application`
+    asserts `core.openWith` records into a new `opened_with_chooser` field on the
+    `RecordingPlatformAdapter` test double, and explicitly asserts `adapter.opened` stays empty
+    (proving it does NOT fall through to the `core.open`/`core.view` path).
+  - NOT manually verified end-to-end against the real interactive dialog: `choose application` pops
+    a real, blocking macOS system dialog with no scriptable/automatable way for this non-interactive
+    agent session to dismiss it (unlike task 0061's original manual verification of `open`/
+    `open -a Terminal`, which complete without user interaction). All argument-construction/
+    injection-safety/cancellation-handling is covered by unit tests instead, per the acceptance
+    criterion "actual launching is verified manually per platform and recorded in the task notes" -
+    this remains an explicit gap for a human to verify by running the desktop app and pressing
+    Cmd+Enter on a file.
+  - Also fixed, same session, unrelated bug report ("the Function keys in the footer don't do
+    anything" in the real Tauri app): the footer's `.fm-function-key` spans
+    (`frontend/src/app/app-shell.ts`) had zero click wiring (a pure text/status display). Added
+    `invokeFunctionKeyShortcut(shortcut)`, which synthesizes a real `KeyboardEvent('keydown', {
+    key: shortcut })` and dispatches it at the active pane's DOM element
+    (`[data-active="true"] > .fm-pane`), reusing the exact same two-tier keyboard-dispatch pipeline
+    (pane-level then document-level handlers) a real key press already goes through, rather than
+    duplicating each action's dispatch logic. Wired via `onclick`/`role="button"`/`tabindex` on the
+    footer spans (disabled ones get `tabindex="-1"`/no `onclick`), plus `cursor: pointer` /
+    `cursor: default` CSS. Test:
+    `copies one selected file to the other pane by clicking the F5 footer hint (Tauri parity fix)`.
+  - Verification this session: `cargo fmt --all` (clean), `cargo clippy --workspace --all-targets
+    -- -D warnings` (zero warnings), `cargo test` for `fm-platform`/`fm-platform-macos`/
+    `fm-platform-windows`/`fm-application` (all passing; the only failure anywhere in the workspace
+    was the already-documented pre-existing `fm-plugin-runtime` icon-count test, unrelated).
+    Frontend: `tsc --noEmit` (clean), full `vitest run` (59 files, 466 tests, all passing).

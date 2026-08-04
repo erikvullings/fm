@@ -71,6 +71,10 @@ impl PlatformAdapter for WindowsPlatformAdapter {
         self.fallback.open_in_text_editor(path, command_override)
     }
 
+    fn open_with_chooser(&self, path: &Path) -> Result<(), PlatformError> {
+        self.fallback.open_with_chooser(path)
+    }
+
     fn read_clipboard_file_references(&self) -> Result<Vec<PathBuf>, PlatformError> {
         self.fallback.read_clipboard_file_references()
     }
@@ -153,6 +157,10 @@ mod tests {
                 .open_in_text_editor(path, None)
                 .unwrap_err()
                 .to_string()
+        );
+        assert_eq!(
+            adapter.open_with_chooser(path).unwrap_err().to_string(),
+            fallback.open_with_chooser(path).unwrap_err().to_string()
         );
         assert_eq!(
             adapter

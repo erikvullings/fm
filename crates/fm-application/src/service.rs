@@ -1160,6 +1160,7 @@ impl FileManagerService {
 
         let result = match kind {
             PlatformActionKind::Open => self.platform.open_with_default_application(&path),
+            PlatformActionKind::OpenWithChooser => self.platform.open_with_chooser(&path),
             PlatformActionKind::Reveal => self.platform.reveal_in_file_manager(&path),
             PlatformActionKind::EditInTextEditor => {
                 let command_override = self
@@ -2741,14 +2742,14 @@ fn mutating_operation_kind(id: &ActionId) -> Option<OperationKindDto> {
 }
 
 /// Which platform adapter method an action dispatches to (task 0061).
-/// `core.openWith` and `core.view` share [`PlatformActionKind::Open`] with
-/// `core.open`: no platform adapter exposes a distinct "choose application"
-/// binding yet (see `core_actions`'s doc comment in `action.rs`), and
-/// `core.view` (task 0087) is an explicit stopgap for a real viewer (task
-/// 0088).
+/// `core.view` shares [`PlatformActionKind::Open`] with `core.open`: it is
+/// an explicit stopgap for a real viewer (task 0088). `core.openWith`
+/// dispatches to [`PlatformActionKind::OpenWithChooser`], a native "choose
+/// application" dialog (see `core_actions`'s doc comment in `action.rs`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum PlatformActionKind {
     Open,
+    OpenWithChooser,
     Reveal,
     OpenTerminal,
     EditInTextEditor,
@@ -2758,7 +2759,8 @@ enum PlatformActionKind {
 /// (task 0061), or `None` for actions with no platform-adapter effect.
 fn platform_action_kind(id: &ActionId) -> Option<PlatformActionKind> {
     match id.as_str() {
-        "core.open" | "core.openWith" | "core.view" => Some(PlatformActionKind::Open),
+        "core.open" | "core.view" => Some(PlatformActionKind::Open),
+        "core.openWith" => Some(PlatformActionKind::OpenWithChooser),
         "core.edit" => Some(PlatformActionKind::EditInTextEditor),
         "core.revealInSystemFileManager" => Some(PlatformActionKind::Reveal),
         "core.openTerminal" => Some(PlatformActionKind::OpenTerminal),
@@ -3582,6 +3584,7 @@ mod tests {
     struct RecordingPlatformAdapter {
         capabilities: PlatformCapabilities,
         opened: Mutex<Vec<PathBuf>>,
+        opened_with_chooser: Mutex<Vec<PathBuf>>,
         revealed: Mutex<Vec<PathBuf>>,
         terminals: Mutex<Vec<(PathBuf, Option<String>)>>,
         edited: Mutex<Vec<(PathBuf, Option<String>)>>,
@@ -3595,6 +3598,7 @@ mod tests {
             Self {
                 capabilities,
                 opened: Mutex::new(Vec::new()),
+                opened_with_chooser: Mutex::new(Vec::new()),
                 revealed: Mutex::new(Vec::new()),
                 terminals: Mutex::new(Vec::new()),
                 edited: Mutex::new(Vec::new()),
@@ -3682,6 +3686,14 @@ mod tests {
                 .lock()
                 .expect("lock must not be poisoned")
                 .push((path.to_path_buf(), command_override.map(str::to_owned)));
+            Ok(())
+        }
+
+        fn open_with_chooser(&self, path: &Path) -> Result<(), fm_platform::PlatformError> {
+            self.opened_with_chooser
+                .lock()
+                .expect("lock must not be poisoned")
+                .push(path.to_path_buf());
             Ok(())
         }
     }
@@ -3820,6 +3832,38 @@ mod tests {
             .expect("core.view must dispatch to the platform adapter");
 
         assert_eq!(adapter.opened.lock().unwrap().as_slice(), [target]);
+    }
+
+    #[test]
+    fn invoke_action_open_with_shows_the_chooser_not_the_default_application() {
+        // core.openWith (task 0061 follow-up) dispatches to the platform
+        // adapter's distinct open_with_chooser method, not the same
+        // open_with_default_application path as core.open/core.view.
+        let (dir, service, adapter) = service_with_recording_adapter();
+        let target = dir.path().join("report.pdf");
+        let uri = Location::from_native_path(&target)
+            .expect("path must convert to a location")
+            .uri;
+
+        service
+            .invoke_action(
+                "core.openWith".to_owned(),
+                InvokeActionRequestDto {
+                    parameters: Some(serde_json::json!({ "uri": uri })),
+                    context: single_selection_context(),
+                },
+                None,
+            )
+            .expect("core.openWith must dispatch to the platform adapter");
+
+        assert_eq!(
+            adapter.opened_with_chooser.lock().unwrap().as_slice(),
+            [target]
+        );
+        assert!(
+            adapter.opened.lock().unwrap().is_empty(),
+            "core.openWith must not dispatch through open_with_default_application"
+        );
     }
 
     #[test]

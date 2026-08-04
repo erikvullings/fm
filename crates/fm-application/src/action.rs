@@ -173,21 +173,24 @@ fn capability_gated_selection(feature_available: bool) -> ActionContextRequireme
 /// injected [`fm_platform::PlatformAdapter`]'s reported capabilities, task
 /// 0061) rather than a permanent hardcoded value. `core.openWith` is tied to
 /// the same [`PlatformCapabilities::OPEN_WITH_DEFAULT_APPLICATION`] flag as
-/// `core.open`: no platform adapter exposes a distinct "choose application"
-/// binding yet, so it currently behaves identically to `core.open` (opens
-/// with the default application) - a documented gap, not silently
-/// over-claimed. `core.openWith` additionally carries a `Ctrl+Enter`
-/// (`Cmd+Enter` on macOS, via [`primary`]) shortcut, matching the Marta file
-/// manager's "open with" convention, alongside its existing command-palette-
-/// only binding. `core.view` (task 0087) is a stopgap that also shares the
-/// same capability and dispatch as `core.open`, documented on
-/// [`crate::FileManagerService`]'s platform dispatch: task 0088
-/// tracks the real in-app viewer it will switch to without changing the
-/// shortcut, title or footer wiring. `core.edit` (task 0086) opens the
-/// selected file in a text editor rather than its default application,
-/// gated by the same capability since no platform adapter exposes a
-/// distinct "text editor" capability bit yet (see
-/// [`fm_platform::PlatformAdapter::open_in_text_editor`]'s doc comment).
+/// `core.open` (no platform adapter exposes a distinct capability bit for
+/// it), but dispatches to [`fm_platform::PlatformAdapter::open_with_chooser`],
+/// a genuinely distinct native "choose application" dialog on adapters that
+/// implement it (macOS), falling back to opening with the default
+/// application on adapters that don't (a documented gap, not silently
+/// over-claimed - see that method's doc comment). `core.openWith`
+/// additionally carries a `Ctrl+Enter` (`Cmd+Enter` on macOS, via
+/// [`primary`]) shortcut, matching the Marta file manager's "open with"
+/// convention, alongside its existing command-palette-only binding.
+/// `core.view` (task 0087) is a stopgap that shares the same capability and
+/// dispatch as `core.open`, documented on [`crate::FileManagerService`]'s
+/// platform dispatch: task 0088 tracks the real in-app viewer it will
+/// switch to without changing the shortcut, title or footer wiring.
+/// `core.edit` (task 0086) opens the selected file in a text editor rather
+/// than its default application, gated by the same capability since no
+/// platform adapter exposes a distinct "text editor" capability bit yet
+/// (see [`fm_platform::PlatformAdapter::open_in_text_editor`]'s doc
+/// comment).
 /// `core.copyPath` and `core.copyRelativePath` have no backend
 /// feature yet (the system-clipboard/relative-path work tracked alongside
 /// this task), so they stay registered as permanently unavailable.

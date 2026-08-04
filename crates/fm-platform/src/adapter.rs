@@ -97,6 +97,18 @@ pub trait PlatformAdapter: Send + Sync {
         self.open_with_default_application(path)
     }
 
+    /// Shows the OS's native "Open With\u2026" application chooser for an
+    /// entry (task 0061 follow-up), rather than silently opening it with the
+    /// default application. Cancelling the chooser must be treated as a
+    /// no-op, not an error.
+    ///
+    /// Falls back to [`PlatformAdapter::open_with_default_application`] for
+    /// adapters with no native chooser (a documented gap, not a silent
+    /// over-claim - see `fm-application`'s `core_actions` doc comment).
+    fn open_with_chooser(&self, path: &Path) -> Result<(), PlatformError> {
+        self.open_with_default_application(path)
+    }
+
     /// Reads the file paths currently referenced on the OS clipboard.
     fn read_clipboard_file_references(&self) -> Result<Vec<PathBuf>, PlatformError> {
         Err(PlatformError::Unsupported {
