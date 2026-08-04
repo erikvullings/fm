@@ -377,6 +377,32 @@ describe('AppShell', () => {
     });
   });
 
+  it('copies one selected file to the other pane by clicking the F5 footer hint (Tauri parity fix)', async () => {
+    const client = new MockFileManagerClient();
+    const startOperation = vi.spyOn(client, 'startOperation');
+    m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
+    await vi.waitFor(() => expect(root.textContent).toContain('.env'));
+    const activePane = root.querySelector<HTMLElement>('[data-active="true"] > .fm-pane');
+    const file = [...(activePane?.querySelectorAll<HTMLElement>('.fm-directory-row') ?? [])].find(
+      (row) => row.textContent?.includes('.env'),
+    );
+    file?.click();
+    m.redraw.sync();
+    const footerKey = [...root.querySelectorAll<HTMLElement>('.fm-function-key')].find((span) =>
+      span.textContent?.includes('F5 Copy'),
+    );
+    expect(footerKey).not.toBeUndefined();
+    footerKey?.click();
+
+    await vi.waitFor(() => expect(startOperation).toHaveBeenCalledOnce());
+    expect(startOperation.mock.calls[0]?.[0]).toMatchObject({
+      type: 'copy',
+      sources: [{ uri: 'mock:///.env' }],
+      destination: { uri: 'mock:///Documents' },
+      conflictPolicy: 'ask',
+    });
+  });
+
   it('trashes the selected file with F8 when core.trash owns the shortcut (task 0043)', async () => {
     const client = new MockFileManagerClient();
     vi.spyOn(client, 'listActions').mockResolvedValue([

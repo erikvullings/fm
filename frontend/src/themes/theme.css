@@ -651,9 +651,14 @@ input[type="text"].fm-command-palette-input {
   font-variant-numeric: tabular-nums;
 }
 
+.fm-function-key {
+  cursor: pointer;
+}
+
 .fm-function-key[aria-disabled="true"] {
   color: var(--fm-text-muted);
   opacity: 0.5;
+  cursor: default;
 }
 
 .fm-pane[data-active="true"] .fm-selected-row {

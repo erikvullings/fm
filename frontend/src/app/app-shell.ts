@@ -1030,6 +1030,17 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     );
   }
 
+  /**
+   * Clicking a footer function-key hint re-triggers the exact same keydown
+   * path a real key press would (pane.ts's local handler, then this file's
+   * `handleGlobalKeydown`), instead of duplicating each action's dispatch
+   * logic here.
+   */
+  function invokeFunctionKeyShortcut(shortcut: string): void {
+    const paneElement = document.querySelector<HTMLElement>('[data-active="true"] > .fm-pane');
+    paneElement?.dispatchEvent(new KeyboardEvent('keydown', { key: shortcut, bubbles: true }));
+  }
+
   function handleGlobalKeydown(event: KeyboardEvent): void {
     if (commandPaletteOpen) return;
     if (hasPrimaryModifier(event, platform) && !event.altKey && event.key.toLowerCase() === 'p') {
@@ -2315,7 +2326,12 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
                 'span.fm-function-key',
                 {
                   key: binding.actionId,
+                  role: 'button',
+                  tabindex: binding.actionAvailable ? 0 : -1,
                   'aria-disabled': binding.actionAvailable ? undefined : 'true',
+                  onclick: binding.actionAvailable
+                    ? () => invokeFunctionKeyShortcut(binding.shortcut)
+                    : undefined,
                 },
                 `${binding.shortcut} ${binding.title}`,
               ),
