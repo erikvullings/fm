@@ -95,6 +95,9 @@ export function constrainSplitRatio(
 }
 
 export function pathFromUri(uri: string): string {
+  if (uri.startsWith('archive://')) {
+    return decodeURIComponent(uri.slice('archive://'.length)) || '/';
+  }
   if (uri.startsWith('file://')) {
     return decodeURIComponent(uri.slice('file://'.length)) || '/';
   }

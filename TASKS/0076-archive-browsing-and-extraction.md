@@ -131,3 +131,7 @@ not implement archive codecs or cryptography.
   explicit destination is listed before its location is committed to workspace history. Unsupported
   RAR-backed CBR files therefore report the error without replacing the last usable tab location,
   leaving retry, reload, and breadcrumb navigation operational.
+- 2026-08-04 codex: Archive paths now cross the provider boundary correctly. Parent navigation
+  leaves an archive root for its containing local directory, while breadcrumbs display the outer
+  filesystem path plus archive/inner segments and map each click to either a local or archive
+  location as appropriate.

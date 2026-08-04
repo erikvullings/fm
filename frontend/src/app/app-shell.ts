@@ -176,6 +176,27 @@ function isAutoDismissibleState(state: OperationState): boolean {
   );
 }
 
+/** Converts a displayed breadcrumb path back to its provider-specific location. */
+export function locationForPath(current: Location, path: string): Location {
+  if (current.providerId === 'archive') {
+    const archiveSeparator = path.indexOf('!');
+    const outerPath = archiveSeparator < 0 ? path : path.slice(0, archiveSeparator);
+    const outerUrl = new URL('file:///');
+    outerUrl.pathname = outerPath.replaceAll('\\', '/');
+    if (archiveSeparator < 0) {
+      return { providerId: 'local', uri: outerUrl.toString() };
+    }
+    const innerPath = path.slice(archiveSeparator + 1).replace(/^\/+/, '');
+    return {
+      providerId: 'archive',
+      uri: `archive://${outerUrl.toString().slice('file://'.length)}!/${innerPath}`,
+    };
+  }
+  const url = new URL(current.uri);
+  url.pathname = path.startsWith('~') ? path : path.replaceAll('\\', '/');
+  return { ...current, uri: url.toString() };
+}
+
 /**
  * A factory component so that per-instance state lives in the closure rather
  * than on a shared module-level object.
@@ -549,12 +570,6 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     viewerByPane.get(paneId)?.controller.dispose();
     viewerByPane.delete(paneId);
     m.redraw();
-  }
-
-  function locationForPath(current: Location, path: string): Location {
-    const url = new URL(current.uri);
-    url.pathname = path.startsWith('~') ? path : path.replaceAll('\\', '/');
-    return { ...current, uri: url.toString() };
   }
 
   let navigation: NavigationController;

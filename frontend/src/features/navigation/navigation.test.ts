@@ -167,6 +167,21 @@ describe('parentLocation', () => {
     expect(parentLocation({ providerId: 'local', uri: 'file:///' }).uri).toBe('file:///');
     expect(parentLocation({ providerId: 'file', uri: 'mock:///Documents' }).uri).toBe('mock:///');
   });
+
+  it('leaves an archive root for the containing filesystem directory', () => {
+    expect(
+      parentLocation({ providerId: 'archive', uri: 'archive:///home/erik/comic.zip!/' }),
+    ).toEqual({ providerId: 'local', uri: 'file:///home/erik' });
+  });
+
+  it('moves between directories inside an archive before leaving its root', () => {
+    expect(
+      parentLocation({
+        providerId: 'archive',
+        uri: 'archive:///home/erik/comic.zip!/chapter/pages',
+      }),
+    ).toEqual({ providerId: 'archive', uri: 'archive:///home/erik/comic.zip!/chapter' });
+  });
 });
 
 describe('navigation controller', () => {

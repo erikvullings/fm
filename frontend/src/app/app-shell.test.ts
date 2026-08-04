@@ -5,7 +5,32 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createFileManagerClient } from '../api/client/create-client';
 import { MockFileManagerClient } from '../api/client/mock-file-manager-client';
 import { ApiError } from '../api/fetch-mutator';
-import { AppShell } from './app-shell';
+import { AppShell, locationForPath } from './app-shell';
+
+describe('locationForPath', () => {
+  const archive = {
+    providerId: 'archive',
+    uri: 'archive:///home/erik/My%20Comic.zip!/chapter',
+  } as const;
+
+  it('maps outer archive breadcrumbs back to local filesystem locations', () => {
+    expect(locationForPath(archive, '/home/erik')).toEqual({
+      providerId: 'local',
+      uri: 'file:///home/erik',
+    });
+  });
+
+  it('maps the archive and inner breadcrumbs to archive locations', () => {
+    expect(locationForPath(archive, '/home/erik/My Comic.zip!')).toEqual({
+      providerId: 'archive',
+      uri: 'archive:///home/erik/My%20Comic.zip!/',
+    });
+    expect(locationForPath(archive, '/home/erik/My Comic.zip!/chapter')).toEqual({
+      providerId: 'archive',
+      uri: 'archive:///home/erik/My%20Comic.zip!/chapter',
+    });
+  });
+});
 
 let root: HTMLElement;
 

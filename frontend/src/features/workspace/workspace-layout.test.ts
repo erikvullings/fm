@@ -4,9 +4,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ActionDescriptor, EntryId, PaneId, WorkspaceProjection } from '../../models';
 import {
   constrainSplitRatio,
+  pathFromUri,
   WorkspaceLayoutView,
   type WorkspaceLayoutViewAttrs,
 } from './workspace-layout';
+
+describe('pathFromUri', () => {
+  it('shows an archive as a navigable filesystem path plus inner path', () => {
+    expect(pathFromUri('archive:///home/erik/My%20Comic.zip!/chapter')).toBe(
+      '/home/erik/My Comic.zip!/chapter',
+    );
+  });
+});
 
 let root: HTMLElement;
 

@@ -92,6 +92,23 @@ function activeTab(workspace: WorkspaceProjection, paneId: PaneId) {
 /** Returns a provider-preserving lexical parent; roots map to themselves. */
 export function parentLocation(location: Location): Location {
   try {
+    if (location.providerId === 'archive' && location.uri.startsWith('archive://')) {
+      const remainder = location.uri.slice('archive://'.length);
+      const separator = remainder.indexOf('!');
+      if (separator >= 0) {
+        const outer = remainder.slice(0, separator);
+        const inner = remainder.slice(separator + 1).replace(/^\/+|\/+$/g, '');
+        if (inner.length === 0) {
+          return parentLocation({ providerId: 'local', uri: `file://${outer}` });
+        }
+        const finalSeparator = inner.lastIndexOf('/');
+        const parentInner = finalSeparator < 0 ? '' : inner.slice(0, finalSeparator);
+        return {
+          providerId: 'archive',
+          uri: `archive://${outer}!/${parentInner}`,
+        };
+      }
+    }
     const url = new URL(location.uri);
     const path = url.pathname;
     if (path === '/' || path.length === 0) {
@@ -109,6 +126,16 @@ export function parentLocation(location: Location): Location {
 /** Returns the final path segment (decoded) of a location, e.g. for cursor restoration after `..`. */
 function lastPathSegment(location: Location): string | undefined {
   try {
+    if (location.providerId === 'archive' && location.uri.startsWith('archive://')) {
+      const [outer, rawInner = ''] = location.uri.slice('archive://'.length).split('!', 2);
+      const inner = rawInner.replace(/^\/+|\/+$/g, '');
+      if (inner.length > 0) {
+        return decodeURIComponent(inner.slice(inner.lastIndexOf('/') + 1));
+      }
+      if (outer !== undefined) {
+        return decodeURIComponent(outer.slice(outer.lastIndexOf('/') + 1));
+      }
+    }
     const path = new URL(location.uri).pathname.replace(/\/+$/, '');
     const finalSeparator = path.lastIndexOf('/');
     const segment = finalSeparator < 0 ? path : path.slice(finalSeparator + 1);
