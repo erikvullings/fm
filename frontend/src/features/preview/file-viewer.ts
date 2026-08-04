@@ -24,6 +24,30 @@ export interface FileViewerAttrs {
 
 const LOAD_MORE_THRESHOLD_PX = 200;
 
+/** Tracks the last search match scrolled into view, per viewer instance, so a match already on
+ * screen (or an unrelated re-render, e.g. typing in the search box) doesn't re-trigger a scroll. */
+interface HighlightScrollState {
+  lastKey: string | undefined;
+}
+
+function scrollHighlightIntoViewIfNeeded(
+  element: HTMLElement,
+  highlightKey: string | undefined,
+  scrollState: HighlightScrollState,
+): void {
+  if (highlightKey === undefined || highlightKey === scrollState.lastKey) return;
+  scrollState.lastKey = highlightKey;
+  const container = element.closest('.fm-file-viewer-body-text');
+  if (!(container instanceof HTMLElement)) return;
+  const elementRect = element.getBoundingClientRect();
+  const containerRect = container.getBoundingClientRect();
+  const alreadyVisible =
+    elementRect.top >= containerRect.top && elementRect.bottom <= containerRect.bottom;
+  if (!alreadyVisible) {
+    element.scrollIntoView({ block: 'center', inline: 'nearest' });
+  }
+}
+
 function renderSearchBar(
   attrs: FileViewerAttrs,
   search: FileViewerSearchState | undefined,
@@ -117,6 +141,7 @@ function renderSearchBar(
 function renderTextBody(
   attrs: FileViewerAttrs,
   state: Extract<FileViewerState, { status: 'ready' }>,
+  highlightScrollState: HighlightScrollState,
 ): m.Children {
   const content = state.content;
   if (content.kind !== 'text') return undefined;
@@ -152,6 +177,20 @@ function renderTextBody(
               content.text.slice(0, localHighlightStart),
               m(
                 'mark.fm-file-viewer-highlight',
+                {
+                  oncreate: (vnode: m.VnodeDOM) =>
+                    scrollHighlightIntoViewIfNeeded(
+                      vnode.dom as HTMLElement,
+                      `${content.highlightOffset}:${content.highlightLength}`,
+                      highlightScrollState,
+                    ),
+                  onupdate: (vnode: m.VnodeDOM) =>
+                    scrollHighlightIntoViewIfNeeded(
+                      vnode.dom as HTMLElement,
+                      `${content.highlightOffset}:${content.highlightLength}`,
+                      highlightScrollState,
+                    ),
+                },
                 content.text.slice(
                   localHighlightStart,
                   localHighlightStart + content.highlightLength,
@@ -189,47 +228,50 @@ function renderImageBody(
   );
 }
 
-export const FileViewer: FactoryComponent<FileViewerAttrs> = () => ({
-  view: ({ attrs }) => {
-    const state = attrs.state;
-    const search =
-      state.status === 'ready' && state.content.kind === 'text' ? state.search : undefined;
-    return m('section.fm-file-viewer', { 'aria-label': `Viewing ${state.entry.name}` }, [
-      m('.fm-file-viewer-header', [
-        m('strong.fm-file-viewer-title', state.entry.name),
-        state.status === 'ready' && state.content.kind === 'image'
-          ? m('.fm-file-viewer-zoom-controls', [
-              m('button', { type: 'button', title: 'Zoom out', onclick: attrs.onZoomOut }, '−'),
-              m(
-                'span.fm-file-viewer-zoom-level',
-                state.content.fitToContainer ? 'Fit' : `${Math.round(state.content.zoom * 100)}%`,
-              ),
-              m('button', { type: 'button', title: 'Zoom in', onclick: attrs.onZoomIn }, '+'),
-              m(
-                'button',
-                { type: 'button', title: 'Fit to window', onclick: attrs.onResetZoom },
-                'Fit',
-              ),
-            ])
+export const FileViewer: FactoryComponent<FileViewerAttrs> = () => {
+  const highlightScrollState: HighlightScrollState = { lastKey: undefined };
+  return {
+    view: ({ attrs }) => {
+      const state = attrs.state;
+      const search =
+        state.status === 'ready' && state.content.kind === 'text' ? state.search : undefined;
+      return m('section.fm-file-viewer', { 'aria-label': `Viewing ${state.entry.name}` }, [
+        m('.fm-file-viewer-header', [
+          m('strong.fm-file-viewer-title', state.entry.name),
+          state.status === 'ready' && state.content.kind === 'image'
+            ? m('.fm-file-viewer-zoom-controls', [
+                m('button', { type: 'button', title: 'Zoom out', onclick: attrs.onZoomOut }, '−'),
+                m(
+                  'span.fm-file-viewer-zoom-level',
+                  state.content.fitToContainer ? 'Fit' : `${Math.round(state.content.zoom * 100)}%`,
+                ),
+                m('button', { type: 'button', title: 'Zoom in', onclick: attrs.onZoomIn }, '+'),
+                m(
+                  'button',
+                  { type: 'button', title: 'Fit to window', onclick: attrs.onResetZoom },
+                  'Fit',
+                ),
+              ])
+            : undefined,
+          m(
+            'button.fm-file-viewer-close',
+            { type: 'button', 'aria-label': 'Close viewer', onclick: attrs.onClose },
+            closeIcon({ size: 13 }),
+          ),
+        ]),
+        state.status === 'ready' && state.content.kind === 'text'
+          ? renderSearchBar(attrs, search)
           : undefined,
-        m(
-          'button.fm-file-viewer-close',
-          { type: 'button', 'aria-label': 'Close viewer', onclick: attrs.onClose },
-          closeIcon({ size: 13 }),
-        ),
-      ]),
-      state.status === 'ready' && state.content.kind === 'text'
-        ? renderSearchBar(attrs, search)
-        : undefined,
-      state.status === 'loading'
-        ? m('.fm-file-viewer-body', m('span', 'Loading…'))
-        : state.status === 'unsupported'
-          ? m('.fm-file-viewer-body', m('span', 'Preview not available for this file.'))
-          : state.status === 'error'
-            ? m('.fm-file-viewer-body', m('span', state.message))
-            : state.content.kind === 'text'
-              ? renderTextBody(attrs, state)
-              : renderImageBody(attrs, state),
-    ]);
-  },
-});
+        state.status === 'loading'
+          ? m('.fm-file-viewer-body', m('span', 'Loading…'))
+          : state.status === 'unsupported'
+            ? m('.fm-file-viewer-body', m('span', 'Preview not available for this file.'))
+            : state.status === 'error'
+              ? m('.fm-file-viewer-body', m('span', state.message))
+              : state.content.kind === 'text'
+                ? renderTextBody(attrs, state, highlightScrollState)
+                : renderImageBody(attrs, state),
+      ]);
+    },
+  };
+};

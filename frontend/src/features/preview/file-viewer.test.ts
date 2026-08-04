@@ -260,4 +260,131 @@ describe('FileViewer', () => {
     root.querySelector<HTMLButtonElement>('.fm-file-viewer-close')?.click();
     expect(onClose).toHaveBeenCalledTimes(1);
   });
+
+  describe('scrolling the active match into view', () => {
+    function stubRects(containerRect: Partial<DOMRect>, highlightRect: Partial<DOMRect>): void {
+      vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (
+        this: Element,
+      ) {
+        const rect = this.classList.contains('fm-file-viewer-body-text')
+          ? containerRect
+          : this.classList.contains('fm-file-viewer-highlight')
+            ? highlightRect
+            : {};
+        return {
+          top: 0,
+          bottom: 0,
+          left: 0,
+          right: 0,
+          width: 0,
+          height: 0,
+          x: 0,
+          y: 0,
+          toJSON: () => ({}),
+          ...rect,
+        } as DOMRect;
+      });
+    }
+
+    function readyTextState(overrides: Partial<FileViewerState> = {}): FileViewerState {
+      return {
+        status: 'ready',
+        entry: entry(),
+        content: {
+          kind: 'text',
+          windowOffset: 0,
+          windowEnd: 11,
+          text: 'hello world',
+          atStart: true,
+          atEnd: true,
+          loadingMore: false,
+          highlightOffset: 6,
+          highlightLength: 5,
+        },
+        search: {
+          query: 'world',
+          regex: false,
+          caseSensitive: false,
+          wholeWord: false,
+          matches: [{ offset: 6, length: 5, lineNumber: 1 }],
+          truncated: false,
+          currentMatchIndex: 0,
+          searching: false,
+          error: undefined,
+        },
+        ...overrides,
+      } as FileViewerState;
+    }
+
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    it('scrolls a newly highlighted match into view when it is not already visible', () => {
+      stubRects({ top: 0, bottom: 100 }, { top: 200, bottom: 220 });
+      const scrollIntoView = vi.fn();
+      Element.prototype.scrollIntoView = scrollIntoView;
+
+      mount(baseAttrs(readyTextState()));
+
+      expect(scrollIntoView).toHaveBeenCalledTimes(1);
+      expect(scrollIntoView).toHaveBeenCalledWith({ block: 'center', inline: 'nearest' });
+    });
+
+    it('does not scroll when the highlighted match is already visible', () => {
+      stubRects({ top: 0, bottom: 100 }, { top: 40, bottom: 60 });
+      const scrollIntoView = vi.fn();
+      Element.prototype.scrollIntoView = scrollIntoView;
+
+      mount(baseAttrs(readyTextState()));
+
+      expect(scrollIntoView).not.toHaveBeenCalled();
+    });
+
+    it('does not scroll again on a later re-render of the same match', () => {
+      stubRects({ top: 0, bottom: 100 }, { top: 200, bottom: 220 });
+      const scrollIntoView = vi.fn();
+      Element.prototype.scrollIntoView = scrollIntoView;
+
+      let currentAttrs = baseAttrs(readyTextState());
+      m.mount(root, { view: () => m(FileViewer, currentAttrs) });
+      expect(scrollIntoView).toHaveBeenCalledTimes(1);
+
+      // Re-render with the same match highlighted (e.g. the user typed further in the search
+      // box without navigating) - the view shouldn't be yanked back into place again.
+      currentAttrs = baseAttrs(readyTextState());
+      m.redraw.sync();
+
+      expect(scrollIntoView).toHaveBeenCalledTimes(1);
+    });
+
+    it('scrolls again once a different match becomes highlighted', () => {
+      stubRects({ top: 0, bottom: 100 }, { top: 200, bottom: 220 });
+      const scrollIntoView = vi.fn();
+      Element.prototype.scrollIntoView = scrollIntoView;
+
+      let currentAttrs = baseAttrs(readyTextState());
+      m.mount(root, { view: () => m(FileViewer, currentAttrs) });
+      expect(scrollIntoView).toHaveBeenCalledTimes(1);
+
+      currentAttrs = baseAttrs(
+        readyTextState({
+          content: {
+            kind: 'text',
+            windowOffset: 0,
+            windowEnd: 11,
+            text: 'hello world',
+            atStart: true,
+            atEnd: true,
+            loadingMore: false,
+            highlightOffset: 0,
+            highlightLength: 5,
+          },
+        }),
+      );
+      m.redraw.sync();
+
+      expect(scrollIntoView).toHaveBeenCalledTimes(2);
+    });
+  });
 });

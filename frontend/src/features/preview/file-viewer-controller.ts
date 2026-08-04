@@ -266,9 +266,11 @@ export function createFileViewerController(
     if (match === undefined) return;
     const windowOffset = Math.max(0, match.offset - JUMP_CONTEXT_BEFORE_BYTES);
     const length = Math.max(TEXT_WINDOW_BYTES, match.offset + match.length - windowOffset);
-    const controller = beginRequest();
     search = { ...(search ?? DEFAULT_SEARCH_STATE), currentMatchIndex: index };
-    publish({ status: 'loading', entry });
+    // Stay in the 'ready' status while fetching (rather than bouncing through 'loading') so the
+    // search bar/input never unmounts - that would drop keyboard focus and flicker the viewer.
+    if (current.status === 'ready') publish({ ...current, search });
+    const controller = beginRequest();
     try {
       const chunk = await client.readFileRange(
         { location: entry.location, offset: windowOffset, length },
