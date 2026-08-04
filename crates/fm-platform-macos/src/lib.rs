@@ -11,11 +11,16 @@
 //! drag-to-Finder (drag is task 0062). Clipboard file references stay
 //! delegated to the fallback adapter. `open_with_default_application` (task
 //! 0061) shells out to `open <path>`. `open_with_chooser` (task 0061
-//! follow-up) shows the native "choose application" dialog via `osascript`
-//! (the path is passed as an `argv` element, never interpolated into the
-//! script text, so it can't be used for AppleScript/shell injection);
-//! cancelling the dialog is caught inside the script (AppleScript error
-//! -128) and treated as a successful no-op, not a failure. `open_in_text_editor`
+//! follow-up) queries Launch Services (`NSWorkspace
+//! -URLsForApplicationsToOpenURL:`) for the applications capable of opening
+//! the target file and shows only those in a `choose from list` dialog via
+//! `osascript` (Marta/Finder-style filtering), plus a trailing "Other
+//! Application…" entry that falls back to the unfiltered `choose
+//! application` dialog; every path and application name is passed as an
+//! `argv` element, never interpolated into the script text, so none of it
+//! can be used for AppleScript/shell injection; cancelling either dialog is
+//! caught inside the script (AppleScript error -128) and treated as a
+//! successful no-op, not a failure. `open_in_text_editor`
 //! (task 0086) shells out to `open -t <path>`, macOS's own "always open in
 //! the default text editor" flag, or `open -a <override> <path>` when an
 //! editor command is configured - a genuine distinct binding, unlike
@@ -111,6 +116,141 @@ fn open_with_chooser_command(path: &Path) -> std::process::Command {
         .arg("end run")
         .arg(path);
     command
+}
+
+/// Sentinel that [`choose_from_list_command`]'s AppleScript prints to
+/// stdout when its dialog is dismissed (Cancel, Escape, or AppleScript
+/// error -128), so [`resolve_open_with_choice`] can tell "cancelled" apart
+/// from a genuinely chosen (and coincidentally identical) application name.
+const OPEN_WITH_CANCELLED_SENTINEL: &str = "__fm_open_with_cancelled__";
+
+/// Trailing entry appended to [`MacosPlatformAdapter::open_with_chooser`]'s
+/// filtered dialog, mirroring Finder's own "Open With" submenu, which lists
+/// Launch Services' recommended apps first and an "Other…" catch-all last.
+const OPEN_WITH_OTHER_APPLICATIONS: &str = "Other Application…";
+
+/// Queries Launch Services (via `NSWorkspace`) for the applications capable
+/// of opening `path`, in Launch Services' own recommended order (the
+/// system's current default application first, per Apple's documented
+/// behaviour for `-URLsForApplicationsToOpenURL:`). Each entry pairs the
+/// app's localized display name (e.g. "Preview", not "Preview.app") with
+/// its absolute bundle path, so `open_with_chooser` can present a
+/// Marta/Finder-style *filtered* list instead of every installed
+/// application.
+fn recommended_applications(path: &Path) -> Result<Vec<(String, PathBuf)>, PlatformError> {
+    let ns_path = NSString::from_str(path_to_str(path)?);
+    let url = NSURL::fileURLWithPath(&ns_path);
+    let app_urls = NSWorkspace::sharedWorkspace().URLsForApplicationsToOpenURL(&url);
+    let file_manager = NSFileManager::defaultManager();
+    let mut apps = Vec::with_capacity(app_urls.len());
+    for app_url in &app_urls {
+        let Some(app_path) = app_url.path() else {
+            continue;
+        };
+        let app_path = PathBuf::from(app_path.to_string());
+        let Some(app_path_str) = app_path.to_str() else {
+            continue;
+        };
+        let display_name = file_manager
+            .displayNameAtPath(&NSString::from_str(app_path_str))
+            .to_string();
+        apps.push((display_name, app_path));
+    }
+    Ok(apps)
+}
+
+/// What the user picked from [`MacosPlatformAdapter::open_with_chooser`]'s
+/// filtered `choose from list` dialog, decoded from its raw stdout.
+#[derive(Debug, PartialEq, Eq)]
+enum OpenWithChoice {
+    /// The dialog was dismissed (Cancel, Escape, or AppleScript error -128).
+    Cancelled,
+    /// The user asked to see every installed application, not just the
+    /// filtered/recommended list.
+    Other,
+    /// The user picked one of the recommended applications.
+    App(PathBuf),
+}
+
+/// Decodes the trimmed stdout of [`choose_from_list_command`] into an
+/// [`OpenWithChoice`], matching the chosen display name back to its
+/// absolute application path in `recommended` (first match wins if two
+/// recommended applications happen to share a display name; an unmatched
+/// name - which should never happen, since the dialog only offers names
+/// drawn from `recommended` - is treated as cancelled rather than guessed).
+fn resolve_open_with_choice(chosen: &str, recommended: &[(String, PathBuf)]) -> OpenWithChoice {
+    if chosen == OPEN_WITH_CANCELLED_SENTINEL {
+        return OpenWithChoice::Cancelled;
+    }
+    if chosen == OPEN_WITH_OTHER_APPLICATIONS {
+        return OpenWithChoice::Other;
+    }
+    match recommended.iter().find(|(name, _)| name == chosen) {
+        Some((_, app_path)) => OpenWithChoice::App(app_path.clone()),
+        None => OpenWithChoice::Cancelled,
+    }
+}
+
+/// Builds (without running) the `osascript` invocation that shows a
+/// Marta/Finder-style filtered "Open With" dialog listing just `names`
+/// (Launch Services' recommended applications for the target file, per
+/// [`recommended_applications`]), returning the chosen name on stdout - or
+/// [`OPEN_WITH_CANCELLED_SENTINEL`] if the dialog was dismissed - so the
+/// caller can resolve it via [`resolve_open_with_choice`] without ever
+/// interpolating a name into the script text.
+///
+/// Every name is passed as a trailing `argv` element, never interpolated
+/// into the `-e` script text, so none of them can be used for
+/// AppleScript/shell injection; cancelling raises AppleScript error -128,
+/// caught inside the script and reported back as a sentinel string (rather
+/// than a non-zero exit) so the caller can tell "cancelled" apart from a
+/// genuine `osascript` failure.
+fn choose_from_list_command(names: &[String]) -> std::process::Command {
+    let mut command = std::process::Command::new("osascript");
+    command
+        .arg("-e")
+        .arg("on run argv")
+        .arg("-e")
+        .arg("try")
+        .arg("-e")
+        .arg("set chosenNameList to (choose from list argv with title \"Open With\" without multiple selections allowed)")
+        .arg("-e")
+        .arg("on error number -128")
+        .arg("-e")
+        .arg(format!("return \"{OPEN_WITH_CANCELLED_SENTINEL}\""))
+        .arg("-e")
+        .arg("end try")
+        .arg("-e")
+        .arg(format!(
+            "if chosenNameList is false then return \"{OPEN_WITH_CANCELLED_SENTINEL}\""
+        ))
+        .arg("-e")
+        .arg("return (item 1 of chosenNameList)")
+        .arg("-e")
+        .arg("end run");
+    for name in names {
+        command.arg(name);
+    }
+    command
+}
+
+/// Runs an `osascript` command built by [`open_with_chooser_command`] or
+/// [`choose_from_list_command`], returning its stdout on success.
+fn run_osascript(mut command: std::process::Command) -> Result<Vec<u8>, PlatformError> {
+    let output = command.output().map_err(|error| PlatformError::Io {
+        message: format!("failed to launch the Open With chooser: {error}"),
+    })?;
+    if output.status.success() {
+        Ok(output.stdout)
+    } else {
+        Err(PlatformError::Io {
+            message: format!(
+                "Open With chooser exited with {}: {}",
+                output.status,
+                String::from_utf8_lossy(&output.stderr).trim()
+            ),
+        })
+    }
 }
 
 fn fetch_icon_png(path: &Path) -> Result<Vec<u8>, PlatformError> {
@@ -254,22 +394,40 @@ impl PlatformAdapter for MacosPlatformAdapter {
     }
 
     fn open_with_chooser(&self, path: &Path) -> Result<(), PlatformError> {
-        let output =
-            open_with_chooser_command(path)
-                .output()
-                .map_err(|error| PlatformError::Io {
-                    message: format!("failed to launch the Open With chooser: {error}"),
-                })?;
-        if output.status.success() {
-            Ok(())
-        } else {
-            Err(PlatformError::Io {
-                message: format!(
-                    "Open With chooser exited with {}: {}",
-                    output.status,
-                    String::from_utf8_lossy(&output.stderr).trim()
-                ),
-            })
+        let recommended = recommended_applications(path)?;
+        if recommended.is_empty() {
+            run_osascript(open_with_chooser_command(path))?;
+            return Ok(());
+        }
+
+        let mut names: Vec<String> = recommended.iter().map(|(name, _)| name.clone()).collect();
+        names.push(OPEN_WITH_OTHER_APPLICATIONS.to_owned());
+        let stdout = run_osascript(choose_from_list_command(&names))?;
+        let chosen = String::from_utf8_lossy(&stdout).trim().to_owned();
+
+        match resolve_open_with_choice(&chosen, &recommended) {
+            OpenWithChoice::Cancelled => Ok(()),
+            OpenWithChoice::Other => {
+                run_osascript(open_with_chooser_command(path))?;
+                Ok(())
+            }
+            OpenWithChoice::App(app_path) => {
+                let status = std::process::Command::new("open")
+                    .arg("-a")
+                    .arg(&app_path)
+                    .arg(path)
+                    .status()
+                    .map_err(|error| PlatformError::Io {
+                        message: format!("failed to launch {}: {error}", app_path.display()),
+                    })?;
+                if status.success() {
+                    Ok(())
+                } else {
+                    Err(PlatformError::Io {
+                        message: format!("{} launch exited with {status}", app_path.display()),
+                    })
+                }
+            }
         }
     }
 
@@ -568,5 +726,122 @@ mod tests {
                 .any(|arg| arg.to_string_lossy().contains("-128")),
             "cancelling `choose application` (AppleScript error -128) must be handled inside the script"
         );
+    }
+
+    #[test]
+    fn choose_from_list_command_passes_names_as_trailing_argv_elements_never_interpolated() {
+        // Not executed: `choose from list` pops a real, blocking system
+        // dialog with no way for an automated test to dismiss it, so this
+        // only asserts on the constructed command (the actual dialog is
+        // manually verified inside a running desktop app, see Agent Notes).
+        let names = vec![
+            "Preview".to_owned(),
+            "weird \"quotes\" & caf\u{00e9}".to_owned(),
+            OPEN_WITH_OTHER_APPLICATIONS.to_owned(),
+        ];
+        let command = choose_from_list_command(&names);
+        assert_eq!(command.get_program(), "osascript");
+
+        let args: Vec<std::ffi::OsString> = command
+            .get_args()
+            .map(std::ffi::OsStr::to_os_string)
+            .collect();
+        assert_eq!(
+            &args[args.len() - names.len()..],
+            names
+                .iter()
+                .map(std::ffi::OsString::from)
+                .collect::<Vec<_>>()
+                .as_slice(),
+            "every name must be a trailing argv element, passed verbatim"
+        );
+        for script_fragment in &args[..args.len() - names.len()] {
+            assert!(
+                !script_fragment.to_string_lossy().contains("caf\u{00e9}"),
+                "no name may ever be embedded inside an -e script fragment: {script_fragment:?}"
+            );
+        }
+        assert!(
+            args.iter()
+                .any(|arg| arg.to_string_lossy().contains("-128")),
+            "cancelling `choose from list` (AppleScript error -128) must be handled inside the script"
+        );
+    }
+
+    #[test]
+    fn resolve_open_with_choice_recognises_the_cancelled_sentinel() {
+        let recommended = vec![(
+            "Preview".to_owned(),
+            PathBuf::from("/Applications/Preview.app"),
+        )];
+        assert_eq!(
+            resolve_open_with_choice(OPEN_WITH_CANCELLED_SENTINEL, &recommended),
+            OpenWithChoice::Cancelled
+        );
+    }
+
+    #[test]
+    fn resolve_open_with_choice_recognises_the_other_applications_entry() {
+        let recommended = vec![(
+            "Preview".to_owned(),
+            PathBuf::from("/Applications/Preview.app"),
+        )];
+        assert_eq!(
+            resolve_open_with_choice(OPEN_WITH_OTHER_APPLICATIONS, &recommended),
+            OpenWithChoice::Other
+        );
+    }
+
+    #[test]
+    fn resolve_open_with_choice_matches_a_recommended_application_by_name() {
+        let recommended = vec![
+            (
+                "Preview".to_owned(),
+                PathBuf::from("/Applications/Preview.app"),
+            ),
+            ("Pinta".to_owned(), PathBuf::from("/Applications/Pinta.app")),
+        ];
+        assert_eq!(
+            resolve_open_with_choice("Pinta", &recommended),
+            OpenWithChoice::App(PathBuf::from("/Applications/Pinta.app"))
+        );
+    }
+
+    #[test]
+    fn resolve_open_with_choice_treats_an_unmatched_name_as_cancelled_rather_than_guessing() {
+        let recommended = vec![(
+            "Preview".to_owned(),
+            PathBuf::from("/Applications/Preview.app"),
+        )];
+        assert_eq!(
+            resolve_open_with_choice("Some App That Was Never Offered", &recommended),
+            OpenWithChoice::Cancelled
+        );
+    }
+
+    #[test]
+    fn recommended_applications_finds_at_least_one_candidate_for_a_plain_text_file() {
+        let dir = tempdir().expect("temp dir");
+        let file = dir.path().join("recommended-apps-test.txt");
+        std::fs::write(&file, b"content").expect("create fixture");
+
+        let recommended = recommended_applications(&file).expect("query Launch Services");
+        assert!(
+            !recommended.is_empty(),
+            "every macOS install ships at least one app (e.g. TextEdit) that can open .txt files"
+        );
+        for (name, app_path) in &recommended {
+            assert!(
+                !name.is_empty(),
+                "display name must not be empty: {app_path:?}"
+            );
+            assert!(
+                app_path
+                    .extension()
+                    .and_then(|extension| extension.to_str())
+                    == Some("app"),
+                "recommended path must be an application bundle: {app_path:?}"
+            );
+        }
     }
 }

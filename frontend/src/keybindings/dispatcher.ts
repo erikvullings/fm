@@ -127,7 +127,11 @@ export interface FunctionKeyBinding {
  * Lists the footer's fixed set of function-key hints (F2-F8), always
  * present so the bar's layout stays stable, sorted in ascending F-key
  * order; `actionAvailable` says whether the bound action can run right
- * now (see `evaluateActionAvailability`).
+ * now (see `evaluateActionAvailability`). Actions that are permanently
+ * unavailable in this runtime (`contextRequirements.featureAvailable ===
+ * false`, e.g. platform-gated actions like `core.edit`/`core.view` in
+ * browser/server mode) are omitted entirely rather than shown disabled,
+ * since they can never become available without a full session restart.
  */
 export function footerFunctionKeyBindings(
   actions: readonly ActionDescriptor[],
@@ -139,16 +143,15 @@ export function footerFunctionKeyBindings(
     .filter((binding) => FOOTER_SHORTCUT_PATTERN.test(binding.shortcut))
     .flatMap((binding) => {
       const action = actions.find((candidate) => candidate.id === binding.actionId);
-      return action === undefined
-        ? []
-        : [
-            {
-              actionId: action.id,
-              shortcut: binding.shortcut,
-              title: action.title,
-              actionAvailable: isActionAvailable(action),
-            },
-          ];
+      if (action === undefined || action.contextRequirements.featureAvailable === false) return [];
+      return [
+        {
+          actionId: action.id,
+          shortcut: binding.shortcut,
+          title: action.title,
+          actionAvailable: isActionAvailable(action),
+        },
+      ];
     })
     .sort(
       (a, b) => Number.parseInt(a.shortcut.slice(1), 10) - Number.parseInt(b.shortcut.slice(1), 10),

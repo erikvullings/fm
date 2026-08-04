@@ -167,4 +167,22 @@ describe('keybinding dispatcher', () => {
       { actionId: 'core.copy', shortcut: 'F5', title: 'Copy', actionAvailable: true },
     ]);
   });
+
+  it('omits footer entries for actions that are permanently unavailable in this runtime', () => {
+    const withGatedAction: readonly ActionDescriptor[] = [
+      ...actions,
+      {
+        id: 'core.view',
+        title: 'View',
+        category: 'fileOperations',
+        defaultShortcuts: [{ key: 'F3' }],
+        contextRequirements: { featureAvailable: false },
+        source: { kind: 'core' },
+      },
+    ];
+
+    const bindings = footerFunctionKeyBindings(withGatedAction, {}, table, () => true);
+
+    expect(bindings.find((binding) => binding.actionId === 'core.view')).toBeUndefined();
+  });
 });

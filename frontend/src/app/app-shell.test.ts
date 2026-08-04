@@ -484,6 +484,39 @@ describe('AppShell', () => {
     });
   });
 
+  it('shows a brief toast instead of invoking a permanently browser-unavailable action from its shortcut', async () => {
+    const client = new MockFileManagerClient();
+    vi.spyOn(client, 'listActions').mockResolvedValue([
+      {
+        id: 'core.openWith',
+        title: 'Open With…',
+        category: 'fileOperations',
+        defaultShortcuts: [{ key: 'Enter', ctrl: true }],
+        contextRequirements: { featureAvailable: false },
+        source: { kind: 'core' },
+      },
+    ]);
+    const invokeAction = vi.spyOn(client, 'invokeAction');
+    m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
+    await vi.waitFor(() => expect(root.textContent).toContain('.env'));
+    const activePane = root.querySelector<HTMLElement>('[data-active="true"] > .fm-pane');
+    const file = [...(activePane?.querySelectorAll<HTMLElement>('.fm-directory-row') ?? [])].find(
+      (row) => row.textContent?.includes('.env'),
+    );
+    file?.click();
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, bubbles: true }),
+    );
+
+    try {
+      await vi.waitFor(() => expect(document.querySelector('.toast')).not.toBeNull());
+      expect(document.querySelector('.toast')?.textContent).toContain('Open With…');
+      expect(invokeAction).not.toHaveBeenCalled();
+    } finally {
+      document.getElementById('toast-container')?.remove();
+    }
+  });
+
   it('cuts a selection, dims it, and pastes the move into the active pane', async () => {
     const client = new MockFileManagerClient();
     const startOperation = vi.spyOn(client, 'startOperation');

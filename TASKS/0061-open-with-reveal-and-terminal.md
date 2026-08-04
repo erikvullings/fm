@@ -206,3 +206,90 @@ Depends on: 0059, 0060
     `fm-platform-windows`/`fm-application` (all passing; the only failure anywhere in the workspace
     was the already-documented pre-existing `fm-plugin-runtime` icon-count test, unrelated).
     Frontend: `tsc --noEmit` (clean), full `vitest run` (59 files, 466 tests, all passing).
+- 2026-08-05 copilot: Two follow-up fixes reported by the user after testing the previous entry's
+  work in the real Tauri app.
+  - **`core.openWith`'s dialog showed every installed application, unfiltered** ("In Marta, when I
+    press CMD+ENTER on an image file, I see [a list scoped to image editors]... I would like to see
+    the same as Marta"). Root cause: AppleScript's `choose application` has no filtering hook at
+    all - it always lists literally every app on the system. Fixed by querying Launch Services
+    directly instead: `MacosPlatformAdapter::open_with_chooser` now calls
+    `NSWorkspace.URLsForApplicationsToOpenURL(_:)` (new `recommended_applications` helper) to get
+    the same Launch-Services-recommended, default-app-first application list Finder's own "Open
+    With" submenu uses, pairs each app's absolute bundle path with its localized display name
+    (`NSFileManager.displayNameAtPath(_:)`, e.g. "Preview" not "Preview.app"), and presents just
+    those names (plus a trailing "Other Application…" entry) via a new `choose_from_list_command`
+    AppleScript builder. Deliberately did **not** build a custom interactive native `NSMenu` with
+    click-callback wiring (would need `objc2::declare_class!`-based target-action plumbing, a much
+    larger and riskier addition with no existing precedent in this crate - `install_native_menu`
+    only ever installs an empty menu) - a `choose from list` dialog is a lighter-weight, equally
+    testable way to achieve the same *filtering* outcome, even though its chrome looks like a
+    picker dialog rather than Finder's contextual menu.
+    - Selection resolution moved entirely into pure, unit-tested Rust
+      (`resolve_open_with_choice`) rather than more AppleScript branching: the `choose from list`
+      script only ever returns a chosen name (or a `__fm_open_with_cancelled__` sentinel string on
+      Cancel/Escape/error -128) on stdout; Rust then matches that name back against the
+      already-fetched `(name, path)` list and, for a match, launches it directly via
+      `open -a <app_path> <path>` (`std::process::Command`, argv-safe, no more AppleScript/Finder
+      needed for the actual launch step). Picking "Other Application…" falls back to the original,
+      already-tested unfiltered `open_with_chooser_command`/`choose application` dialog (kept
+      byte-for-byte unchanged, still covered by its original test) - this mirrors Finder's own
+      "Open With" submenu, which lists recommended apps first and an "Other…" catch-all last. An
+      empty `recommended_applications` result (should be rare) falls back to the unfiltered dialog
+      outright.
+    - Every application name and the target path are passed exclusively as trailing `argv`
+      elements, never interpolated into `-e` script text (same injection-safety discipline as the
+      original `open_with_chooser_command`) - verified by
+      `choose_from_list_command_passes_names_as_trailing_argv_elements_never_interpolated`, which
+      uses a name containing embedded quotes and a non-ASCII character to prove it can't leak into
+      the script. `resolve_open_with_choice`'s three branches (cancelled sentinel, "Other
+      Application…", exact-name match, and the defensive "unmatched name is treated as cancelled
+      rather than guessed" case) are each covered by a dedicated pure unit test requiring no
+      objc2/osascript involvement at all.
+    - `recommended_applications` itself (a real, read-only `NSWorkspace` query, not a mocked/stubbed
+      call) is exercised directly by `recommended_applications_finds_at_least_one_candidate_for_a_
+      plain_text_file`, which asserts Launch Services returns at least one `.app`-suffixed
+      candidate for a scratch `.txt` file (every macOS install ships TextEdit) - unlike the
+      interactive chooser dialogs, this call has no blocking UI, so it can run as a normal (not
+      `--ignored`) test.
+    - **Not manually verified end-to-end against the real interactive dialog** (same constraint as
+      the previous entry): `choose from list` pops a real, blocking system dialog with no
+      scriptable way for this non-interactive session to dismiss it. Remains an explicit gap for a
+      human to verify by running the desktop app, pressing Cmd+Enter on an image file, and
+      confirming the list is scoped to image-capable apps (Preview, Pinta, etc.) rather than every
+      installed application, matching Marta's screenshot.
+  - **Browser-mode Ctrl+Enter/F3/F4 produced a persistent top-of-screen error banner** ("this
+    command does not work in the browser, and I see a rather ugly permanent error at the top of the
+    screen... unavailable actions in the browser should be hidden if they have a visible shortcut,
+    and if the user presses a shortcut key, use a mithril-materialized toast to warn the user
+    briefly"). Root cause: `handleGlobalKeydown`'s `core.view`/`core.edit`/`core.openWith` branch
+    (`app-shell.ts`) always invoked the backend action whenever an entry was selected, with no
+    check of `contextRequirements.featureAvailable` (the backend-computed, session-lifetime-permanent
+    signal that already distinguishes "will never work this session", e.g. browser/server mode, from
+    "temporarily blocked", e.g. no selection) - so a genuinely-gated action's backend rejection set
+    `commandPaletteError`, which renders unconditionally and only clears when the command palette is
+    reopened.
+    - `handleGlobalKeydown` now looks the dispatched action up in `registeredActions` first; if
+      `contextRequirements.featureAvailable === false`, it calls `event.preventDefault()`, shows a
+      `mithril-materialized` `toast({ html: "<title> isn't available in the browser." })` (default
+      `displayLength` of 4000ms, confirmed via the bundled UMD source - genuinely brief, unlike the
+      persistent banner it replaces for this case), and returns *before* ever reaching
+      `invokeActionById`/the backend. The pre-existing `commandPaletteError` banner is untouched and
+      remains the correct fallback for genuine, unpredictable backend failures elsewhere.
+    - `footerFunctionKeyBindings` (`keybindings/dispatcher.ts`) now excludes (rather than merely
+      disabling) any F-key entry whose action has `contextRequirements.featureAvailable === false`,
+      so a permanently-gated action's footer hint (e.g. `core.view`'s F3, `core.edit`'s F4 in
+      browser mode) disappears entirely instead of lingering as dead, confusing UI; its doc comment
+      was updated to describe this. Genuinely transient unavailability (e.g. no selection) is
+      unaffected - those entries still show, just marked `actionAvailable: false`, per the
+      pre-existing (and still-passing) "marks unavailable actions instead of hiding them" test.
+    - Tests: `omits footer entries for actions that are permanently unavailable in this runtime`
+      (`dispatcher.test.ts`) and `shows a brief toast instead of invoking a permanently
+      browser-unavailable action from its shortcut` (`app-shell.test.ts`, asserting a real `.toast`
+      DOM element appears with the action's title and that `client.invokeAction` is never called).
+  - Verification this session: `cargo test -p fm-platform-macos` (18 passed, 1 ignored - the
+    pre-existing manual-only Finder-reveal test), `cargo fmt --all --check` and
+    `cargo clippy --workspace --all-targets -- -D warnings` (both clean), `cargo test --workspace`
+    (only the already-documented pre-existing `fm-plugin-runtime` icon-count failure, unrelated).
+    Frontend: `tsc --noEmit` (clean), `vitest run` (468 tests, 59 files, all passing, up from 466),
+    repo-wide `pnpm run lint` (cargo fmt --check + clippy + `biome check .`, all clean).
+

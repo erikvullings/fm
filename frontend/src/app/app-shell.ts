@@ -1,6 +1,6 @@
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import m, { type FactoryComponent } from 'mithril';
-import { type Theme, ThemeManager } from 'mithril-materialized';
+import { type Theme, ThemeManager, toast } from 'mithril-materialized';
 
 import type { FileManagerClient } from '../api/client/file-manager-client';
 import {
@@ -1280,6 +1280,16 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       dispatchedAction === 'core.edit' ||
       dispatchedAction === 'core.openWith'
     ) {
+      const action = registeredActions.find((candidate) => candidate.id === dispatchedAction);
+      if (action?.contextRequirements.featureAvailable === false) {
+        // The shortcut is still reachable by keyboard even though its footer
+        // hint is hidden (task 0061 follow-up): warn briefly instead of
+        // invoking, which would otherwise surface a persistent top-of-screen
+        // error from the backend rejecting a known-unavailable action.
+        event.preventDefault();
+        toast({ html: `${action.title} isn't available in the browser.` });
+        return;
+      }
       const active = activeDirectory();
       const selection =
         active === undefined ? undefined : selections.get(activeTabKey(active.paneId));
