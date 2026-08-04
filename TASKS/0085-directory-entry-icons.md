@@ -1,6 +1,6 @@
 # 0085 Directory entry icons
 
-Status: open
+Status: done
 Priority: medium
 Owner: unassigned
 Agent: unassigned
@@ -76,6 +76,16 @@ theme-icon fallback unless `fm-server` also serves native icons.
   icon primitive.
 
 ## Agent Notes
+- 2026-08-04 Codex: Re-verified and closed the frontend theme-icon baseline after confirming the
+  native backend overlay remains explicitly tracked by task 0091. The shipped implementation in
+  commit `79a1aa8` satisfies 0085's split-scope acceptance criteria: kind/extension/MIME
+  resolution, built-in themed glyphs, a replaceable registry extension point, documented theming,
+  and directory-table rendering. Verified the 8 tests introduced by that commit (7 in
+  `entry-icons.test.ts`, 1 in `directory-table.test.ts`) by rerunning both files (32 current tests
+  passing across them), the full frontend suite (467 passed, 1 skipped), `pnpm --dir frontend
+  typecheck`, and `pnpm run lint:frontend`. No implementation changes were required. The HTTP
+  route, Tauri command, native lazy-fetch/cache overlay, and binary response handling are not gaps
+  in this closed split scope; they remain acceptance criteria of open follow-up task 0091.
 - 2026-08-03 Claude Sonnet 5 (Copilot): Shipped the frontend theme-icon baseline only; split the
   backend-served native-icon overlay into a new follow-up task, 0091, per this task's own
   explicit split-scope allowance ("Consider splitting this into two tasks..."). Status stays
