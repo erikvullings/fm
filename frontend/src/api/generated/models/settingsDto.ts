@@ -5,8 +5,10 @@
 import type { ConflictPolicyDto } from './conflictPolicyDto';
 import type { DateFormatDto } from './dateFormatDto';
 import type { DefaultPaneLayoutDto } from './defaultPaneLayoutDto';
+import type { FavouriteLocationDto } from './favouriteLocationDto';
 import type { SettingsDtoKeybindings } from './settingsDtoKeybindings';
 import type { SettingsDtoPluginSettings } from './settingsDtoPluginSettings';
+import type { SettingsDtoRecentLocationsByWorkspace } from './settingsDtoRecentLocationsByWorkspace';
 import type { SizeFormatDto } from './sizeFormatDto';
 import type { ThemeDto } from './themeDto';
 
@@ -33,6 +35,8 @@ export interface SettingsDto {
   editorCommand?: string | null;
   /** Enabled plugin identifiers. */
   enabledPlugins: string[];
+  /** User-managed named locations, in the order shown by the favourites menu. */
+  favouriteLocations: FavouriteLocationDto[];
   /**
      * Base font size in CSS pixels.
      * @minimum 0
@@ -49,6 +53,8 @@ export interface SettingsDto {
   operationConcurrency: number;
   /** Non-secret plugin settings keyed by plugin identifier. */
   pluginSettings: SettingsDtoPluginSettings;
+  /** Recently visited locations per workspace, newest first. */
+  recentLocationsByWorkspace: SettingsDtoRecentLocationsByWorkspace;
   /**
      * Directory row height in CSS pixels.
      * @minimum 0

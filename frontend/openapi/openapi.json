@@ -849,6 +849,24 @@
         ],
         "type": "object"
       },
+      "FavouriteLocationDto": {
+        "description": "A named, provider-neutral location saved by the user.",
+        "properties": {
+          "label": {
+            "description": "User-visible label, independent of the location URI.",
+            "type": "string"
+          },
+          "location": {
+            "$ref": "#/components/schemas/LocationDto",
+            "description": "Provider-neutral location target."
+          }
+        },
+        "required": [
+          "label",
+          "location"
+        ],
+        "type": "object"
+      },
       "HealthDto": {
         "description": "Response body for `GET /api/v1/health`.",
         "example": {
@@ -2223,6 +2241,13 @@
             },
             "type": "array"
           },
+          "favouriteLocations": {
+            "description": "User-managed named locations, in the order shown by the favourites menu.",
+            "items": {
+              "$ref": "#/components/schemas/FavouriteLocationDto"
+            },
+            "type": "array"
+          },
           "fontSize": {
             "description": "Base font size in CSS pixels.",
             "format": "int32",
@@ -2251,6 +2276,19 @@
           },
           "pluginSettings": {
             "description": "Non-secret plugin settings keyed by plugin identifier.",
+            "type": "object"
+          },
+          "recentLocationsByWorkspace": {
+            "additionalProperties": {
+              "items": {
+                "$ref": "#/components/schemas/LocationDto"
+              },
+              "type": "array"
+            },
+            "description": "Recently visited locations per workspace, newest first.",
+            "propertyNames": {
+              "type": "string"
+            },
             "type": "object"
           },
           "rowHeight": {
@@ -2302,6 +2340,8 @@
           "enabledPlugins",
           "pluginSettings",
           "defaultStartLocations",
+          "favouriteLocations",
+          "recentLocationsByWorkspace",
           "iconTheme"
         ],
         "type": "object"

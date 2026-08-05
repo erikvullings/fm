@@ -1,4 +1,5 @@
 import m, { type FactoryComponent, type VnodeDOM } from 'mithril';
+import { eyeOffIcon } from '../../components/tabler-icons';
 import type { EntryId, EntrySummary, LoadingState, SortDescriptor } from '../../models';
 import {
   DEFAULT_ENTRY_FORMAT_SETTINGS,
@@ -132,10 +133,6 @@ const INITIAL_COLUMNS: readonly DirectoryColumnDescriptor[] = [
     cellClass: 'fm-directory-name',
     render: (entry, nameMatchPrefix, _formatSettings, _now, nativeIconLoader, showFullPath) => {
       const name = displayName(entry, showFullPath);
-      const statuses = [
-        entry.hidden ? 'Hidden' : undefined,
-        entry.kind === 'symlink' ? 'Link' : undefined,
-      ].filter((status): status is string => status !== undefined);
       const matchIndex =
         nameMatchPrefix === undefined
           ? -1
@@ -162,13 +159,16 @@ const INITIAL_COLUMNS: readonly DirectoryColumnDescriptor[] = [
                 name.slice(matchIndex + nameMatchPrefix.length),
               ],
         ]),
-        statuses.map((status) =>
-          m(
-            'span.fm-entry-status',
-            { key: status, title: `${status} entry` },
-            status === 'Link' ? ['↗ ', status] : status,
-          ),
-        ),
+        entry.kind === 'symlink'
+          ? m('span.fm-entry-status', { title: 'Link entry' }, ['↗ ', 'Link'])
+          : undefined,
+        entry.hidden
+          ? m(
+              'span.fm-entry-hidden-indicator',
+              { title: 'Hidden entry', 'aria-label': 'Hidden entry' },
+              eyeOffIcon({ size: 14 }),
+            )
+          : undefined,
       ];
     },
   },

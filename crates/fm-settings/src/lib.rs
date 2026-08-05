@@ -10,12 +10,13 @@ use std::io::Write;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use fm_domain::Location;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use thiserror::Error;
 
 /// Current on-disk settings schema.
-pub const CURRENT_SCHEMA_VERSION: u32 = 2;
+pub const CURRENT_SCHEMA_VERSION: u32 = 3;
 /// Stable settings filename within the platform configuration directory.
 pub const SETTINGS_FILE_NAME: &str = "settings.json";
 
@@ -90,6 +91,16 @@ pub enum DefaultPaneLayout {
     Single,
 }
 
+/// A named, provider-neutral location saved by the user.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FavouriteLocation {
+    /// User-visible label, independent of the location's URI.
+    pub label: String,
+    /// Provider-neutral target, never a host-specific raw path.
+    pub location: Location,
+}
+
 /// Versioned, application-wide settings. Live workspace content is excluded.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
@@ -131,6 +142,10 @@ pub struct Settings {
     pub editor_command: Option<String>,
     /// Locations inherited by newly created panes.
     pub default_start_locations: Vec<String>,
+    /// User-managed named locations, in the order shown by the favourites menu.
+    pub favourite_locations: Vec<FavouriteLocation>,
+    /// Recently visited locations per workspace, newest first.
+    pub recent_locations_by_workspace: BTreeMap<String, Vec<Location>>,
     /// Directory-entry icon set: `"generic"` for the built-in glyphs, or a discovered plugin's id
     /// (task 0095).
     pub icon_theme: String,
@@ -161,6 +176,8 @@ impl Default for Settings {
             terminal_command: None,
             editor_command: None,
             default_start_locations: Vec::new(),
+            favourite_locations: Vec::new(),
+            recent_locations_by_workspace: BTreeMap::new(),
             icon_theme: GENERIC_ICON_THEME.to_owned(),
         }
     }
@@ -273,7 +290,7 @@ fn migrate(bytes: &[u8]) -> Result<Settings, serde_json::Error> {
         .get("schemaVersion")
         .and_then(Value::as_u64)
         .unwrap_or(1);
-    if version == 1 {
+    if version == 1 || version == 2 {
         value["schemaVersion"] = Value::from(CURRENT_SCHEMA_VERSION);
     } else if version != u64::from(CURRENT_SCHEMA_VERSION) {
         return Err(<serde_json::Error as serde::de::Error>::custom(
@@ -336,6 +353,18 @@ mod tests {
             terminal_command: Some("alacritty".into()),
             editor_command: Some("code --wait".into()),
             default_start_locations: vec!["file:///tmp".into()],
+            favourite_locations: vec![FavouriteLocation {
+                label: "Temporary files".into(),
+                location: Location::new(fm_domain::ProviderId::new("local"), "file:///tmp"),
+            }],
+            recent_locations_by_workspace: [(
+                "workspace-1".into(),
+                vec![Location::new(
+                    fm_domain::ProviderId::new("local"),
+                    "file:///tmp",
+                )],
+            )]
+            .into(),
             icon_theme: "sample.icons".into(),
             ..Settings::default()
         };
@@ -397,6 +426,27 @@ mod tests {
             Settings::default().default_columns
         );
         assert!(loaded.warning.is_none());
+    }
+
+    #[test]
+    fn v2_fixture_migrates_to_favourites_and_workspace_recents() {
+        let directory = tempdir().expect("temp directory");
+        fs::write(
+            directory.path().join(SETTINGS_FILE_NAME),
+            r#"{
+              "schemaVersion": 2,
+              "theme": "dark"
+            }"#,
+        )
+        .expect("write v2 fixture");
+
+        let loaded = SettingsStore::new(directory.path())
+            .load()
+            .expect("migrate fixture");
+
+        assert_eq!(loaded.settings.schema_version, CURRENT_SCHEMA_VERSION);
+        assert!(loaded.settings.favourite_locations.is_empty());
+        assert!(loaded.settings.recent_locations_by_workspace.is_empty());
     }
 
     #[test]

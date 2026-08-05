@@ -10,12 +10,16 @@
   font-size: 0.92em;
 }
 
-/* Header lives outside the scrollable viewport so the scrollbar starts below it. */
+/* Header lives outside the scrollable viewport so the scrollbar starts below it.
+   `scrollbar-gutter: stable` on both makes them always reserve the same width, so
+   name-column content (e.g. the hidden-entry icon) lines up with the header regardless
+   of whether the body actually has enough rows to scroll. */
 .fm-directory-viewport {
   position: relative;
   flex: 1 1 auto;
   min-height: 0;
   overflow: auto;
+  scrollbar-gutter: stable;
   outline: none;
 }
 
@@ -38,6 +42,8 @@
 .fm-directory-header {
   flex: 0 0 auto;
   height: var(--fm-row-height);
+  overflow: hidden;
+  scrollbar-gutter: stable;
   border-bottom: 1px solid var(--fm-border);
   background: var(--fm-surface-elevated);
   color: var(--fm-text-muted);
@@ -184,6 +190,16 @@ img.fm-native-entry-icon {
   color: var(--fm-text-muted);
   font-size: 0.8em;
   font-style: normal;
+}
+
+.fm-entry-hidden-indicator {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  margin-inline-start: auto;
+  padding-inline-start: 0.5rem;
+  color: var(--fm-text-muted);
+  opacity: 0.72;
 }
 
 .fm-typeahead-match {

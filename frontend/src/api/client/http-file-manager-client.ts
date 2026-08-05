@@ -10,6 +10,7 @@ import type {
   FileRangeChunk,
   InvokeActionRequest,
   ListDirectoryRequest,
+  Location as FileLocation,
   NavigateRequest,
   Operation,
   OperationId,
@@ -527,6 +528,21 @@ function actionFromDto(dto: ActionDescriptorDto): ActionDescriptor {
 function settingsFromDto(settings: SettingsDto): Settings {
   return {
     ...settings,
+    favouriteLocations: settings.favouriteLocations.map((favourite) => ({
+      ...favourite,
+      location: { ...favourite.location },
+    })),
+    recentLocationsByWorkspace: Object.fromEntries(
+      Object.entries(settings.recentLocationsByWorkspace).map(([workspaceId, locations]) => [
+        workspaceId,
+        Array.isArray(locations)
+          ? locations.map((location): FileLocation => ({
+              providerId: String((location as { providerId?: unknown }).providerId),
+              uri: String((location as { uri?: unknown }).uri),
+            }))
+          : [],
+      ]),
+    ),
     terminalCommand: settings.terminalCommand ?? null,
     editorCommand: settings.editorCommand ?? null,
   };
@@ -538,7 +554,17 @@ function settingsToDto(settings: Settings): SettingsDto {
     defaultColumns: [...settings.defaultColumns],
     defaultStartLocations: [...settings.defaultStartLocations],
     enabledPlugins: [...settings.enabledPlugins],
+    favouriteLocations: settings.favouriteLocations.map((favourite) => ({
+      ...favourite,
+      location: { ...favourite.location },
+    })),
     keybindings: { ...settings.keybindings },
     pluginSettings: { ...settings.pluginSettings },
+    recentLocationsByWorkspace: Object.fromEntries(
+      Object.entries(settings.recentLocationsByWorkspace).map(([workspaceId, locations]) => [
+        workspaceId,
+        locations.map((location) => ({ ...location })),
+      ]),
+    ),
   };
 }

@@ -13,8 +13,8 @@ import type {
   WorkspaceProjection,
 } from '../../models';
 import type { DirectoryColumnDescriptor } from '../directory-table/directory-table';
-import type { NativeIconLoader } from '../directory-table/native-icon-loader';
 import type { EntryFormatSettings } from '../entry-formatting/entry-formatting';
+import type { EntryMetadataView } from '../entry-metadata/entry-metadata-loader';
 import { Pane } from '../panes/pane';
 import type { SelectionPlatform } from '../selection/keybindings';
 import type { SelectionAction } from '../selection/selection';
@@ -33,14 +33,12 @@ export interface WorkspacePaneContent {
   readonly hasMore?: boolean;
   readonly totalEntryCount: number;
   readonly totalKnownEntries?: number;
-  readonly totalKnownSize?: number;
-  readonly totalKnownFileCount?: number;
   readonly hiddenSelectedCount: number;
   readonly filterOpen: boolean;
   readonly filterQuery: string;
   readonly formatSettings?: EntryFormatSettings;
   readonly pluginColumns?: readonly DirectoryColumnDescriptor[];
-  readonly nativeIconLoader?: NativeIconLoader;
+  readonly metadata: EntryMetadataView;
   readonly cursorIndex?: number;
   readonly platform: SelectionPlatform;
   readonly keybindingRuntime?: KeybindingRuntime;
@@ -60,8 +58,6 @@ export interface WorkspacePaneContent {
   readonly onFilterClose: () => void;
   readonly onRename: (entry: EntrySummary, name: string) => void | Promise<void>;
   readonly onContextMenu?: (entries: readonly EntrySummary[], x: number, y: number) => void;
-  /** When set, replaces the pane's directory-listing surface with this content (task 0088). */
-  readonly viewerContent?: m.Children;
 }
 
 /** Inputs for the recursive workspace layout renderer. */
@@ -95,9 +91,6 @@ export function constrainSplitRatio(
 }
 
 export function pathFromUri(uri: string): string {
-  if (uri.startsWith('archive://')) {
-    return decodeURIComponent(uri.slice('archive://'.length)) || '/';
-  }
   if (uri.startsWith('file://')) {
     return decodeURIComponent(uri.slice('file://'.length)) || '/';
   }
@@ -243,21 +236,7 @@ export const WorkspaceLayoutView: FactoryComponent<WorkspaceLayoutViewAttrs> = (
         tabindex: active ? 0 : -1,
         oncreate: ({ dom }) => paneElements.set(paneId, dom as HTMLElement),
         onremove: () => paneElements.delete(paneId),
-        onclick: (event: MouseEvent) => {
-          // Clicking an interactive control (e.g. the file viewer's search box) must not steal
-          // focus back to the directory table - only activate the pane, keep the DOM focus as-is.
-          if (
-            event.target instanceof HTMLInputElement ||
-            event.target instanceof HTMLTextAreaElement ||
-            event.target instanceof HTMLSelectElement ||
-            event.target instanceof HTMLButtonElement ||
-            (event.target instanceof HTMLElement && event.target.isContentEditable)
-          ) {
-            attrs.onActivatePane(paneId);
-            return;
-          }
-          focusAndActivate(attrs, paneId);
-        },
+        onclick: () => focusAndActivate(attrs, paneId),
         onkeydown: (event: KeyboardEvent) => {
           if (
             event.target instanceof HTMLInputElement ||
@@ -321,19 +300,12 @@ export const WorkspaceLayoutView: FactoryComponent<WorkspaceLayoutViewAttrs> = (
         ...(content.totalKnownEntries === undefined
           ? {}
           : { totalKnownEntries: content.totalKnownEntries }),
-        ...(content.totalKnownSize === undefined ? {} : { totalKnownSize: content.totalKnownSize }),
-        ...(content.totalKnownFileCount === undefined
-          ? {}
-          : { totalKnownFileCount: content.totalKnownFileCount }),
         hiddenSelectedCount: content.hiddenSelectedCount,
         filterOpen: content.filterOpen,
         filterQuery: content.filterQuery,
         ...(content.formatSettings === undefined ? {} : { formatSettings: content.formatSettings }),
         ...(content.pluginColumns === undefined ? {} : { pluginColumns: content.pluginColumns }),
-        ...(content.nativeIconLoader === undefined
-          ? {}
-          : { nativeIconLoader: content.nativeIconLoader }),
-        ...(content.viewerContent === undefined ? {} : { viewerContent: content.viewerContent }),
+        metadata: content.metadata,
         active,
         platform: content.platform,
         ...(content.keybindingRuntime === undefined

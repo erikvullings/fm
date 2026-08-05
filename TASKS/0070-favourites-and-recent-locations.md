@@ -1,6 +1,6 @@
 # 0070 Favourites, bookmarks and recent locations
 
-Status: open
+Status: done
 Priority: low
 Owner: unassigned
 Agent: unassigned
@@ -27,4 +27,18 @@ Depends on: 0069
 - Bookmarks must survive a settings schema migration (§26) — add a migration test.
 
 ## Agent Notes
-- Not started.
+- Added versioned settings persistence and migration coverage for named `Location` favourites and
+  workspace-scoped recent locations.
+- The tab-bar heart opens the favourites menu; double-clicking the breadcrumb edits and navigates
+  pasted paths. Favourites can be added, removed, reordered, and opened alongside recent locations.
+- Successful navigation records bounded, deduplicated recents. Failed location opens are visibly
+  marked unavailable for the session. Favourites are also exposed as command-palette actions, with
+  Ctrl/Cmd+Shift+H opening the palette.
+- Verified with `cargo test -p fm-settings`, frontend type-checking, and focused Vitest suites.
+  Repository-wide lint/test was started but could not complete while another Cargo process held the
+  shared build lock.
+- Final menu polish uses compact subdued text for selectable favourite and recent-location rows,
+  retains brighter compact section headings, and keeps click targets and pointer cursors continuous.
+- `pnpm run lint` passes. A full frontend Vitest run is currently blocked by unrelated in-progress
+  pane metadata integration: workspace/app-shell tests omit Pane's required `metadata` attribute;
+  the mithril-inspector production-build test also fails.

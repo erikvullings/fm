@@ -1,6 +1,5 @@
 import m, { type FactoryComponent, type VnodeDOM } from 'mithril';
-import { IconButton } from 'mithril-materialized';
-import { heartIcon } from '../../components/tabler-icons';
+import { editIcon } from '../../components/icons';
 import { dispatchKeybinding, type KeybindingRuntime } from '../../keybindings/dispatcher';
 import type {
   ActionDescriptor,
@@ -15,8 +14,13 @@ import {
   DirectoryTable,
   entryArraySource,
 } from '../directory-table/directory-table';
-import type { NativeIconLoader } from '../directory-table/native-icon-loader';
-import type { EntryFormatSettings } from '../entry-formatting/entry-formatting';
+import {
+  DEFAULT_ENTRY_FORMAT_SETTINGS,
+  type EntryFormatSettings,
+  formatEntryModifiedAt,
+  formatEntrySize,
+} from '../entry-formatting/entry-formatting';
+import type { EntryMetadataView } from '../entry-metadata/entry-metadata-loader';
 import { validateDirectoryName } from '../operations/create-directory-dialog';
 import { QuickFilterInput } from '../quick-filter/quick-filter-input';
 import {
@@ -59,7 +63,7 @@ export interface PaneAttrs {
   readonly sort: readonly SortDescriptor[];
   readonly formatSettings?: EntryFormatSettings;
   readonly pluginColumns?: readonly DirectoryColumnDescriptor[];
-  readonly nativeIconLoader?: NativeIconLoader;
+  readonly metadata: EntryMetadataView;
   readonly selectedEntryIds: ReadonlySet<EntryId>;
   readonly cutEntryIds: ReadonlySet<EntryId>;
   readonly active: boolean;
@@ -80,10 +84,6 @@ export interface PaneAttrs {
    * front instead of only once all pages have been fetched.
    */
   readonly totalKnownEntries?: number;
-  /** Combined byte size of every file/symlink entry in the directory, known from the backend. */
-  readonly totalKnownSize?: number;
-  /** Number of file/symlink entries (directories excluded) in the directory, known from the backend. */
-  readonly totalKnownFileCount?: number;
   /** Selected entries hidden by the active filter (still selected, just not rendered). */
   readonly hiddenSelectedCount: number;
   readonly filterOpen: boolean;
@@ -102,9 +102,6 @@ export interface PaneAttrs {
   readonly onSortChange: (sort: readonly SortDescriptor[]) => void;
   readonly onRename: (entry: EntrySummary, name: string) => void | Promise<void>;
   readonly onContextMenu: (entries: readonly EntrySummary[], x: number, y: number) => void;
-  /** When set, replaces the entire directory-listing surface with this content (task 0088's
-   * Lister-style viewer, opened in the opposite pane). */
-  readonly viewerContent?: m.Children;
 }
 
 function isEditableTarget(target: EventTarget | null): boolean {
@@ -196,37 +193,6 @@ function sizeLabel(bytes: number): string {
   return `${new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 }).format(value)} ${units[unitIndex]}`;
 }
 
-/** Formats a Marta-style status summary from already-aggregated counts. */
-function formatListingSummary(fileCount: number, folderCount: number, totalSize: number): string {
-  const filesPart = `${fileCount} ${fileCount === 1 ? 'file' : 'files'}`;
-  const foldersPart = `${folderCount} ${folderCount === 1 ? 'folder' : 'folders'}`;
-  const countsText =
-    folderCount === 0
-      ? filesPart
-      : fileCount === 0
-        ? foldersPart
-        : `${filesPart}, and ${foldersPart}`;
-  return `${sizeLabel(totalSize)} in ${countsText}`;
-}
-
-/** Aggregates the currently listed (loaded/shown) entries into a Marta-style status summary:
- * total size of files plus separate file/folder counts. Symlinks are counted as files since
- * they're visually indistinguishable from them in the table. */
-function listingSummary(entries: readonly EntrySummary[]): string {
-  let fileCount = 0;
-  let folderCount = 0;
-  let totalSize = 0;
-  for (const entry of entries) {
-    if (entry.kind === 'directory') {
-      folderCount += 1;
-    } else {
-      fileCount += 1;
-      totalSize += entry.size ?? 0;
-    }
-  }
-  return formatListingSummary(fileCount, folderCount, totalSize);
-}
-
 /** Compact pane containing its single tab, path controls, directory grid, and status. */
 export const Pane: FactoryComponent<PaneAttrs> = () => {
   let editing = false;
@@ -237,8 +203,6 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
   let typeahead: TypeaheadState | undefined;
   let typeaheadTimer: ReturnType<typeof setTimeout> | undefined;
   let typeaheadError = false;
-  /** The path the current `typeahead` prefix was typed against; a path change resets it. */
-  let typeaheadPath: string | undefined;
   let renamingEntry: EntrySummary | undefined;
   let renameValue = '';
   let renameError: string | undefined;
@@ -372,48 +336,9 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
       clearTypeaheadTimer();
     },
     view: ({ attrs }) => {
-      if (attrs.viewerContent !== undefined) {
-        // Bypasses the directory-listing grid entirely (tabs/breadcrumb/table/status) - the
-        // Lister-style viewer (task 0088) owns its own header/body layout via `.fm-pane-viewer`.
-        return m(
-          'section.fm-pane.fm-pane-viewer',
-          { 'data-active': String(attrs.active), tabindex: -1 },
-          attrs.viewerContent,
-        );
-      }
-      // Entering a different directory (however navigation happened: opening an entry, ..,
-      // breadcrumb, back/forward, or switching tabs) makes any typed prefix meaningless for the
-      // new listing, and stale error highlighting to boot — reset it once per path change.
-      if (typeaheadPath !== attrs.path) {
-        typeaheadPath = attrs.path;
-        clearTypeaheadTimer();
-        typeahead = undefined;
-        typeaheadError = false;
-      }
       const ordinaryEntries = attrs.entries.filter((entry) => !isParentEntry(entry.id));
       const selectedCount = attrs.selectedEntryIds.size;
       const totalSelectedSize = selectedSize(ordinaryEntries, attrs.selectedEntryIds);
-      // `attrs.totalKnownEntries` counts the synthetic ".." row the same way `attrs.entries`
-      // does (app-shell adds +1 for it), while the backend-reported size/file-count totals never
-      // do — subtract the same adjustment so the counts stay comparable. Only used unfiltered:
-      // while filtering, the backend total can't be projected onto the filtered subset, so the
-      // status bar falls back to aggregating the filtered/shown entries directly (see below).
-      const parentEntryAdjustment = attrs.entries.length - ordinaryEntries.length;
-      const backendTotalEntries =
-        attrs.totalKnownEntries === undefined
-          ? undefined
-          : attrs.totalKnownEntries - parentEntryAdjustment;
-      const backendListingSummary =
-        attrs.filterQuery.trim() === '' &&
-        attrs.totalKnownSize !== undefined &&
-        attrs.totalKnownFileCount !== undefined &&
-        backendTotalEntries !== undefined
-          ? formatListingSummary(
-              attrs.totalKnownFileCount,
-              backendTotalEntries - attrs.totalKnownFileCount,
-              attrs.totalKnownSize,
-            )
-          : undefined;
       return m(
         'section.fm-pane',
         {
@@ -553,7 +478,7 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
                 clearTypeaheadTimer();
                 typeaheadError = false;
                 event.preventDefault();
-                attrs.onSelectionAction({ type: 'selectOnly', entryId: result.matchedEntryId });
+                attrs.onSelectionAction({ type: 'setCursor', entryId: result.matchedEntryId });
               } else {
                 flashRejectedTypeahead();
               }
@@ -642,16 +567,6 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
               },
               '+',
             ),
-            m(
-              IconButton,
-              {
-                key: '__favourites__',
-                className: 'fm-pane-tab-favourites',
-                'aria-label': 'Favourites',
-                tooltip: 'Favourites',
-              },
-              heartIcon(),
-            ),
           ]),
           editing
             ? m('.fm-path-editor', [
@@ -685,9 +600,6 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
             : m('nav.fm-breadcrumb', { 'aria-label': 'Current path' }, [
                 m(
                   '.fm-breadcrumb-segments',
-                  {
-                    ondblclick: () => beginEditing(attrs.path),
-                  },
                   breadcrumbSegments(attrs.path).map((segment) =>
                     m(
                       'button.fm-breadcrumb-segment',
@@ -699,6 +611,16 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
                       segment.label,
                     ),
                   ),
+                ),
+                m(
+                  'button.fm-breadcrumb-edit-target',
+                  {
+                    type: 'button',
+                    'aria-label': 'Edit path',
+                    title: 'Edit path (Ctrl/Cmd+L)',
+                    onclick: () => beginEditing(attrs.path),
+                  },
+                  editIcon(),
                 ),
                 pathError === undefined
                   ? undefined
@@ -721,11 +643,7 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
             sort: attrs.sort,
             ...(attrs.pluginColumns === undefined ? {} : { pluginColumns: attrs.pluginColumns }),
             ...(attrs.formatSettings === undefined ? {} : { formatSettings: attrs.formatSettings }),
-            ...(attrs.nativeIconLoader === undefined
-              ? {}
-              : { nativeIconLoader: attrs.nativeIconLoader }),
             label: `${attrs.tabTitle} directory`,
-            showFullPath: attrs.path.startsWith('search://'),
             ...(renamingEntry === undefined ? {} : { renamingEntryId: renamingEntry.id }),
             renameValue,
             ...(renameError === undefined ? {} : { renameError }),
@@ -781,25 +699,67 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
             onSortChange: attrs.onSortChange,
             ...(attrs.cursorIndex === undefined ? {} : { cursorIndex: attrs.cursorIndex }),
           }),
+          attrs.metadata.state === 'idle'
+            ? undefined
+            : m('.fm-entry-metadata', { 'aria-label': 'Cursor entry metadata' }, [
+                m('strong', attrs.metadata.entry.name),
+                m(
+                  'span',
+                  formatEntrySize(
+                    attrs.metadata.entry,
+                    attrs.formatSettings ?? DEFAULT_ENTRY_FORMAT_SETTINGS,
+                  ),
+                ),
+                m(
+                  'span',
+                  formatEntryModifiedAt(
+                    attrs.metadata.entry.modifiedAt,
+                    attrs.formatSettings ?? DEFAULT_ENTRY_FORMAT_SETTINGS,
+                  ),
+                ),
+                attrs.metadata.state === 'loading'
+                  ? m('span', 'Loading metadata…')
+                  : attrs.metadata.state === 'error'
+                    ? m('span', attrs.metadata.message)
+                    : [
+                        attrs.metadata.metadata.ownership?.owner === undefined
+                          ? undefined
+                          : m('span', `Owner: ${attrs.metadata.metadata.ownership.owner}`),
+                        attrs.metadata.metadata.permissions === undefined
+                          ? undefined
+                          : m(
+                              'span',
+                              `Permissions: ${[
+                                attrs.metadata.metadata.permissions.readable ? 'read' : undefined,
+                                attrs.metadata.metadata.permissions.writable ? 'write' : undefined,
+                                attrs.metadata.metadata.permissions.executable
+                                  ? 'execute'
+                                  : undefined,
+                              ]
+                                .filter(
+                                  (permission): permission is string => permission !== undefined,
+                                )
+                                .join(', ')}`,
+                            ),
+                      ],
+              ]),
           m('.fm-pane-status', { role: 'status' }, [
             m(
               'span',
               attrs.filterQuery.trim() === ''
-                ? (backendListingSummary ?? listingSummary(ordinaryEntries))
-                : `${listingSummary(ordinaryEntries)} (${ordinaryEntries.length} of ${attrs.totalEntryCount} shown${
-                    attrs.hasMore === true ? ', more available' : ''
-                  })`,
-            ),
-            selectedCount === 0
-              ? undefined
-              : m(
-                  'span',
-                  `${sizeLabel(totalSelectedSize)} in ${selectedCount} selected${
-                    attrs.hiddenSelectedCount > 0
-                      ? ` (${attrs.hiddenSelectedCount} hidden by filter)`
-                      : ''
+                ? `${ordinaryEntries.length} ${ordinaryEntries.length === 1 ? 'entry' : 'entries'}`
+                : `${ordinaryEntries.length} of ${attrs.totalEntryCount} shown${
+                    attrs.hasMore === true ? ' (more available)' : ''
                   }`,
-                ),
+            ),
+            m(
+              'span',
+              attrs.hiddenSelectedCount > 0
+                ? `${selectedCount} selected (${attrs.hiddenSelectedCount} hidden by filter)`
+                : `${selectedCount} selected`,
+            ),
+            m('span', `${sizeLabel(totalSelectedSize)} selected`),
+            m('span', `Sort: ${attrs.sortLabel}`),
             typeahead === undefined
               ? undefined
               : m(

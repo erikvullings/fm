@@ -6,6 +6,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use utoipa::ToSchema;
 
+use crate::LocationDto;
+
 /// Application colour theme.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
@@ -66,6 +68,16 @@ pub enum DefaultPaneLayoutDto {
     Single,
 }
 
+/// A named, provider-neutral location saved by the user.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct FavouriteLocationDto {
+    /// User-visible label, independent of the location URI.
+    pub label: String,
+    /// Provider-neutral location target.
+    pub location: LocationDto,
+}
+
 /// Versioned global settings. Live workspace content is deliberately absent.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
@@ -107,6 +119,10 @@ pub struct SettingsDto {
     pub editor_command: Option<String>,
     /// Locations inherited by new panes.
     pub default_start_locations: Vec<String>,
+    /// User-managed named locations, in the order shown by the favourites menu.
+    pub favourite_locations: Vec<FavouriteLocationDto>,
+    /// Recently visited locations per workspace, newest first.
+    pub recent_locations_by_workspace: BTreeMap<String, Vec<LocationDto>>,
     /// Directory-entry icon set: `"generic"` for the built-in glyphs, or a discovered plugin's id.
     pub icon_theme: String,
 }

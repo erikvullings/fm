@@ -299,7 +299,7 @@ describe('DirectoryTable rows', () => {
     expect(root.querySelector<HTMLElement>('.fm-directory-table')?.style.height).toBe('100%');
   });
 
-  it('renders semantic columns and textual hidden and link indicators', () => {
+  it('renders semantic columns and a hidden icon and textual link indicator', () => {
     mount({
       state: { type: 'loaded' },
       source: entryArraySource([
@@ -317,7 +317,7 @@ describe('DirectoryTable rows', () => {
     expect(grid?.getAttribute('aria-colcount')).toBe('4');
     expect(root.querySelectorAll('[role="columnheader"]')).toHaveLength(4);
     expect(root.querySelectorAll('[role="row"]')).toHaveLength(3);
-    expect(root.textContent).toContain('Hidden');
+    expect(root.querySelector('[aria-label="Hidden entry"]')).not.toBeNull();
     expect(root.textContent).toContain('↗ Link');
     expect(root.querySelector('.fm-hidden-entry')).not.toBeNull();
   });

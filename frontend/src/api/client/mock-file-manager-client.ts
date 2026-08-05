@@ -299,6 +299,8 @@ export class MockFileManagerClient implements FileManagerClient {
     terminalCommand: null,
     editorCommand: null,
     defaultStartLocations: [],
+    favouriteLocations: [],
+    recentLocationsByWorkspace: {},
     iconTheme: 'generic',
   };
   private operationSequence = 0;

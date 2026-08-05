@@ -1,3 +1,11 @@
+import type { Location } from './location';
+
+/** A user-named provider-neutral favourite location. */
+export interface FavouriteLocation {
+  readonly label: string;
+  readonly location: Location;
+}
+
 /** Versioned application-wide settings returned by both backend transports. */
 export interface Settings {
   readonly schemaVersion: number;
@@ -18,5 +26,7 @@ export interface Settings {
   readonly terminalCommand: string | null;
   readonly editorCommand: string | null;
   readonly defaultStartLocations: readonly string[];
+  readonly favouriteLocations: readonly FavouriteLocation[];
+  readonly recentLocationsByWorkspace: Readonly<Record<string, readonly Location[]>>;
   readonly iconTheme: string;
 }

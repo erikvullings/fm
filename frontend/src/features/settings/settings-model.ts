@@ -9,6 +9,16 @@ export function cloneSettings(settings: Settings): Settings {
     enabledPlugins: [...settings.enabledPlugins],
     pluginSettings: { ...settings.pluginSettings },
     defaultStartLocations: [...settings.defaultStartLocations],
+    favouriteLocations: settings.favouriteLocations.map((favourite) => ({
+      ...favourite,
+      location: { ...favourite.location },
+    })),
+    recentLocationsByWorkspace: Object.fromEntries(
+      Object.entries(settings.recentLocationsByWorkspace).map(([workspaceId, locations]) => [
+        workspaceId,
+        locations.map((location) => ({ ...location })),
+      ]),
+    ),
   };
 }
 

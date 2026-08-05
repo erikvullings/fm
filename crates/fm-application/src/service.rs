@@ -3238,6 +3238,24 @@ fn settings_to_dto(settings: Settings) -> SettingsDto {
         terminal_command: settings.terminal_command,
         editor_command: settings.editor_command,
         default_start_locations: settings.default_start_locations,
+        favourite_locations: settings
+            .favourite_locations
+            .into_iter()
+            .map(|favourite| fm_transport_dto::FavouriteLocationDto {
+                label: favourite.label,
+                location: favourite.location.into(),
+            })
+            .collect(),
+        recent_locations_by_workspace: settings
+            .recent_locations_by_workspace
+            .into_iter()
+            .map(|(workspace_id, locations)| {
+                (
+                    workspace_id,
+                    locations.into_iter().map(Into::into).collect(),
+                )
+            })
+            .collect(),
         icon_theme: settings.icon_theme,
     }
 }
@@ -3282,6 +3300,24 @@ fn settings_from_dto(settings: SettingsDto) -> Settings {
         terminal_command: settings.terminal_command,
         editor_command: settings.editor_command,
         default_start_locations: settings.default_start_locations,
+        favourite_locations: settings
+            .favourite_locations
+            .into_iter()
+            .map(|favourite| fm_settings::FavouriteLocation {
+                label: favourite.label,
+                location: favourite.location.into(),
+            })
+            .collect(),
+        recent_locations_by_workspace: settings
+            .recent_locations_by_workspace
+            .into_iter()
+            .map(|(workspace_id, locations)| {
+                (
+                    workspace_id,
+                    locations.into_iter().map(Into::into).collect(),
+                )
+            })
+            .collect(),
         icon_theme: settings.icon_theme,
     }
 }

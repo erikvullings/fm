@@ -1378,6 +1378,7 @@ name = "fm-settings"
 version = "0.1.0"
 dependencies = [
  "dirs",
+ "fm-domain",
  "serde",
  "serde_json",
  "tempfile",

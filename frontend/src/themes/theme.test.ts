@@ -125,7 +125,11 @@ describe('theme stylesheet', () => {
     expect(materializedCss).toContain('.switch label span:not(.lever)');
     expect(materializedCss).toContain('.modal.fm-find-files-modal > button.modal-close');
     expect(materializedCss).toContain('.dropdown-content li.selected');
-    expect(materializedCss).toContain('[data-theme="dark"] .fm-app-shell .dropdown-content li.active');
+    expect(materializedCss).toContain(
+      '[data-theme="dark"] .fm-app-shell .select-wrapper .dropdown-content li.active',
+    );
+    expect(materializedCss).toContain('position: static');
+    expect(materializedCss).toContain('input[type="number"]::-webkit-inner-spin-button');
   });
 
   it('removes transitions and animations when reduced motion is requested', () => {

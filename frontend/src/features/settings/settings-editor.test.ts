@@ -36,6 +36,8 @@ function fixtureSettings(overrides: Partial<Settings> = {}): Settings {
     terminalCommand: null,
     editorCommand: null,
     defaultStartLocations: [],
+    favouriteLocations: [],
+    recentLocationsByWorkspace: {},
     iconTheme: 'generic',
     ...overrides,
   };

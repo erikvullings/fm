@@ -79,6 +79,19 @@ export const heartIcon = trustedStrokeIcon(
   'fm-icon-heart',
 );
 
+/** "heart-plus" — add the current location to favourites. */
+export const heartPlusIcon = trustedStrokeIcon(
+  '<path d="M12 20l-7.5 -7.428a5 5 0 1 1 7.5 -6.566a5 5 0 1 1 7.96 6.053" />' +
+    '<path d="M16 19h6" /><path d="M19 16v6" />',
+  'fm-icon-heart-plus',
+);
+
+/** "plus" — add the current location to favourites. */
+export const plusIcon = trustedStrokeIcon(
+  '<path d="M12 5l0 14" /><path d="M5 12l14 0" />',
+  'fm-icon-plus',
+);
+
 /** "layout-grid" — workspace switcher. */
 export const layoutGridIcon = trustedStrokeIcon(
   '<path d="M4 5a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v4a1 1 0 0 1 -1 1h-4a1 1 0 0 1 -1 -1l0 -4" />' +
@@ -92,4 +105,12 @@ export const layoutGridIcon = trustedStrokeIcon(
 export const closeIcon = trustedStrokeIcon(
   '<path d="M18 6l-12 12" /><path d="M6 6l12 12" />',
   'fm-icon-close',
+);
+
+/** "eye-off" — hidden-entry indicator in the directory table's name column. */
+export const eyeOffIcon = trustedStrokeIcon(
+  '<path d="M10.585 10.587a2 2 0 0 0 2.829 2.828" />' +
+    '<path d="M16.681 16.673a8.717 8.717 0 0 1 -4.681 1.327c-3.6 0 -6.6 -2 -9 -6c1.272 -2.12 2.712 -3.678 4.32 -4.674m2.86 -1.146a9.055 9.055 0 0 1 1.82 -.18c3.6 0 6.6 2 9 6c-.666 1.11 -1.379 2.067 -2.138 2.87" />' +
+    '<path d="M3 3l18 18" />',
+  'fm-icon-eye-off',
 );

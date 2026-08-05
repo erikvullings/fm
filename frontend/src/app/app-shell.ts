@@ -1,6 +1,6 @@
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import m, { type FactoryComponent } from 'mithril';
-import { type Theme, ThemeManager, toast } from 'mithril-materialized';
+import { type Theme, ThemeManager } from 'mithril-materialized';
 
 import type { FileManagerClient } from '../api/client/file-manager-client';
 import {
@@ -29,13 +29,15 @@ import {
 } from '../features/commands/availability';
 import { ContextMenu as DirectoryContextMenu } from '../features/commands/context-menu';
 import { SAMPLE_FILE_AGE_COLUMN } from '../features/directory-table/directory-table';
-import { NativeIconLoader } from '../features/directory-table/native-icon-loader';
 import {
   DEFAULT_ENTRY_FORMAT_SETTINGS,
   type EntryFormatSettings,
 } from '../features/entry-formatting/entry-formatting';
-import { archiveRootForEntry } from '../features/navigation/archive-location';
-import { ArchivePasswordDialog } from '../features/navigation/archive-password-dialog';
+import {
+  createEntryMetadataLoader,
+  type EntryMetadataLoader,
+  type EntryMetadataView,
+} from '../features/entry-metadata/entry-metadata-loader';
 import {
   createNavigationController,
   type NavigationController,
@@ -55,12 +57,6 @@ import { PermanentDeleteDialog } from '../features/operations/permanent-delete-d
 import { CloseLastTabDialog } from '../features/panes/close-last-tab-dialog';
 import { isParentEntry, withParentEntry } from '../features/panes/parent-entry';
 import { cycledTabIndex, tabIdForJump } from '../features/panes/tab-navigation';
-import { FileViewer } from '../features/preview/file-viewer';
-import {
-  createFileViewerController,
-  type FileViewerController,
-  type FileViewerState,
-} from '../features/preview/file-viewer-controller';
 import { filterEntries, hiddenSelectedEntryCount } from '../features/quick-filter/quick-filter';
 import { FindFilesDialog } from '../features/search/find-files-dialog';
 import type { SelectionPlatform } from '../features/selection/keybindings';
@@ -171,27 +167,6 @@ function isAutoDismissibleState(state: OperationState): boolean {
   );
 }
 
-/** Converts a displayed breadcrumb path back to its provider-specific location. */
-export function locationForPath(current: Location, path: string): Location {
-  if (current.providerId === 'archive') {
-    const archiveSeparator = path.indexOf('!');
-    const outerPath = archiveSeparator < 0 ? path : path.slice(0, archiveSeparator);
-    const outerUrl = new URL('file:///');
-    outerUrl.pathname = outerPath.replaceAll('\\', '/');
-    if (archiveSeparator < 0) {
-      return { providerId: 'local', uri: outerUrl.toString() };
-    }
-    const innerPath = path.slice(archiveSeparator + 1).replace(/^\/+/, '');
-    return {
-      providerId: 'archive',
-      uri: `archive://${outerUrl.toString().slice('file://'.length)}!/${innerPath}`,
-    };
-  }
-  const url = new URL(current.uri);
-  url.pathname = path.startsWith('~') ? path : path.replaceAll('\\', '/');
-  return { ...current, uri: url.toString() };
-}
-
 /**
  * A factory component so that per-instance state lives in the closure rather
  * than on a shared module-level object.
@@ -214,22 +189,15 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
   let flushPendingLayoutUpdate: (() => void) | undefined;
   let createDirectoryOpen = false;
   let createDirectoryLocation: Location | undefined;
-  let pendingArchiveCredential:
-    | {
-        readonly location: Location;
-        readonly invalid: boolean;
-        readonly resolve: (supplied: boolean) => void;
-      }
-    | undefined;
-  let archiveCredentialError: string | undefined;
   let findFilesOpen = false;
   let findFilesRoot: Location | undefined;
   let findFilesSearchId: string | undefined;
+  let findFilesResults: readonly EntrySummary[] = [];
+  let findFilesSearching = false;
   let findFilesError: string | undefined;
-  const findFilesRootsByLocationUri = new Map<string, Location>();
   let commandPaletteOpen = false;
+  let commandPaletteError: string | undefined;
   let openTerminalSupported = false;
-  let nativeIconLoader: NativeIconLoader | undefined;
   let contextMenu:
     | {
         readonly paneId: PaneId;
@@ -248,14 +216,8 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
    */
   const directories = new Map<string, PaneDirectoryView>();
   const selections = new Map<string, SelectionState>();
-  /**
-   * The Lister-style viewer (task 0088) opened for a pane via F3 `core.view` — keyed by `PaneId`
-   * (not `${paneId}:${tabId}`) since it replaces the whole pane's surface regardless of tab.
-   */
-  const viewerByPane = new Map<
-    PaneId,
-    { readonly controller: FileViewerController; state: FileViewerState }
-  >();
+  const metadataLoaders = new Map<string, EntryMetadataLoader>();
+  const metadataViews = new Map<string, EntryMetadataView>();
   const sortedEntries = new Map<
     string,
     {
@@ -340,80 +302,6 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     ThemeManager.setTheme(theme);
     applyIconTheme(settings.iconTheme);
     syncTauriWindowBackground();
-  }
-
-  /**
-   * Hidden-file visibility is filtered server-side (unlike sort/quick-filter, which only
-   * reorder/hide already-fetched entries client-side), so entries that were never fetched while
-   * hidden files were off can't just be re-shown locally — every open tab's `showHidden` needs an
-   * `updateView` patch, and every pane needs its active tab re-fetched, or toggling the setting
-   * and saving would silently do nothing.
-   */
-  async function applyShowHiddenFilesToAllTabs(
-    client: FileManagerClient,
-    showHidden: boolean,
-  ): Promise<void> {
-    if (workspace === undefined) return;
-    for (const paneId of workspace.paneOrder) {
-      for (const tabId of workspace.panesById[paneId]?.tabOrder ?? []) {
-        const current = workspace;
-        const tab = current?.panesById[paneId]?.tabsById[tabId];
-        if (current === undefined || tab === undefined || tab.view.showHidden === showHidden) {
-          continue;
-        }
-        try {
-          await dispatchWorkspaceCommand(
-            client,
-            {
-              type: 'updateView',
-              workspaceId: current.id,
-              paneId,
-              tabId,
-              patch: { showHidden },
-              expectedRevision: current.revision,
-            },
-            replaceWorkspace,
-          );
-        } catch {
-          continue;
-        }
-        if (activeTabKey(paneId) !== tabKey(paneId, tabId))
-          directories.delete(tabKey(paneId, tabId));
-      }
-    }
-    for (const paneId of workspace.paneOrder) void navigation.load(paneId);
-  }
-
-  /**
-   * New tabs always start from the pane's fixed `default_view` (the backend has no per-user
-   * "default view" concept, and `applyShowHiddenFilesToAllTabs` above only ever patches tabs that
-   * already existed at save time) — so every freshly opened tab silently reverts to hiding
-   * dotfiles unless explicitly patched here to match the current setting.
-   */
-  async function applyCurrentShowHiddenSetting(
-    client: FileManagerClient,
-    workspaceId: WorkspaceId,
-    paneId: PaneId,
-    tabId: TabId,
-    expectedRevision: number,
-  ): Promise<void> {
-    if (currentSettings?.showHiddenFiles !== true) return;
-    try {
-      await dispatchWorkspaceCommand(
-        client,
-        {
-          type: 'updateView',
-          workspaceId,
-          paneId,
-          tabId,
-          patch: { showHidden: true },
-          expectedRevision,
-        },
-        replaceWorkspace,
-      );
-    } catch {
-      // Best-effort: the tab still works, just without hidden files until manually toggled.
-    }
   }
 
   /**
@@ -599,38 +487,24 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     return quickFilterOpen.get(key) === true || (tab?.view.quickFilter ?? null) !== null;
   }
 
-  /** Opens the Lister-style viewer (task 0088) for `entry` in `paneId`, replacing any viewer
-   * already open there. */
-  function openViewer(client: FileManagerClient, paneId: PaneId, entry: EntrySummary): void {
-    viewerByPane.get(paneId)?.controller.dispose();
-    const controller = createFileViewerController({
+  function metadataLoader(client: FileManagerClient, key: string): EntryMetadataLoader {
+    const existing = metadataLoaders.get(key);
+    if (existing !== undefined) return existing;
+    const loader = createEntryMetadataLoader({
       client,
-      entry,
-      update: (state) => {
-        const existing = viewerByPane.get(paneId);
-        if (existing === undefined) return;
-        if (state.status === 'unsupported') {
-          // Leaving an empty viewer pane open just for the user to close it manually is
-          // pointless busywork; dismiss it immediately and use a self-disappearing toast
-          // instead (Alt+F3 opens the same file in the OS default application).
-          closeViewer(paneId);
-          toast({
-            html: `Preview not available for "${entry.name}". Press Alt+F3 to open it in the default application.`,
-          });
-          return;
-        }
-        existing.state = state;
+      update: (view) => {
+        metadataViews.set(key, view);
         m.redraw();
       },
     });
-    viewerByPane.set(paneId, { controller, state: { status: 'loading', entry } });
-    m.redraw();
+    metadataLoaders.set(key, loader);
+    return loader;
   }
 
-  function closeViewer(paneId: PaneId): void {
-    viewerByPane.get(paneId)?.controller.dispose();
-    viewerByPane.delete(paneId);
-    m.redraw();
+  function locationForPath(current: Location, path: string): Location {
+    const url = new URL(current.uri);
+    url.pathname = path.startsWith('~') ? path : path.replaceAll('\\', '/');
+    return { ...current, uri: url.toString() };
   }
 
   let navigation: NavigationController;
@@ -641,6 +515,9 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     navigation.abort(paneId, tabId);
     directories.delete(key);
     selections.delete(key);
+    metadataLoaders.get(key)?.dispose();
+    metadataLoaders.delete(key);
+    metadataViews.delete(key);
     sortedEntries.delete(key);
     sortRequests.delete(key);
     quickFilterDrafts.delete(key);
@@ -654,8 +531,6 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       for (const tabId of outgoing.panesById[paneId]?.tabOrder ?? []) {
         clearTabState(paneId, tabId);
       }
-      viewerByPane.get(paneId)?.controller.dispose();
-      viewerByPane.delete(paneId);
     }
   }
 
@@ -718,7 +593,6 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       const capabilities = await client.getRuntimeCapabilities(workspaceRequest.signal);
       platform = capabilities.platform;
       openTerminalSupported = capabilities.openTerminal;
-      nativeIconLoader = capabilities.nativeFileIcons ? new NativeIconLoader(client) : undefined;
       const { loaded, summaries } = await openOrCreateDefaultWorkspace(
         client,
         workspaceRequest.signal,
@@ -907,14 +781,6 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     return paneId === undefined || location === undefined ? undefined : { paneId, location };
   }
 
-  /** Opens filename search at the real directory that produced a virtual search location. */
-  function openFindFiles(): void {
-    const active = activeDirectory();
-    if (active === undefined) return;
-    findFilesRoot = findFilesRootsByLocationUri.get(active.location.uri) ?? active.location;
-    findFilesOpen = true;
-  }
-
   /**
    * Invalidates any in-flight `startSearch` resolution and running search
    * when incremented, without depending on backend-assigned search ids
@@ -930,13 +796,8 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     findFilesOpen = false;
     findFilesRoot = undefined;
     findFilesSearchId = undefined;
-    findFilesError = undefined;
-  }
-
-  /** Closes the query dialog without cancelling the search now displayed in the active pane. */
-  function dismissFindFiles(): void {
-    findFilesOpen = false;
-    findFilesRoot = undefined;
+    findFilesResults = [];
+    findFilesSearching = false;
     findFilesError = undefined;
   }
 
@@ -949,6 +810,8 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     }
     findFilesGeneration += 1;
     const generation = findFilesGeneration;
+    findFilesResults = [];
+    findFilesSearching = true;
     findFilesError = undefined;
     findFilesSearchId = undefined;
     void attrsClient
@@ -959,14 +822,11 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
           return;
         }
         findFilesSearchId = result.searchId;
-        findFilesRootsByLocationUri.set(result.location.uri, root);
-        const paneId = activeDirectory()?.paneId ?? workspace?.activePaneId;
-        if (paneId === undefined) return;
-        dismissFindFiles();
-        void navigation.navigate(paneId, result.location).then(() => navigation.load(paneId));
+        m.redraw();
       })
       .catch((error: unknown) => {
         if (generation !== findFilesGeneration) return;
+        findFilesSearching = false;
         findFilesError = error instanceof Error ? error.message : 'Unable to start search';
         m.redraw();
       });
@@ -1034,13 +894,12 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
   }
 
   /**
-   * `core.open`/`core.view`/`core.edit`/`core.openWith`/
-   * `core.revealInSystemFileManager` act on a single entry and
-   * `core.openTerminal` acts on the current directory (task 0061); the
-   * backend cannot resolve an opaque `EntryId` back to a path itself (there
-   * is no server-side entry registry, mirroring plugin action invocation),
-   * so the frontend must supply the target as an explicit `{ uri }`
-   * parameter built from the already-loaded `Location`.
+   * `core.open`/`core.openWith`/`core.revealInSystemFileManager` act on a
+   * single entry and `core.openTerminal` acts on the current directory
+   * (task 0061); the backend cannot resolve an opaque `EntryId` back to a
+   * path itself (there is no server-side entry registry, mirroring plugin
+   * action invocation), so the frontend must supply the target as an
+   * explicit `{ uri }` parameter built from the already-loaded `Location`.
    */
   function platformActionParameters(
     actionId: string,
@@ -1049,8 +908,6 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
   ): { uri: string } | undefined {
     if (
       actionId === 'core.open' ||
-      actionId === 'core.view' ||
-      actionId === 'core.edit' ||
       actionId === 'core.openWith' ||
       actionId === 'core.revealInSystemFileManager'
     ) {
@@ -1079,10 +936,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
         m.redraw();
       })
       .catch((error: unknown) => {
-        // Action-invocation failures are transient and user-actionable (e.g. "no default
-        // application registered") - a toast is enough; never leave a persistent banner
-        // above the command bar for these.
-        toast({ html: error instanceof Error ? error.message : 'Unable to run command.' });
+        commandPaletteError = error instanceof Error ? error.message : 'Unable to run command.';
         m.redraw();
       });
   }
@@ -1173,22 +1027,12 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     );
   }
 
-  /**
-   * Clicking a footer function-key hint re-triggers the exact same keydown
-   * path a real key press would (pane.ts's local handler, then this file's
-   * `handleGlobalKeydown`), instead of duplicating each action's dispatch
-   * logic here.
-   */
-  function invokeFunctionKeyShortcut(shortcut: string): void {
-    const paneElement = document.querySelector<HTMLElement>('[data-active="true"] > .fm-pane');
-    paneElement?.dispatchEvent(new KeyboardEvent('keydown', { key: shortcut, bubbles: true }));
-  }
-
   function handleGlobalKeydown(event: KeyboardEvent): void {
     if (commandPaletteOpen) return;
     if (hasPrimaryModifier(event, platform) && !event.altKey && event.key.toLowerCase() === 'p') {
       event.preventDefault();
       commandPaletteOpen = true;
+      commandPaletteError = undefined;
       m.redraw();
       return;
     }
@@ -1202,11 +1046,6 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       registeredActions,
       currentSettings?.keybindings ?? {},
     );
-    // Alt+F3 forces the OS default application instead of the in-app Lister viewer. It never
-    // matches `core.view`'s registered F3 chord (whose `alt` flag must be false), so it is
-    // special-cased here rather than resolved through `dispatchKeybinding`.
-    const forceSystemView =
-      !isEditableTarget(event.target) && event.altKey && event.key.toUpperCase() === 'F3';
     if (!isEditableTarget(event.target) && hasPrimaryModifier(event, platform) && !event.altKey) {
       const key = event.key.toLowerCase();
       const sources = selectedLocations();
@@ -1375,7 +1214,8 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       const active = activeDirectory();
       if (active === undefined) return;
       event.preventDefault();
-      openFindFiles();
+      findFilesRoot = active.location;
+      findFilesOpen = true;
       m.redraw();
       return;
     }
@@ -1419,71 +1259,6 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       if (workspace === undefined) return;
       event.preventDefault();
       reopenClosedTab(attrsClient, workspace.activePaneId);
-      return;
-    }
-    if (dispatchedAction === 'core.view' && !forceSystemView) {
-      const active = activeDirectory();
-      const selection =
-        active === undefined ? undefined : selections.get(activeTabKey(active.paneId));
-      const directory =
-        active === undefined ? undefined : directories.get(activeTabKey(active.paneId));
-      const selected = directory?.entries.filter(
-        (entry) => selection?.selectedEntryIds.includes(entry.id) === true,
-      );
-      const viewEntry = selected?.length === 1 ? selected[0] : undefined;
-      const otherPaneId = workspace?.paneOrder.find((paneId) => paneId !== active?.paneId);
-      // Only intercept single-file selections into the in-app viewer (task 0088); directories,
-      // multi-selections, and single-pane workspaces (no opposite pane to open into) fall through
-      // to the generic core.view/core.edit/core.openWith block below, which opens the OS default
-      // application instead. The viewer itself closes and shows a toast for content that turns
-      // out to be binary once its first chunk is fetched, rather than falling back further.
-      if (
-        viewEntry !== undefined &&
-        viewEntry.kind === 'file' &&
-        !isParentEntry(viewEntry.id) &&
-        otherPaneId !== undefined
-      ) {
-        event.preventDefault();
-        openViewer(attrsClient, otherPaneId, viewEntry);
-        return;
-      }
-    }
-    // `forceSystemView` (Alt+F3) always resolves to `core.view`, which the backend maps to the
-    // same "open with OS default application" behaviour as `core.open` (see PlatformActionKind).
-    const viewActionId = forceSystemView ? 'core.view' : dispatchedAction;
-    if (
-      viewActionId === 'core.view' ||
-      viewActionId === 'core.edit' ||
-      viewActionId === 'core.openWith'
-    ) {
-      const action = registeredActions.find((candidate) => candidate.id === viewActionId);
-      if (action?.contextRequirements.featureAvailable === false) {
-        // The shortcut is still reachable by keyboard even though its footer
-        // hint is hidden (task 0061 follow-up): warn briefly instead of
-        // invoking, which would otherwise surface a persistent top-of-screen
-        // error from the backend rejecting a known-unavailable action.
-        event.preventDefault();
-        toast({ html: `${action.title} isn't available in the browser.` });
-        return;
-      }
-      const active = activeDirectory();
-      const selection =
-        active === undefined ? undefined : selections.get(activeTabKey(active.paneId));
-      const directory =
-        active === undefined ? undefined : directories.get(activeTabKey(active.paneId));
-      const selected = directory?.entries.filter(
-        (entry) => selection?.selectedEntryIds.includes(entry.id) === true,
-      );
-      const parameters = platformActionParameters(
-        viewActionId,
-        selected ?? [],
-        directory?.location,
-      );
-      if (parameters !== undefined) {
-        event.preventDefault();
-        invokeActionById(viewActionId, parameters, actionContext());
-      }
-      return;
     }
   }
 
@@ -1581,15 +1356,8 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     }
     if (payload.type === 'search.resultsBatch') {
       if (payload.searchId !== findFilesSearchId) return;
-      const searchUri = `search://local/${payload.searchId}`;
-      if (workspace !== undefined) {
-        for (const [paneId, pane] of Object.entries(workspace.panesById) as Array<
-          [PaneId, WorkspaceProjection['panesById'][PaneId]]
-        >) {
-          const tab = pane.tabsById[pane.activeTabId];
-          if (tab?.location.uri === searchUri) void navigation.load(paneId);
-        }
-      }
+      findFilesResults = [...findFilesResults, ...payload.entries];
+      findFilesSearching = !payload.isComplete;
       m.redraw();
       return;
     }
@@ -1655,14 +1423,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       },
       (next) => {
         replaceWorkspace(next);
-        const newTabId = next.panesById[paneId]?.activeTabId;
-        if (newTabId === undefined) {
-          void navigation.load(paneId);
-          return;
-        }
-        void applyCurrentShowHiddenSetting(client, next.id, paneId, newTabId, next.revision).then(
-          () => navigation.load(paneId),
-        );
+        void navigation.load(paneId);
       },
     ).catch(() => undefined);
   }
@@ -1755,14 +1516,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       },
       (next) => {
         replaceWorkspace(next);
-        const newTabId = next.panesById[paneId]?.activeTabId;
-        if (newTabId === undefined) {
-          void navigation.load(paneId);
-          return;
-        }
-        void applyCurrentShowHiddenSetting(client, next.id, paneId, newTabId, next.revision).then(
-          () => navigation.load(paneId),
-        );
+        void navigation.load(paneId);
       },
     ).catch(() => undefined);
   }
@@ -1840,7 +1594,6 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       filterOpen: key === undefined ? false : quickFilterOpenFor(key, tab),
       filterQuery: quickFilterQuery,
       formatSettings: entryFormatSettings,
-      ...(nativeIconLoader === undefined ? {} : { nativeIconLoader }),
       pluginColumns:
         plugins.some(
           (plugin) =>
@@ -1849,6 +1602,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
         tab?.view.columns.some((column) => column.columnId === 'sample.fileAge' && column.visible)
           ? [SAMPLE_FILE_AGE_COLUMN]
           : [],
+      metadata: (key === undefined ? undefined : metadataViews.get(key)) ?? { state: 'idle' },
       platform,
       keybindingRuntime,
       actions: registeredActions,
@@ -1861,28 +1615,17 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       },
       onBack: () => navigation.back(paneId),
       onForward: () => navigation.forward(paneId),
-      onParent: () =>
-        tab?.location.uri.startsWith('search://')
-          ? navigation.back(paneId)
-          : navigation.parent(paneId),
-      onOpenEntry: (entry) => {
-        if (isParentEntry(entry.id)) {
-          return tab?.location.uri.startsWith('search://')
-            ? navigation.back(paneId)
-            : navigation.parent(paneId);
-        }
-        if (tab?.location.uri.startsWith('search://')) {
-          return navigation.navigate(paneId, parentLocation(entry.location), entry.name);
-        }
-        if (entry.kind === 'directory') return navigation.navigate(paneId, entry.location);
-        const archiveRoot = archiveRootForEntry(entry);
-        if (archiveRoot !== undefined) return navigation.navigate(paneId, archiveRoot);
-        return invokeActionById(
-          'core.open',
-          { uri: entry.location.uri },
-          { paneId, selectedEntryIds: [entry.id], cursorEntryId: entry.id },
-        );
-      },
+      onParent: () => navigation.parent(paneId),
+      onOpenEntry: (entry) =>
+        isParentEntry(entry.id)
+          ? navigation.parent(paneId)
+          : entry.kind === 'directory'
+            ? navigation.navigate(paneId, entry.location)
+            : invokeActionById(
+                'core.open',
+                { uri: entry.location.uri },
+                { paneId, selectedEntryIds: [entry.id], cursorEntryId: entry.id },
+              ),
       onSelectionAction: (action: SelectionAction) => {
         if (key === undefined) return;
         if (action.type === 'moveCursorTo' && action.edge === 'last' && directory.hasMore) {
@@ -1943,12 +1686,20 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
             const loadedEntryIds = loadedEntries.map((entry) => entry.id);
             const next = reduceSelection(selections.get(key) ?? selection, action, loadedEntryIds);
             selections.set(key, next);
+            const cursorEntry = loadedEntries.find((entry) => entry.id === next.cursorEntryId);
+            void metadataLoader(client, key).select(
+              cursorEntry === undefined || isParentEntry(cursorEntry.id) ? undefined : cursorEntry,
+            );
             m.redraw();
           });
           return;
         }
         const next = reduceSelection(selection, action, entryIds);
         selections.set(key, next);
+        const cursorEntry = entries.find((entry) => entry.id === next.cursorEntryId);
+        void metadataLoader(client, key).select(
+          cursorEntry === undefined || isParentEntry(cursorEntry.id) ? undefined : cursorEntry,
+        );
         m.redraw();
       },
       onRetry: () => navigation.retry(paneId),
@@ -2028,27 +1779,6 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
         });
       },
       onContextMenu: (entries, x, y) => openContextMenu(paneId, entries, x, y),
-      ...(viewerByPane.has(paneId)
-        ? {
-            viewerContent: (() => {
-              const viewer = viewerByPane.get(paneId);
-              if (viewer === undefined) return undefined;
-              return m(FileViewer, {
-                state: viewer.state,
-                onLoadMore: () => void viewer.controller.loadMore(),
-                onSearchQueryChange: (query) => viewer.controller.setSearchOptions({ query }),
-                onSearchOptionChange: (patch) => viewer.controller.setSearchOptions(patch),
-                onRunSearch: () => void viewer.controller.runSearch(),
-                onNextMatch: () => void viewer.controller.goToNextMatch(),
-                onPreviousMatch: () => void viewer.controller.goToPreviousMatch(),
-                onZoomIn: () => viewer.controller.zoomIn(),
-                onZoomOut: () => viewer.controller.zoomOut(),
-                onResetZoom: () => viewer.controller.resetZoom(),
-                onClose: () => closeViewer(paneId),
-              });
-            })(),
-          }
-        : {}),
     };
   }
 
@@ -2067,20 +1797,13 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
         client: attrs.client,
         getWorkspace: () => workspace,
         replaceWorkspace: (next) => replaceWorkspace(next),
-        requestArchivePassword: (location, invalid) => {
-          pendingArchiveCredential?.resolve(false);
-          archiveCredentialError = undefined;
-          return new Promise<boolean>((resolve) => {
-            pendingArchiveCredential = { location, invalid, resolve };
-            m.redraw();
-          });
-        },
         updatePane: (paneId, tabId, view, preferredCursorName) => {
           const key = tabKey(paneId, tabId);
           const previous = directories.get(key);
           directories.set(key, view);
           if (view.entries.length === 0) {
             selections.set(key, emptySelection);
+            void metadataLoader(attrs.client, key).select(undefined);
           } else if (
             selections.get(key)?.cursorEntryId === undefined ||
             previous?.location?.uri !== view.location?.uri
@@ -2093,6 +1816,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
               selectedEntryIds: [],
               ...(firstEntry === undefined ? {} : { cursorEntryId: firstEntry.id }),
             });
+            void metadataLoader(attrs.client, key).select(firstEntry);
           }
           m.redraw();
         },
@@ -2148,8 +1872,6 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
 
     onremove: () => {
       removed = true;
-      pendingArchiveCredential?.resolve(false);
-      pendingArchiveCredential = undefined;
       document.removeEventListener('keydown', handleGlobalKeydown);
       systemThemeQuery?.removeEventListener('change', handleSystemThemeChange);
       if (operationFrame !== undefined) cancelAnimationFrame(operationFrame);
@@ -2161,6 +1883,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       unsubscribeResynchronise?.();
       attrsClient.disconnect();
       navigation.dispose();
+      for (const loader of metadataLoaders.values()) loader.dispose();
       document.documentElement.style.removeProperty('--fm-font-size');
       document.documentElement.style.removeProperty('--fm-row-height');
     },
@@ -2235,7 +1958,10 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
                 'aria-label': 'Find files',
                 'data-tooltip': 'Find files',
                 onclick: () => {
-                  openFindFiles();
+                  const active = activeDirectory();
+                  if (active === undefined) return;
+                  findFilesRoot = active.location;
+                  findFilesOpen = true;
                 },
               },
               searchIcon(),
@@ -2249,6 +1975,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
                 'data-tooltip': 'Command palette',
                 onclick: () => {
                   commandPaletteOpen = true;
+                  commandPaletteError = undefined;
                 },
               },
               commandIcon(),
@@ -2357,19 +2084,10 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
                                 m.redraw();
                               },
                               onSave: async (draft: Settings) => {
-                                const showHiddenChanged =
-                                  currentSettings !== undefined &&
-                                  currentSettings.showHiddenFiles !== draft.showHiddenFiles;
                                 await attrs.client.updateSettings(draft);
                                 currentSettings = draft;
                                 applyAppearance(draft);
                                 closeSettingsDialog();
-                                if (showHiddenChanged) {
-                                  void applyShowHiddenFilesToAllTabs(
-                                    attrs.client,
-                                    draft.showHiddenFiles,
-                                  );
-                                }
                               },
                               onCancel: () => {
                                 if (currentSettings !== undefined) applyAppearance(currentSettings);
@@ -2413,6 +2131,9 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
           clipboardMessage === undefined
             ? undefined
             : m('.fm-clipboard-message', { role: 'alert' }, clipboardMessage),
+          commandPaletteError === undefined
+            ? undefined
+            : m('.fm-command-palette-error', { role: 'alert' }, commandPaletteError),
           m(CommandPalette, {
             open: commandPaletteOpen,
             actions: registeredActions,
@@ -2485,46 +2206,20 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
                 });
             },
           }),
-          m(ArchivePasswordDialog, {
-            open: pendingArchiveCredential !== undefined,
-            invalid: pendingArchiveCredential?.invalid ?? false,
-            archiveLabel:
-              pendingArchiveCredential === undefined
-                ? ''
-                : pathFromUri(pendingArchiveCredential.location.uri),
-            ...(archiveCredentialError === undefined ? {} : { error: archiveCredentialError }),
-            onCancel: () => {
-              const pending = pendingArchiveCredential;
-              pendingArchiveCredential = undefined;
-              archiveCredentialError = undefined;
-              pending?.resolve(false);
-            },
-            onConfirm: (password: string) => {
-              const pending = pendingArchiveCredential;
-              if (pending === undefined) return;
-              void attrs.client
-                .cacheArchivePassword({ location: pending.location, password })
-                .then(() => {
-                  if (pendingArchiveCredential === pending) {
-                    pendingArchiveCredential = undefined;
-                    archiveCredentialError = undefined;
-                    pending.resolve(true);
-                    m.redraw();
-                  }
-                })
-                .catch((error: unknown) => {
-                  archiveCredentialError =
-                    error instanceof Error ? error.message : 'Unable to cache archive password';
-                  m.redraw();
-                });
-            },
-          }),
           m(FindFilesDialog, {
             open: findFilesOpen,
             scopeLabel: findFilesRoot === undefined ? '' : pathFromUri(findFilesRoot.uri),
+            results: findFilesResults,
+            searching: findFilesSearching,
             ...(findFilesError === undefined ? {} : { error: findFilesError }),
             onSearch: (query: string) => startFindFilesSearch(query),
             onCancel: () => closeFindFiles(),
+            onActivateResult: (entry: EntrySummary) => {
+              const paneId = activeDirectory()?.paneId ?? workspace?.activePaneId;
+              if (paneId === undefined) return;
+              closeFindFiles();
+              void navigation.navigate(paneId, parentLocation(entry.location), entry.name);
+            },
           }),
           m(PermanentDeleteDialog, {
             open: pendingDelete !== undefined,
@@ -2592,12 +2287,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
                 'span.fm-function-key',
                 {
                   key: binding.actionId,
-                  role: 'button',
-                  tabindex: binding.actionAvailable ? 0 : -1,
                   'aria-disabled': binding.actionAvailable ? undefined : 'true',
-                  onclick: binding.actionAvailable
-                    ? () => invokeFunctionKeyShortcut(binding.shortcut)
-                    : undefined,
                 },
                 `${binding.shortcut} ${binding.title}`,
               ),
