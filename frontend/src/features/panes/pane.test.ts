@@ -469,7 +469,7 @@ describe('Pane navigation input', () => {
 
     expect(onSelectionAction.mock.calls.map(([action]) => action)).toEqual([
       { type: 'selectOnly', entryId: 'two' },
-      { type: 'setCursor', entryId: 'one' },
+      { type: 'selectOnly', entryId: 'one' },
     ]);
     vi.useRealTimers();
   });

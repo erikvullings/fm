@@ -552,7 +552,7 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
                 clearTypeaheadTimer();
                 typeaheadError = false;
                 event.preventDefault();
-                attrs.onSelectionAction({ type: 'setCursor', entryId: result.matchedEntryId });
+                attrs.onSelectionAction({ type: 'selectOnly', entryId: result.matchedEntryId });
               } else {
                 flashRejectedTypeahead();
               }
