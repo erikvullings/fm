@@ -18,19 +18,19 @@ pnpm run dev:http
 
 ## Step 1 — Repository bootstrap (§33.1)
 
-- 0001 Cargo workspace skeleton and crate stubs
-- 0002 Frontend Vite + Mithril + TypeScript skeleton
-- 0003 Root development scripts, formatting and linting
-- 0004 CI skeleton
-- 0005 Architecture documentation and initial ADRs
+- [x] 0001 Cargo workspace skeleton and crate stubs
+- [x] 0002 Frontend Vite + Mithril + TypeScript skeleton
+- [x] 0003 Root development scripts, formatting and linting
+- [x] 0004 CI skeleton
+- [x] 0005 Architecture documentation and initial ADRs
 
 ## Step 2 — API pipeline (§33.2)
 
-- 0006 Core domain model in fm-domain
-- 0007 Transport DTOs and OpenAPI schemas
-- 0008 Axum server with runtime capabilities, OpenAPI JSON and Swagger UI
-- 0009 Deterministic OpenAPI export command
-- 0010 Orval-generated Fetch client and api:check
+- [x] 0006 Core domain model in fm-domain
+- [x] 0007 Transport DTOs and OpenAPI schemas
+- [x] 0008 Axum server with runtime capabilities, OpenAPI JSON and Swagger UI
+- [x] 0009 Deterministic OpenAPI export command
+- [x] 0010 Orval-generated Fetch client and api:check
 
 ## Step 2b — Workspace service (§5.3)
 
@@ -39,132 +39,134 @@ already-`done` work, so tackle it here rather than at the end. 0030 was narrowed
 persistence, 0069 now depends on 0080 instead of 0030, and 0026's split-ratio note points at 0080 —
 see each file's Context/Implementation Notes for details.
 
-- 0078 Workspace domain model refinement (aligns 0006's types with the detailed §5.3)
-- 0079 Workspace repository, validation and default-workspace lifecycle
-- 0080 Workspace semantic commands, revisions and REST/Tauri surface
-- 0081 Workspace events over the shared event bus *(needs 0031)*
-- 0082 Frontend WorkspaceProjection, state slice and command dispatch
+- [x] 0078 Workspace domain model refinement (aligns 0006's types with the detailed §5.3)
+- [x] 0079 Workspace repository, validation and default-workspace lifecycle
+- [x] 0080 Workspace semantic commands, revisions and REST/Tauri surface
+- [x] 0081 Workspace events over the shared event bus *(needs 0031)*
+- [x] 0082 Frontend WorkspaceProjection, state slice and command dispatch
 
 ## Step 3 — Transport abstraction (§33.3)
 
-- 0011 FileManagerClient interface and runtime selection
-- 0012 HTTP FileManagerClient adapter
-- 0013 Mock FileManagerClient adapter and fixtures
-- 0014 Typed backend event model and event-stream abstraction
-- 0015 Tauri 2 shell application and Tauri client adapter
+- [x] 0011 FileManagerClient interface and runtime selection
+- [x] 0012 HTTP FileManagerClient adapter
+- [x] 0013 Mock FileManagerClient adapter and fixtures
+- [x] 0014 Typed backend event model and event-stream abstraction
+- [x] 0015 Tauri 2 shell application and Tauri client adapter
 
 ## Step 4 — Local provider (§33.4)
 
-- 0016 VFS provider trait, capabilities and errors
-- 0017 Location parsing and path normalization
-- 0018 Local filesystem provider: listing, paging and metadata
-- 0019 Directory service, snapshots and request cancellation
-- 0020 Filesystem watching and directory deltas *(needs 0031)*
+- [x] 0016 VFS provider trait, capabilities and errors
+- [x] 0017 Location parsing and path normalization
+- [x] 0018 Local filesystem provider: listing, paging and metadata
+- [x] 0019 Directory service, snapshots and request cancellation
+- [x] 0020 Filesystem watching and directory deltas *(needs 0031)*
 
 ## Step 5 — Frontend shell (§33.5)
 
-- 0021 Frontend application state model
-- 0022 CSS variable themes: light, dark and follow-system
-- 0023 Development-only mithril-inspector integration
-- 0024 Virtualized directory table component
-- 0025 Pane component: tab strip, breadcrumb path bar and status bar
-- 0026 Two-pane workspace layout and pane focus
-- 0027 Directory navigation, parent navigation and history
-- 0028 Selection model and keyboard navigation
-- 0029 Sorting and file metadata summary
-- 0030 Settings service
+- [x] 0021 Frontend application state model
+- [x] 0022 CSS variable themes: light, dark and follow-system
+- [x] 0023 Development-only mithril-inspector integration
+- [x] 0024 Virtualized directory table component
+- [x] 0025 Pane component: tab strip, breadcrumb path bar and status bar
+- [x] 0026 Two-pane workspace layout and pane focus
+- [x] 0027 Directory navigation, parent navigation and history
+- [x] 0028 Selection model and keyboard navigation
+- [x] 0029 Sorting and file metadata summary
+- [x] 0030 Settings service
 
 **Milestone 1 (§16) is complete after 0030 and 0078–0082** (persisted-workspace restore moved to
 the workspace-service tasks; see Step 2b above).
 
 ## Step 6 — Event delivery (§33.6)
 
-- 0031 Rust event bus
-- 0032 SSE endpoint
-- 0033 Frontend SSE stream, reconnection and connection status
-- 0034 Tauri channel event delivery and transport parity
+- [x] 0031 Rust event bus
+- [x] 0032 SSE endpoint
+- [x] 0033 Frontend SSE stream, reconnection and connection status
+- [x] 0034 Tauri channel event delivery and transport parity
 
 ## Step 7 — File operations, one at a time (§33.7)
 
-- 0035 Operation engine core: jobs, scheduler, progress
-- 0036 Operations API and operation centre UI
-- 0037 Operation: create directory
-- 0038 Operation: rename
-- 0039 Operation: copy a single file
-- 0040 Operation: copy a directory tree
-- 0041 Operation: move files and directories
-- 0042 Operation: duplicate
-- 0043 Operation: move to Trash / Recycle Bin
-- 0044 Operation: permanent delete with confirmation
-- 0045 Conflict detection, policies and resolution dialog
-- 0046 Operation cancellation, pause and resume
-- 0047 Operation queue and history
-- 0048 In-application clipboard copy / cut / paste
+- [x] 0035 Operation engine core: jobs, scheduler, progress
+- [x] 0036 Operations API and operation centre UI
+- [x] 0037 Operation: create directory
+- [x] 0038 Operation: rename
+- [x] 0039 Operation: copy a single file
+- [x] 0040 Operation: copy a directory tree
+- [x] 0041 Operation: move files and directories
+- [x] 0042 Operation: duplicate
+- [x] 0043 Operation: move to Trash / Recycle Bin
+- [x] 0044 Operation: permanent delete with confirmation
+- [x] 0045 Conflict detection, policies and resolution dialog
+- [x] 0046 Operation cancellation, pause and resume
+- [x] 0047 Operation queue and history
+- [x] 0048 In-application clipboard copy / cut / paste
 
 **Milestone 2 (§16) is complete after 0048.**
 
 ## Step 8 — Action system (§33.8)
 
-- 0049 Backend action registry
-- 0050 Configurable keybinding dispatcher
-- 0051 Command palette
-- 0052 Context menus and context-sensitive action availability
+- [x] 0049 Backend action registry
+- [x] 0050 Configurable keybinding dispatcher
+- [x] 0051 Command palette
+- [x] 0052 Context menus and context-sensitive action availability
 
 ## Step 9 — Plugins (§33.9)
 
-- 0053 Plugin API, manifest, discovery and permissions
-- 0054 Plugin runtime with error isolation
-- 0055 Sample plugin: Copy Markdown Path
-- 0056 Sample plugin: File Age column
-- 0057 Plugin management UI
-- 0083 Settings editor UI *(after 0050 and 0057)*
+- [x] 0053 Plugin API, manifest, discovery and permissions
+- [x] 0054 Plugin runtime with error isolation
+- [x] 0055 Sample plugin: Copy Markdown Path
+- [x] 0056 Sample plugin: File Age column
+- [x] 0057 Plugin management UI
+- [x] 0083 Settings editor UI *(after 0050 and 0057)*
 
 ## Step 10 — Desktop polish (§33.10)
 
-- 0058 Platform adapter traits and capability reporting
-- 0059 macOS platform integration
-- 0060 Windows platform integration
-- 0061 Open with default application, reveal in file manager, open terminal
-- 0062 Drag and drop within the app and with the OS
-- 0063 Desktop packaging, signing and notarization
+- [x] 0058 Platform adapter traits and capability reporting
+- [x] 0059 macOS platform integration
+- [ ] 0060 Windows platform integration
+- [x] 0061 Open with default application, reveal in file manager, open terminal
+- [ ] 0062 Drag and drop within the app and with the OS
+- [ ] 0063 Desktop packaging, signing and notarization
 
 ## Cross-cutting quality
 
-- 0064 Browser/server mode security hardening (§22)
-- 0065 Performance fixtures and benchmarks (§28)
-- 0066 Accessibility review (§29)
-- 0073 Diagnostics view and structured logging (§30)
-- 0074 README, development commands and roadmap (§38)
-- 0085 Directory entry icons (themeable, with optional native-icon overlay)
-- 0086 F4 edit-in-external-editor action
-- 0087 F3 view action
-- 0088 Lister-style instant large-file viewer with lazy search
-- 0089 Content search across files
-- 0090 Total Commander-style selection toggles (invert, select/deselect by mask)
-- 0091 Native file icon overlay (backend-served, layered over 0085) *(after 0085; needs 0059)*
-- 0092 Catppuccin icon theme *(after 0085)*
-- 0093 Copy filename and path actions
-- 0094 Tabler icons toolbar
-- 0095 Distributable icon theme plugins *(after 0053, 0085, 0092)*
-- 0098 Frontend i18n with translate.js
-- 0099 In-app text file editor with Markdown preview *(after 0088)*
-- 0100 Streaming CSV and Excel file viewer subsystem
+- [ ] 0064 Browser/server mode security hardening (§22)
+- [ ] 0065 Performance fixtures and benchmarks (§28)
+- [ ] 0066 Accessibility review (§29)
+- [ ] 0073 Diagnostics view and structured logging (§30)
+- [ ] 0074 README, development commands and roadmap (§38)
+- [x] 0085 Directory entry icons (themeable, with optional native-icon overlay)
+- [x] 0086 F4 edit-in-external-editor action
+- [x] 0087 F3 view action
+- [ ] 0088 Lister-style instant large-file viewer with lazy search
+- [ ] 0089 Content search across files
+- [ ] 0090 Total Commander-style selection toggles (invert, select/deselect by mask)
+- [x] 0091 Native file icon overlay (backend-served, layered over 0085) *(after 0085; needs 0059)*
+- [x] 0092 Catppuccin icon theme *(after 0085)*
+- [ ] 0093 Copy filename and path actions
+- [x] 0094 Tabler icons toolbar
+- [x] 0095 Distributable icon theme plugins *(after 0053, 0085, 0092)*
+- [ ] 0096 Mounted volume capacity
+- [x] 0097 Directory aggregate totals
+- [ ] 0098 Frontend i18n with translate.js
+- [ ] 0099 In-app text file editor with Markdown preview *(after 0088)*
+- [ ] 0100 Streaming CSV and Excel file viewer subsystem
 
 ## Milestone 3 / version 1 features (§16.3, §37)
 
-- 0067 Quick filter
-- 0068 Recursive filesystem search
-- 0069 Tabs per pane
-- 0070 Favourites, bookmarks and recent locations
-- 0071 Preview service and initial preview panel
-- 0072 Multi-rename tool
-- 0084 Workspace management UI *(after 0069; 0082 already complete)*
+- [x] 0067 Quick filter
+- [x] 0068 Recursive filesystem search
+- [x] 0069 Tabs per pane
+- [ ] 0070 Favourites, bookmarks and recent locations
+- [ ] 0071 Preview service and initial preview panel
+- [ ] 0072 Multi-rename tool
+- [x] 0084 Workspace management UI *(after 0069; 0082 already complete)*
 
 ## Milestone 5 backlog (§16.5, §37)
 
-- 0075 Directory comparison and synchronization
-- 0076 Archive provider: browse, mutate and passwords
-- 0077 Checksums and duplicate-file detection
+- [ ] 0075 Directory comparison and synchronization
+- [ ] 0076 Archive provider: browse, mutate and passwords
+- [ ] 0077 Checksums and duplicate-file detection
 
 ## MVP definition (§36)
 
