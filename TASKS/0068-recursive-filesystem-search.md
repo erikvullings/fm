@@ -140,3 +140,10 @@ Depends on: 0067, 0032
   loaded after mm's modular core/forms/components/utilities styles (unused picker and advanced
   groups are excluded). Verified frontend typecheck and lint clean;
   full frontend suite: 64 files, 559 passed and 1 skipped (three new behavior/contract tests).
+- 2026-08-05 codex: Follow-up hardened the filename-search dialog: submitting now blurs the query
+  before the controlled ModalPanel can apply `aria-hidden`, and the modal has a stable accessible
+  id. Searches opened from a `search://` result location reuse that search's original real root.
+  Tightened the Procyon modal chrome and spacing, retained MM's FlatButton footer actions with a
+  borderless treatment, and removed the close button border. Browser verification confirmed focus
+  is outside the dialog before it becomes hidden. Full frontend suite: 65 files, 568 passed and 1
+  skipped; frontend typecheck and production build clean.

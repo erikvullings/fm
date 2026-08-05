@@ -1206,6 +1206,16 @@ describe('AppShell', () => {
         ),
       ).toBe(true),
     );
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'F7', altKey: true, bubbles: true }),
+    );
+    m.redraw.sync();
+    expect(root.querySelector('.fm-find-files-body')?.textContent).toContain('Search in /');
+    expect(root.querySelector('.fm-find-files-body')?.textContent).not.toContain('search://');
+    root
+      .querySelector<HTMLInputElement>('#find-files-query')
+      ?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    m.redraw.sync();
     const activePane = root.querySelector<HTMLElement>('[data-active="true"] > .fm-pane');
     const rows = activePane?.querySelectorAll<HTMLElement>('.fm-directory-row');
     expect(rows?.item(0).textContent).toContain('..');

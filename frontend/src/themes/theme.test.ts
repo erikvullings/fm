@@ -119,6 +119,15 @@ describe('theme stylesheet', () => {
     expect(materializedCss).toContain('var(--fm-row-height)');
   });
 
+  it('tunes mithril-materialized form chrome to match the Procyon layout', () => {
+    expect(materializedCss).toContain('.input-field > label');
+    expect(materializedCss).toContain('input[type="number"]::-webkit-inner-spin-button');
+    expect(materializedCss).toContain('.switch label span:not(.lever)');
+    expect(materializedCss).toContain('.modal.fm-find-files-modal > button.modal-close');
+    expect(materializedCss).toContain('.dropdown-content li.selected');
+    expect(materializedCss).toContain('[data-theme="dark"] .fm-app-shell .dropdown-content li.active');
+  });
+
   it('removes transitions and animations when reduced motion is requested', () => {
     expect(themeCss).toMatch(
       /@media \(prefers-reduced-motion: reduce\)[\s\S]*transition-duration:\s*0\.01ms/,

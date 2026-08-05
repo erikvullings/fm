@@ -26,21 +26,39 @@
   box-shadow: none;
 }
 
+.fm-app-shell .btn-flat,
+.fm-app-shell button.btn-flat {
+  border-color: transparent;
+  background: transparent;
+  color: var(--fm-text);
+}
+
+.fm-app-shell .btn-flat:hover,
+.fm-app-shell .btn-flat:focus-visible {
+  border-color: transparent;
+  background: var(--fm-hover);
+}
+
 .fm-app-shell .input-field {
-  min-height: var(--fm-row-height);
-  margin: 0.35rem 0;
+  min-height: calc(var(--fm-row-height) + 1.1rem);
+  margin: 0.35rem 0 0.45rem;
 }
 
 .fm-app-shell .input-field > label {
+  display: block;
+  margin: 0 0 0.2rem;
+  padding-left: 0.1rem;
   color: var(--fm-text-muted);
   font-size: 0.82rem;
+  line-height: 1.15;
 }
 
 .fm-app-shell .input-field input:not([type="checkbox"]),
 .fm-app-shell .select-wrapper input.select-dropdown,
 .fm-app-shell select.browser-default {
+  box-sizing: border-box;
   min-height: var(--fm-row-height);
-  height: 1.75rem;
+  height: var(--fm-row-height);
   margin: 0;
   padding: 0 0.35rem;
   border: 1px solid var(--fm-border);
@@ -50,6 +68,31 @@
   font: inherit;
 }
 
+.fm-app-shell .input-field input[type="number"] {
+  appearance: textfield;
+  -moz-appearance: textfield;
+  padding-right: 0.35rem;
+}
+
+.fm-app-shell .input-field input[type="number"]::-webkit-outer-spin-button,
+.fm-app-shell .input-field input[type="number"]::-webkit-inner-spin-button {
+  margin: 0;
+  -webkit-appearance: none;
+}
+
+.fm-app-shell .input-field input:not([type="checkbox"]):focus,
+.fm-app-shell .select-wrapper input.select-dropdown:focus,
+.fm-app-shell select.browser-default:focus {
+  outline: none;
+}
+
+.fm-app-shell .input-field input:not([type="checkbox"]),
+.fm-app-shell .select-wrapper input.select-dropdown,
+.fm-app-shell select.browser-default {
+  width: 100%;
+  line-height: calc(var(--fm-row-height) - 2px);
+}
+
 .fm-app-shell .switch,
 .fm-app-shell .switch label,
 .fm-app-shell .switch label .switch-value {
@@ -57,10 +100,19 @@
   line-height: var(--fm-row-height);
 }
 
+.fm-app-shell .switch label {
+  gap: 0.45rem;
+}
+
+.fm-app-shell .switch label span:not(.lever) {
+  font-size: 0.92rem;
+  line-height: 1.15;
+}
+
 .fm-app-shell .switch label .lever {
   width: 1.8rem;
   height: 0.75rem;
-  margin: 0 0.35rem;
+  margin: 0;
 }
 
 .fm-app-shell .switch label .lever::after,
@@ -90,6 +142,44 @@
   background: var(--fm-surface-elevated);
 }
 
+/* ModalPanel supplies these values inline; keep the search dialog compact and chrome-like. */
+/* biome-ignore-start lint/complexity/noImportantStyles: overrides ModalPanel inline layout */
+.fm-app-shell .modal.fm-find-files-modal {
+  width: min(32rem, calc(100vw - 2rem));
+  max-width: min(32rem, calc(100vw - 2rem)) !important;
+  border-radius: 2px !important;
+  background: var(--fm-surface-elevated) !important;
+}
+
+.fm-app-shell .modal.fm-find-files-modal > button.modal-close {
+  top: 0.1rem !important;
+  right: 0.1rem !important;
+  min-width: 1rem !important;
+  min-height: 1rem;
+  padding: 0.05rem !important;
+  border: 0;
+  font-size: 0.85rem;
+  line-height: 1;
+}
+
+.fm-app-shell .modal.fm-find-files-modal .modal-content {
+  padding: 0.65rem 0.75rem !important;
+  padding-top: 0.65rem !important;
+  background: var(--fm-surface-elevated);
+}
+
+.fm-app-shell .modal.fm-find-files-modal .modal-content h4 {
+  margin: 0 2rem 0.5rem 0 !important;
+  font-size: 1rem !important;
+  font-weight: 600;
+  line-height: var(--fm-row-height);
+}
+
+.fm-app-shell .modal.fm-find-files-modal .modal-footer {
+  padding: 0.2rem 0.35rem !important;
+}
+/* biome-ignore-end lint/complexity/noImportantStyles: overrides ModalPanel inline layout */
+
 .fm-app-shell .dropdown-content {
   border: 1px solid var(--fm-border);
   border-radius: 2px;
@@ -106,4 +196,16 @@
   color: var(--fm-text);
   font-size: inherit;
   line-height: 1.2;
+}
+
+.fm-app-shell .dropdown-content li:hover:not(.disabled),
+.fm-app-shell .dropdown-content li.selected,
+.fm-app-shell .dropdown-content li.active {
+  background-color: var(--mm-dropdown-hover);
+}
+
+[data-theme="dark"] .fm-app-shell .dropdown-content li:hover:not(.disabled),
+[data-theme="dark"] .fm-app-shell .dropdown-content li.selected,
+[data-theme="dark"] .fm-app-shell .dropdown-content li.active {
+  background-color: var(--fm-selection);
 }

@@ -226,6 +226,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
   let findFilesRoot: Location | undefined;
   let findFilesSearchId: string | undefined;
   let findFilesError: string | undefined;
+  const findFilesRootsByLocationUri = new Map<string, Location>();
   let commandPaletteOpen = false;
   let openTerminalSupported = false;
   let nativeIconLoader: NativeIconLoader | undefined;
@@ -874,6 +875,14 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     return paneId === undefined || location === undefined ? undefined : { paneId, location };
   }
 
+  /** Opens filename search at the real directory that produced a virtual search location. */
+  function openFindFiles(): void {
+    const active = activeDirectory();
+    if (active === undefined) return;
+    findFilesRoot = findFilesRootsByLocationUri.get(active.location.uri) ?? active.location;
+    findFilesOpen = true;
+  }
+
   /**
    * Invalidates any in-flight `startSearch` resolution and running search
    * when incremented, without depending on backend-assigned search ids
@@ -918,6 +927,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
           return;
         }
         findFilesSearchId = result.searchId;
+        findFilesRootsByLocationUri.set(result.location.uri, root);
         const paneId = activeDirectory()?.paneId ?? workspace?.activePaneId;
         if (paneId === undefined) return;
         dismissFindFiles();
@@ -1333,8 +1343,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       const active = activeDirectory();
       if (active === undefined) return;
       event.preventDefault();
-      findFilesRoot = active.location;
-      findFilesOpen = true;
+      openFindFiles();
       m.redraw();
       return;
     }
@@ -2180,10 +2189,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
                 'aria-label': 'Find files',
                 'data-tooltip': 'Find files',
                 onclick: () => {
-                  const active = activeDirectory();
-                  if (active === undefined) return;
-                  findFilesRoot = active.location;
-                  findFilesOpen = true;
+                  openFindFiles();
                 },
               },
               searchIcon(),

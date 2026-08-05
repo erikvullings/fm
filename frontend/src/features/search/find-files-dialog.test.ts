@@ -38,6 +38,7 @@ describe('FindFilesDialog', () => {
     input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
 
     expect(onSearch).toHaveBeenCalledWith('report');
+    expect(document.activeElement).not.toBe(input);
 
     input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     expect(onCancel).toHaveBeenCalledOnce();
@@ -78,6 +79,12 @@ describe('FindFilesDialog', () => {
     m.redraw.sync();
 
     expect(document.querySelector('.fm-find-files-results')).toBeNull();
+    expect(document.querySelector('.fm-find-files-modal')?.id).toBe('find-files-dialog');
+    expect(
+      [...document.querySelectorAll('.fm-find-files-modal .modal-footer button')].every((button) =>
+        button.classList.contains('btn-flat'),
+      ),
+    ).toBe(true);
   });
 
   it('resets the query and blurs before cancel when Cancel is clicked', () => {

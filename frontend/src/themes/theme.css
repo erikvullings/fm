@@ -814,14 +814,8 @@ input[type="text"].fm-command-palette-input {
   font-size: 0.8rem;
 }
 
-/* biome-ignore-start lint/complexity/noImportantStyles: overrides ModalPanel's inline styles */
-.modal.fm-find-files-modal {
-  max-width: min(42rem, calc(100vw - 2rem)) !important;
-}
-/* biome-ignore-end lint/complexity/noImportantStyles: overrides ModalPanel's inline styles */
-
 .fm-find-files-body {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 0.35rem;
 }

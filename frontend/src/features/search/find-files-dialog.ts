@@ -28,6 +28,7 @@ export const FindFilesDialog: FactoryComponent<FindFilesDialogAttrs> = () => {
   function search(attrs: FindFilesDialogAttrs): void {
     const trimmed = query.trim();
     if (trimmed.length === 0) return;
+    blurActive();
     attrs.onSearch(trimmed);
   }
 
@@ -50,6 +51,7 @@ export const FindFilesDialog: FactoryComponent<FindFilesDialogAttrs> = () => {
     },
     view: ({ attrs }) =>
       m(ModalPanel, {
+        id: 'find-files-dialog',
         title: 'Find files',
         className: 'fm-find-files-modal',
         description: m('.fm-find-files-body', [
