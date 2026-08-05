@@ -3,7 +3,7 @@
 Status: done
 Priority: medium
 Owner: unassigned
-Agent: unassigned
+Agent: Claude Sonnet 5 (Copilot)
 Area: frontend
 Depends on: 0058
 
@@ -123,3 +123,25 @@ theme-icon fallback unless `fm-server` also serves native icons.
     scoping this: `frontend/src/api/fetch-mutator.ts`'s `readBody()` decodes every non-JSON
     response via `.text()`, which would corrupt binary PNG bytes — needs a real fix as part of
     0091, not a per-call workaround.
+- 2026-08-04 Claude Sonnet 5 (Copilot): Closing out this task as `done`. Re-verified the frontend
+  baseline is intact and unchanged (`entry-icons.test.ts`, `directory-table.test.ts` — 43 tests
+  across the three icon-theme test files, verified via `pnpm exec vitest run
+  src/features/directory-table/entry-icons.test.ts src/features/directory-table/directory-table.test.ts
+  src/themes/plugin-icon-theme.test.ts`, all passing; working tree clean). The hard
+  "theme-creator replaceability" requirement this task set out has since been proven and exceeded
+  by two follow-up tasks built directly on the `entryIconRegistry` extension point:
+  - Task 0092 shipped a concrete, hardcoded Catppuccin (Mocha) icon theme installed into the same
+    registry, plus a `Settings.iconTheme` field and a live-switching Select in the Settings Editor.
+  - Task 0095 went further and replaced that hardcoded approach with a real **distributable icon
+    theme plugin mechanism** (`[contributions] icon_theme = true` + a sibling `icon-theme.json`,
+    served read-only over HTTP/Tauri, sanitized before `m.trust()`, installed via a generic
+    `installPluginIconTheme()` loader) — i.e. a theme package can now be added with zero changes to
+    this repo's source, which is a stronger proof of the replaceability requirement than this task
+    itself demanded. `plugins/catppuccin-icons/` is the real, currently-installed example of this.
+  - `docs/architecture/theming.md` documents both the original `entryIconRegistry` extension point
+    ("Directory entry icons" section, from this task) and the plugin mechanism built on top of it
+    ("Distributable icon theme plugins" section, from 0095) — no further doc changes needed here.
+  The one line of this task's own Acceptance Criteria still unmet — the `nativeFileIcons`-gated
+  backend-served overlay — remains intentionally out of scope for this task per its own
+  explicit split allowance; it stays tracked solely under task 0091 (open, low priority,
+  unstarted), which is not blocked by anything else in this task.
