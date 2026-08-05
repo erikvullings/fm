@@ -57,7 +57,7 @@
 }
 
 .fm-breadcrumb-segment,
-.fm-breadcrumb-edit-target {
+.fm-breadcrumb-favourites {
   min-height: var(--fm-row-height);
   border: 0;
   background: transparent;
@@ -159,11 +159,11 @@
 }
 
 .fm-breadcrumb-segment:hover,
-.fm-breadcrumb-edit-target:hover {
+.fm-breadcrumb-favourites:hover {
   background: var(--fm-hover);
 }
 
-.fm-breadcrumb-edit-target {
+.fm-breadcrumb-favourites {
   display: flex;
   align-items: center;
   margin-left: auto;
@@ -171,7 +171,7 @@
   color: var(--fm-text-muted);
 }
 
-.fm-breadcrumb-edit-target .fm-icon {
+.fm-breadcrumb-favourites .fm-icon {
   display: block;
 }
 

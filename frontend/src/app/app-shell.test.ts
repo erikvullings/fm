@@ -134,8 +134,8 @@ describe('AppShell', () => {
     if (activePane === null) throw new Error('no active pane');
 
     activePane
-      .querySelector<HTMLElement>('.fm-breadcrumb-edit-target')
-      ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      .querySelector<HTMLElement>('.fm-breadcrumb-segments')
+      ?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
     m.redraw.sync();
     const pathInput = activePane.querySelector<HTMLInputElement>('.fm-path-input');
     if (pathInput === null) throw new Error('path input missing');
@@ -164,8 +164,8 @@ describe('AppShell', () => {
     if (activePane === null) throw new Error('no active pane');
 
     activePane
-      .querySelector<HTMLElement>('.fm-breadcrumb-edit-target')
-      ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      .querySelector<HTMLElement>('.fm-breadcrumb-segments')
+      ?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
     m.redraw.sync();
     const pathInput = activePane.querySelector<HTMLInputElement>('.fm-path-input');
     if (pathInput === null) throw new Error('path input missing');
@@ -1511,8 +1511,9 @@ describe('AppShell', () => {
     m.redraw.sync();
     expect(activePane?.querySelectorAll('.fm-quick-filter-input')).toHaveLength(1);
 
-    const editButton = activePane?.querySelector<HTMLElement>('.fm-breadcrumb-edit-target');
-    editButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    activePane
+      ?.querySelector<HTMLElement>('.fm-breadcrumb-segments')
+      ?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
     m.redraw.sync();
     const pathInput = activePane?.querySelector<HTMLInputElement>('.fm-path-input');
     pathInput?.focus();
@@ -1771,8 +1772,8 @@ describe('tabs per pane (task 0069)', () => {
     }
 
     activePane()
-      ?.querySelector<HTMLElement>('.fm-breadcrumb-edit-target')
-      ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      ?.querySelector<HTMLElement>('.fm-breadcrumb-segments')
+      ?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
     m.redraw.sync();
     const pathInput = activePane()?.querySelector<HTMLInputElement>('.fm-path-input');
     if (pathInput === undefined || pathInput === null) throw new Error('path input missing');
@@ -1831,8 +1832,8 @@ describe('tabs per pane (task 0069)', () => {
     }
 
     activePane()
-      ?.querySelector<HTMLElement>('.fm-breadcrumb-edit-target')
-      ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      ?.querySelector<HTMLElement>('.fm-breadcrumb-segments')
+      ?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
     m.redraw.sync();
     const pathInput = activePane()?.querySelector<HTMLInputElement>('.fm-path-input');
     if (pathInput === undefined || pathInput === null) throw new Error('path input missing');

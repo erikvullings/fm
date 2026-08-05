@@ -73,6 +73,12 @@ export const settingsIcon = trustedStrokeIcon(
   'fm-icon-settings',
 );
 
+/** "heart" — favourites/bookmarks. */
+export const heartIcon = trustedStrokeIcon(
+  '<path d="M19.5 12.572l-7.5 7.428l-7.5 -7.428a5 5 0 1 1 7.5 -6.566a5 5 0 1 1 7.5 6.572" />',
+  'fm-icon-heart',
+);
+
 /** "layout-grid" — workspace switcher. */
 export const layoutGridIcon = trustedStrokeIcon(
   '<path d="M4 5a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v4a1 1 0 0 1 -1 1h-4a1 1 0 0 1 -1 -1l0 -4" />' +

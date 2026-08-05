@@ -209,10 +209,12 @@ describe('breadcrumbSegments', () => {
 });
 
 describe('Pane breadcrumb editing', () => {
-  it('enters edit mode on breadcrumb click and cancels with Escape', () => {
+  it('enters edit mode on breadcrumb double-click and cancels with Escape', () => {
     mount(attrs());
 
-    root.querySelector<HTMLButtonElement>('.fm-breadcrumb-edit-target')?.click();
+    root
+      .querySelector<HTMLElement>('.fm-breadcrumb-segments')
+      ?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
     m.redraw.sync();
     expect(root.querySelector<HTMLInputElement>('.fm-path-input')?.value).toBe('/home/erik');
 
@@ -255,7 +257,9 @@ describe('Pane breadcrumb editing', () => {
   it('shows rejected paths inline without replacing the current directory', async () => {
     mount(attrs({ onNavigate: () => Promise.reject(new Error('Path does not exist')) }));
 
-    root.querySelector<HTMLButtonElement>('.fm-breadcrumb-edit-target')?.click();
+    root
+      .querySelector<HTMLElement>('.fm-breadcrumb-segments')
+      ?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
     m.redraw.sync();
     const input = root.querySelector<HTMLInputElement>('.fm-path-input');
     if (input === null) return;
@@ -267,6 +271,16 @@ describe('Pane breadcrumb editing', () => {
       expect(root.querySelector('.fm-path-error')?.textContent).toBe('Path does not exist'),
     );
     expect(root.textContent).toContain('one.txt');
+  });
+
+  it('replaces the edit affordance with a Tabler heart favourites button', () => {
+    mount(attrs());
+
+    expect(root.querySelector('.fm-breadcrumb-edit-target')).toBeNull();
+    expect(root.querySelector<HTMLButtonElement>('.fm-breadcrumb-favourites')?.ariaLabel).toBe(
+      'Favourites',
+    );
+    expect(root.querySelector('.fm-icon-heart')).not.toBeNull();
   });
 });
 

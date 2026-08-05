@@ -1,5 +1,5 @@
 import m, { type FactoryComponent, type VnodeDOM } from 'mithril';
-import { editIcon } from '../../components/icons';
+import { heartIcon } from '../../components/tabler-icons';
 import { dispatchKeybinding, type KeybindingRuntime } from '../../keybindings/dispatcher';
 import type {
   ActionDescriptor,
@@ -674,6 +674,9 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
             : m('nav.fm-breadcrumb', { 'aria-label': 'Current path' }, [
                 m(
                   '.fm-breadcrumb-segments',
+                  {
+                    ondblclick: () => beginEditing(attrs.path),
+                  },
                   breadcrumbSegments(attrs.path).map((segment) =>
                     m(
                       'button.fm-breadcrumb-segment',
@@ -687,14 +690,13 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
                   ),
                 ),
                 m(
-                  'button.fm-breadcrumb-edit-target',
+                  'button.fm-breadcrumb-favourites',
                   {
                     type: 'button',
-                    'aria-label': 'Edit path',
-                    title: 'Edit path (Ctrl/Cmd+L)',
-                    onclick: () => beginEditing(attrs.path),
+                    'aria-label': 'Favourites',
+                    title: 'Favourites',
                   },
-                  editIcon(),
+                  heartIcon(),
                 ),
                 pathError === undefined
                   ? undefined
