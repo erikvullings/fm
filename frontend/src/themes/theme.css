@@ -487,8 +487,7 @@ input[type="text"].fm-command-palette-input {
 
 .fm-command-palette-status,
 .fm-command-palette-results small,
-.fm-command-palette-unavailable,
-.fm-command-palette-error {
+.fm-command-palette-unavailable {
   color: var(--fm-text-muted);
 }
 

@@ -9,6 +9,7 @@ const ARCHIVE_SUFFIXES = [
   '.7z',
   '.cbr',
   '.cbz',
+  '.epub',
   '.gz',
   '.rar',
   '.tar',

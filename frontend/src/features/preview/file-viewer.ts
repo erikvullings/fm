@@ -1,6 +1,16 @@
 import m, { type FactoryComponent } from 'mithril';
 import { closeIcon } from '../../components/tabler-icons';
-import type { FileViewerSearchState, FileViewerState } from './file-viewer-controller';
+import type { EntrySummary } from '../../models';
+import type {
+  FileViewerSearchState,
+  FileViewerState,
+  FileViewerTextContent,
+} from './file-viewer-controller';
+import {
+  highlightToHtml,
+  languageForExtension,
+  wrapRangeInHighlightMark,
+} from './syntax-highlighting';
 import './file-viewer.css';
 
 /** Presentational Lister-style large-file viewer (task 0088); all state/async work lives in
@@ -138,6 +148,40 @@ function renderSearchBar(
   ]);
 }
 
+/** Re-renders the `pre.fm-file-viewer-text` element imperatively (syntax highlighting and the
+ * search-match `<mark>` are both DOM-tree operations, not plain vdom children - see
+ * `syntax-highlighting.ts`), then re-runs the scroll-into-view check for the active match. */
+function updateHighlightedTextBody(
+  element: HTMLElement,
+  content: FileViewerTextContent,
+  entry: EntrySummary,
+  scrollState: HighlightScrollState,
+): void {
+  const language = languageForExtension(entry.extension);
+  element.innerHTML = highlightToHtml(content.text, language);
+  element.classList.toggle('hljs', language !== undefined);
+
+  const start =
+    content.highlightOffset === undefined
+      ? undefined
+      : content.highlightOffset - content.windowOffset;
+  const end =
+    start === undefined || content.highlightLength === undefined
+      ? undefined
+      : start + content.highlightLength;
+  if (start !== undefined && end !== undefined && start >= 0 && end <= content.text.length) {
+    wrapRangeInHighlightMark(element, start, end);
+  }
+  const mark = element.querySelector('.fm-file-viewer-highlight');
+  if (mark instanceof HTMLElement) {
+    scrollHighlightIntoViewIfNeeded(
+      mark,
+      `${content.highlightOffset}:${content.highlightLength}`,
+      scrollState,
+    );
+  }
+}
+
 function renderTextBody(
   attrs: FileViewerAttrs,
   state: Extract<FileViewerState, { status: 'ready' }>,
@@ -145,15 +189,8 @@ function renderTextBody(
 ): m.Children {
   const content = state.content;
   if (content.kind !== 'text') return undefined;
-  const localHighlightStart =
-    content.highlightOffset === undefined
-      ? undefined
-      : content.highlightOffset - content.windowOffset;
-  const showHighlight =
-    localHighlightStart !== undefined &&
-    localHighlightStart >= 0 &&
-    content.highlightLength !== undefined &&
-    localHighlightStart + content.highlightLength <= content.text.length;
+  const update = (element: HTMLElement) =>
+    updateHighlightedTextBody(element, content, state.entry, highlightScrollState);
   return m(
     '.fm-file-viewer-body.fm-file-viewer-body-text',
     {
@@ -169,36 +206,10 @@ function renderTextBody(
       },
     },
     [
-      m(
-        'pre.fm-file-viewer-text',
-        !showHighlight || localHighlightStart === undefined || content.highlightLength === undefined
-          ? content.text
-          : [
-              content.text.slice(0, localHighlightStart),
-              m(
-                'mark.fm-file-viewer-highlight',
-                {
-                  oncreate: (vnode: m.VnodeDOM) =>
-                    scrollHighlightIntoViewIfNeeded(
-                      vnode.dom as HTMLElement,
-                      `${content.highlightOffset}:${content.highlightLength}`,
-                      highlightScrollState,
-                    ),
-                  onupdate: (vnode: m.VnodeDOM) =>
-                    scrollHighlightIntoViewIfNeeded(
-                      vnode.dom as HTMLElement,
-                      `${content.highlightOffset}:${content.highlightLength}`,
-                      highlightScrollState,
-                    ),
-                },
-                content.text.slice(
-                  localHighlightStart,
-                  localHighlightStart + content.highlightLength,
-                ),
-              ),
-              content.text.slice(localHighlightStart + content.highlightLength),
-            ],
-      ),
+      m('pre.fm-file-viewer-text', {
+        oncreate: (vnode: m.VnodeDOM) => update(vnode.dom as HTMLElement),
+        onupdate: (vnode: m.VnodeDOM) => update(vnode.dom as HTMLElement),
+      }),
       content.loadingMore ? m('.fm-file-viewer-loading-more', 'Loading more…') : undefined,
     ],
   );

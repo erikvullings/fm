@@ -160,6 +160,54 @@
   color: var(--fm-surface);
 }
 
+/* Syntax highlighting (highlight.js token classes), mapped to the file-manager's own theme
+ * tokens rather than a bundled hljs stylesheet so it follows the active light/dark/custom theme. */
+.fm-file-viewer-text.hljs {
+  background: transparent;
+  color: var(--fm-text);
+}
+
+.fm-file-viewer-text .hljs-comment,
+.fm-file-viewer-text .hljs-quote {
+  color: var(--fm-text-muted);
+  font-style: italic;
+}
+
+.fm-file-viewer-text .hljs-keyword,
+.fm-file-viewer-text .hljs-selector-tag,
+.fm-file-viewer-text .hljs-literal,
+.fm-file-viewer-text .hljs-section,
+.fm-file-viewer-text .hljs-link {
+  color: var(--fm-accent);
+  font-weight: 600;
+}
+
+.fm-file-viewer-text .hljs-string,
+.fm-file-viewer-text .hljs-attr,
+.fm-file-viewer-text .hljs-regexp,
+.fm-file-viewer-text .hljs-addition {
+  color: var(--fm-success);
+}
+
+.fm-file-viewer-text .hljs-number,
+.fm-file-viewer-text .hljs-symbol,
+.fm-file-viewer-text .hljs-bullet {
+  color: var(--fm-warning);
+}
+
+.fm-file-viewer-text .hljs-title,
+.fm-file-viewer-text .hljs-name,
+.fm-file-viewer-text .hljs-built_in,
+.fm-file-viewer-text .hljs-type {
+  color: var(--fm-accent);
+}
+
+.fm-file-viewer-text .hljs-deletion,
+.fm-file-viewer-text .hljs-variable,
+.fm-file-viewer-text .hljs-template-variable {
+  color: var(--fm-error);
+}
+
 .fm-file-viewer-loading-more {
   padding: 0.5rem 0;
   color: var(--fm-text-muted);

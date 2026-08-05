@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "@tauri-apps/api": "^2",
+    "highlight.js": "^11.11.1",
     "meiosis-setup": "^6.2.3",
     "mithril": "^2.3.8",
     "mithril-materialized": "^3.17.7"

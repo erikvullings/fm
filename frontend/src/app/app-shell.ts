@@ -227,7 +227,6 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
   let findFilesSearchId: string | undefined;
   let findFilesError: string | undefined;
   let commandPaletteOpen = false;
-  let commandPaletteError: string | undefined;
   let openTerminalSupported = false;
   let nativeIconLoader: NativeIconLoader | undefined;
   let contextMenu:
@@ -340,6 +339,48 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     ThemeManager.setTheme(theme);
     applyIconTheme(settings.iconTheme);
     syncTauriWindowBackground();
+  }
+
+  /**
+   * Hidden-file visibility is filtered server-side (unlike sort/quick-filter, which only
+   * reorder/hide already-fetched entries client-side), so entries that were never fetched while
+   * hidden files were off can't just be re-shown locally — every open tab's `showHidden` needs an
+   * `updateView` patch, and every pane needs its active tab re-fetched, or toggling the setting
+   * and saving would silently do nothing.
+   */
+  async function applyShowHiddenFilesToAllTabs(
+    client: FileManagerClient,
+    showHidden: boolean,
+  ): Promise<void> {
+    if (workspace === undefined) return;
+    for (const paneId of workspace.paneOrder) {
+      for (const tabId of workspace.panesById[paneId]?.tabOrder ?? []) {
+        const current = workspace;
+        const tab = current?.panesById[paneId]?.tabsById[tabId];
+        if (current === undefined || tab === undefined || tab.view.showHidden === showHidden) {
+          continue;
+        }
+        try {
+          await dispatchWorkspaceCommand(
+            client,
+            {
+              type: 'updateView',
+              workspaceId: current.id,
+              paneId,
+              tabId,
+              patch: { showHidden },
+              expectedRevision: current.revision,
+            },
+            replaceWorkspace,
+          );
+        } catch {
+          continue;
+        }
+        if (activeTabKey(paneId) !== tabKey(paneId, tabId))
+          directories.delete(tabKey(paneId, tabId));
+      }
+    }
+    for (const paneId of workspace.paneOrder) void navigation.load(paneId);
   }
 
   /**
@@ -996,7 +1037,10 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
         m.redraw();
       })
       .catch((error: unknown) => {
-        commandPaletteError = error instanceof Error ? error.message : 'Unable to run command.';
+        // Action-invocation failures are transient and user-actionable (e.g. "no default
+        // application registered") - a toast is enough; never leave a persistent banner
+        // above the command bar for these.
+        toast({ html: error instanceof Error ? error.message : 'Unable to run command.' });
         m.redraw();
       });
   }
@@ -1103,7 +1147,6 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     if (hasPrimaryModifier(event, platform) && !event.altKey && event.key.toLowerCase() === 'p') {
       event.preventDefault();
       commandPaletteOpen = true;
-      commandPaletteError = undefined;
       m.redraw();
       return;
     }
@@ -2154,7 +2197,6 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
                 'data-tooltip': 'Command palette',
                 onclick: () => {
                   commandPaletteOpen = true;
-                  commandPaletteError = undefined;
                 },
               },
               commandIcon(),
@@ -2263,10 +2305,19 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
                                 m.redraw();
                               },
                               onSave: async (draft: Settings) => {
+                                const showHiddenChanged =
+                                  currentSettings !== undefined &&
+                                  currentSettings.showHiddenFiles !== draft.showHiddenFiles;
                                 await attrs.client.updateSettings(draft);
                                 currentSettings = draft;
                                 applyAppearance(draft);
                                 closeSettingsDialog();
+                                if (showHiddenChanged) {
+                                  void applyShowHiddenFilesToAllTabs(
+                                    attrs.client,
+                                    draft.showHiddenFiles,
+                                  );
+                                }
                               },
                               onCancel: () => {
                                 if (currentSettings !== undefined) applyAppearance(currentSettings);
@@ -2310,9 +2361,6 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
           clipboardMessage === undefined
             ? undefined
             : m('.fm-clipboard-message', { role: 'alert' }, clipboardMessage),
-          commandPaletteError === undefined
-            ? undefined
-            : m('.fm-command-palette-error', { role: 'alert' }, commandPaletteError),
           m(CommandPalette, {
             open: commandPaletteOpen,
             actions: registeredActions,

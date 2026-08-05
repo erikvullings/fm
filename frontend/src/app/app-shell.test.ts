@@ -878,6 +878,47 @@ describe('AppShell', () => {
     expect(document.documentElement.dataset.theme).toBe('dark');
   });
 
+  it('applies a saved "show hidden files" change to every open tab and refetches immediately', async () => {
+    const client = new MockFileManagerClient();
+    const dispatchWorkspaceCommand = vi.spyOn(client, 'dispatchWorkspaceCommand');
+    const listDirectory = vi.spyOn(client, 'listDirectory');
+    m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
+    await openAppearanceSettings();
+    listDirectory.mockClear();
+
+    const hiddenFilesLabel = [...root.querySelectorAll<HTMLElement>('label.switch-label')].find(
+      (label) => label.textContent?.includes('Show hidden files'),
+    );
+    hiddenFilesLabel?.closest<HTMLElement>('.input-field')?.click();
+    m.redraw.sync();
+    root.querySelector<HTMLButtonElement>('.fm-settings-save')?.click();
+    m.redraw.sync();
+
+    // Both panes' tabs start with `showHidden: false` (mock workspace fixture) and must each be
+    // patched, since hidden-file filtering happens server-side - unlike sort/quick-filter, a
+    // stale client-side view can't just be re-shown locally.
+    await vi.waitFor(() =>
+      expect(dispatchWorkspaceCommand).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'updateView',
+          paneId: 'left',
+          patch: { showHidden: true },
+        }),
+        undefined,
+      ),
+    );
+    expect(dispatchWorkspaceCommand).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'updateView', paneId: 'right', patch: { showHidden: true } }),
+      undefined,
+    );
+    await vi.waitFor(() =>
+      expect(listDirectory).toHaveBeenCalledWith(
+        expect.objectContaining({ showHidden: true }),
+        expect.any(AbortSignal),
+      ),
+    );
+  });
+
   it('reverts a previewed setting and closes the dialog when Cancel is clicked', async () => {
     const client = new MockFileManagerClient();
     const updateSettings = vi.spyOn(client, 'updateSettings');
@@ -1249,6 +1290,62 @@ describe('AppShell', () => {
     );
   });
 
+  it('enters an epub file as a folder-like archive on double-click, instead of opening it externally', async () => {
+    const client = new MockFileManagerClient();
+    const originalListDirectory = client.listDirectory.bind(client);
+    vi.spyOn(client, 'listDirectory').mockImplementation(async (request, signal) => {
+      const snapshot = await originalListDirectory(request, signal);
+      if (request.location.uri !== 'mock:///') return snapshot;
+      return {
+        ...snapshot,
+        entries: [
+          ...snapshot.entries,
+          {
+            id: 'epub-file',
+            location: { providerId: 'local', uri: 'file:///tmp/book.epub' },
+            name: 'book.epub',
+            kind: 'file',
+            hidden: false,
+            readOnly: false,
+            metadataRevision: 0,
+          },
+        ],
+        totalKnownEntries: (snapshot.totalKnownEntries ?? snapshot.entries.length) + 1,
+      };
+    });
+    const navigatePane = vi.spyOn(client, 'navigatePane').mockImplementation(async (request) => ({
+      paneId: request.paneId,
+      requestId: request.requestId,
+      revision: 1,
+      location: request.location,
+      writable: true,
+      entries: [],
+      totalKnownEntries: 0,
+      hasMore: false,
+      loadingState: { type: 'loaded' },
+    }));
+    const invokeAction = vi.spyOn(client, 'invokeAction');
+    m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
+    await vi.waitFor(() => expect(root.textContent).toContain('book.epub'));
+
+    const epubRow = [...root.querySelectorAll<HTMLElement>('.fm-directory-row')].find((row) =>
+      row.textContent?.includes('book.epub'),
+    );
+    epubRow?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+
+    await vi.waitFor(() =>
+      expect(navigatePane).toHaveBeenCalledWith(
+        expect.objectContaining({
+          location: { providerId: 'archive', uri: 'archive:///tmp/book.epub!/' },
+        }),
+        expect.any(AbortSignal),
+      ),
+    );
+    expect(invokeAction).not.toHaveBeenCalledWith(
+      expect.objectContaining({ actionId: 'core.open' }),
+    );
+  });
+
   it('reveals the selected entry via the context menu, passing its uri as a parameter (task 0061)', async () => {
     const client = new MockFileManagerClient();
     const invokeAction = vi.spyOn(client, 'invokeAction');
@@ -1329,7 +1426,7 @@ describe('AppShell', () => {
     );
   });
 
-  it('surfaces a platform action failure as a visible, user-readable error (task 0061)', async () => {
+  it('surfaces a platform action failure as a brief toast, never a persistent banner (task 0061)', async () => {
     const client = new MockFileManagerClient();
     vi.spyOn(client, 'invokeAction').mockRejectedValue(
       new Error('no default application is registered for this file type'),
@@ -1343,11 +1440,17 @@ describe('AppShell', () => {
     fileRow?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
     m.redraw.sync();
 
-    await vi.waitFor(() =>
-      expect(root.querySelector('.fm-command-palette-error')?.textContent).toBe(
-        'no default application is registered for this file type',
-      ),
-    );
+    try {
+      await vi.waitFor(() =>
+        expect(document.querySelector('.toast')?.textContent).toContain(
+          'no default application is registered for this file type',
+        ),
+      );
+      expect(root.querySelector('.fm-command-palette-error')).toBeNull();
+    } finally {
+      Toast.dismissAll();
+      await vi.waitFor(() => expect(document.getElementById('toast-container')).toBeNull());
+    }
   });
 
   it('opens the quick filter with Ctrl+F, filters the active pane live, and closes with Escape (task 0067)', async () => {

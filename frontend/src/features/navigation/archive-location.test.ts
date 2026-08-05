@@ -25,6 +25,7 @@ describe('archiveRootForEntry', () => {
     'files.tar.gz',
     'files.tbz2',
     'document.txt.gz',
+    'book.epub',
   ])('maps %s to its folder-like archive root', (name) => {
     expect(archiveRootForEntry(entry(name))).toEqual({
       providerId: 'archive',
