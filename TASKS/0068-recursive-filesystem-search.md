@@ -130,3 +130,13 @@ Depends on: 0067, 0032
     `frontend/src/api/client/tauri-file-manager-client.ts`'s pre-existing unrelated 1-line
     `import type` change was likewise left untouched, as with every prior task tonight. Human commit
     `d8a1f68` was not touched, amended, or rebased.
+- 2026-08-05 codex: Replaced the filename-search modal's accumulating results with the existing
+  `search://local/{searchId}` pane location. Search batches refresh the virtual provider through
+  normal paged navigation; rows show decoded full paths and retain a leading `..` that uses tab
+  history to return to the pre-search folder. Activating a result navigates to its real containing
+  directory with the filename selected, while operations continue to use its real provider
+  location. Extended the mock provider to exercise the generic listing contract. Added a separate
+  dense Procyon override stylesheet for the mm modal/button/form/select/switch/dropdown components,
+  loaded after mm's modular core/forms/components/utilities styles (unused picker and advanced
+  groups are excluded). Verified frontend typecheck and lint clean;
+  full frontend suite: 64 files, 559 passed and 1 skipped (three new behavior/contract tests).

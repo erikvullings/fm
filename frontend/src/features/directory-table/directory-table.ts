@@ -54,6 +54,8 @@ export interface DirectoryTableAttrs {
   readonly overscan?: number;
   readonly label?: string;
   readonly nameMatchPrefix?: string;
+  /** Shows each entry's complete filesystem path in the name column (search locations). */
+  readonly showFullPath?: boolean;
   readonly sort?: readonly SortDescriptor[];
   readonly onSortChange?: (sort: readonly SortDescriptor[]) => void;
   readonly formatSettings?: EntryFormatSettings;
@@ -109,7 +111,18 @@ export interface DirectoryColumnDescriptor {
     formatSettings?: EntryFormatSettings,
     now?: number,
     nativeIconLoader?: NativeIconLoader,
+    showFullPath?: boolean,
   ): m.Children;
+}
+
+function displayName(entry: EntrySummary, showFullPath = false): string {
+  if (!showFullPath || isParentEntry(entry.id)) return entry.name;
+  try {
+    const url = new URL(entry.location.uri);
+    return decodeURIComponent(url.pathname) || entry.name;
+  } catch {
+    return entry.location.uri;
+  }
 }
 
 const INITIAL_COLUMNS: readonly DirectoryColumnDescriptor[] = [
@@ -117,7 +130,8 @@ const INITIAL_COLUMNS: readonly DirectoryColumnDescriptor[] = [
     id: 'core.name',
     label: 'Name',
     cellClass: 'fm-directory-name',
-    render: (entry, nameMatchPrefix, _formatSettings, _now, nativeIconLoader) => {
+    render: (entry, nameMatchPrefix, _formatSettings, _now, nativeIconLoader, showFullPath) => {
+      const name = displayName(entry, showFullPath);
       const statuses = [
         entry.hidden ? 'Hidden' : undefined,
         entry.kind === 'symlink' ? 'Link' : undefined,
@@ -125,7 +139,7 @@ const INITIAL_COLUMNS: readonly DirectoryColumnDescriptor[] = [
       const matchIndex =
         nameMatchPrefix === undefined
           ? -1
-          : entry.name.toLocaleLowerCase().indexOf(nameMatchPrefix.toLocaleLowerCase());
+          : name.toLocaleLowerCase().indexOf(nameMatchPrefix.toLocaleLowerCase());
       return [
         nativeIconLoader?.iconDataUri(entry) === undefined
           ? entryIcon(entry, { className: 'fm-entry-icon' })
@@ -138,14 +152,14 @@ const INITIAL_COLUMNS: readonly DirectoryColumnDescriptor[] = [
             }),
         m('span.fm-entry-name', [
           matchIndex < 0 || nameMatchPrefix === undefined
-            ? entry.name
+            ? name
             : [
-                entry.name.slice(0, matchIndex),
+                name.slice(0, matchIndex),
                 m(
                   'span.fm-typeahead-match',
-                  entry.name.slice(matchIndex, matchIndex + nameMatchPrefix.length),
+                  name.slice(matchIndex, matchIndex + nameMatchPrefix.length),
                 ),
-                entry.name.slice(matchIndex + nameMatchPrefix.length),
+                name.slice(matchIndex + nameMatchPrefix.length),
               ],
         ]),
         statuses.map((status) =>
@@ -480,6 +494,7 @@ export const DirectoryTable: FactoryComponent<DirectoryTableAttrs> = () => {
                         attrs.formatSettings,
                         now,
                         attrs.nativeIconLoader,
+                        attrs.showFullPath,
                       ),
                 ),
               ),

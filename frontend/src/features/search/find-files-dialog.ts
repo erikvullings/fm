@@ -1,20 +1,14 @@
 import m, { type FactoryComponent } from 'mithril';
 import { ModalPanel } from 'mithril-materialized';
-import type { EntrySummary } from '../../models';
-import { entryIcon } from '../directory-table/entry-icons';
 
 /** The F7/Alt+F7 filename search dialog's props (task 0089, filename-search slice). */
 export interface FindFilesDialogAttrs {
   readonly open: boolean;
   /** Read-only context shown above the query field, e.g. the active directory's path. */
   readonly scopeLabel: string;
-  readonly results: readonly EntrySummary[];
-  /** True while a search is in flight (streaming `search.resultsBatch` events). */
-  readonly searching: boolean;
   readonly error?: string;
   readonly onSearch: (query: string) => void;
   readonly onCancel: () => void;
-  readonly onActivateResult: (entry: EntrySummary) => void;
 }
 
 /**
@@ -29,24 +23,17 @@ function blurActive(): void {
 /** Materialized modal used by the `core.findFiles` (Alt+F7) action. */
 export const FindFilesDialog: FactoryComponent<FindFilesDialogAttrs> = () => {
   let query = '';
-  let hasSearched = false;
   let wasOpen = false;
 
   function search(attrs: FindFilesDialogAttrs): void {
     const trimmed = query.trim();
     if (trimmed.length === 0) return;
-    hasSearched = true;
     attrs.onSearch(trimmed);
   }
 
   function cancel(attrs: FindFilesDialogAttrs): void {
     blurActive();
     attrs.onCancel();
-  }
-
-  function activate(attrs: FindFilesDialogAttrs, entry: EntrySummary): void {
-    blurActive();
-    attrs.onActivateResult(entry);
   }
 
   return {
@@ -57,7 +44,6 @@ export const FindFilesDialog: FactoryComponent<FindFilesDialogAttrs> = () => {
       // false->true open transition instead.
       if (attrs.open && !wasOpen) {
         query = '';
-        hasSearched = false;
         document.getElementById('find-files-query')?.focus();
       }
       wasOpen = attrs.open;
@@ -90,31 +76,13 @@ export const FindFilesDialog: FactoryComponent<FindFilesDialogAttrs> = () => {
             }),
           ]),
           attrs.error === undefined ? undefined : m('.fm-field-error', attrs.error),
-          attrs.searching ? m('.fm-find-files-status', 'Searching…') : undefined,
-          !attrs.searching && hasSearched && attrs.results.length === 0
-            ? m('.fm-find-files-status', 'No matches.')
-            : undefined,
-          m(
-            'ul.fm-find-files-results',
-            attrs.results.map((entry) =>
-              m(
-                'li',
-                {
-                  key: entry.id,
-                  onclick: () => activate(attrs, entry),
-                },
-                [
-                  entryIcon(entry),
-                  m('span', [m('strong', entry.name), m('small', entry.location.uri)]),
-                ],
-              ),
-            ),
-          ),
         ]),
         isOpen: attrs.open,
         closeOnEsc: true,
         onToggle: (open: boolean) => {
-          if (!open) cancel(attrs);
+          // Ignore the controlled true -> false update after a successful submit;
+          // only a user-driven close while the parent still requests an open modal cancels.
+          if (!open && attrs.open) cancel(attrs);
         },
         buttons: [
           { label: 'Cancel', onclick: () => cancel(attrs) },

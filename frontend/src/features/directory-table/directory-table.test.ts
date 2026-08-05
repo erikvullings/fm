@@ -200,6 +200,22 @@ describe('DirectoryTable rows', () => {
     expect(root.querySelectorAll('.fm-directory-row')[0]?.textContent).toContain('banana-an.txt');
   });
 
+  it('shows the full location for entries in a virtual search directory', () => {
+    mount({
+      state: { type: 'loaded' },
+      source: entryArraySource([
+        entry({
+          location: { providerId: 'local', uri: 'file:///Users/erik/Documents/report.txt' },
+        }),
+      ]),
+      showFullPath: true,
+    });
+
+    expect(root.querySelector('.fm-entry-name')?.textContent).toBe(
+      '/Users/erik/Documents/report.txt',
+    );
+  });
+
   it('moves the cursor to a clicked row', () => {
     const onCursorChange = vi.fn();
     mount({

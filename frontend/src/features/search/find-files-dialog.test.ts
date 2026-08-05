@@ -1,7 +1,6 @@
 import m from 'mithril';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { EntrySummary } from '../../models';
 import { FindFilesDialog } from './find-files-dialog';
 
 let root: HTMLElement;
@@ -16,34 +15,17 @@ afterEach(() => {
   root.remove();
 });
 
-function fixtureEntry(overrides: Partial<EntrySummary> = {}): EntrySummary {
-  return {
-    id: 'entry-1',
-    location: { providerId: 'local', uri: 'file:///Documents/report.pdf' },
-    name: 'report.pdf',
-    kind: 'file',
-    hidden: false,
-    readOnly: false,
-    metadataRevision: 1,
-    ...overrides,
-  };
-}
-
 describe('FindFilesDialog', () => {
   it('is focused on open and submits the trimmed query with Enter', async () => {
     const onSearch = vi.fn();
     const onCancel = vi.fn();
-    const onActivateResult = vi.fn();
     m.mount(root, {
       view: () =>
         m(FindFilesDialog, {
           open: true,
           scopeLabel: 'file:///Documents',
-          results: [],
-          searching: false,
           onSearch,
           onCancel,
-          onActivateResult,
         }),
     });
     m.redraw.sync();
@@ -68,11 +50,8 @@ describe('FindFilesDialog', () => {
         m(FindFilesDialog, {
           open: true,
           scopeLabel: 'file:///Documents',
-          results: [],
-          searching: false,
           onSearch,
           onCancel: vi.fn(),
-          onActivateResult: vi.fn(),
         }),
     });
     m.redraw.sync();
@@ -86,60 +65,19 @@ describe('FindFilesDialog', () => {
     expect(onSearch).not.toHaveBeenCalled();
   });
 
-  it('renders streamed results and activates one on click', () => {
-    const onActivateResult = vi.fn();
-    const entry = fixtureEntry();
+  it('keeps results out of the modal because they render in the active pane', () => {
     m.mount(root, {
       view: () =>
         m(FindFilesDialog, {
           open: true,
           scopeLabel: 'file:///Documents',
-          results: [entry],
-          searching: true,
           onSearch: vi.fn(),
           onCancel: vi.fn(),
-          onActivateResult,
         }),
     });
     m.redraw.sync();
 
-    expect(document.body.textContent).toContain('report.pdf');
-    expect(document.body.textContent).toContain('Searching…');
-
-    document
-      .querySelector('.fm-find-files-results li')
-      ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-
-    expect(onActivateResult).toHaveBeenCalledWith(entry);
-  });
-
-  it('shows a no-matches status once a completed search finds nothing', () => {
-    let searching = false;
-    const onSearch = vi.fn(() => {
-      searching = false;
-    });
-    m.mount(root, {
-      view: () =>
-        m(FindFilesDialog, {
-          open: true,
-          scopeLabel: 'file:///Documents',
-          results: [],
-          searching,
-          onSearch,
-          onCancel: vi.fn(),
-          onActivateResult: vi.fn(),
-        }),
-    });
-    m.redraw.sync();
-    const input = document.querySelector<HTMLInputElement>('#find-files-query');
-    if (!input) throw new Error('input missing');
-
-    input.value = 'nothing-matches-this';
-    input.dispatchEvent(new InputEvent('input', { bubbles: true }));
-    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
-    m.redraw.sync();
-
-    expect(document.body.textContent).toContain('No matches.');
+    expect(document.querySelector('.fm-find-files-results')).toBeNull();
   });
 
   it('resets the query and blurs before cancel when Cancel is clicked', () => {
@@ -149,11 +87,8 @@ describe('FindFilesDialog', () => {
         m(FindFilesDialog, {
           open: true,
           scopeLabel: 'file:///Documents',
-          results: [],
-          searching: false,
           onSearch: vi.fn(),
           onCancel,
-          onActivateResult: vi.fn(),
         }),
     });
     m.redraw.sync();

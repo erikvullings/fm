@@ -10,6 +10,7 @@ import type {
   DirectorySnapshot,
   EntryMetadata,
   EntryMetadataRequest,
+  EntrySummary,
   FileRangeChunk,
   InvokeActionRequest,
   ListDirectoryRequest,
@@ -305,7 +306,10 @@ export class MockFileManagerClient implements FileManagerClient {
   private workspaceSequence = 0;
   private searchSequence = 0;
   private eventSequence = 0;
-  private readonly searches = new Map<string, { cancelled: boolean }>();
+  private readonly searches = new Map<
+    string,
+    { cancelled: boolean; entries: readonly EntrySummary[] }
+  >();
   private readonly fileContents = new Map<string, Uint8Array>();
   // Generated directories are recreated per request, but their aggregate totals are a pure
   // function of (size, seed) — cache them instead of resumming up to 1,000,000 entries on every
@@ -799,8 +803,8 @@ export class MockFileManagerClient implements FileManagerClient {
       this.searchSequence += 1;
       const searchId = `mock-search-${this.seed}-${this.searchSequence}`;
       const location: Location = { providerId: 'local', uri: `search://local/${searchId}` };
-      this.searches.set(searchId, { cancelled: false });
       const entries = request.roots.flatMap((root) => collectMatches(root.uri, request.query));
+      this.searches.set(searchId, { cancelled: false, entries });
       // Deferred with a macrotask (rather than a microtask) so it always runs
       // after this method's own promise has resolved and the caller has
       // recorded `searchId`, avoiding a race against the resultsBatch handler
@@ -891,7 +895,11 @@ export class MockFileManagerClient implements FileManagerClient {
   ): Promise<DirectorySnapshot> {
     const fixtures = directories[request.location.uri];
     const generatedSize = this.generatedSize(request.location.uri);
-    if (fixtures === undefined && generatedSize === undefined) {
+    const searchId = request.location.uri.startsWith('search://local/')
+      ? request.location.uri.slice('search://local/'.length)
+      : undefined;
+    const searchEntries = searchId === undefined ? undefined : this.searches.get(searchId)?.entries;
+    if (fixtures === undefined && generatedSize === undefined && searchEntries === undefined) {
       return Promise.reject(
         new MockClientError('directoryNotFound', `No mock directory at ${request.location.uri}`),
       );
@@ -899,10 +907,12 @@ export class MockFileManagerClient implements FileManagerClient {
 
     const offset = this.parseContinuationToken(request.continuationToken);
     const entries =
-      generatedSize === undefined
-        ? (fixtures ?? []).map((fixture) => fixtureEntry(request.location.uri, fixture))
-        : createGeneratedDirectory(generatedSize, this.seed).page(offset, this.pageSize);
-    const totalEntries = generatedSize ?? fixtures?.length ?? 0;
+      searchEntries !== undefined
+        ? searchEntries.slice(offset, offset + this.pageSize)
+        : generatedSize === undefined
+          ? (fixtures ?? []).map((fixture) => fixtureEntry(request.location.uri, fixture))
+          : createGeneratedDirectory(generatedSize, this.seed).page(offset, this.pageSize);
+    const totalEntries = searchEntries?.length ?? generatedSize ?? fixtures?.length ?? 0;
     const { size: totalKnownSize, fileCount: totalKnownFileCount } =
       generatedSize === undefined
         ? aggregateTotals(entries)

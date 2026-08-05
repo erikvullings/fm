@@ -3,6 +3,10 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const themeCss = readFileSync(join(process.cwd(), 'src/themes/theme.css'), 'utf8');
+const materializedCss = readFileSync(
+  join(process.cwd(), 'src/themes/mithril-materialized-procyon.css'),
+  'utf8',
+);
 const directoryTableCss = readFileSync(
   join(process.cwd(), 'src/features/directory-table/directory-table.css'),
   'utf8',
@@ -99,6 +103,20 @@ describe('theme stylesheet', () => {
     for (const mapping of mappings) {
       expect(themeCss).toContain(mapping);
     }
+  });
+
+  it('densifies the mithril-materialized controls used by the application', () => {
+    for (const selector of [
+      '.modal',
+      '.btn',
+      '.btn-flat',
+      '.input-field',
+      '.switch',
+      '.select-wrapper',
+    ]) {
+      expect(materializedCss).toContain(selector);
+    }
+    expect(materializedCss).toContain('var(--fm-row-height)');
   });
 
   it('removes transitions and animations when reduced motion is requested', () => {

@@ -1,5 +1,9 @@
-import 'mithril-materialized/index.css';
+import 'mithril-materialized/core.css';
+import 'mithril-materialized/forms.css';
+import 'mithril-materialized/components.css';
+import 'mithril-materialized/utilities.css';
 import './themes/theme.css';
+import './themes/mithril-materialized-procyon.css';
 
 import m from 'mithril';
 

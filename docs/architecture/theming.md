@@ -17,6 +17,11 @@ The root `data-theme` attribute is the runtime interface:
 therefore switch both Materialized controls and custom file-manager UI without a reload.
 Materialized's `--mm-*` variables map back to the corresponding `--fm-*` tokens, including
 backgrounds, surfaces, text, borders, inputs, selection, hover, accent, and error colours.
+Only mithril-materialized's `core.css`, `forms.css`, `components.css`, and `utilities.css` modules
+are imported. They cover the application's form controls, modals, buttons, theme switcher, and
+toasts without loading the unused picker and advanced-component groups.
+`frontend/src/themes/mithril-materialized-procyon.css` loads afterwards as the application-owned
+density and shape layer for mm components in use.
 
 ## Token contract
 

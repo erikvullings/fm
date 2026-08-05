@@ -15,10 +15,7 @@ import {
   entryArraySource,
 } from '../directory-table/directory-table';
 import type { NativeIconLoader } from '../directory-table/native-icon-loader';
-import {
-  DEFAULT_ENTRY_FORMAT_SETTINGS,
-  type EntryFormatSettings,
-} from '../entry-formatting/entry-formatting';
+import type { EntryFormatSettings } from '../entry-formatting/entry-formatting';
 import { validateDirectoryName } from '../operations/create-directory-dialog';
 import { QuickFilterInput } from '../quick-filter/quick-filter-input';
 import {
@@ -724,6 +721,7 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
               ? {}
               : { nativeIconLoader: attrs.nativeIconLoader }),
             label: `${attrs.tabTitle} directory`,
+            showFullPath: attrs.path.startsWith('search://'),
             ...(renamingEntry === undefined ? {} : { renamingEntryId: renamingEntry.id }),
             renameValue,
             ...(renameError === undefined ? {} : { renameError }),

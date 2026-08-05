@@ -1141,6 +1141,58 @@ describe('AppShell', () => {
     );
   });
 
+  it('shows filename-search results as a virtual directory and opens a result in its folder', async () => {
+    const client = new MockFileManagerClient();
+    const navigatePane = vi.spyOn(client, 'navigatePane');
+    m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
+    await vi.waitFor(() => expect(root.textContent).toContain('Documents'));
+
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'F7', altKey: true, bubbles: true }),
+    );
+    m.redraw.sync();
+    const input = root.querySelector<HTMLInputElement>('#find-files-query');
+    expect(input).not.toBeNull();
+    if (input === null) return;
+    input.value = 'report';
+    input.dispatchEvent(new InputEvent('input', { bubbles: true }));
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+
+    await vi.waitFor(() =>
+      expect(
+        [...root.querySelectorAll('.fm-entry-name')].some(
+          (name) => name.textContent === '/Documents/report.pdf',
+        ),
+      ).toBe(true),
+    );
+    const activePane = root.querySelector<HTMLElement>('[data-active="true"] > .fm-pane');
+    const rows = activePane?.querySelectorAll<HTMLElement>('.fm-directory-row');
+    expect(rows?.item(0).textContent).toContain('..');
+    rows
+      ?.item(1)
+      .dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 20, clientY: 20 }));
+    m.redraw.sync();
+    const searchResultActions = [
+      ...root.querySelectorAll<HTMLButtonElement>('.fm-context-menu-item'),
+    ];
+    expect(searchResultActions.find((button) => button.textContent === 'Rename')?.disabled).toBe(
+      false,
+    );
+    expect(searchResultActions.find((button) => button.textContent === 'Delete')?.disabled).toBe(
+      false,
+    );
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    m.redraw.sync();
+    rows?.item(1).dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+
+    await vi.waitFor(() =>
+      expect(navigatePane).toHaveBeenCalledWith(
+        expect.objectContaining({ location: { providerId: 'file', uri: 'mock:///Documents' } }),
+        expect.any(AbortSignal),
+      ),
+    );
+  });
+
   it('enters a local archive as a folder with Enter', async () => {
     const client = new MockFileManagerClient();
     const originalListDirectory = client.listDirectory.bind(client);
