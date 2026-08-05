@@ -537,6 +537,16 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       update: (state) => {
         const existing = viewerByPane.get(paneId);
         if (existing === undefined) return;
+        if (state.status === 'unsupported') {
+          // Leaving an empty viewer pane open just for the user to close it manually is
+          // pointless busywork; dismiss it immediately and use a self-disappearing toast
+          // instead (Alt+F3 opens the same file in the OS default application).
+          closeViewer(paneId);
+          toast({
+            html: `Preview not available for "${entry.name}". Press Alt+F3 to open it in the default application.`,
+          });
+          return;
+        }
         existing.state = state;
         m.redraw();
       },
@@ -1104,6 +1114,11 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       registeredActions,
       currentSettings?.keybindings ?? {},
     );
+    // Alt+F3 forces the OS default application instead of the in-app Lister viewer. It never
+    // matches `core.view`'s registered F3 chord (whose `alt` flag must be false), so it is
+    // special-cased here rather than resolved through `dispatchKeybinding`.
+    const forceSystemView =
+      !isEditableTarget(event.target) && event.altKey && event.key.toUpperCase() === 'F3';
     if (!isEditableTarget(event.target) && hasPrimaryModifier(event, platform) && !event.altKey) {
       const key = event.key.toLowerCase();
       const sources = selectedLocations();
@@ -1319,7 +1334,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       reopenClosedTab(attrsClient, workspace.activePaneId);
       return;
     }
-    if (dispatchedAction === 'core.view') {
+    if (dispatchedAction === 'core.view' && !forceSystemView) {
       const active = activeDirectory();
       const selection =
         active === undefined ? undefined : selections.get(activeTabKey(active.paneId));
@@ -1333,8 +1348,8 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       // Only intercept single-file selections into the in-app viewer (task 0088); directories,
       // multi-selections, and single-pane workspaces (no opposite pane to open into) fall through
       // to the generic core.view/core.edit/core.openWith block below, which opens the OS default
-      // application instead. The viewer itself shows "Preview not available" for content that
-      // turns out to be binary once its first chunk is fetched, rather than falling back further.
+      // application instead. The viewer itself closes and shows a toast for content that turns
+      // out to be binary once its first chunk is fetched, rather than falling back further.
       if (
         viewEntry !== undefined &&
         viewEntry.kind === 'file' &&
@@ -1346,12 +1361,15 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
         return;
       }
     }
+    // `forceSystemView` (Alt+F3) always resolves to `core.view`, which the backend maps to the
+    // same "open with OS default application" behaviour as `core.open` (see PlatformActionKind).
+    const viewActionId = forceSystemView ? 'core.view' : dispatchedAction;
     if (
-      dispatchedAction === 'core.view' ||
-      dispatchedAction === 'core.edit' ||
-      dispatchedAction === 'core.openWith'
+      viewActionId === 'core.view' ||
+      viewActionId === 'core.edit' ||
+      viewActionId === 'core.openWith'
     ) {
-      const action = registeredActions.find((candidate) => candidate.id === dispatchedAction);
+      const action = registeredActions.find((candidate) => candidate.id === viewActionId);
       if (action?.contextRequirements.featureAvailable === false) {
         // The shortcut is still reachable by keyboard even though its footer
         // hint is hidden (task 0061 follow-up): warn briefly instead of
@@ -1370,13 +1388,13 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
         (entry) => selection?.selectedEntryIds.includes(entry.id) === true,
       );
       const parameters = platformActionParameters(
-        dispatchedAction,
+        viewActionId,
         selected ?? [],
         directory?.location,
       );
       if (parameters !== undefined) {
         event.preventDefault();
-        invokeActionById(dispatchedAction, parameters, actionContext());
+        invokeActionById(viewActionId, parameters, actionContext());
       }
       return;
     }

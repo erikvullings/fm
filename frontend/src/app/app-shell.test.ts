@@ -1,5 +1,5 @@
 import m from 'mithril';
-import { ThemeManager } from 'mithril-materialized';
+import { ThemeManager, Toast } from 'mithril-materialized';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createFileManagerClient } from '../api/client/create-client';
@@ -532,6 +532,62 @@ describe('AppShell', () => {
     expect(inactivePane?.classList.contains('fm-pane-viewer')).toBe(false);
   });
 
+  it('closes the Lister viewer and toasts instead of leaving a manual-dismiss message when the content is unsupported', async () => {
+    const client = new MockFileManagerClient();
+    vi.spyOn(client, 'readFileRange').mockResolvedValue({
+      data: [0, 1, 2],
+      offset: 0,
+      length: 3,
+      eof: true,
+      probablyBinary: true,
+    });
+    m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
+    await vi.waitFor(() => expect(root.textContent).toContain('.env'));
+    const activePane = root.querySelector<HTMLElement>('[data-active="true"] > .fm-pane');
+    const file = [...(activePane?.querySelectorAll<HTMLElement>('.fm-directory-row') ?? [])].find(
+      (row) => row.textContent?.includes('.env'),
+    );
+    file?.click();
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'F3', bubbles: true }));
+
+    try {
+      await vi.waitFor(() =>
+        expect(document.querySelector('.toast')?.textContent).toContain('Preview not available'),
+      );
+      expect(root.querySelector('.fm-file-viewer')).toBeNull();
+      const inactivePane = root.querySelector('[data-active="false"] > .fm-pane');
+      expect(inactivePane?.classList.contains('fm-pane-viewer')).toBe(false);
+    } finally {
+      // `.remove()`-ing the container leaves mithril-materialized's internal `Toast._toasts`
+      // registry non-empty, which then skips creating a fresh container for the next test's
+      // toast (see Toast constructor); dismissAll() properly unwinds that static state.
+      Toast.dismissAll();
+      await vi.waitFor(() => expect(document.getElementById('toast-container')).toBeNull());
+    }
+  });
+
+  it('opens the OS default application instead of the Lister viewer with Alt+F3', async () => {
+    const client = new MockFileManagerClient();
+    const invokeAction = vi.spyOn(client, 'invokeAction');
+    m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
+    await vi.waitFor(() => expect(root.textContent).toContain('.env'));
+    const activePane = root.querySelector<HTMLElement>('[data-active="true"] > .fm-pane');
+    const file = [...(activePane?.querySelectorAll<HTMLElement>('.fm-directory-row') ?? [])].find(
+      (row) => row.textContent?.includes('.env'),
+    );
+    file?.click();
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'F3', altKey: true, bubbles: true }),
+    );
+
+    await vi.waitFor(() => expect(invokeAction).toHaveBeenCalledOnce());
+    expect(invokeAction.mock.calls[0]?.[0]).toMatchObject({
+      actionId: 'core.view',
+      parameters: { uri: 'mock:///.env' },
+    });
+    expect(root.querySelector('.fm-file-viewer')).toBeNull();
+  });
+
   it('shows a brief toast instead of invoking a permanently browser-unavailable action from its shortcut', async () => {
     const client = new MockFileManagerClient();
     vi.spyOn(client, 'listActions').mockResolvedValue([
@@ -561,7 +617,8 @@ describe('AppShell', () => {
       expect(document.querySelector('.toast')?.textContent).toContain('Open With…');
       expect(invokeAction).not.toHaveBeenCalled();
     } finally {
-      document.getElementById('toast-container')?.remove();
+      Toast.dismissAll();
+      await vi.waitFor(() => expect(document.getElementById('toast-container')).toBeNull());
     }
   });
 
