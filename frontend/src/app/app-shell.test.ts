@@ -227,19 +227,6 @@ describe('AppShell', () => {
     await vi.waitFor(() => expect(nameHeader?.getAttribute('aria-sort')).toBe('descending'));
   });
 
-  it('lazily shows metadata for the cursor entry after a directory loads', async () => {
-    mountShell('mock');
-
-    await vi.waitFor(() =>
-      expect(root.querySelector('[data-active="true"] .fm-entry-metadata')?.textContent).toContain(
-        'Documents',
-      ),
-    );
-    expect(
-      root.querySelector('[data-active="true"] .fm-entry-metadata')?.textContent,
-    ).not.toContain('Loading metadata');
-  });
-
   it('shows a parent row outside the root and opens it with Enter', async () => {
     mountShell('mock');
 

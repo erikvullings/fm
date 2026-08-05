@@ -105,7 +105,6 @@ function attrs(overrides: Partial<WorkspaceLayoutViewAttrs> = {}): WorkspaceLayo
       hiddenSelectedCount: 0,
       filterOpen: false,
       filterQuery: '',
-      metadata: { state: 'idle' },
       platform: 'linux',
       keybindingRuntime: 'desktop',
       actions: keybindingActions,

@@ -15,7 +15,6 @@ import type {
 import type { DirectoryColumnDescriptor } from '../directory-table/directory-table';
 import type { NativeIconLoader } from '../directory-table/native-icon-loader';
 import type { EntryFormatSettings } from '../entry-formatting/entry-formatting';
-import type { EntryMetadataView } from '../entry-metadata/entry-metadata-loader';
 import { Pane } from '../panes/pane';
 import type { SelectionPlatform } from '../selection/keybindings';
 import type { SelectionAction } from '../selection/selection';
@@ -42,7 +41,6 @@ export interface WorkspacePaneContent {
   readonly formatSettings?: EntryFormatSettings;
   readonly pluginColumns?: readonly DirectoryColumnDescriptor[];
   readonly nativeIconLoader?: NativeIconLoader;
-  readonly metadata: EntryMetadataView;
   readonly cursorIndex?: number;
   readonly platform: SelectionPlatform;
   readonly keybindingRuntime?: KeybindingRuntime;
@@ -335,7 +333,6 @@ export const WorkspaceLayoutView: FactoryComponent<WorkspaceLayoutViewAttrs> = (
         ...(content.nativeIconLoader === undefined
           ? {}
           : { nativeIconLoader: content.nativeIconLoader }),
-        metadata: content.metadata,
         ...(content.viewerContent === undefined ? {} : { viewerContent: content.viewerContent }),
         active,
         platform: content.platform,

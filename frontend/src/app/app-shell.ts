@@ -34,11 +34,6 @@ import {
   DEFAULT_ENTRY_FORMAT_SETTINGS,
   type EntryFormatSettings,
 } from '../features/entry-formatting/entry-formatting';
-import {
-  createEntryMetadataLoader,
-  type EntryMetadataLoader,
-  type EntryMetadataView,
-} from '../features/entry-metadata/entry-metadata-loader';
 import { archiveRootForEntry } from '../features/navigation/archive-location';
 import { ArchivePasswordDialog } from '../features/navigation/archive-password-dialog';
 import {
@@ -255,8 +250,6 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
    */
   const directories = new Map<string, PaneDirectoryView>();
   const selections = new Map<string, SelectionState>();
-  const metadataLoaders = new Map<string, EntryMetadataLoader>();
-  const metadataViews = new Map<string, EntryMetadataView>();
   /**
    * The Lister-style viewer (task 0088) opened for a pane via F3 `core.view` — keyed by `PaneId`
    * (not `${paneId}:${tabId}`) since it replaces the whole pane's surface regardless of tab.
@@ -534,20 +527,6 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     return quickFilterOpen.get(key) === true || (tab?.view.quickFilter ?? null) !== null;
   }
 
-  function metadataLoader(client: FileManagerClient, key: string): EntryMetadataLoader {
-    const existing = metadataLoaders.get(key);
-    if (existing !== undefined) return existing;
-    const loader = createEntryMetadataLoader({
-      client,
-      update: (view) => {
-        metadataViews.set(key, view);
-        m.redraw();
-      },
-    });
-    metadataLoaders.set(key, loader);
-    return loader;
-  }
-
   /** Opens the Lister-style viewer (task 0088) for `entry` in `paneId`, replacing any viewer
    * already open there. */
   function openViewer(client: FileManagerClient, paneId: PaneId, entry: EntrySummary): void {
@@ -580,9 +559,6 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     navigation.abort(paneId, tabId);
     directories.delete(key);
     selections.delete(key);
-    metadataLoaders.get(key)?.dispose();
-    metadataLoaders.delete(key);
-    metadataViews.delete(key);
     sortedEntries.delete(key);
     sortRequests.delete(key);
     quickFilterDrafts.delete(key);
@@ -1747,7 +1723,6 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
         tab?.view.columns.some((column) => column.columnId === 'sample.fileAge' && column.visible)
           ? [SAMPLE_FILE_AGE_COLUMN]
           : [],
-      metadata: (key === undefined ? undefined : metadataViews.get(key)) ?? { state: 'idle' },
       platform,
       keybindingRuntime,
       actions: registeredActions,
@@ -1832,20 +1807,12 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
             const loadedEntryIds = loadedEntries.map((entry) => entry.id);
             const next = reduceSelection(selections.get(key) ?? selection, action, loadedEntryIds);
             selections.set(key, next);
-            const cursorEntry = loadedEntries.find((entry) => entry.id === next.cursorEntryId);
-            const metadataCursorEntry =
-              cursorEntry === undefined || isParentEntry(cursorEntry.id) ? undefined : cursorEntry;
-            void metadataLoader(client, key).select(metadataCursorEntry);
             m.redraw();
           });
           return;
         }
         const next = reduceSelection(selection, action, entryIds);
         selections.set(key, next);
-        const cursorEntry = entries.find((entry) => entry.id === next.cursorEntryId);
-        const metadataCursorEntry =
-          cursorEntry === undefined || isParentEntry(cursorEntry.id) ? undefined : cursorEntry;
-        void metadataLoader(client, key).select(metadataCursorEntry);
         m.redraw();
       },
       onRetry: () => navigation.retry(paneId),
@@ -1978,7 +1945,6 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
           directories.set(key, view);
           if (view.entries.length === 0) {
             selections.set(key, emptySelection);
-            void metadataLoader(attrs.client, key).select(undefined);
           } else if (
             selections.get(key)?.cursorEntryId === undefined ||
             previous?.location?.uri !== view.location?.uri
@@ -1991,7 +1957,6 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
               selectedEntryIds: [],
               ...(firstEntry === undefined ? {} : { cursorEntryId: firstEntry.id }),
             });
-            void metadataLoader(attrs.client, key).select(firstEntry);
           }
           m.redraw();
         },
@@ -2060,7 +2025,6 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       unsubscribeResynchronise?.();
       attrsClient.disconnect();
       navigation.dispose();
-      for (const loader of metadataLoaders.values()) loader.dispose();
       document.documentElement.style.removeProperty('--fm-font-size');
       document.documentElement.style.removeProperty('--fm-row-height');
     },

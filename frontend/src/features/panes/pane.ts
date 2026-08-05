@@ -18,10 +18,7 @@ import type { NativeIconLoader } from '../directory-table/native-icon-loader';
 import {
   DEFAULT_ENTRY_FORMAT_SETTINGS,
   type EntryFormatSettings,
-  formatEntryModifiedAt,
-  formatEntrySize,
 } from '../entry-formatting/entry-formatting';
-import type { EntryMetadataView } from '../entry-metadata/entry-metadata-loader';
 import { validateDirectoryName } from '../operations/create-directory-dialog';
 import { QuickFilterInput } from '../quick-filter/quick-filter-input';
 import {
@@ -65,7 +62,6 @@ export interface PaneAttrs {
   readonly formatSettings?: EntryFormatSettings;
   readonly pluginColumns?: readonly DirectoryColumnDescriptor[];
   readonly nativeIconLoader?: NativeIconLoader;
-  readonly metadata: EntryMetadataView;
   readonly selectedEntryIds: ReadonlySet<EntryId>;
   readonly cutEntryIds: ReadonlySet<EntryId>;
   readonly active: boolean;
@@ -783,50 +779,6 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
             onSortChange: attrs.onSortChange,
             ...(attrs.cursorIndex === undefined ? {} : { cursorIndex: attrs.cursorIndex }),
           }),
-          attrs.metadata.state === 'idle'
-            ? undefined
-            : m('.fm-entry-metadata', { 'aria-label': 'Cursor entry metadata' }, [
-                m('strong', attrs.metadata.entry.name),
-                m(
-                  'span',
-                  formatEntrySize(
-                    attrs.metadata.entry,
-                    attrs.formatSettings ?? DEFAULT_ENTRY_FORMAT_SETTINGS,
-                  ),
-                ),
-                m(
-                  'span',
-                  formatEntryModifiedAt(
-                    attrs.metadata.entry.modifiedAt,
-                    attrs.formatSettings ?? DEFAULT_ENTRY_FORMAT_SETTINGS,
-                  ),
-                ),
-                attrs.metadata.state === 'loading'
-                  ? m('span', 'Loading metadata…')
-                  : attrs.metadata.state === 'error'
-                    ? m('span', attrs.metadata.message)
-                    : [
-                        attrs.metadata.metadata.ownership?.owner === undefined
-                          ? undefined
-                          : m('span', `Owner: ${attrs.metadata.metadata.ownership.owner}`),
-                        attrs.metadata.metadata.permissions === undefined
-                          ? undefined
-                          : m(
-                              'span',
-                              `Permissions: ${[
-                                attrs.metadata.metadata.permissions.readable ? 'read' : undefined,
-                                attrs.metadata.metadata.permissions.writable ? 'write' : undefined,
-                                attrs.metadata.metadata.permissions.executable
-                                  ? 'execute'
-                                  : undefined,
-                              ]
-                                .filter(
-                                  (permission): permission is string => permission !== undefined,
-                                )
-                                .join(', ')}`,
-                            ),
-                      ],
-              ]),
           m('.fm-pane-status', { role: 'status' }, [
             m(
               'span',
