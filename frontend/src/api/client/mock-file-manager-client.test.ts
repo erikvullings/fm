@@ -32,6 +32,18 @@ describe('MockFileManagerClient directories', () => {
     expect(nested.entries.map((entry) => entry.name)).toEqual(['Projects', 'report.pdf']);
   });
 
+  it('reports accurate size/file-count totals for the full directory, not just the loaded page', async () => {
+    const client = new MockFileManagerClient();
+
+    const root = await client.listDirectory(ROOT_REQUEST);
+
+    // 3 directories (Documents, Empty, Unreadable) + 2 files (.env: 42 bytes, 日本語.txt: 128
+    // bytes) + 1 symlink (documents-link, no reported size) = 6 entries, 3 non-directory.
+    expect(root.totalKnownEntries).toBe(6);
+    expect(root.totalKnownFileCount).toBe(3);
+    expect(root.totalKnownSize).toBe(42 + 128);
+  });
+
   it('pages a million-entry directory without returning every entry', async () => {
     const client = new MockFileManagerClient({ pageSize: 25, seed: 99 });
 
@@ -54,6 +66,31 @@ describe('MockFileManagerClient directories', () => {
     expect(first.totalKnownEntries).toBe(1_000_000);
     expect(first.hasMore).toBe(true);
     expect(second.entries[0]?.id).not.toBe(first.entries[0]?.id);
+  });
+
+  it('reports the full generated directory total size/file count, cached across pages', async () => {
+    const client = new MockFileManagerClient({ pageSize: 25, seed: 99 });
+
+    const first = await client.listDirectory({
+      ...ROOT_REQUEST,
+      location: { providerId: 'file', uri: 'mock:///large/1000000' },
+    });
+    const nextToken = first.continuationToken;
+    if (nextToken === undefined) {
+      throw new Error('Expected the first large-directory page to have a continuation token');
+    }
+    const second = await client.listDirectory({
+      ...ROOT_REQUEST,
+      continuationToken: nextToken,
+      location: { providerId: 'file', uri: 'mock:///large/1000000' },
+    });
+
+    // Every generated entry is a file, so the file count always equals the entry total.
+    expect(first.totalKnownFileCount).toBe(1_000_000);
+    expect(first.totalKnownSize).toBeGreaterThan(0);
+    // The aggregate is a pure function of (size, seed); it must be identical across pages/requests.
+    expect(second.totalKnownFileCount).toBe(first.totalKnownFileCount);
+    expect(second.totalKnownSize).toBe(first.totalKnownSize);
   });
 
   it('returns error and loading snapshots for configured directory states', async () => {

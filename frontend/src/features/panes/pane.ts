@@ -86,6 +86,10 @@ export interface PaneAttrs {
    * front instead of only once all pages have been fetched.
    */
   readonly totalKnownEntries?: number;
+  /** Combined byte size of every file/symlink entry in the directory, known from the backend. */
+  readonly totalKnownSize?: number;
+  /** Number of file/symlink entries (directories excluded) in the directory, known from the backend. */
+  readonly totalKnownFileCount?: number;
   /** Selected entries hidden by the active filter (still selected, just not rendered). */
   readonly hiddenSelectedCount: number;
   readonly filterOpen: boolean;
@@ -198,6 +202,19 @@ function sizeLabel(bytes: number): string {
   return `${new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 }).format(value)} ${units[unitIndex]}`;
 }
 
+/** Formats a Marta-style status summary from already-aggregated counts. */
+function formatListingSummary(fileCount: number, folderCount: number, totalSize: number): string {
+  const filesPart = `${fileCount} ${fileCount === 1 ? 'file' : 'files'}`;
+  const foldersPart = `${folderCount} ${folderCount === 1 ? 'folder' : 'folders'}`;
+  const countsText =
+    folderCount === 0
+      ? filesPart
+      : fileCount === 0
+        ? foldersPart
+        : `${filesPart}, and ${foldersPart}`;
+  return `${sizeLabel(totalSize)} in ${countsText}`;
+}
+
 /** Aggregates the currently listed (loaded/shown) entries into a Marta-style status summary:
  * total size of files plus separate file/folder counts. Symlinks are counted as files since
  * they're visually indistinguishable from them in the table. */
@@ -213,15 +230,7 @@ function listingSummary(entries: readonly EntrySummary[]): string {
       totalSize += entry.size ?? 0;
     }
   }
-  const filesPart = `${fileCount} ${fileCount === 1 ? 'file' : 'files'}`;
-  const foldersPart = `${folderCount} ${folderCount === 1 ? 'folder' : 'folders'}`;
-  const countsText =
-    folderCount === 0
-      ? filesPart
-      : fileCount === 0
-        ? foldersPart
-        : `${filesPart}, and ${foldersPart}`;
-  return `${sizeLabel(totalSize)} in ${countsText}`;
+  return formatListingSummary(fileCount, folderCount, totalSize);
 }
 
 /** Compact pane containing its single tab, path controls, directory grid, and status. */
@@ -390,6 +399,27 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
       const ordinaryEntries = attrs.entries.filter((entry) => !isParentEntry(entry.id));
       const selectedCount = attrs.selectedEntryIds.size;
       const totalSelectedSize = selectedSize(ordinaryEntries, attrs.selectedEntryIds);
+      // `attrs.totalKnownEntries` counts the synthetic ".." row the same way `attrs.entries`
+      // does (app-shell adds +1 for it), while the backend-reported size/file-count totals never
+      // do — subtract the same adjustment so the counts stay comparable. Only used unfiltered:
+      // while filtering, the backend total can't be projected onto the filtered subset, so the
+      // status bar falls back to aggregating the filtered/shown entries directly (see below).
+      const parentEntryAdjustment = attrs.entries.length - ordinaryEntries.length;
+      const backendTotalEntries =
+        attrs.totalKnownEntries === undefined
+          ? undefined
+          : attrs.totalKnownEntries - parentEntryAdjustment;
+      const backendListingSummary =
+        attrs.filterQuery.trim() === '' &&
+        attrs.totalKnownSize !== undefined &&
+        attrs.totalKnownFileCount !== undefined &&
+        backendTotalEntries !== undefined
+          ? formatListingSummary(
+              attrs.totalKnownFileCount,
+              backendTotalEntries - attrs.totalKnownFileCount,
+              attrs.totalKnownSize,
+            )
+          : undefined;
       return m(
         'section.fm-pane',
         {
@@ -801,7 +831,7 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
             m(
               'span',
               attrs.filterQuery.trim() === ''
-                ? listingSummary(ordinaryEntries)
+                ? (backendListingSummary ?? listingSummary(ordinaryEntries))
                 : `${listingSummary(ordinaryEntries)} (${ordinaryEntries.length} of ${attrs.totalEntryCount} shown${
                     attrs.hasMore === true ? ', more available' : ''
                   })`,

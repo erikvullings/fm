@@ -1,6 +1,6 @@
 # 0097 Directory aggregate totals (size/file count) independent of pagination
 
-Status: open
+Status: done
 Priority: low
 Owner: unassigned
 Agent: unassigned
@@ -66,3 +66,16 @@ already-fully-loaded `full_entries` is a cheap, no-extra-I/O addition, not a new
   outright (frontend-only change) so the UI doesn't expose the loading detail, even though the
   underlying number is still only as accurate as what's been paged into the frontend so far until
   this task ships.
+- Implemented: added `total_known_size`/`total_known_file_count` to `fm_domain::DirectorySnapshot`,
+  `fm-transport-dto::DirectorySnapshotDto`, and `fm-events`'s snapshot payload type, computed via a
+  new `aggregate_totals()` helper in `crates/fm-application/src/directory.rs` at both
+  `DirectorySnapshot` construction sites (`list()` and `publish_changes()`). Regenerated
+  `frontend/openapi/openapi.json` and the Orval client. Threaded the two fields through
+  `frontend/src/models/snapshot.ts`, `navigation.ts`, `workspace-layout.ts` (no change needed in
+  `app-shell.ts` - its object-literal spread already carried the fields through). `pane.ts`'s status
+  bar now prefers the backend-supplied totals when the quick filter is inactive, falling back to
+  client-side aggregation of `ordinaryEntries` while filtering (backend totals can't be filtered).
+  `mock-file-manager-client.ts` populates both fields for fixture-backed and generated directories
+  (with memoized totals for the large generated-directory case). New Rust unit tests
+  (`fm-application`) and frontend tests (`pane.test.ts`, `mock-file-manager-client.test.ts`) cover
+  empty directories, mixed entries, and the backend-totals-vs-filter-fallback behaviour.

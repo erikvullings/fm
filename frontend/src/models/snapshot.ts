@@ -26,6 +26,10 @@ export interface DirectorySnapshot {
   writable: boolean;
   entries: EntrySummary[];
   totalKnownEntries?: number;
+  /** Combined byte size of every file/symlink entry, when known in advance. */
+  totalKnownSize?: number;
+  /** Number of file/symlink entries (directories excluded), when known in advance. */
+  totalKnownFileCount?: number;
   hasMore: boolean;
   continuationToken?: string;
   loadingState: LoadingState;
@@ -47,6 +51,8 @@ export function directorySnapshotFromDto(dto: DirectorySnapshotDto): DirectorySn
     hasMore: dto.hasMore,
     loadingState: dto.loadingState,
     ...(dto.totalKnownEntries == null ? {} : { totalKnownEntries: dto.totalKnownEntries }),
+    ...(dto.totalKnownSize == null ? {} : { totalKnownSize: dto.totalKnownSize }),
+    ...(dto.totalKnownFileCount == null ? {} : { totalKnownFileCount: dto.totalKnownFileCount }),
     ...(dto.continuationToken == null ? {} : { continuationToken: dto.continuationToken }),
   };
 }

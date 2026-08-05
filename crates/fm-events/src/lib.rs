@@ -156,6 +156,12 @@ pub struct DirectorySnapshotPayload {
     /// Known total, when available.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub total_known_entries: Option<u64>,
+    /// Combined byte size of every file/symlink entry, when available.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub total_known_size: Option<u64>,
+    /// Number of file/symlink entries (directories excluded), when available.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub total_known_file_count: Option<u64>,
     /// Whether another page exists.
     pub has_more: bool,
     /// Opaque paging token.
@@ -208,6 +214,8 @@ impl From<DirectorySnapshot> for DirectorySnapshotPayload {
             writable: snapshot.writable,
             entries: snapshot.entries.into_iter().map(Into::into).collect(),
             total_known_entries: snapshot.total_known_entries,
+            total_known_size: snapshot.total_known_size,
+            total_known_file_count: snapshot.total_known_file_count,
             has_more: snapshot.has_more,
             continuation_token: snapshot.continuation_token,
             loading_state: match snapshot.loading_state {
@@ -857,6 +865,8 @@ mod tests {
             writable: true,
             entries: vec![],
             total_known_entries: Some(0),
+            total_known_size: Some(0),
+            total_known_file_count: Some(0),
             has_more: false,
             continuation_token: None,
             loading_state: LoadingStatePayload::Loaded,

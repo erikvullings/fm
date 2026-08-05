@@ -324,6 +324,7 @@ export const DirectoryTable: FactoryComponent<DirectoryTableAttrs> = () => {
   // the scroll once Mithril patches the content to its real (larger) height.
   // `pendingCursorIndex` tracks that a post-patch recheck is still owed.
   let pendingCursorIndex: number | undefined;
+  let resizeObserver: ResizeObserver | undefined;
 
   function applyScrollForCursor(attrs: DirectoryTableAttrs, cursorIndex: number): void {
     if (element === undefined || attrs.source === undefined) return;
@@ -372,6 +373,7 @@ export const DirectoryTable: FactoryComponent<DirectoryTableAttrs> = () => {
   return {
     onremove: () => {
       if (refreshTimer !== undefined) clearInterval(refreshTimer);
+      resizeObserver?.disconnect();
     },
     view: ({ attrs }) => {
       syncCursor(attrs);
@@ -537,6 +539,13 @@ export const DirectoryTable: FactoryComponent<DirectoryTableAttrs> = () => {
                   attrs.pluginColumns?.some((column) => column.id === fileAgeColumn.id) === true
                 ) {
                   refreshTimer = setInterval(() => m.redraw(), fileAgeColumn.refreshIntervalMs);
+                }
+                // Neither a window resize nor a split-pane divider drag triggers a Mithril
+                // redraw on its own, so the row window (sized off `element.clientHeight`)
+                // would otherwise only catch up once something unrelated redraws.
+                if (attrs.viewportHeight === undefined && typeof ResizeObserver !== 'undefined') {
+                  resizeObserver = new ResizeObserver(() => m.redraw());
+                  resizeObserver.observe(element);
                 }
                 syncCursor(attrs);
                 m.redraw();

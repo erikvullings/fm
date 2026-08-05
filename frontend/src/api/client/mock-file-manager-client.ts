@@ -121,6 +121,24 @@ function fixtureEntry(
   };
 }
 
+/** Sums the byte size and counts the files/symlinks (directories excluded) across a directory's
+ * entries, mirroring `fm_application::directory::aggregate_totals` so mock-mode status-bar
+ * totals behave like a real backend. */
+function aggregateTotals(entries: Iterable<import('../../models').EntrySummary>): {
+  size: number;
+  fileCount: number;
+} {
+  let size = 0;
+  let fileCount = 0;
+  for (const entry of entries) {
+    if (entry.kind !== 'directory') {
+      size += entry.size ?? 0;
+      fileCount += 1;
+    }
+  }
+  return { size, fileCount };
+}
+
 /** Case-insensitive substring match, or a `*`/`?` glob match when the query contains a wildcard. */
 function matchesQuery(name: string, query: string): boolean {
   if (!query.includes('*') && !query.includes('?')) {
@@ -289,6 +307,13 @@ export class MockFileManagerClient implements FileManagerClient {
   private eventSequence = 0;
   private readonly searches = new Map<string, { cancelled: boolean }>();
   private readonly fileContents = new Map<string, Uint8Array>();
+  // Generated directories are recreated per request, but their aggregate totals are a pure
+  // function of (size, seed) — cache them instead of resumming up to 1,000,000 entries on every
+  // paginated fetch.
+  private readonly generatedTotalsCache = new Map<
+    GeneratedDirectorySize,
+    { readonly size: number; readonly fileCount: number }
+  >();
 
   constructor(options: MockFileManagerClientOptions = {}) {
     this.pageSize = options.pageSize ?? 100;
@@ -878,6 +903,10 @@ export class MockFileManagerClient implements FileManagerClient {
         ? (fixtures ?? []).map((fixture) => fixtureEntry(request.location.uri, fixture))
         : createGeneratedDirectory(generatedSize, this.seed).page(offset, this.pageSize);
     const totalEntries = generatedSize ?? fixtures?.length ?? 0;
+    const { size: totalKnownSize, fileCount: totalKnownFileCount } =
+      generatedSize === undefined
+        ? aggregateTotals(entries)
+        : this.generatedDirectoryTotals(generatedSize);
     const nextOffset = offset + entries.length;
     const isUnreadable = request.location.uri === 'mock:///Unreadable';
     const loadingState = isUnreadable
@@ -894,10 +923,25 @@ export class MockFileManagerClient implements FileManagerClient {
       writable: request.location.uri !== 'mock:///Read-only',
       entries: isUnreadable ? [] : entries,
       totalKnownEntries: totalEntries,
+      totalKnownSize,
+      totalKnownFileCount,
       hasMore: nextOffset < totalEntries,
       ...(nextOffset < totalEntries ? { continuationToken: String(nextOffset) } : {}),
       loadingState,
     }));
+  }
+
+  private generatedDirectoryTotals(size: GeneratedDirectorySize): {
+    size: number;
+    fileCount: number;
+  } {
+    const cached = this.generatedTotalsCache.get(size);
+    if (cached !== undefined) {
+      return cached;
+    }
+    const totals = aggregateTotals(createGeneratedDirectory(size, this.seed).entries());
+    this.generatedTotalsCache.set(size, totals);
+    return totals;
   }
 
   private generatedSize(uri: string): GeneratedDirectorySize | undefined {

@@ -402,6 +402,8 @@
           "requestId": "e1ce66cc-64a8-4ae7-9cc1-2882bc80de4e",
           "revision": 1,
           "totalKnownEntries": 0,
+          "totalKnownFileCount": 0,
+          "totalKnownSize": 0,
           "writable": true
         },
         "properties": {
@@ -449,6 +451,24 @@
           },
           "totalKnownEntries": {
             "description": "The total number of entries, when known in advance.",
+            "format": "int64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "totalKnownFileCount": {
+            "description": "The number of file/symlink entries in the directory (directories excluded), when known\nin advance.",
+            "format": "int64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "totalKnownSize": {
+            "description": "The combined byte size of every file/symlink entry in the directory, when known in\nadvance.",
             "format": "int64",
             "minimum": 0,
             "type": [

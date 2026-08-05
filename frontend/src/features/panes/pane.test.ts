@@ -83,7 +83,6 @@ function attrs(overrides: Partial<PaneAttrs> = {}): PaneAttrs {
     entries,
     sortLabel: 'Name ascending',
     sort: [{ columnId: 'core.name', direction: 'ascending' }],
-    metadata: { state: 'idle' },
     selectedEntryIds: new Set<EntryId>(),
     cutEntryIds: new Set<EntryId>(),
     active: true,
@@ -272,6 +271,13 @@ describe('Pane breadcrumb editing', () => {
 });
 
 describe('Pane status bar', () => {
+  it('renders the directory status without a separate cursor-metadata row', () => {
+    mount(attrs());
+
+    expect(root.querySelector('.fm-pane-status')).not.toBeNull();
+    expect(root.querySelector('.fm-entry-metadata')).toBeNull();
+  });
+
   it('shows entry, selection, selected-size and sort counters', () => {
     mount(attrs({ selectedEntryIds: new Set<EntryId>(['one' as EntryId]) }));
 
@@ -285,31 +291,6 @@ describe('Pane status bar', () => {
 
     expect(root.querySelector('.fm-pane')?.getAttribute('data-active')).toBe('false');
     expect(root.querySelector('.fm-selected-row')).not.toBeNull();
-  });
-
-  it('shows lazily loaded details for the cursor entry in the metadata area', () => {
-    mount(
-      attrs({
-        metadata: {
-          state: 'loaded',
-          entry: entries[0] as EntrySummary,
-          metadata: {
-            entryId: 'one' as EntryId,
-            ownership: { owner: 'erik' },
-            permissions: { readable: true, writable: true, executable: false },
-            extendedAttributes: {},
-            checksums: {},
-            pluginFields: {},
-          },
-        },
-      }),
-    );
-
-    const summary = root.querySelector('.fm-entry-metadata')?.textContent;
-    expect(summary).toContain('one.txt');
-    expect(summary).toContain('1 KiB');
-    expect(summary).toContain('Owner: erik');
-    expect(summary).toContain('Permissions: read, write');
   });
 });
 
@@ -379,6 +360,40 @@ describe('Pane quick filter', () => {
 
     mount(attrs({ filterQuery: '', totalKnownEntries: 2 }));
     expect(root.querySelector('.fm-pane-status')?.textContent).toContain('3 KB in 2 files');
+  });
+
+  it('prefers the backend-reported directory totals over the loaded-so-far count when unfiltered', () => {
+    // Regression test: only two of a real 468-entry directory's pages have loaded so far, but
+    // the backend already knows the true totals from the first response — the status bar must
+    // show those, not just an aggregate of the entries paged in so far.
+    mount(
+      attrs({
+        filterQuery: '',
+        totalKnownEntries: 468,
+        totalKnownSize: 8_160_437_760,
+        totalKnownFileCount: 445,
+      }),
+    );
+    const status = root.querySelector('.fm-pane-status')?.textContent;
+    expect(status).toContain('7.6 GB in 445 files, and 23 folders');
+    expect(status).not.toContain('3 KB in 2 files');
+  });
+
+  it('falls back to the loaded-so-far aggregate while filtering, even with backend totals known', () => {
+    mount(
+      attrs({
+        filterOpen: true,
+        filterQuery: 'one',
+        entries: [entries[0] as EntrySummary],
+        totalEntryCount: 2,
+        totalKnownEntries: 468,
+        totalKnownSize: 8_160_437_760,
+        totalKnownFileCount: 445,
+      }),
+    );
+    expect(root.querySelector('.fm-pane-status')?.textContent).toContain(
+      '1 KB in 1 file (1 of 2 shown)',
+    );
   });
 
   it('reports hidden-but-selected entries alongside the plain selected count', () => {

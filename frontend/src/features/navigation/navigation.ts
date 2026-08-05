@@ -31,6 +31,10 @@ export interface PaneDirectoryView {
   readonly continuationToken?: string;
   /** Total entries in the directory, known from the first page's response even before all pages load. */
   readonly totalKnownEntries?: number;
+  /** Combined byte size of every file/symlink entry, known from the first page's response. */
+  readonly totalKnownSize?: number;
+  /** Number of file/symlink entries (directories excluded), known from the first page's response. */
+  readonly totalKnownFileCount?: number;
 }
 
 /** Integration callbacks kept outside the navigation module. */
@@ -264,6 +268,10 @@ export function createNavigationController(
       ...(snapshot.totalKnownEntries === undefined
         ? {}
         : { totalKnownEntries: snapshot.totalKnownEntries }),
+      ...(snapshot.totalKnownSize === undefined ? {} : { totalKnownSize: snapshot.totalKnownSize }),
+      ...(snapshot.totalKnownFileCount === undefined
+        ? {}
+        : { totalKnownFileCount: snapshot.totalKnownFileCount }),
     };
   }
 

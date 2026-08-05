@@ -38,6 +38,20 @@ export interface DirectorySnapshotDto {
      * @nullable
      */
   totalKnownEntries?: number | null;
+  /**
+     * The number of file/symlink entries in the directory (directories excluded), when known
+     * in advance.
+     * @minimum 0
+     * @nullable
+     */
+  totalKnownFileCount?: number | null;
+  /**
+     * The combined byte size of every file/symlink entry in the directory, when known in
+     * advance.
+     * @minimum 0
+     * @nullable
+     */
+  totalKnownSize?: number | null;
   /** Whether the current user may create entries in this directory. */
   writable: boolean;
 }

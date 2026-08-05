@@ -34,6 +34,8 @@ export interface WorkspacePaneContent {
   readonly hasMore?: boolean;
   readonly totalEntryCount: number;
   readonly totalKnownEntries?: number;
+  readonly totalKnownSize?: number;
+  readonly totalKnownFileCount?: number;
   readonly hiddenSelectedCount: number;
   readonly filterOpen: boolean;
   readonly filterQuery: string;
@@ -321,6 +323,10 @@ export const WorkspaceLayoutView: FactoryComponent<WorkspaceLayoutViewAttrs> = (
         ...(content.totalKnownEntries === undefined
           ? {}
           : { totalKnownEntries: content.totalKnownEntries }),
+        ...(content.totalKnownSize === undefined ? {} : { totalKnownSize: content.totalKnownSize }),
+        ...(content.totalKnownFileCount === undefined
+          ? {}
+          : { totalKnownFileCount: content.totalKnownFileCount }),
         hiddenSelectedCount: content.hiddenSelectedCount,
         filterOpen: content.filterOpen,
         filterQuery: content.filterQuery,

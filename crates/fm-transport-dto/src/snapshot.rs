@@ -58,6 +58,8 @@ impl From<LoadingStateDto> for LoadingState {
     "writable": true,
     "entries": [],
     "totalKnownEntries": 0,
+    "totalKnownSize": 0,
+    "totalKnownFileCount": 0,
     "hasMore": false,
     "continuationToken": null,
     "loadingState": {"type": "loaded"}
@@ -77,6 +79,12 @@ pub struct DirectorySnapshotDto {
     pub entries: Vec<EntrySummaryDto>,
     /// The total number of entries, when known in advance.
     pub total_known_entries: Option<u64>,
+    /// The combined byte size of every file/symlink entry in the directory, when known in
+    /// advance.
+    pub total_known_size: Option<u64>,
+    /// The number of file/symlink entries in the directory (directories excluded), when known
+    /// in advance.
+    pub total_known_file_count: Option<u64>,
     /// Whether more entries remain to be paged in.
     pub has_more: bool,
     /// An opaque token used to request the next page, when `hasMore`.
@@ -95,6 +103,8 @@ impl From<DirectorySnapshot> for DirectorySnapshotDto {
             writable: snapshot.writable,
             entries: snapshot.entries.into_iter().map(Into::into).collect(),
             total_known_entries: snapshot.total_known_entries,
+            total_known_size: snapshot.total_known_size,
+            total_known_file_count: snapshot.total_known_file_count,
             has_more: snapshot.has_more,
             continuation_token: snapshot.continuation_token,
             loading_state: snapshot.loading_state.into(),
@@ -112,6 +122,8 @@ impl From<DirectorySnapshotDto> for DirectorySnapshot {
             writable: dto.writable,
             entries: dto.entries.into_iter().map(Into::into).collect(),
             total_known_entries: dto.total_known_entries,
+            total_known_size: dto.total_known_size,
+            total_known_file_count: dto.total_known_file_count,
             has_more: dto.has_more,
             continuation_token: dto.continuation_token,
             loading_state: dto.loading_state.into(),
@@ -137,6 +149,8 @@ mod tests {
             writable: true,
             entries: vec![],
             total_known_entries: Some(0),
+            total_known_size: Some(0),
+            total_known_file_count: Some(0),
             has_more: false,
             continuation_token: None,
             loading_state: LoadingStateDto::Loaded,
@@ -159,6 +173,8 @@ mod tests {
             "\"paneId\"",
             "\"requestId\"",
             "\"totalKnownEntries\"",
+            "\"totalKnownSize\"",
+            "\"totalKnownFileCount\"",
             "\"hasMore\"",
             "\"continuationToken\"",
             "\"loadingState\"",
@@ -196,6 +212,8 @@ mod tests {
             writable: true,
             entries: vec![],
             total_known_entries: Some(0),
+            total_known_size: Some(0),
+            total_known_file_count: Some(0),
             has_more: false,
             continuation_token: None,
             loading_state: LoadingState::Loaded,

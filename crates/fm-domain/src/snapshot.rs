@@ -50,6 +50,12 @@ pub struct DirectorySnapshot {
     pub entries: Vec<EntrySummary>,
     /// The total number of entries, when known in advance.
     pub total_known_entries: Option<u64>,
+    /// The combined byte size of every file/symlink entry in the directory, when known in
+    /// advance (mirrors `total_known_entries`'s eager-enumeration availability).
+    pub total_known_size: Option<u64>,
+    /// The number of file/symlink entries in the directory (directories excluded), when known
+    /// in advance; `total_known_entries - total_known_file_count` gives the folder count.
+    pub total_known_file_count: Option<u64>,
     /// Whether more entries remain to be paged in.
     pub has_more: bool,
     /// An opaque token used to request the next page, when `has_more`.
@@ -104,6 +110,8 @@ mod tests {
             writable: true,
             entries: vec![],
             total_known_entries: Some(0),
+            total_known_size: Some(0),
+            total_known_file_count: Some(0),
             has_more: false,
             continuation_token: None,
             loading_state: LoadingState::Loaded,
