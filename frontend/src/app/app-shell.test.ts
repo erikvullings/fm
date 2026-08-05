@@ -919,6 +919,47 @@ describe('AppShell', () => {
     );
   });
 
+  it('applies the current "show hidden files" setting to a freshly opened tab', async () => {
+    const client = new MockFileManagerClient();
+    const dispatchWorkspaceCommand = vi.spyOn(client, 'dispatchWorkspaceCommand');
+    const listDirectory = vi.spyOn(client, 'listDirectory');
+    m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
+    await openAppearanceSettings();
+
+    const hiddenFilesLabel = [...root.querySelectorAll<HTMLElement>('label.switch-label')].find(
+      (label) => label.textContent?.includes('Show hidden files'),
+    );
+    hiddenFilesLabel?.closest<HTMLElement>('.input-field')?.click();
+    m.redraw.sync();
+    root.querySelector<HTMLButtonElement>('.fm-settings-save')?.click();
+    m.redraw.sync();
+    await vi.waitFor(() =>
+      expect(dispatchWorkspaceCommand).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'updateView',
+          paneId: 'left',
+          patch: { showHidden: true },
+        }),
+        undefined,
+      ),
+    );
+    listDirectory.mockClear();
+
+    // New tabs are built from the pane's fixed `default_view` server-side, which never learns
+    // about later `showHidden` patches to sibling tabs - without an explicit follow-up patch a
+    // freshly opened tab would silently revert to hiding dotfiles.
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 't', ctrlKey: true, bubbles: true }),
+    );
+
+    await vi.waitFor(() =>
+      expect(listDirectory).toHaveBeenCalledWith(
+        expect.objectContaining({ showHidden: true }),
+        expect.any(AbortSignal),
+      ),
+    );
+  });
+
   it('reverts a previewed setting and closes the dialog when Cancel is clicked', async () => {
     const client = new MockFileManagerClient();
     const updateSettings = vi.spyOn(client, 'updateSettings');

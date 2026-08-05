@@ -385,6 +385,38 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
   }
 
   /**
+   * New tabs always start from the pane's fixed `default_view` (the backend has no per-user
+   * "default view" concept, and `applyShowHiddenFilesToAllTabs` above only ever patches tabs that
+   * already existed at save time) — so every freshly opened tab silently reverts to hiding
+   * dotfiles unless explicitly patched here to match the current setting.
+   */
+  async function applyCurrentShowHiddenSetting(
+    client: FileManagerClient,
+    workspaceId: WorkspaceId,
+    paneId: PaneId,
+    tabId: TabId,
+    expectedRevision: number,
+  ): Promise<void> {
+    if (currentSettings?.showHiddenFiles !== true) return;
+    try {
+      await dispatchWorkspaceCommand(
+        client,
+        {
+          type: 'updateView',
+          workspaceId,
+          paneId,
+          tabId,
+          patch: { showHidden: true },
+          expectedRevision,
+        },
+        replaceWorkspace,
+      );
+    } catch {
+      // Best-effort: the tab still works, just without hidden files until manually toggled.
+    }
+  }
+
+  /**
    * Closes the settings disclosure (Save/Cancel/close-button/outside-click all route through
    * here). Reverts any unsaved live preview back to `currentSettings` directly, rather than
    * relying on the `<details>` element's `toggle` event to fire for a scripted close — some DOM
@@ -1623,7 +1655,14 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       },
       (next) => {
         replaceWorkspace(next);
-        void navigation.load(paneId);
+        const newTabId = next.panesById[paneId]?.activeTabId;
+        if (newTabId === undefined) {
+          void navigation.load(paneId);
+          return;
+        }
+        void applyCurrentShowHiddenSetting(client, next.id, paneId, newTabId, next.revision).then(
+          () => navigation.load(paneId),
+        );
       },
     ).catch(() => undefined);
   }
@@ -1716,7 +1755,14 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       },
       (next) => {
         replaceWorkspace(next);
-        void navigation.load(paneId);
+        const newTabId = next.panesById[paneId]?.activeTabId;
+        if (newTabId === undefined) {
+          void navigation.load(paneId);
+          return;
+        }
+        void applyCurrentShowHiddenSetting(client, next.id, paneId, newTabId, next.revision).then(
+          () => navigation.load(paneId),
+        );
       },
     ).catch(() => undefined);
   }
