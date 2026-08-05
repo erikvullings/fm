@@ -47,6 +47,12 @@ not implement archive codecs or cryptography.
   covered by explicit tests.
 - Resource limits guard against decompression bombs (uncompressed-size and ratio caps) with a clear
   error.
+- RAR entry extraction is cached per backend session so repeatedly viewing comic pages does not
+  repeatedly decode the same data. The cache is bounded, keyed by the archive's current filesystem
+  fingerprint plus inner path, and invalidated when the archive changes.
+- Cached plaintext lives in a private session temporary directory. Normal backend shutdown removes
+  it; each session holds an OS lock so startup can safely remove unlocked directories abandoned by
+  crashed sessions without deleting another running instance's cache.
 - Password-protected archives are detected and request a password through an application-level
   credential challenge that has equivalent Axum and Tauri transports. A correct password permits
   every operation supported by that format; missing/wrong passwords return distinct typed errors
@@ -150,3 +156,13 @@ not implement archive codecs or cryptography.
   tables, borders, scrollbars, and the F3 image viewer cannot paint across the adjacent pane. RAR
   page reads now stop decoding immediately after the requested member, while still decoding the
   required prefix for solid archives.
+- 2026-08-05 user decision: Cache extracted archive entries per backend session. Keep plaintext in
+  a private, bounded temporary cache, remove it on normal shutdown, and reclaim cache directories
+  abandoned by crashes on a later backend startup.
+- 2026-08-05 codex: Implemented a private RAR extraction cache scoped to the archive provider
+  session, bounded to 512 entries/512 MiB with LRU eviction and archive size/mtime invalidation.
+  Normal provider drop removes the session directory; an OS lock protects live sessions while a
+  later startup removes unlocked crash leftovers. Added two cache lifecycle tests; all 19
+  `fm-archive` unit/integration tests pass and its all-target clippy check is warning-free. Full
+  workspace verification remains blocked by pre-existing missing `DirectorySnapshot` fields in
+  `fm-domain`/`fm-transport-dto`; `pnpm test` also attempted a sandbox-blocked Swagger UI download.

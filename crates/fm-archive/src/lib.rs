@@ -5,10 +5,11 @@
 
 use std::{
     collections::{BTreeMap, HashMap},
-    fs::File,
+    fs::{File, OpenOptions},
     io::{Cursor, Read, Seek, SeekFrom, Write},
     path::{Component, Path, PathBuf},
     sync::{Arc, Mutex},
+    time::UNIX_EPOCH,
 };
 
 use async_trait::async_trait;
@@ -31,6 +32,10 @@ const BZIP2_MAGIC: &[u8] = b"BZh";
 const XZ_MAGIC: &[u8] = b"\xfd7zXZ\0";
 const RAR4_MAGIC: &[u8] = b"Rar!\x1a\x07\0";
 const RAR5_MAGIC: &[u8] = b"Rar!\x1a\x07\x01\0";
+const CACHE_ROOT_NAME: &str = "procyon-archive-cache";
+const CACHE_SESSION_PREFIX: &str = "session-";
+const CACHE_MAX_BYTES: u64 = 512 * 1024 * 1024;
+const CACHE_MAX_ENTRIES: usize = 512;
 
 /// Resource policy applied before an archive entry is expanded.
 #[derive(Clone, Copy, Debug)]
@@ -51,11 +56,18 @@ impl Default for ArchiveLimits {
 }
 
 /// Provider that exposes supported archive entries as virtual directories.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct ArchiveFileSystemProvider {
     staged_writes: Mutex<HashMap<String, PathBuf>>,
     passwords: Mutex<HashMap<PathBuf, Zeroizing<String>>>,
+    extraction_cache: Arc<Mutex<Option<SessionExtractionCache>>>,
     limits: ArchiveLimits,
+}
+
+impl Default for ArchiveFileSystemProvider {
+    fn default() -> Self {
+        Self::with_limits(ArchiveLimits::default())
+    }
 }
 
 impl ArchiveFileSystemProvider {
@@ -71,6 +83,7 @@ impl ArchiveFileSystemProvider {
         Self {
             staged_writes: Mutex::new(HashMap::new()),
             passwords: Mutex::new(HashMap::new()),
+            extraction_cache: Arc::new(Mutex::new(SessionExtractionCache::new().ok())),
             limits,
         }
     }
@@ -303,13 +316,24 @@ impl FileSystemProvider for ArchiveFileSystemProvider {
         let inner = parsed.inner;
         let password = self.password_for(&archive_path);
         let limits = self.limits;
+        let extraction_cache = self.extraction_cache.clone();
         let bytes = tokio::task::spawn_blocking(move || {
-            read_archive_entry(
-                &archive_path,
-                &inner,
-                limits,
-                password.as_ref().map(|value| value.as_str()),
-            )
+            if detect_format(&archive_path)? == ArchiveFormat::Rar {
+                read_cached_rar_entry(
+                    &extraction_cache,
+                    &archive_path,
+                    &inner,
+                    limits,
+                    password.as_ref().map(|value| value.as_str()),
+                )
+            } else {
+                read_archive_entry(
+                    &archive_path,
+                    &inner,
+                    limits,
+                    password.as_ref().map(|value| value.as_str()),
+                )
+            }
         })
         .await
         .map_err(join_error)??;
@@ -426,6 +450,210 @@ impl FileSystemProvider for ArchiveFileSystemProvider {
     ) -> Result<ProviderChangeStream, VfsError> {
         unsupported(ProviderCapabilities::WATCH)
     }
+}
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+struct CacheKey {
+    archive_path: PathBuf,
+    archive_len: u64,
+    archive_modified_nanos: u128,
+    inner: String,
+}
+
+impl CacheKey {
+    fn new(archive_path: &Path, inner: &str) -> Result<Self, VfsError> {
+        let metadata =
+            std::fs::metadata(archive_path).map_err(|error| io_error(error, archive_path))?;
+        let modified = metadata
+            .modified()
+            .map_err(|error| io_error(error, archive_path))?
+            .duration_since(UNIX_EPOCH)
+            .map_err(|_| VfsError::Io {
+                message: format!(
+                    "archive modification time is invalid: {}",
+                    archive_path.display()
+                ),
+            })?;
+        Ok(Self {
+            archive_path: archive_path.to_path_buf(),
+            archive_len: metadata.len(),
+            archive_modified_nanos: modified.as_nanos(),
+            inner: inner.to_owned(),
+        })
+    }
+}
+
+#[derive(Debug)]
+struct CachedEntry {
+    path: PathBuf,
+    size: u64,
+    last_used: u64,
+}
+
+#[derive(Debug)]
+struct SessionExtractionCache {
+    _lock: File,
+    directory: tempfile::TempDir,
+    entries: HashMap<CacheKey, CachedEntry>,
+    total_bytes: u64,
+    clock: u64,
+}
+
+impl SessionExtractionCache {
+    fn new() -> std::io::Result<Self> {
+        let root = std::env::temp_dir().join(CACHE_ROOT_NAME);
+        Self::new_in(&root)
+    }
+
+    fn new_in(root: &Path) -> std::io::Result<Self> {
+        create_private_directory(root)?;
+        cleanup_abandoned_cache_sessions(root);
+        let directory = tempfile::Builder::new()
+            .prefix(CACHE_SESSION_PREFIX)
+            .tempdir_in(root)?;
+        set_private_permissions(directory.path())?;
+        let lock_path = directory.path().join("session.lock");
+        let lock = OpenOptions::new()
+            .create_new(true)
+            .read(true)
+            .write(true)
+            .open(lock_path)?;
+        fs2::FileExt::lock_exclusive(&lock)?;
+        Ok(Self {
+            _lock: lock,
+            directory,
+            entries: HashMap::new(),
+            total_bytes: 0,
+            clock: 0,
+        })
+    }
+
+    fn read(&mut self, key: &CacheKey) -> Option<Vec<u8>> {
+        let entry = self.entries.get_mut(key)?;
+        match std::fs::read(&entry.path) {
+            Ok(bytes) => {
+                self.clock = self.clock.saturating_add(1);
+                entry.last_used = self.clock;
+                Some(bytes)
+            }
+            Err(_) => {
+                let removed = self.entries.remove(key)?;
+                self.total_bytes = self.total_bytes.saturating_sub(removed.size);
+                None
+            }
+        }
+    }
+
+    fn insert(&mut self, key: CacheKey, bytes: &[u8]) -> std::io::Result<()> {
+        let size = u64::try_from(bytes.len()).unwrap_or(u64::MAX);
+        if size > CACHE_MAX_BYTES {
+            return Ok(());
+        }
+        if let Some(previous) = self.entries.remove(&key) {
+            self.total_bytes = self.total_bytes.saturating_sub(previous.size);
+            let _ = std::fs::remove_file(previous.path);
+        }
+        while self.entries.len() >= CACHE_MAX_ENTRIES
+            || self.total_bytes.saturating_add(size) > CACHE_MAX_BYTES
+        {
+            let Some(oldest_key) = self
+                .entries
+                .iter()
+                .min_by_key(|(_, entry)| entry.last_used)
+                .map(|(key, _)| key.clone())
+            else {
+                break;
+            };
+            if let Some(entry) = self.entries.remove(&oldest_key) {
+                self.total_bytes = self.total_bytes.saturating_sub(entry.size);
+                let _ = std::fs::remove_file(entry.path);
+            }
+        }
+        self.clock = self.clock.saturating_add(1);
+        let path = self.directory.path().join(Uuid::new_v4().to_string());
+        std::fs::write(&path, bytes)?;
+        self.total_bytes = self.total_bytes.saturating_add(size);
+        self.entries.insert(
+            key,
+            CachedEntry {
+                path,
+                size,
+                last_used: self.clock,
+            },
+        );
+        Ok(())
+    }
+}
+
+fn read_cached_rar_entry(
+    cache: &Mutex<Option<SessionExtractionCache>>,
+    archive_path: &Path,
+    inner: &str,
+    limits: ArchiveLimits,
+    password: Option<&str>,
+) -> Result<Vec<u8>, VfsError> {
+    let key = CacheKey::new(archive_path, inner)?;
+    if let Some(bytes) = cache
+        .lock()
+        .unwrap_or_else(|error| error.into_inner())
+        .as_mut()
+        .and_then(|cache| cache.read(&key))
+    {
+        return Ok(bytes);
+    }
+    let bytes = read_rar_entry(archive_path, inner, limits, password)?;
+    if let Some(cache) = cache
+        .lock()
+        .unwrap_or_else(|error| error.into_inner())
+        .as_mut()
+    {
+        let _ = cache.insert(key, &bytes);
+    }
+    Ok(bytes)
+}
+
+fn cleanup_abandoned_cache_sessions(root: &Path) {
+    let Ok(entries) = std::fs::read_dir(root) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !entry
+            .file_name()
+            .to_string_lossy()
+            .starts_with(CACHE_SESSION_PREFIX)
+            || !path.is_dir()
+        {
+            continue;
+        }
+        let Ok(lock) = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(path.join("session.lock"))
+        else {
+            continue;
+        };
+        if fs2::FileExt::try_lock_exclusive(&lock).is_ok() {
+            drop(lock);
+            let _ = std::fs::remove_dir_all(path);
+        }
+    }
+}
+
+fn create_private_directory(path: &Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(path)?;
+    set_private_permissions(path)
+}
+
+#[cfg(unix)]
+fn set_private_permissions(path: &Path) -> std::io::Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700))
+}
+
+#[cfg(not(unix))]
+fn set_private_permissions(_path: &Path) -> std::io::Result<()> {
+    Ok(())
 }
 
 #[derive(Debug)]
@@ -1379,6 +1607,53 @@ mod unit_tests {
     use std::io::Write;
 
     use super::*;
+
+    #[test]
+    fn session_cache_reuses_entries_and_invalidates_changed_archives() {
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let cache_root = directory.path().join("cache");
+        let archive_path = directory.path().join("comic.rar");
+        std::fs::write(&archive_path, b"first archive").expect("write archive fixture");
+        let first_key = CacheKey::new(&archive_path, "001.jpg").expect("first fingerprint");
+        let mut cache = SessionExtractionCache::new_in(&cache_root).expect("create cache");
+
+        cache
+            .insert(first_key.clone(), b"page one")
+            .expect("cache page");
+        assert_eq!(cache.read(&first_key), Some(b"page one".to_vec()));
+
+        std::fs::write(&archive_path, b"changed archive contents").expect("change archive fixture");
+        let changed_key = CacheKey::new(&archive_path, "001.jpg").expect("changed fingerprint");
+        assert_ne!(changed_key, first_key);
+        assert_eq!(cache.read(&changed_key), None);
+    }
+
+    #[test]
+    fn startup_cleanup_removes_only_abandoned_sessions() {
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let cache_root = directory.path().join("cache");
+        let active = SessionExtractionCache::new_in(&cache_root).expect("create active cache");
+        let active_path = active.directory.path().to_path_buf();
+        let abandoned = cache_root.join(format!("{CACHE_SESSION_PREFIX}abandoned"));
+        create_private_directory(&abandoned).expect("create abandoned cache");
+        File::create(abandoned.join("session.lock")).expect("create abandoned lock");
+        std::fs::write(abandoned.join("plaintext"), b"cached page")
+            .expect("write abandoned cache entry");
+
+        let second = SessionExtractionCache::new_in(&cache_root).expect("create second cache");
+
+        assert!(active_path.exists(), "locked active cache must remain");
+        assert!(
+            !abandoned.exists(),
+            "unlocked crashed cache must be removed"
+        );
+        drop(second);
+        drop(active);
+        assert!(
+            !active_path.exists(),
+            "normal shutdown removes session cache"
+        );
+    }
 
     #[test]
     fn cancelled_rewrite_preserves_archive_and_removes_temporary_file() {
