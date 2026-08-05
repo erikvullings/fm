@@ -96,7 +96,7 @@ pub enum OperationState {
     Running,
     /// Cooperatively paused.
     Paused,
-    /// Waiting for a user conflict decision.
+    /// Waiting for a user confirmation or conflict decision.
     WaitingForConflictResolution,
     /// Cancellation requested; finishing the current safe unit.
     Cancelling,

@@ -214,3 +214,79 @@ async fn resolve_conflict_route_applies_the_requested_decision() {
     }
     panic!("operation did not complete after REST conflict resolution")
 }
+
+#[tokio::test]
+async fn resolve_conflict_route_confirms_a_permanent_directory_delete() {
+    let server = common::TestServer::spawn().await;
+    let root = tempfile::tempdir().unwrap();
+    let source = root.path().join("delete-me");
+    tokio::fs::create_dir(&source).await.unwrap();
+    tokio::fs::write(source.join("child.txt"), b"contents")
+        .await
+        .unwrap();
+    let client = reqwest::Client::new();
+    let operation: serde_json::Value = client
+        .post(format!("{}/api/v1/operations", server.base_url))
+        .json(&json!({
+            "type": "delete",
+            "sources": [{"providerId":"local","uri": format!("file://{}", source.display())}],
+            "conflictPolicy": "ask"
+        }))
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let id = operation["id"].as_str().unwrap();
+
+    for _ in 0..200 {
+        let current: serde_json::Value = client
+            .get(format!("{}/api/v1/operations/{id}", server.base_url))
+            .send()
+            .await
+            .unwrap()
+            .error_for_status()
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        if current["state"] == "waitingForConflictResolution" {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+
+    client
+        .post(format!(
+            "{}/api/v1/operations/{id}/resolve-conflict",
+            server.base_url
+        ))
+        .json(&json!({"resolution":"confirm", "applyToAllSimilar":false}))
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap();
+
+    for _ in 0..200 {
+        let current: serde_json::Value = client
+            .get(format!("{}/api/v1/operations/{id}", server.base_url))
+            .send()
+            .await
+            .unwrap()
+            .error_for_status()
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        if current["state"] == "completed" {
+            assert!(!source.exists());
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    panic!("directory delete did not complete after REST confirmation")
+}

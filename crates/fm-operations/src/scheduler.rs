@@ -307,6 +307,15 @@ impl Scheduler {
         Ok(())
     }
 
+    /// Confirms an operation that paused after planning for explicit approval.
+    pub fn confirm(&self, id: OperationId) -> Result<(), SchedulerError> {
+        let jobs = self.jobs.lock().unwrap_or_else(|e| e.into_inner());
+        let job = jobs.get(&id).ok_or(SchedulerError::UnknownOperation(id))?;
+        self.transition_job(job, OperationState::Running)?;
+        job.resumed.notify_waiters();
+        Ok(())
+    }
+
     /// Continues an operation waiting for a conflict decision.
     pub fn resolve_conflict(
         &self,

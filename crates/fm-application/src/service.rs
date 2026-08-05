@@ -757,13 +757,16 @@ impl FileManagerService {
         if request.resolution == ConflictResolutionDto::CancelOperation {
             return self.cancel_operation(id);
         }
+        if request.resolution == ConflictResolutionDto::Confirm {
+            return self.operations.confirm(id).map_err(map_scheduler_error);
+        }
         let resolution = match request.resolution {
             ConflictResolutionDto::Skip => ConflictResolution::Skip,
-            ConflictResolutionDto::Overwrite | ConflictResolutionDto::Confirm => {
-                ConflictResolution::Overwrite
-            }
+            ConflictResolutionDto::Overwrite => ConflictResolution::Overwrite,
             ConflictResolutionDto::RenameNew => ConflictResolution::RenameNew,
-            ConflictResolutionDto::CancelOperation => unreachable!("handled above"),
+            ConflictResolutionDto::Confirm | ConflictResolutionDto::CancelOperation => {
+                unreachable!("handled above")
+            }
         };
         self.operations
             .resolve_conflict(id, resolution, request.apply_to_all_similar)
