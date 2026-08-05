@@ -273,13 +273,19 @@ describe('Pane breadcrumb editing', () => {
     expect(root.textContent).toContain('one.txt');
   });
 
-  it('replaces the edit affordance with a Tabler heart favourites button', () => {
+  it('places a mithril-materialized Tabler heart IconButton beside the new-tab button', () => {
     mount(attrs());
 
     expect(root.querySelector('.fm-breadcrumb-edit-target')).toBeNull();
-    expect(root.querySelector<HTMLButtonElement>('.fm-breadcrumb-favourites')?.ariaLabel).toBe(
+    expect(root.querySelector<HTMLButtonElement>('.fm-pane-tab-favourites')?.ariaLabel).toBe(
       'Favourites',
     );
+    expect(root.querySelector('.fm-pane-tab-favourites')?.classList.contains('btn-icon')).toBe(true);
+    expect(
+      root.querySelector('.fm-pane-tab-new')?.nextElementSibling?.classList.contains(
+        'fm-pane-tab-favourites',
+      ),
+    ).toBe(true);
     expect(root.querySelector('.fm-icon-heart')).not.toBeNull();
   });
 });

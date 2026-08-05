@@ -1,4 +1,5 @@
 import m, { type FactoryComponent, type VnodeDOM } from 'mithril';
+import { IconButton } from 'mithril-materialized';
 import { heartIcon } from '../../components/tabler-icons';
 import { dispatchKeybinding, type KeybindingRuntime } from '../../keybindings/dispatcher';
 import type {
@@ -641,6 +642,16 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
               },
               '+',
             ),
+            m(
+              IconButton,
+              {
+                key: '__favourites__',
+                className: 'fm-pane-tab-favourites',
+                'aria-label': 'Favourites',
+                tooltip: 'Favourites',
+              },
+              heartIcon(),
+            ),
           ]),
           editing
             ? m('.fm-path-editor', [
@@ -688,15 +699,6 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
                       segment.label,
                     ),
                   ),
-                ),
-                m(
-                  'button.fm-breadcrumb-favourites',
-                  {
-                    type: 'button',
-                    'aria-label': 'Favourites',
-                    title: 'Favourites',
-                  },
-                  heartIcon(),
                 ),
                 pathError === undefined
                   ? undefined
