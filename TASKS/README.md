@@ -148,6 +148,7 @@ the workspace-service tasks; see Step 2b above).
 - 0095 Distributable icon theme plugins *(after 0053, 0085, 0092)*
 - 0098 Frontend i18n with translate.js
 - 0099 In-app text file editor with Markdown preview *(after 0088)*
+- 0100 Streaming CSV and Excel file viewer subsystem
 
 ## Milestone 3 / version 1 features (§16.3, §37)
 
