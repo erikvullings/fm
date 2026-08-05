@@ -146,6 +146,8 @@ the workspace-service tasks; see Step 2b above).
 - 0093 Copy filename and path actions
 - 0094 Tabler icons toolbar
 - 0095 Distributable icon theme plugins *(after 0053, 0085, 0092)*
+- 0098 Frontend i18n with translate.js
+- 0099 In-app text file editor with Markdown preview *(after 0088)*
 
 ## Milestone 3 / version 1 features (§16.3, §37)
 
