@@ -34,6 +34,9 @@ export interface NavigateRequest {
   paneId: PaneId;
   requestId: string;
   location: Location;
+  sort?: SortDescriptor[];
+  showHidden?: boolean;
+  foldersFirst?: boolean;
 }
 
 /**

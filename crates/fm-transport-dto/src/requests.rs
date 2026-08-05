@@ -51,7 +51,10 @@ pub struct ListDirectoryRequest {
     "workspaceId": "7136d9bc-90f1-4c67-8527-9d30683167ec",
     "paneId": "5b1b6b1e-9b1b-4b1b-8b1b-1b1b1b1b1b1b",
     "requestId": "e1ce66cc-64a8-4ae7-9cc1-2882bc80de4e",
-    "location": {"providerId": "local", "uri": "file:///Users/erik/Documents"}
+    "location": {"providerId": "local", "uri": "file:///Users/erik/Documents"},
+    "sort": [{"columnId": "core.name", "direction": "ascending"}],
+    "showHidden": false,
+    "foldersFirst": true
 }))]
 pub struct NavigateRequest {
     /// Workspace that owns the pane and receives its events.
@@ -63,6 +66,20 @@ pub struct NavigateRequest {
     pub request_id: Uuid,
     /// The location to navigate to.
     pub location: LocationDto,
+    /// Sort descriptors applied by the backend to the returned page, carried
+    /// over from the navigating tab's current view so navigation doesn't
+    /// silently reset it.
+    #[serde(default)]
+    pub sort: Vec<SortDescriptorDto>,
+    /// Whether hidden entries should be included, carried over from the
+    /// navigating tab's current view so navigation doesn't silently reset it.
+    #[serde(default)]
+    pub show_hidden: bool,
+    /// Whether directories should sort before non-directories, carried over
+    /// from the navigating tab's current view so navigation doesn't silently
+    /// reset it.
+    #[serde(default)]
+    pub folders_first: bool,
 }
 
 /// Requests detailed metadata for a single entry
@@ -121,14 +138,35 @@ mod tests {
             pane_id: Uuid::new_v4(),
             request_id: Uuid::new_v4(),
             location: sample_location(),
+            sort: Vec::new(),
+            show_hidden: true,
+            folders_first: true,
         };
         let json = serde_json::to_string(&request).expect("serialization must succeed");
         assert!(json.contains("\"paneId\""));
         assert!(json.contains("\"workspaceId\""));
         assert!(json.contains("\"requestId\""));
+        assert!(json.contains("\"showHidden\""));
+        assert!(json.contains("\"foldersFirst\""));
         let parsed: NavigateRequest =
             serde_json::from_str(&json).expect("deserialization must succeed");
         assert_eq!(request, parsed);
+    }
+
+    #[test]
+    fn navigate_request_defaults_missing_view_fields_for_backward_compatibility() {
+        let json = serde_json::json!({
+            "workspaceId": Uuid::new_v4(),
+            "paneId": Uuid::new_v4(),
+            "requestId": Uuid::new_v4(),
+            "location": sample_location(),
+        })
+        .to_string();
+        let parsed: NavigateRequest =
+            serde_json::from_str(&json).expect("deserialization must succeed");
+        assert_eq!(parsed.sort, Vec::new());
+        assert!(!parsed.show_hidden);
+        assert!(!parsed.folders_first);
     }
 
     #[test]

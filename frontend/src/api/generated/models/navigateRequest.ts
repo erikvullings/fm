@@ -3,11 +3,18 @@
  * Run `pnpm api:generate` (or `pnpm api:check`) to regenerate.
  */
 import type { LocationDto } from './locationDto';
+import type { SortDescriptorDto } from './sortDescriptorDto';
 
 /**
  * Requests navigation to a new location (`POST /api/v1/navigation/open`).
  */
 export interface NavigateRequest {
+  /**
+     * Whether directories should sort before non-directories, carried over
+     * from the navigating tab's current view so navigation doesn't silently
+     * reset it.
+     */
+  foldersFirst?: boolean;
   /** The location to navigate to. */
   location: LocationDto;
   /** The pane to navigate. */
@@ -17,6 +24,17 @@ export interface NavigateRequest {
      * late response can be recognised and dropped.
      */
   requestId: string;
+  /**
+     * Whether hidden entries should be included, carried over from the
+     * navigating tab's current view so navigation doesn't silently reset it.
+     */
+  showHidden?: boolean;
+  /**
+     * Sort descriptors applied by the backend to the returned page, carried
+     * over from the navigating tab's current view so navigation doesn't
+     * silently reset it.
+     */
+  sort?: SortDescriptorDto[];
   /** Workspace that owns the pane and receives its events. */
   workspaceId: string;
 }

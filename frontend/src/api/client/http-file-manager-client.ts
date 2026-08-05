@@ -7,10 +7,10 @@ import type {
   DirectorySnapshot,
   EntryMetadata,
   EntryMetadataRequest,
+  Location as FileLocation,
   FileRangeChunk,
   InvokeActionRequest,
   ListDirectoryRequest,
-  Location as FileLocation,
   NavigateRequest,
   Operation,
   OperationId,
@@ -536,10 +536,12 @@ function settingsFromDto(settings: SettingsDto): Settings {
       Object.entries(settings.recentLocationsByWorkspace).map(([workspaceId, locations]) => [
         workspaceId,
         Array.isArray(locations)
-          ? locations.map((location): FileLocation => ({
-              providerId: String((location as { providerId?: unknown }).providerId),
-              uri: String((location as { uri?: unknown }).uri),
-            }))
+          ? locations.map(
+              (location): FileLocation => ({
+                providerId: String((location as { providerId?: unknown }).providerId),
+                uri: String((location as { uri?: unknown }).uri),
+              }),
+            )
           : [],
       ]),
     ),

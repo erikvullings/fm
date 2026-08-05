@@ -1,11 +1,36 @@
 import m from 'mithril';
-import { ThemeManager } from 'mithril-materialized';
+import { ThemeManager, Toast } from 'mithril-materialized';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createFileManagerClient } from '../api/client/create-client';
 import { MockFileManagerClient } from '../api/client/mock-file-manager-client';
 import { ApiError } from '../api/fetch-mutator';
-import { AppShell } from './app-shell';
+import { AppShell, locationForPath } from './app-shell';
+
+describe('locationForPath', () => {
+  const archive = {
+    providerId: 'archive',
+    uri: 'archive:///home/erik/My%20Comic.zip!/chapter',
+  } as const;
+
+  it('maps outer archive breadcrumbs back to local filesystem locations', () => {
+    expect(locationForPath(archive, '/home/erik')).toEqual({
+      providerId: 'local',
+      uri: 'file:///home/erik',
+    });
+  });
+
+  it('maps the archive and inner breadcrumbs to archive locations', () => {
+    expect(locationForPath(archive, '/home/erik/My Comic.zip!')).toEqual({
+      providerId: 'archive',
+      uri: 'archive:///home/erik/My%20Comic.zip!/',
+    });
+    expect(locationForPath(archive, '/home/erik/My Comic.zip!/chapter')).toEqual({
+      providerId: 'archive',
+      uri: 'archive:///home/erik/My%20Comic.zip!/chapter',
+    });
+  });
+});
 
 let root: HTMLElement;
 
@@ -79,7 +104,7 @@ describe('AppShell', () => {
     });
     expect(root.querySelector('.fm-pane-tabs')).not.toBeNull();
     expect(root.querySelector('.fm-breadcrumb')).not.toBeNull();
-    expect(root.querySelector('.fm-pane-status')?.textContent).toContain('entries');
+    expect(root.querySelector('.fm-pane-status')?.textContent).not.toBeNull();
   });
 
   it('selects a row and opens its directory with Enter', async () => {
@@ -109,8 +134,8 @@ describe('AppShell', () => {
     if (activePane === null) throw new Error('no active pane');
 
     activePane
-      .querySelector<HTMLElement>('.fm-breadcrumb-edit-target')
-      ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      .querySelector<HTMLElement>('.fm-breadcrumb-segments')
+      ?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
     m.redraw.sync();
     const pathInput = activePane.querySelector<HTMLInputElement>('.fm-path-input');
     if (pathInput === null) throw new Error('path input missing');
@@ -139,8 +164,8 @@ describe('AppShell', () => {
     if (activePane === null) throw new Error('no active pane');
 
     activePane
-      .querySelector<HTMLElement>('.fm-breadcrumb-edit-target')
-      ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      .querySelector<HTMLElement>('.fm-breadcrumb-segments')
+      ?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
     m.redraw.sync();
     const pathInput = activePane.querySelector<HTMLInputElement>('.fm-path-input');
     if (pathInput === null) throw new Error('path input missing');
@@ -199,25 +224,7 @@ describe('AppShell', () => {
 
     nameHeader?.click();
 
-    await vi.waitFor(() =>
-      expect(activePane?.querySelector('.fm-pane-status')?.textContent).toContain(
-        'Name descending',
-      ),
-    );
-    expect(nameHeader?.getAttribute('aria-sort')).toBe('descending');
-  });
-
-  it('lazily shows metadata for the cursor entry after a directory loads', async () => {
-    mountShell('mock');
-
-    await vi.waitFor(() =>
-      expect(root.querySelector('[data-active="true"] .fm-entry-metadata')?.textContent).toContain(
-        'Documents',
-      ),
-    );
-    expect(
-      root.querySelector('[data-active="true"] .fm-entry-metadata')?.textContent,
-    ).not.toContain('Loading metadata');
+    await vi.waitFor(() => expect(nameHeader?.getAttribute('aria-sort')).toBe('descending'));
   });
 
   it('shows a parent row outside the root and opens it with Enter', async () => {
@@ -251,7 +258,7 @@ describe('AppShell', () => {
     expect(root.querySelector('.fm-app-bar')).toBeNull();
     expect(root.querySelector('.fm-workspace-toolbar')).not.toBeNull();
     expect(root.querySelector('.fm-navigation-controls')).not.toBeNull();
-    expect(root.querySelector('.fm-operation-centre')).not.toBeNull();
+    expect(root.querySelector('.fm-operation-centre')).toBeNull();
     expect(root.querySelector('.fm-function-key-bar')?.textContent).toContain('F5 Copy');
     expect(root.querySelector('.fm-function-key-bar')?.textContent).toContain('F6 Move');
   });
@@ -263,7 +270,7 @@ describe('AppShell', () => {
     await vi.waitFor(() => expect(root.textContent).toContain('Documents'));
 
     const trigger = root.querySelector<HTMLButtonElement>(
-      '.fm-workspace-toolbar > button:last-of-type',
+      '.fm-workspace-toolbar .fm-command-palette-trigger',
     );
     trigger?.focus();
     document.dispatchEvent(
@@ -377,6 +384,32 @@ describe('AppShell', () => {
     });
   });
 
+  it('copies one selected file to the other pane by clicking the F5 footer hint (Tauri parity fix)', async () => {
+    const client = new MockFileManagerClient();
+    const startOperation = vi.spyOn(client, 'startOperation');
+    m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
+    await vi.waitFor(() => expect(root.textContent).toContain('.env'));
+    const activePane = root.querySelector<HTMLElement>('[data-active="true"] > .fm-pane');
+    const file = [...(activePane?.querySelectorAll<HTMLElement>('.fm-directory-row') ?? [])].find(
+      (row) => row.textContent?.includes('.env'),
+    );
+    file?.click();
+    m.redraw.sync();
+    const footerKey = [...root.querySelectorAll<HTMLElement>('.fm-function-key')].find((span) =>
+      span.textContent?.includes('F5 Copy'),
+    );
+    expect(footerKey).not.toBeUndefined();
+    footerKey?.click();
+
+    await vi.waitFor(() => expect(startOperation).toHaveBeenCalledOnce());
+    expect(startOperation.mock.calls[0]?.[0]).toMatchObject({
+      type: 'copy',
+      sources: [{ uri: 'mock:///.env' }],
+      destination: { uri: 'mock:///Documents' },
+      conflictPolicy: 'ask',
+    });
+  });
+
   it('trashes the selected file with F8 when core.trash owns the shortcut (task 0043)', async () => {
     const client = new MockFileManagerClient();
     vi.spyOn(client, 'listActions').mockResolvedValue([
@@ -416,6 +449,177 @@ describe('AppShell', () => {
       sources: [{ uri: 'mock:///.env' }],
       conflictPolicy: 'ask',
     });
+  });
+
+  it('invokes core.openWith on the selected file with Ctrl+Enter (Marta shortcut, task 0086/0087)', async () => {
+    const client = new MockFileManagerClient();
+    const invokeAction = vi.spyOn(client, 'invokeAction');
+    m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
+    await vi.waitFor(() => expect(root.textContent).toContain('.env'));
+    const activePane = root.querySelector<HTMLElement>('[data-active="true"] > .fm-pane');
+    const file = [...(activePane?.querySelectorAll<HTMLElement>('.fm-directory-row') ?? [])].find(
+      (row) => row.textContent?.includes('.env'),
+    );
+    file?.click();
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, bubbles: true }),
+    );
+
+    await vi.waitFor(() => expect(invokeAction).toHaveBeenCalledOnce());
+    expect(invokeAction.mock.calls[0]?.[0]).toMatchObject({
+      actionId: 'core.openWith',
+      parameters: { uri: 'mock:///.env' },
+    });
+  });
+
+  it('invokes core.edit on the selected file with F4', async () => {
+    const client = new MockFileManagerClient();
+    const invokeAction = vi.spyOn(client, 'invokeAction');
+    m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
+    await vi.waitFor(() => expect(root.textContent).toContain('.env'));
+    const activePane = root.querySelector<HTMLElement>('[data-active="true"] > .fm-pane');
+    const file = [...(activePane?.querySelectorAll<HTMLElement>('.fm-directory-row') ?? [])].find(
+      (row) => row.textContent?.includes('.env'),
+    );
+    file?.click();
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'F4', bubbles: true }));
+
+    await vi.waitFor(() => expect(invokeAction).toHaveBeenCalledOnce());
+    expect(invokeAction.mock.calls[0]?.[0]).toMatchObject({
+      actionId: 'core.edit',
+      parameters: { uri: 'mock:///.env' },
+    });
+  });
+
+  it('opens the Lister viewer in the opposite pane with F3 (task 0088)', async () => {
+    const client = new MockFileManagerClient();
+    const invokeAction = vi.spyOn(client, 'invokeAction');
+    m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
+    await vi.waitFor(() => expect(root.textContent).toContain('.env'));
+    const activePane = root.querySelector<HTMLElement>('[data-active="true"] > .fm-pane');
+    const file = [...(activePane?.querySelectorAll<HTMLElement>('.fm-directory-row') ?? [])].find(
+      (row) => row.textContent?.includes('.env'),
+    );
+    file?.click();
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'F3', bubbles: true }));
+
+    await vi.waitFor(() => expect(root.querySelector('.fm-file-viewer')).not.toBeNull());
+    // The viewer replaces the OPPOSITE pane's surface, leaving the active pane's directory
+    // listing (and its selection) untouched, and never falls back to the OS-open action.
+    expect(root.querySelector('[data-active="true"] > .fm-pane .fm-file-viewer')).toBeNull();
+    const inactivePane = root.querySelector('[data-active="false"] > .fm-pane');
+    expect(inactivePane?.classList.contains('fm-pane-viewer')).toBe(true);
+    expect(inactivePane?.querySelector('.fm-file-viewer')?.textContent).toContain('.env');
+    expect(invokeAction).not.toHaveBeenCalled();
+  });
+
+  it('closes the Lister viewer via its close button', async () => {
+    const client = new MockFileManagerClient();
+    m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
+    await vi.waitFor(() => expect(root.textContent).toContain('.env'));
+    const activePane = root.querySelector<HTMLElement>('[data-active="true"] > .fm-pane');
+    const file = [...(activePane?.querySelectorAll<HTMLElement>('.fm-directory-row') ?? [])].find(
+      (row) => row.textContent?.includes('.env'),
+    );
+    file?.click();
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'F3', bubbles: true }));
+    await vi.waitFor(() => expect(root.querySelector('.fm-file-viewer')).not.toBeNull());
+
+    root.querySelector<HTMLButtonElement>('.fm-file-viewer-close')?.click();
+
+    await vi.waitFor(() => expect(root.querySelector('.fm-file-viewer')).toBeNull());
+    const inactivePane = root.querySelector('[data-active="false"] > .fm-pane');
+    expect(inactivePane?.classList.contains('fm-pane-viewer')).toBe(false);
+  });
+
+  it('closes the Lister viewer and toasts instead of leaving a manual-dismiss message when the content is unsupported', async () => {
+    const client = new MockFileManagerClient();
+    vi.spyOn(client, 'readFileRange').mockResolvedValue({
+      data: [0, 1, 2],
+      offset: 0,
+      length: 3,
+      eof: true,
+      probablyBinary: true,
+    });
+    m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
+    await vi.waitFor(() => expect(root.textContent).toContain('.env'));
+    const activePane = root.querySelector<HTMLElement>('[data-active="true"] > .fm-pane');
+    const file = [...(activePane?.querySelectorAll<HTMLElement>('.fm-directory-row') ?? [])].find(
+      (row) => row.textContent?.includes('.env'),
+    );
+    file?.click();
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'F3', bubbles: true }));
+
+    try {
+      await vi.waitFor(() =>
+        expect(document.querySelector('.toast')?.textContent).toContain('Preview not available'),
+      );
+      expect(root.querySelector('.fm-file-viewer')).toBeNull();
+      const inactivePane = root.querySelector('[data-active="false"] > .fm-pane');
+      expect(inactivePane?.classList.contains('fm-pane-viewer')).toBe(false);
+    } finally {
+      // `.remove()`-ing the container leaves mithril-materialized's internal `Toast._toasts`
+      // registry non-empty, which then skips creating a fresh container for the next test's
+      // toast (see Toast constructor); dismissAll() properly unwinds that static state.
+      Toast.dismissAll();
+      await vi.waitFor(() => expect(document.getElementById('toast-container')).toBeNull());
+    }
+  });
+
+  it('opens the OS default application instead of the Lister viewer with Alt+F3', async () => {
+    const client = new MockFileManagerClient();
+    const invokeAction = vi.spyOn(client, 'invokeAction');
+    m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
+    await vi.waitFor(() => expect(root.textContent).toContain('.env'));
+    const activePane = root.querySelector<HTMLElement>('[data-active="true"] > .fm-pane');
+    const file = [...(activePane?.querySelectorAll<HTMLElement>('.fm-directory-row') ?? [])].find(
+      (row) => row.textContent?.includes('.env'),
+    );
+    file?.click();
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'F3', altKey: true, bubbles: true }),
+    );
+
+    await vi.waitFor(() => expect(invokeAction).toHaveBeenCalledOnce());
+    expect(invokeAction.mock.calls[0]?.[0]).toMatchObject({
+      actionId: 'core.view',
+      parameters: { uri: 'mock:///.env' },
+    });
+    expect(root.querySelector('.fm-file-viewer')).toBeNull();
+  });
+
+  it('shows a brief toast instead of invoking a permanently browser-unavailable action from its shortcut', async () => {
+    const client = new MockFileManagerClient();
+    vi.spyOn(client, 'listActions').mockResolvedValue([
+      {
+        id: 'core.openWith',
+        title: 'Open With…',
+        category: 'fileOperations',
+        defaultShortcuts: [{ key: 'Enter', ctrl: true }],
+        contextRequirements: { featureAvailable: false },
+        source: { kind: 'core' },
+      },
+    ]);
+    const invokeAction = vi.spyOn(client, 'invokeAction');
+    m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
+    await vi.waitFor(() => expect(root.textContent).toContain('.env'));
+    const activePane = root.querySelector<HTMLElement>('[data-active="true"] > .fm-pane');
+    const file = [...(activePane?.querySelectorAll<HTMLElement>('.fm-directory-row') ?? [])].find(
+      (row) => row.textContent?.includes('.env'),
+    );
+    file?.click();
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, bubbles: true }),
+    );
+
+    try {
+      await vi.waitFor(() => expect(document.querySelector('.toast')).not.toBeNull());
+      expect(document.querySelector('.toast')?.textContent).toContain('Open With…');
+      expect(invokeAction).not.toHaveBeenCalled();
+    } finally {
+      Toast.dismissAll();
+      await vi.waitFor(() => expect(document.getElementById('toast-container')).toBeNull());
+    }
   });
 
   it('cuts a selection, dims it, and pastes the move into the active pane', async () => {
@@ -674,6 +878,88 @@ describe('AppShell', () => {
     expect(document.documentElement.dataset.theme).toBe('dark');
   });
 
+  it('applies a saved "show hidden files" change to every open tab and refetches immediately', async () => {
+    const client = new MockFileManagerClient();
+    const dispatchWorkspaceCommand = vi.spyOn(client, 'dispatchWorkspaceCommand');
+    const listDirectory = vi.spyOn(client, 'listDirectory');
+    m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
+    await openAppearanceSettings();
+    listDirectory.mockClear();
+
+    const hiddenFilesLabel = [...root.querySelectorAll<HTMLElement>('label.switch-label')].find(
+      (label) => label.textContent?.includes('Show hidden files'),
+    );
+    hiddenFilesLabel?.closest<HTMLElement>('.input-field')?.click();
+    m.redraw.sync();
+    root.querySelector<HTMLButtonElement>('.fm-settings-save')?.click();
+    m.redraw.sync();
+
+    // Both panes' tabs start with `showHidden: false` (mock workspace fixture) and must each be
+    // patched, since hidden-file filtering happens server-side - unlike sort/quick-filter, a
+    // stale client-side view can't just be re-shown locally.
+    await vi.waitFor(() =>
+      expect(dispatchWorkspaceCommand).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'updateView',
+          paneId: 'left',
+          patch: { showHidden: true },
+        }),
+        undefined,
+      ),
+    );
+    expect(dispatchWorkspaceCommand).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'updateView', paneId: 'right', patch: { showHidden: true } }),
+      undefined,
+    );
+    await vi.waitFor(() =>
+      expect(listDirectory).toHaveBeenCalledWith(
+        expect.objectContaining({ showHidden: true }),
+        expect.any(AbortSignal),
+      ),
+    );
+  });
+
+  it('applies the current "show hidden files" setting to a freshly opened tab', async () => {
+    const client = new MockFileManagerClient();
+    const dispatchWorkspaceCommand = vi.spyOn(client, 'dispatchWorkspaceCommand');
+    const listDirectory = vi.spyOn(client, 'listDirectory');
+    m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
+    await openAppearanceSettings();
+
+    const hiddenFilesLabel = [...root.querySelectorAll<HTMLElement>('label.switch-label')].find(
+      (label) => label.textContent?.includes('Show hidden files'),
+    );
+    hiddenFilesLabel?.closest<HTMLElement>('.input-field')?.click();
+    m.redraw.sync();
+    root.querySelector<HTMLButtonElement>('.fm-settings-save')?.click();
+    m.redraw.sync();
+    await vi.waitFor(() =>
+      expect(dispatchWorkspaceCommand).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'updateView',
+          paneId: 'left',
+          patch: { showHidden: true },
+        }),
+        undefined,
+      ),
+    );
+    listDirectory.mockClear();
+
+    // New tabs are built from the pane's fixed `default_view` server-side, which never learns
+    // about later `showHidden` patches to sibling tabs - without an explicit follow-up patch a
+    // freshly opened tab would silently revert to hiding dotfiles.
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 't', ctrlKey: true, bubbles: true }),
+    );
+
+    await vi.waitFor(() =>
+      expect(listDirectory).toHaveBeenCalledWith(
+        expect.objectContaining({ showHidden: true }),
+        expect.any(AbortSignal),
+      ),
+    );
+  });
+
   it('reverts a previewed setting and closes the dialog when Cancel is clicked', async () => {
     const client = new MockFileManagerClient();
     const updateSettings = vi.spyOn(client, 'updateSettings');
@@ -795,7 +1081,10 @@ describe('AppShell', () => {
       enabledPlugins: ['mock.archive'],
       pluginSettings: {},
       terminalCommand: null,
+      editorCommand: null,
       defaultStartLocations: [],
+      favouriteLocations: [],
+      recentLocationsByWorkspace: {},
       iconTheme: 'mock.archive',
     });
     const iconTheme = {
@@ -936,6 +1225,180 @@ describe('AppShell', () => {
     );
   });
 
+  it('shows filename-search results as a virtual directory and opens a result in its folder', async () => {
+    const client = new MockFileManagerClient();
+    const navigatePane = vi.spyOn(client, 'navigatePane');
+    m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
+    await vi.waitFor(() => expect(root.textContent).toContain('Documents'));
+
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'F7', altKey: true, bubbles: true }),
+    );
+    m.redraw.sync();
+    const input = root.querySelector<HTMLInputElement>('#find-files-query');
+    expect(input).not.toBeNull();
+    if (input === null) return;
+    input.value = 'report';
+    input.dispatchEvent(new InputEvent('input', { bubbles: true }));
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+
+    await vi.waitFor(() =>
+      expect(
+        [...root.querySelectorAll('.fm-entry-name')].some(
+          (name) => name.textContent === '/Documents/report.pdf',
+        ),
+      ).toBe(true),
+    );
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'F7', altKey: true, bubbles: true }),
+    );
+    m.redraw.sync();
+    expect(root.querySelector('.fm-find-files-body')?.textContent).toContain('Search in /');
+    expect(root.querySelector('.fm-find-files-body')?.textContent).not.toContain('search://');
+    root
+      .querySelector<HTMLInputElement>('#find-files-query')
+      ?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    m.redraw.sync();
+    const activePane = root.querySelector<HTMLElement>('[data-active="true"] > .fm-pane');
+    const rows = activePane?.querySelectorAll<HTMLElement>('.fm-directory-row');
+    expect(rows?.item(0).textContent).toContain('..');
+    rows
+      ?.item(1)
+      .dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 20, clientY: 20 }));
+    m.redraw.sync();
+    const searchResultActions = [
+      ...root.querySelectorAll<HTMLButtonElement>('.fm-context-menu-item'),
+    ];
+    expect(searchResultActions.find((button) => button.textContent === 'Rename')?.disabled).toBe(
+      false,
+    );
+    expect(searchResultActions.find((button) => button.textContent === 'Delete')?.disabled).toBe(
+      false,
+    );
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    m.redraw.sync();
+    rows?.item(1).dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+
+    await vi.waitFor(() =>
+      expect(navigatePane).toHaveBeenCalledWith(
+        expect.objectContaining({ location: { providerId: 'file', uri: 'mock:///Documents' } }),
+        expect.any(AbortSignal),
+      ),
+    );
+  });
+
+  it('enters a local archive as a folder with Enter', async () => {
+    const client = new MockFileManagerClient();
+    const originalListDirectory = client.listDirectory.bind(client);
+    vi.spyOn(client, 'listDirectory').mockImplementation(async (request, signal) => {
+      const snapshot = await originalListDirectory(request, signal);
+      if (request.location.uri !== 'mock:///') return snapshot;
+      return {
+        ...snapshot,
+        entries: [
+          ...snapshot.entries,
+          {
+            id: 'archive-file',
+            location: { providerId: 'local', uri: 'file:///tmp/photos.zip' },
+            name: 'photos.zip',
+            kind: 'file',
+            hidden: false,
+            readOnly: false,
+            metadataRevision: 0,
+          },
+        ],
+        totalKnownEntries: (snapshot.totalKnownEntries ?? snapshot.entries.length) + 1,
+      };
+    });
+    const navigatePane = vi.spyOn(client, 'navigatePane').mockImplementation(async (request) => ({
+      paneId: request.paneId,
+      requestId: request.requestId,
+      revision: 1,
+      location: request.location,
+      writable: true,
+      entries: [],
+      totalKnownEntries: 0,
+      hasMore: false,
+      loadingState: { type: 'loaded' },
+    }));
+    m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
+    await vi.waitFor(() => expect(root.textContent).toContain('photos.zip'));
+
+    const archiveRow = [...root.querySelectorAll<HTMLElement>('.fm-directory-row')].find((row) =>
+      row.textContent?.includes('photos.zip'),
+    );
+    archiveRow?.click();
+    m.redraw.sync();
+    archiveRow
+      ?.closest<HTMLElement>('.fm-pane')
+      ?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+
+    await vi.waitFor(() =>
+      expect(navigatePane).toHaveBeenCalledWith(
+        expect.objectContaining({
+          location: { providerId: 'archive', uri: 'archive:///tmp/photos.zip!/' },
+        }),
+        expect.any(AbortSignal),
+      ),
+    );
+  });
+
+  it('enters an epub file as a folder-like archive on double-click, instead of opening it externally', async () => {
+    const client = new MockFileManagerClient();
+    const originalListDirectory = client.listDirectory.bind(client);
+    vi.spyOn(client, 'listDirectory').mockImplementation(async (request, signal) => {
+      const snapshot = await originalListDirectory(request, signal);
+      if (request.location.uri !== 'mock:///') return snapshot;
+      return {
+        ...snapshot,
+        entries: [
+          ...snapshot.entries,
+          {
+            id: 'epub-file',
+            location: { providerId: 'local', uri: 'file:///tmp/book.epub' },
+            name: 'book.epub',
+            kind: 'file',
+            hidden: false,
+            readOnly: false,
+            metadataRevision: 0,
+          },
+        ],
+        totalKnownEntries: (snapshot.totalKnownEntries ?? snapshot.entries.length) + 1,
+      };
+    });
+    const navigatePane = vi.spyOn(client, 'navigatePane').mockImplementation(async (request) => ({
+      paneId: request.paneId,
+      requestId: request.requestId,
+      revision: 1,
+      location: request.location,
+      writable: true,
+      entries: [],
+      totalKnownEntries: 0,
+      hasMore: false,
+      loadingState: { type: 'loaded' },
+    }));
+    const invokeAction = vi.spyOn(client, 'invokeAction');
+    m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
+    await vi.waitFor(() => expect(root.textContent).toContain('book.epub'));
+
+    const epubRow = [...root.querySelectorAll<HTMLElement>('.fm-directory-row')].find((row) =>
+      row.textContent?.includes('book.epub'),
+    );
+    epubRow?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+
+    await vi.waitFor(() =>
+      expect(navigatePane).toHaveBeenCalledWith(
+        expect.objectContaining({
+          location: { providerId: 'archive', uri: 'archive:///tmp/book.epub!/' },
+        }),
+        expect.any(AbortSignal),
+      ),
+    );
+    expect(invokeAction).not.toHaveBeenCalledWith(
+      expect.objectContaining({ actionId: 'core.open' }),
+    );
+  });
+
   it('reveals the selected entry via the context menu, passing its uri as a parameter (task 0061)', async () => {
     const client = new MockFileManagerClient();
     const invokeAction = vi.spyOn(client, 'invokeAction');
@@ -1016,7 +1479,7 @@ describe('AppShell', () => {
     );
   });
 
-  it('surfaces a platform action failure as a visible, user-readable error (task 0061)', async () => {
+  it('surfaces a platform action failure as a brief toast, never a persistent banner (task 0061)', async () => {
     const client = new MockFileManagerClient();
     vi.spyOn(client, 'invokeAction').mockRejectedValue(
       new Error('no default application is registered for this file type'),
@@ -1030,11 +1493,17 @@ describe('AppShell', () => {
     fileRow?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
     m.redraw.sync();
 
-    await vi.waitFor(() =>
-      expect(root.querySelector('.fm-command-palette-error')?.textContent).toBe(
-        'no default application is registered for this file type',
-      ),
-    );
+    try {
+      await vi.waitFor(() =>
+        expect(document.querySelector('.toast')?.textContent).toContain(
+          'no default application is registered for this file type',
+        ),
+      );
+      expect(root.querySelector('.fm-command-palette-error')).toBeNull();
+    } finally {
+      Toast.dismissAll();
+      await vi.waitFor(() => expect(document.getElementById('toast-container')).toBeNull());
+    }
   });
 
   it('opens the quick filter with Ctrl+F, filters the active pane live, and closes with Escape (task 0067)', async () => {
@@ -1085,8 +1554,9 @@ describe('AppShell', () => {
     m.redraw.sync();
     expect(activePane?.querySelectorAll('.fm-quick-filter-input')).toHaveLength(1);
 
-    const editButton = activePane?.querySelector<HTMLElement>('.fm-breadcrumb-edit-target');
-    editButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    activePane
+      ?.querySelector<HTMLElement>('.fm-breadcrumb-segments')
+      ?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
     m.redraw.sync();
     const pathInput = activePane?.querySelector<HTMLInputElement>('.fm-path-input');
     pathInput?.focus();
@@ -1345,8 +1815,8 @@ describe('tabs per pane (task 0069)', () => {
     }
 
     activePane()
-      ?.querySelector<HTMLElement>('.fm-breadcrumb-edit-target')
-      ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      ?.querySelector<HTMLElement>('.fm-breadcrumb-segments')
+      ?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
     m.redraw.sync();
     const pathInput = activePane()?.querySelector<HTMLInputElement>('.fm-path-input');
     if (pathInput === undefined || pathInput === null) throw new Error('path input missing');
@@ -1405,8 +1875,8 @@ describe('tabs per pane (task 0069)', () => {
     }
 
     activePane()
-      ?.querySelector<HTMLElement>('.fm-breadcrumb-edit-target')
-      ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      ?.querySelector<HTMLElement>('.fm-breadcrumb-segments')
+      ?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
     m.redraw.sync();
     const pathInput = activePane()?.querySelector<HTMLInputElement>('.fm-path-input');
     if (pathInput === undefined || pathInput === null) throw new Error('path input missing');

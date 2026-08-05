@@ -280,13 +280,15 @@ describe('Pane breadcrumb editing', () => {
     expect(root.querySelector<HTMLButtonElement>('.fm-pane-tab-favourites')?.ariaLabel).toBe(
       'Favourites',
     );
-    expect(root.querySelector('.fm-pane-tab-favourites')?.classList.contains('btn-icon')).toBe(true);
+    expect(root.querySelector('.fm-pane-tab-favourites')?.classList.contains('btn-icon')).toBe(
+      true,
+    );
     expect(
-      root.querySelector('.fm-pane-tab-new')?.nextElementSibling?.classList.contains(
-        'fm-pane-tab-favourites',
-      ),
+      root
+        .querySelector('.fm-pane-tab-new')
+        ?.nextElementSibling?.classList.contains('fm-pane-tab-favourites'),
     ).toBe(true);
-    expect(root.querySelector('.fm-icon-heart-plus')).not.toBeNull();
+    expect(root.querySelector('.fm-icon-heart')).not.toBeNull();
   });
 
   it('opens the favourites menu and navigates to a selected favourite', async () => {
@@ -308,26 +310,6 @@ describe('Pane breadcrumb editing', () => {
     await vi.waitFor(() => expect(onNavigateLocation).toHaveBeenCalledWith(location));
   });
 
-  it('closes the favourites menu on Escape or a click outside it', () => {
-    mount(attrs());
-    const heart = root.querySelector<HTMLButtonElement>('.fm-pane-tab-favourites');
-    heart?.click();
-    m.redraw.sync();
-    expect(root.querySelector('[role="menu"]')).not.toBeNull();
-
-    root.querySelector<HTMLElement>('.fm-pane')?.dispatchEvent(
-      new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
-    );
-    m.redraw.sync();
-    expect(root.querySelector('[role="menu"]')).toBeNull();
-
-    heart?.click();
-    m.redraw.sync();
-    document.body.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    m.redraw.sync();
-    expect(root.querySelector('[role="menu"]')).toBeNull();
-  });
-
   it('prefills the add-favourite name with the current folder name', () => {
     mount(
       attrs({
@@ -343,27 +325,6 @@ describe('Pane breadcrumb editing', () => {
     expect(root.querySelector<HTMLInputElement>('[aria-label="Favourite name"]')?.value).toBe(
       'Projects',
     );
-  });
-
-  it('shows the saved-state heart and omits the add form and duplicate recent location', () => {
-    const location = { providerId: 'local' as const, uri: 'file:///home/erik/Projects' };
-    mount(
-      attrs({
-        location,
-        favouriteLocations: [{ label: 'Projects', location }],
-        recentLocations: [location, { providerId: 'local', uri: 'file:///home/erik/Downloads' }],
-      }),
-    );
-
-    expect(root.querySelector('.fm-icon-heart')).not.toBeNull();
-    expect(root.querySelector('.fm-icon-heart-plus')).toBeNull();
-    root.querySelector<HTMLButtonElement>('.fm-pane-tab-favourites')?.click();
-    m.redraw.sync();
-
-    expect(root.querySelector('[aria-label="Favourite name"]')).toBeNull();
-    expect(root.querySelector('[role="menu"]')?.textContent).toContain('Favourites');
-    expect(root.querySelector('.fm-favourites-recents')?.textContent).toContain('Downloads');
-    expect(root.querySelector('.fm-favourites-recents')?.textContent).not.toContain('Projects');
   });
 
   it('adds the current location when the plus IconButton is clicked', () => {

@@ -79,20 +79,11 @@ async fn main() {
         return;
     }
 
-    // `notify`'s poll watcher (used for cross-platform directory watching, see
-    // docs/architecture/filesystem-watching.md) walks the directory tree on every poll and logs a
-    // WARN whenever a transient entry vanishes mid-scan (e.g. macOS's `.VolumeIcon.icns` on volume
-    // roots). This is a benign race inherent to polling, not an application error, so it is
-    // suppressed regardless of the caller's own `RUST_LOG` filter.
-    let filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new("info"))
-        .add_directive(
-            "notify::poll::data=error"
-                .parse()
-                .expect("static directive is valid"),
-        );
-
-    tracing_subscriber::fmt().with_env_filter(filter).init();
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
+        )
+        .init();
 
     let config: ServerConfig = cli.into();
     let router = fm_server::build_router(&config);

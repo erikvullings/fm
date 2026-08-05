@@ -7,11 +7,16 @@ const location = (name: string): Location => ({ providerId: 'local', uri: `file:
 describe('recordRecentLocation', () => {
   it('puts a visit first, deduplicates it, and bounds the list', () => {
     const first = location('first');
-    const existing = Array.from({ length: MAX_RECENT_LOCATIONS }, (_, index) => location(`${index}`));
+    const existing = Array.from({ length: MAX_RECENT_LOCATIONS }, (_, index) =>
+      location(`${index}`),
+    );
 
     expect(recordRecentLocation(existing, first).map((item) => item.uri)).toEqual([
       first.uri,
-      ...existing.filter((item) => item.uri !== first.uri).slice(0, MAX_RECENT_LOCATIONS - 1).map((item) => item.uri),
+      ...existing
+        .filter((item) => item.uri !== first.uri)
+        .slice(0, MAX_RECENT_LOCATIONS - 1)
+        .map((item) => item.uri),
     ]);
   });
 
@@ -25,7 +30,10 @@ describe('recordRecentLocation', () => {
 
 describe('reorderFavourites', () => {
   it('moves a favourite while preserving every other favourite order', () => {
-    const favourites = ['One', 'Two', 'Three'].map((label) => ({ label, location: location(label) }));
+    const favourites = ['One', 'Two', 'Three'].map((label) => ({
+      label,
+      location: location(label),
+    }));
     expect(reorderFavourites(favourites, 2, 0).map((favourite) => favourite.label)).toEqual([
       'Three',
       'One',

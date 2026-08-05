@@ -14,7 +14,9 @@
   background: var(--fm-surface);
 }
 
-.fm-pane-tabs { grid-row: 1; }
+.fm-pane-tabs {
+  grid-row: 1;
+}
 
 .fm-breadcrumb,
 .fm-path-editor {
@@ -199,7 +201,7 @@
   align-items: center;
 }
 
-.fm-favourites-add > input[type='text']:not(.browser-default) {
+.fm-favourites-add > input[type="text"]:not(.browser-default) {
   box-sizing: border-box;
   flex: 1;
   min-width: 0;
@@ -214,7 +216,7 @@
   font: inherit;
 }
 
-.fm-favourites-add > input[type='text']:not(.browser-default):focus {
+.fm-favourites-add > input[type="text"]:not(.browser-default):focus {
   border: 1px solid var(--fm-accent);
   box-shadow: 0 0 0 1px var(--fm-accent);
 }

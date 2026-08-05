@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import { ApiError } from '../../api/fetch-mutator';
 import type { DirectorySnapshot, EntryId, WorkspaceProjection } from '../../models';
 import {
   createNavigationController,
@@ -8,7 +9,15 @@ import {
   parentLocation,
 } from './navigation';
 
-function workspace(uri = 'file:///home/erik'): WorkspaceProjection {
+function workspace(
+  uri = 'file:///home/erik',
+  providerId = 'local',
+  viewOverrides: Partial<{
+    sort: { columnId: string; direction: 'ascending' | 'descending' }[];
+    showHidden: boolean;
+    foldersFirst: boolean;
+  }> = {},
+): WorkspaceProjection {
   return {
     id: 'workspace',
     name: 'Workspace',
@@ -24,7 +33,7 @@ function workspace(uri = 'file:///home/erik'): WorkspaceProjection {
           tab: {
             id: 'tab',
             title: 'erik',
-            location: { providerId: 'local', uri },
+            location: { providerId, uri },
             canNavigateBack: true,
             canNavigateForward: true,
             view: {
@@ -33,6 +42,7 @@ function workspace(uri = 'file:///home/erik'): WorkspaceProjection {
               showHidden: false,
               foldersFirst: true,
               quickFilter: null,
+              ...viewOverrides,
             },
           },
         },
@@ -144,6 +154,7 @@ function setup(initial = workspace()): {
       listDirectory: vi.fn(),
       navigatePane: vi.fn(),
       dispatchWorkspaceCommand: vi.fn(),
+      getWorkspace: vi.fn(),
     },
     getWorkspace: () => current,
     views: [],
@@ -165,6 +176,21 @@ describe('parentLocation', () => {
     expect(parentLocation({ providerId: 'local', uri: 'file:///' }).uri).toBe('file:///');
     expect(parentLocation({ providerId: 'file', uri: 'mock:///Documents' }).uri).toBe('mock:///');
   });
+
+  it('leaves an archive root for the containing filesystem directory', () => {
+    expect(
+      parentLocation({ providerId: 'archive', uri: 'archive:///home/erik/comic.zip!/' }),
+    ).toEqual({ providerId: 'local', uri: 'file:///home/erik' });
+  });
+
+  it('moves between directories inside an archive before leaving its root', () => {
+    expect(
+      parentLocation({
+        providerId: 'archive',
+        uri: 'archive:///home/erik/comic.zip!/chapter/pages',
+      }),
+    ).toEqual({ providerId: 'archive', uri: 'archive:///home/erik/comic.zip!/chapter' });
+  });
 });
 
 describe('navigation controller', () => {
@@ -184,6 +210,33 @@ describe('navigation controller', () => {
     await loading;
     expect(context.views.at(-1)?.entries[0]?.name).toBe('Documents');
     expect(context.client.listDirectory).toHaveBeenCalledOnce();
+  });
+
+  it('requests an archive credential and retries the same listing', async () => {
+    const archive = { providerId: 'archive', uri: 'archive:///tmp/secret.zip!/' } as const;
+    const context = setup(workspace(archive.uri, archive.providerId));
+    vi.mocked(context.client.listDirectory)
+      .mockRejectedValueOnce(
+        new ApiError(400, { code: 'credentialRequired', message: 'archive password required' }),
+      )
+      .mockImplementationOnce(async (request) => snapshot(request.requestId, archive.uri, []));
+    const requestArchivePassword = vi.fn().mockResolvedValue(true);
+    const controller = createNavigationController({
+      client: context.client,
+      getWorkspace: context.getWorkspace,
+      replaceWorkspace: context.replaceWorkspace,
+      updatePane: (_paneId, _tabId, view) => context.views.push(view),
+      requestArchivePassword,
+    });
+
+    await controller.load('left');
+
+    expect(requestArchivePassword).toHaveBeenCalledWith(
+      expect.objectContaining({ uri: archive.uri }),
+      false,
+    );
+    expect(context.client.listDirectory).toHaveBeenCalledTimes(2);
+    expect(context.views.at(-1)?.state).toEqual({ type: 'loaded' });
   });
 
   it('keeps the current directory visible while a different folder loads', async () => {
@@ -242,7 +295,7 @@ describe('navigation controller', () => {
     );
   });
 
-  it('navigates with backend history mutation before opening the directory', async () => {
+  it('opens the destination before committing it to backend history', async () => {
     const context = setup();
     const next = workspace('file:///home/erik/Documents');
     const nextLocation = { providerId: 'local', uri: 'file:///home/erik/Documents' } as const;
@@ -270,6 +323,113 @@ describe('navigation controller', () => {
       expect.objectContaining({ location: nextLocation }),
       expect.any(AbortSignal),
     );
+  });
+
+  it('carries the current tab view (showHidden/sort/foldersFirst) over when navigating to a new location', async () => {
+    const context = setup(
+      workspace('file:///home/erik', 'local', {
+        showHidden: true,
+        foldersFirst: false,
+        sort: [{ columnId: 'core.size', direction: 'descending' }],
+      }),
+    );
+    const next = workspace('file:///home/erik/Documents');
+    const nextLocation = { providerId: 'local', uri: 'file:///home/erik/Documents' } as const;
+    vi.mocked(context.client.dispatchWorkspaceCommand).mockResolvedValue(next);
+    vi.mocked(context.client.navigatePane).mockImplementation(async (request) =>
+      snapshot(request.requestId, nextLocation.uri, ['Projects']),
+    );
+    const controller = createNavigationController({
+      client: context.client,
+      getWorkspace: context.getWorkspace,
+      replaceWorkspace: context.replaceWorkspace,
+      updatePane: (_paneId, _tabId, view) => context.views.push(view),
+    });
+
+    await controller.navigate('left', nextLocation);
+
+    // A favourite, breadcrumb, or subfolder navigation must not silently reset the tab back to
+    // backend default view settings (show_hidden: false, folders_first: true) - it should carry
+    // over whatever view options the tab currently has.
+    expect(context.client.navigatePane).toHaveBeenCalledWith(
+      expect.objectContaining({
+        location: nextLocation,
+        showHidden: true,
+        foldersFirst: false,
+        sort: [{ columnId: 'core.size', direction: 'descending' }],
+      }),
+      expect.any(AbortSignal),
+    );
+  });
+
+  it('does not poison the tab location when opening an archive fails', async () => {
+    const context = setup();
+    const original = context.getWorkspace();
+    const archiveLocation = {
+      providerId: 'archive',
+      uri: 'archive://file%3A%2F%2F%2Fhome%2Ferik%2Fcomic.cbr!/',
+    } as const;
+    vi.mocked(context.client.dispatchWorkspaceCommand).mockResolvedValue(
+      workspace(archiveLocation.uri, archiveLocation.providerId),
+    );
+    vi.mocked(context.client.navigatePane).mockRejectedValue(
+      new ApiError(400, {
+        code: 'invalidRequest',
+        message: 'RAR archive browsing is not supported',
+      }),
+    );
+    const controller = createNavigationController({
+      client: context.client,
+      getWorkspace: context.getWorkspace,
+      replaceWorkspace: context.replaceWorkspace,
+      updatePane: (_paneId, _tabId, view) => context.views.push(view),
+    });
+
+    await controller.navigate('left', archiveLocation);
+
+    expect(context.client.navigatePane).toHaveBeenCalledWith(
+      expect.objectContaining({ location: expect.objectContaining({ uri: archiveLocation.uri }) }),
+      expect.any(AbortSignal),
+    );
+    expect(context.client.dispatchWorkspaceCommand).not.toHaveBeenCalled();
+    expect(context.getWorkspace()).toBe(original);
+    expect(context.views.at(-1)).toMatchObject({
+      state: { type: 'error', message: 'RAR archive browsing is not supported' },
+      location: original.panesById.left?.tabsById.tab?.location,
+    });
+  });
+
+  it('resyncs the local workspace revision on a conflict instead of leaving it stale forever', async () => {
+    const context = setup();
+    const staleWorkspace = context.getWorkspace();
+    const resynced = { ...staleWorkspace, revision: staleWorkspace.revision + 1 };
+    const conflict = new ApiError(409, {
+      code: 'workspaceRevisionConflict',
+      message: 'The workspace changed after this view was loaded.',
+      details: { workspaceId: staleWorkspace.id, expectedRevision: 1, actualRevision: 2 },
+    });
+    vi.mocked(context.client.dispatchWorkspaceCommand).mockRejectedValueOnce(conflict);
+    vi.mocked(context.client.getWorkspace).mockResolvedValueOnce(resynced);
+    const controller = createNavigationController({
+      client: context.client,
+      getWorkspace: context.getWorkspace,
+      replaceWorkspace: context.replaceWorkspace,
+      updatePane: (_paneId, _tabId, view) => context.views.push(view),
+    });
+
+    await controller.navigate('left', {
+      providerId: 'local',
+      uri: 'file:///home/erik/Documents',
+    });
+
+    // The failed navigation still reports an error to the pane...
+    expect(context.views.at(-1)?.state).toEqual({
+      type: 'error',
+      message: 'The workspace changed after this view was loaded.',
+    });
+    // ...but the local workspace projection is resynced so the *next* command (retry, parent,
+    // breadcrumb, ...) uses the correct revision instead of repeating the same conflict forever.
+    expect(context.getWorkspace().revision).toBe(resynced.revision);
   });
 
   it('forwards an optional preferredCursorName on navigate to updatePane', async () => {
@@ -496,6 +656,58 @@ describe('navigation controller', () => {
 
     expect(vi.mocked(context.client.listDirectory)).toHaveBeenCalledTimes(2);
     expect(context.views.at(-1)?.state).toEqual({ type: 'error', message: 'boom' });
+  });
+
+  it('loadAllPages stays pinned to the tab it started for and stops if the active tab changes', async () => {
+    // Regression test: switching tabs (e.g. via Ctrl+Tab) while `loadAllPages` is still fetching
+    // pages for the previously-active tab must never redirect its remaining fetches, or publish
+    // updates, to whichever tab becomes active next — that would corrupt the newly active tab's
+    // entries with data computed for a different location.
+    const context = setup(workspaceWithTwoTabs('tab-a'));
+    const secondPage = deferred<DirectorySnapshot>();
+    vi.mocked(context.client.listDirectory)
+      .mockImplementationOnce(async (request) =>
+        snapshot(request.requestId, 'file:///a', ['one'], {
+          hasMore: true,
+          continuationToken: 'page-2',
+        }),
+      )
+      .mockImplementationOnce((request) => {
+        void request;
+        return secondPage.promise;
+      });
+    const updates: Array<{ paneId: string; tabId: string; view: PaneDirectoryView }> = [];
+    const controller = createNavigationController({
+      client: context.client,
+      getWorkspace: context.getWorkspace,
+      replaceWorkspace: context.replaceWorkspace,
+      updatePane: (paneId, tabId, view) => updates.push({ paneId, tabId, view }),
+    });
+    await controller.load('left');
+
+    const allPages = controller.loadAllPages('left');
+    const secondRequestId = vi.mocked(context.client.listDirectory).mock.calls[1]?.[0].requestId;
+    // Simulate switching to tab-b (e.g. Ctrl+Tab) while tab-a's second page is still in flight.
+    context.replaceWorkspace(workspaceWithTwoTabs('tab-b'));
+    secondPage.resolve(
+      snapshot(secondRequestId ?? '', 'file:///a', ['two'], {
+        hasMore: true,
+        continuationToken: 'page-3',
+      }),
+    );
+    await allPages;
+
+    // The in-flight fetch for tab-a still completes and publishes to tab-a...
+    expect(
+      updates
+        .filter((update) => update.tabId === 'tab-a')
+        .at(-1)
+        ?.view.entries.map((e) => e.name),
+    ).toEqual(['one', 'two']);
+    // ...but the loop stops instead of fetching page-3 for whichever tab is now active, and
+    // never publishes anything to tab-b.
+    expect(vi.mocked(context.client.listDirectory)).toHaveBeenCalledTimes(2);
+    expect(updates.some((update) => update.tabId === 'tab-b')).toBe(false);
   });
 });
 

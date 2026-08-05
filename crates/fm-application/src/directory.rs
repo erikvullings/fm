@@ -193,14 +193,17 @@ impl DirectoryService {
             .map(|entry| !entry.read_only)
             .unwrap_or(false);
 
+        let (total_known_size, total_known_file_count) = aggregate_totals(&full_entries);
         let snapshot = DirectorySnapshot {
             pane_id,
             request_id: request.request_id,
             revision: state.revision,
-            location,
+            location: location.clone(),
             writable,
             entries: full_entries[offset..end].to_vec(),
             total_known_entries: Some(full_entries.len() as u64),
+            total_known_size: Some(total_known_size),
+            total_known_file_count: Some(total_known_file_count),
             has_more,
             continuation_token: has_more.then(|| end.to_string()),
             loading_state: LoadingState::Loaded,
@@ -211,7 +214,8 @@ impl DirectoryService {
 
         if first_page
             && provider
-                .capabilities()
+                .capabilities_for(&location)
+                .unwrap_or_else(|_| provider.capabilities())
                 .contains(fm_vfs::ProviderCapabilities::WATCH)
         {
             let receiver = self
@@ -238,6 +242,12 @@ impl DirectoryService {
     }
 
     /// Navigates a pane to a location, cancelling any older pane request.
+    ///
+    /// The view options (`sort`/`show_hidden`/`folders_first`) are carried over
+    /// from the navigating tab's current view (the caller is expected to
+    /// populate them from its own state) so that pushing a new location -
+    /// e.g. via a favourite, breadcrumb, or opening a subfolder - doesn't
+    /// silently reset the tab back to default view settings.
     pub async fn navigate(
         &self,
         request: NavigateRequest,
@@ -248,9 +258,9 @@ impl DirectoryService {
             request_id: request.request_id,
             location: request.location,
             continuation_token: None,
-            sort: Vec::new(),
-            show_hidden: false,
-            folders_first: true,
+            sort: request.sort,
+            show_hidden: request.show_hidden,
+            folders_first: request.folders_first,
         })
         .await
     }
@@ -480,10 +490,13 @@ async fn publish_changes(
     };
     state.revision += 1;
     let revision = state.revision;
+    let (total_known_size, total_known_file_count) = aggregate_totals(&entries);
     let snapshot = DirectorySnapshot {
         revision,
         entries: entries.clone(),
         total_known_entries: Some(entries.len() as u64),
+        total_known_size: Some(total_known_size),
+        total_known_file_count: Some(total_known_file_count),
         has_more: false,
         continuation_token: None,
         ..previous.clone()
@@ -631,6 +644,18 @@ fn compare_entry(
         "core.modified" => left.modified_at.cmp(&right.modified_at),
         _ => left.name.to_lowercase().cmp(&right.name.to_lowercase()),
     }
+}
+
+/// Sums the byte size and counts the files/symlinks (directories excluded) across every entry
+/// already resident in memory - no extra provider I/O, since callers only ever have a fully
+/// enumerated entry list on hand (`full_entries`) by the time they need these totals.
+fn aggregate_totals(entries: &[fm_domain::EntrySummary]) -> (u64, u64) {
+    entries
+        .iter()
+        .filter(|entry| !matches!(entry.kind, EntryKind::Directory))
+        .fold((0u64, 0u64), |(size, count), entry| {
+            (size + entry.size.unwrap_or(0), count + 1)
+        })
 }
 
 /// Decodes `list()`'s continuation token: a plain index offset into the pane's cached, fully
@@ -869,6 +894,8 @@ mod tests {
 
         assert!(first.has_more);
         assert_eq!(first.total_known_entries, Some(257));
+        assert_eq!(first.total_known_size, Some(0));
+        assert_eq!(first.total_known_file_count, Some(257));
         assert_eq!(first.entries.len(), 256);
         assert_eq!(service.watches.registration_count().await, 1);
 
@@ -881,6 +908,8 @@ mod tests {
         assert!(!second.has_more);
         assert_eq!(second.continuation_token, None);
         assert_eq!(second.total_known_entries, Some(257));
+        assert_eq!(second.total_known_size, Some(0));
+        assert_eq!(second.total_known_file_count, Some(257));
         assert_eq!(second.entries.len(), 1);
         // The two pages must be a contiguous slice of one globally sorted list: no gaps,
         // no duplicates, and page 2 continues immediately after page 1 in sort order.
@@ -898,6 +927,76 @@ mod tests {
         };
         assert_eq!(unique_count, 257);
         assert_eq!(service.watches.registration_count().await, 1);
+    }
+
+    #[tokio::test]
+    async fn navigate_carries_over_the_requested_view_options_instead_of_hardcoded_defaults() {
+        // Regression test: `navigate` (used for every "push" navigation - favourites,
+        // breadcrumbs, opening a subfolder - not just brand new tabs) used to always request
+        // `show_hidden: false, folders_first: true, sort: []` regardless of what the caller
+        // asked for, silently resetting a tab's view every time it navigated to a new location.
+        let root = tempfile::tempdir().expect("temporary directory");
+        std::fs::write(root.path().join("visible.txt"), b"").expect("create visible entry");
+        std::fs::write(root.path().join(".hidden.txt"), b"").expect("create hidden entry");
+        let mut providers = ProviderRegistry::new();
+        providers.register(Arc::new(fm_vfs_local::LocalFileSystemProvider));
+        let service = DirectoryService::new(providers);
+        let pane_id = PaneId::new();
+        let location =
+            LocationDto::from(Location::from_native_path(root.path()).expect("local location"));
+
+        let snapshot = service
+            .navigate(NavigateRequest {
+                workspace_id: Uuid::new_v4(),
+                pane_id: pane_id.into(),
+                request_id: Uuid::new_v4(),
+                location,
+                sort: Vec::new(),
+                show_hidden: true,
+                folders_first: false,
+            })
+            .await
+            .expect("navigate must succeed");
+
+        assert_eq!(snapshot.entries.len(), 2, "hidden entry must be included");
+        assert!(snapshot.entries.iter().any(|entry| entry.hidden));
+    }
+
+    fn sample_entry(kind: EntryKind, size: Option<u64>) -> fm_domain::EntrySummary {
+        fm_domain::EntrySummary {
+            id: fm_domain::EntryId::new(),
+            location: Location::new(ProviderId::new("late"), "late:///directory/entry"),
+            name: "entry".to_owned(),
+            kind,
+            size,
+            modified_at: None,
+            created_at: None,
+            hidden: false,
+            read_only: false,
+            extension: None,
+            mime_type: None,
+            icon_key: None,
+            metadata_revision: 0,
+        }
+    }
+
+    #[test]
+    fn aggregate_totals_of_an_empty_directory_is_zero() {
+        assert_eq!(aggregate_totals(&[]), (0, 0));
+    }
+
+    #[test]
+    fn aggregate_totals_excludes_directories_and_treats_missing_size_as_zero() {
+        let entries = vec![
+            sample_entry(EntryKind::File, Some(1_024)),
+            sample_entry(EntryKind::Directory, Some(4_096)),
+            sample_entry(EntryKind::Symlink, Some(8)),
+            sample_entry(EntryKind::File, None),
+        ];
+
+        // 2 files + 1 symlink = 3 non-directory entries; the directory's size is never summed,
+        // and a file with an unknown size contributes 0 rather than panicking or being skipped.
+        assert_eq!(aggregate_totals(&entries), (1_024 + 8, 3));
     }
 
     #[test]
@@ -945,6 +1044,8 @@ mod tests {
             writable: false,
             entries: Vec::new(),
             total_known_entries: Some(0),
+            total_known_size: Some(0),
+            total_known_file_count: Some(0),
             has_more: false,
             continuation_token: None,
             loading_state: LoadingState::Loaded,
