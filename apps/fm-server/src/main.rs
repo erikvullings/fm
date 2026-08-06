@@ -80,9 +80,12 @@ async fn main() {
     }
 
     tracing_subscriber::fmt()
-        .with_env_filter(
-            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
-        )
+        .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+            // notify's poll backend logs a WARN for every transient walkdir race (e.g. a file
+            // disappearing between listing and stat, such as macOS's `.VolumeIcon.icns`); these
+            // are expected and not actionable, so keep that target quiet by default.
+            EnvFilter::new("info,notify::poll=error")
+        }))
         .init();
 
     let config: ServerConfig = cli.into();
