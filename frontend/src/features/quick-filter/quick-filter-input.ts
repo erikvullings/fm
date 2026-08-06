@@ -1,4 +1,5 @@
 import m, { type FactoryComponent, type VnodeDOM } from 'mithril';
+import { filterIcon } from '../../components/tabler-icons';
 import './quick-filter.css';
 
 /** Inputs for the inline quick-filter text box. */
@@ -14,6 +15,7 @@ export const QuickFilterInput: FactoryComponent<QuickFilterInputAttrs> = () => {
   return {
     view: ({ attrs }) =>
       m('.fm-quick-filter', [
+        filterIcon({ className: 'fm-quick-filter-icon', size: 14 }),
         m('input.fm-quick-filter-input', {
           type: 'text',
           value: attrs.query,

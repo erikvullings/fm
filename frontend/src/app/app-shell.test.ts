@@ -1632,6 +1632,14 @@ describe('AppShell', () => {
     m.redraw.sync();
     expect(activePane?.querySelectorAll('.fm-quick-filter-input')).toHaveLength(1);
 
+    // The quick filter occupies the breadcrumb bar's own slot, so close it first to reach the
+    // breadcrumb (see the pane.ts merge — the two are mutually exclusive in the same row).
+    activePane
+      ?.querySelector<HTMLInputElement>('.fm-quick-filter-input')
+      ?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    m.redraw.sync();
+    expect(activePane?.querySelector('.fm-quick-filter-input')).toBeNull();
+
     activePane
       ?.querySelector<HTMLElement>('.fm-breadcrumb-segments')
       ?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
@@ -1644,6 +1652,35 @@ describe('AppShell', () => {
     m.redraw.sync();
 
     expect(document.activeElement).toBe(pathInput);
+    expect(activePane?.querySelector('.fm-quick-filter-input')).toBeNull();
+  });
+
+  it('replaces an in-progress path edit when the quick filter is invoked, and does not resurrect it once the filter closes (task 0067)', async () => {
+    mountShell('mock');
+    await vi.waitFor(() => expect(root.textContent).toContain('Documents'));
+    const activePane = root.querySelector<HTMLElement>('[data-active="true"] > .fm-pane');
+
+    activePane
+      ?.querySelector<HTMLElement>('.fm-breadcrumb-segments')
+      ?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+    m.redraw.sync();
+    expect(activePane?.querySelector('.fm-path-input')).not.toBeNull();
+
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'f', ctrlKey: true, bubbles: true }),
+    );
+    m.redraw.sync();
+
+    const filterInput = activePane?.querySelector<HTMLInputElement>('.fm-quick-filter-input');
+    expect(filterInput).not.toBeNull();
+    expect(activePane?.querySelector('.fm-path-input')).toBeNull();
+
+    filterInput?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    m.redraw.sync();
+
+    expect(activePane?.querySelector('.fm-quick-filter-input')).toBeNull();
+    expect(activePane?.querySelector('.fm-path-input')).toBeNull();
+    expect(activePane?.querySelector('.fm-breadcrumb-segments')).not.toBeNull();
   });
 
   it('persists the committed quick-filter query and restores it when the filter box reopens (task 0067)', async () => {

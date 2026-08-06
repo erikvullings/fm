@@ -3,12 +3,14 @@
   position: relative;
   /*
    * Every conceptual row gets its own always-present, explicitly numbered track (auto-sized
-   * tracks with no content collapse to 0 height) so optional siblings (quick filter, entry
-   * content) can never be auto-placed into the flexible directory-table row - see the
-   * per-class `grid-row` pins below.
+   * tracks with no content collapse to 0 height) so optional siblings (entry content) can never
+   * be auto-placed into the flexible directory-table row - see the per-class `grid-row` pins
+   * below. The quick filter replaces the breadcrumb/path-editor in-place (row 2) rather than
+   * adding its own row, so the tab strip and directory table stay aligned between panes whether
+   * or not filtering is active.
    */
   grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: auto auto auto minmax(0, 1fr) auto;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
   min-width: 0;
   /* border: 1px solid var(--fm-border); */
   background: var(--fm-surface);
@@ -19,21 +21,18 @@
 }
 
 .fm-breadcrumb,
-.fm-path-editor {
-  grid-row: 2;
-}
-
+.fm-path-editor,
 .fm-quick-filter {
-  grid-row: 3;
+  grid-row: 2;
 }
 
 .fm-pane > .fm-directory-table,
 .fm-pane > .fm-directory-state {
-  grid-row: 4;
+  grid-row: 3;
 }
 
 .fm-pane-status {
-  grid-row: 5;
+  grid-row: 4;
 }
 
 .fm-pane-viewer {

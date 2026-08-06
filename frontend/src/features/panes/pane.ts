@@ -479,6 +479,13 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
           attrs.viewerContent,
         );
       }
+      // The quick filter occupies the breadcrumb bar's slot while active, so an in-progress
+      // path edit (started before the filter was invoked) would otherwise reappear, stale, once
+      // the filter closes — drop it silently instead.
+      if (attrs.filterOpen && editing) {
+        editing = false;
+        pathError = undefined;
+      }
       // Entering a different directory (however navigation happened: opening an entry, ..,
       // breadcrumb, back/forward, or switching tabs) makes any typed prefix meaningless for the
       // new listing, and stale error highlighting to boot — reset it once per path change.
@@ -899,57 +906,6 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
               // otherwise treats the conditional `undefined` as a fragment hole beside keyed tab
               // descendants during redraw.
               '',
-          editing
-            ? m('.fm-path-editor', [
-                m('input[type=text].fm-path-input', {
-                  value: draftPath,
-                  'aria-label': 'Path',
-                  'aria-invalid': pathError === undefined ? undefined : 'true',
-                  oncreate: (vnode: VnodeDOM) => {
-                    inputElement = vnode.dom as HTMLInputElement;
-                    inputElement.focus();
-                    inputElement.select();
-                  },
-                  oninput: (event: InputEvent) => {
-                    draftPath = (event.currentTarget as HTMLInputElement).value;
-                    pathError = undefined;
-                  },
-                  onkeydown: (event: KeyboardEvent) => {
-                    event.stopPropagation();
-                    if (event.key === 'Escape') {
-                      cancelEditing();
-                    } else if (event.key === 'Enter') {
-                      event.preventDefault();
-                      void navigate(draftPath, attrs, true);
-                    }
-                  },
-                }),
-                pathError === undefined
-                  ? undefined
-                  : m('.fm-path-error', { role: 'alert' }, pathError),
-              ])
-            : m('nav.fm-breadcrumb', { 'aria-label': 'Current path' }, [
-                m(
-                  '.fm-breadcrumb-segments',
-                  {
-                    ondblclick: () => beginEditing(attrs.path),
-                  },
-                  breadcrumbSegments(attrs.path).map((segment) =>
-                    m(
-                      'button.fm-breadcrumb-segment',
-                      {
-                        key: segment.path,
-                        type: 'button',
-                        onclick: () => void navigate(segment.path, attrs, false),
-                      },
-                      segment.label,
-                    ),
-                  ),
-                ),
-                pathError === undefined
-                  ? undefined
-                  : m('.fm-path-error', { role: 'alert' }, pathError),
-              ]),
           attrs.filterOpen
             ? m(QuickFilterInput, {
                 query: attrs.filterQuery,
@@ -957,7 +913,57 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
                 onCommit: attrs.onFilterCommit,
                 onClose: attrs.onFilterClose,
               })
-            : undefined,
+            : editing
+              ? m('.fm-path-editor', [
+                  m('input[type=text].fm-path-input', {
+                    value: draftPath,
+                    'aria-label': 'Path',
+                    'aria-invalid': pathError === undefined ? undefined : 'true',
+                    oncreate: (vnode: VnodeDOM) => {
+                      inputElement = vnode.dom as HTMLInputElement;
+                      inputElement.focus();
+                      inputElement.select();
+                    },
+                    oninput: (event: InputEvent) => {
+                      draftPath = (event.currentTarget as HTMLInputElement).value;
+                      pathError = undefined;
+                    },
+                    onkeydown: (event: KeyboardEvent) => {
+                      event.stopPropagation();
+                      if (event.key === 'Escape') {
+                        cancelEditing();
+                      } else if (event.key === 'Enter') {
+                        event.preventDefault();
+                        void navigate(draftPath, attrs, true);
+                      }
+                    },
+                  }),
+                  pathError === undefined
+                    ? undefined
+                    : m('.fm-path-error', { role: 'alert' }, pathError),
+                ])
+              : m('nav.fm-breadcrumb', { 'aria-label': 'Current path' }, [
+                  m(
+                    '.fm-breadcrumb-segments',
+                    {
+                      ondblclick: () => beginEditing(attrs.path),
+                    },
+                    breadcrumbSegments(attrs.path).map((segment) =>
+                      m(
+                        'button.fm-breadcrumb-segment',
+                        {
+                          key: segment.path,
+                          type: 'button',
+                          onclick: () => void navigate(segment.path, attrs, false),
+                        },
+                        segment.label,
+                      ),
+                    ),
+                  ),
+                  pathError === undefined
+                    ? undefined
+                    : m('.fm-path-error', { role: 'alert' }, pathError),
+                ]),
           m(DirectoryTable, {
             state: attrs.state,
             source: entryArraySource(attrs.entries, attrs.totalKnownEntries),

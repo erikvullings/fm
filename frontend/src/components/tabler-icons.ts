@@ -114,3 +114,9 @@ export const eyeOffIcon = trustedStrokeIcon(
     '<path d="M3 3l18 18" />',
   'fm-icon-eye-off',
 );
+
+/** "filter" — the pane's inline quick-filter box. */
+export const filterIcon = trustedStrokeIcon(
+  '<path d="M4 4h16v2.172a2 2 0 0 1 -.586 1.414l-4.414 4.414v7l-6 2v-8.5l-4.414 -4.414a2 2 0 0 1 -.586 -1.414v-2.172z" />',
+  'fm-icon-filter',
+);
