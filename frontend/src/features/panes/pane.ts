@@ -54,6 +54,9 @@ export interface PaneTab {
 export interface PaneAttrs {
   readonly path: string;
   readonly tabTitle: string;
+  /** The originating query text for a `search://` tab's `path`, if known - shown in the
+   * breadcrumb instead of the opaque search id (task 0089 follow-up). */
+  readonly searchQuery?: string;
   readonly tabs: readonly PaneTab[];
   readonly activeTabId: TabId;
   readonly onSelectTab: (tabId: TabId) => void;
@@ -190,6 +193,23 @@ function windowsSegments(path: string): readonly BreadcrumbSegment[] {
 /** Produces cumulative breadcrumb targets for POSIX, drive-letter and UNC paths. */
 export function breadcrumbSegments(path: string): readonly BreadcrumbSegment[] {
   return path.includes('\\') ? windowsSegments(path) : posixSegments(path);
+}
+
+/** Non-navigable, display-only breadcrumb for a `search://<providerId>/<searchId>` location,
+ * e.g. `/ > search > local > *.svg` - falls back to the raw search id when the originating query
+ * text isn't known. There is no real filesystem path behind any of these segments, so callers
+ * must not treat their `path` as navigable (see the non-button rendering in the view below). */
+export function searchBreadcrumbSegments(uri: string, query: string | undefined): readonly BreadcrumbSegment[] {
+  const withoutScheme = uri.slice('search://'.length);
+  const separatorIndex = withoutScheme.indexOf('/');
+  const providerId = separatorIndex === -1 ? withoutScheme : withoutScheme.slice(0, separatorIndex);
+  const searchId = separatorIndex === -1 ? '' : withoutScheme.slice(separatorIndex + 1);
+  return [
+    { label: '/', path: '/' },
+    { label: 'search', path: 'search' },
+    { label: providerId, path: providerId },
+    { label: query ?? searchId, path: query ?? searchId },
+  ];
 }
 
 function isAcceptedPath(path: string): boolean {
@@ -946,19 +966,27 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
                   m(
                     '.fm-breadcrumb-segments',
                     {
-                      ondblclick: () => beginEditing(attrs.path),
+                      ondblclick: attrs.path.startsWith('search://')
+                        ? undefined
+                        : () => beginEditing(attrs.path),
                     },
-                    breadcrumbSegments(attrs.path).map((segment) =>
-                      m(
-                        'button.fm-breadcrumb-segment',
-                        {
-                          key: segment.path,
-                          type: 'button',
-                          onclick: () => void navigate(segment.path, attrs, false),
-                        },
-                        segment.label,
-                      ),
-                    ),
+                    attrs.path.startsWith('search://')
+                      ? searchBreadcrumbSegments(attrs.path, attrs.searchQuery).map((segment) =>
+                          // Search breadcrumbs are display-only - there's no real filesystem path
+                          // behind any segment, so they render as plain (non-clickable) text.
+                          m('span.fm-breadcrumb-segment', { key: segment.path }, segment.label),
+                        )
+                      : breadcrumbSegments(attrs.path).map((segment) =>
+                          m(
+                            'button.fm-breadcrumb-segment',
+                            {
+                              key: segment.path,
+                              type: 'button',
+                              onclick: () => void navigate(segment.path, attrs, false),
+                            },
+                            segment.label,
+                          ),
+                        ),
                   ),
                   pathError === undefined
                     ? undefined

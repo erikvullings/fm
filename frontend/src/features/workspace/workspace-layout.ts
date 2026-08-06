@@ -92,6 +92,13 @@ export interface WorkspaceLayoutViewAttrs {
    * init.
    */
   readonly registerFlush?: (flush: () => void) => void;
+  /** Registers a callback (once, on init) the caller can invoke to move DOM focus into a pane -
+   * e.g. after a filename search (Alt+F7) navigates a pane to its results and closes the dialog,
+   * so arrow-key cursor movement works immediately without an extra click. */
+  readonly registerFocusPane?: (focusPane: (paneId: PaneId) => void) => void;
+  /** Resolves the originating query text for a `search://` tab location, if known - used to show
+   * `*.svg`-style breadcrumb/tab labels instead of the opaque search id in the location's URI. */
+  readonly searchQueryForLocationUri?: (uri: string) => string | undefined;
 }
 
 /** Clamps a horizontal split so both children retain a usable minimum width. */
@@ -121,6 +128,28 @@ export function pathFromUri(uri: string): string {
   return uri;
 }
 
+/** A `search://<providerId>/<searchId>` tab location's displayed breadcrumb path, e.g.
+ * `/search/local/*.svg` - falls back to the raw search id when the query text isn't known
+ * (e.g. after a reload that didn't restore the frontend-only query lookup). */
+function searchDisplayPath(uri: string, query: string | undefined): string {
+  const withoutScheme = uri.slice('search://'.length);
+  const separatorIndex = withoutScheme.indexOf('/');
+  const providerId = separatorIndex === -1 ? withoutScheme : withoutScheme.slice(0, separatorIndex);
+  const searchId = separatorIndex === -1 ? '' : withoutScheme.slice(separatorIndex + 1);
+  return `/search/${providerId}/${query ?? searchId}`;
+}
+
+/** Displayed breadcrumb path for any tab location, special-casing `search://` (see
+ * {@link searchDisplayPath}) - every other scheme delegates to {@link pathFromUri}. */
+function displayPathFromUri(uri: string, query: string | undefined): string {
+  return uri.startsWith('search://') ? searchDisplayPath(uri, query) : pathFromUri(uri);
+}
+
+/** Displayed tab title for any tab location, e.g. `search: *.svg` for filename-search results. */
+function displayTabTitle(uri: string, title: string, query: string | undefined): string {
+  return uri.startsWith('search://') && query !== undefined ? `search: ${query}` : title;
+}
+
 function paneIdsInLayout(layout: WorkspaceLayout): readonly PaneId[] {
   if (layout.type === 'pane') {
     return [layout.paneId];
@@ -136,6 +165,8 @@ export const WorkspaceLayoutView: FactoryComponent<WorkspaceLayoutViewAttrs> = (
   let persistenceTimer: ReturnType<typeof setTimeout> | undefined;
   let pendingLayoutUpdate: { attrs: WorkspaceLayoutViewAttrs; layout: WorkspaceLayout } | undefined;
   let stopDragging: (() => void) | undefined;
+  /** Latest render's attrs, for `registerFocusPane`'s callback (invoked outside any render). */
+  let latestAttrs: WorkspaceLayoutViewAttrs | undefined;
   /** Frontend-only tab order overrides for drag-reorder; no backend command persists this. */
   const tabOrderOverrides = new Map<PaneId, readonly TabId[]>();
 
@@ -306,13 +337,25 @@ export const WorkspaceLayoutView: FactoryComponent<WorkspaceLayoutViewAttrs> = (
       },
       m(Pane, {
         path: pathFromUri(tab.location.uri),
-        tabTitle: tab.title,
+        tabTitle: displayTabTitle(
+          tab.location.uri,
+          tab.title,
+          attrs.searchQueryForLocationUri?.(tab.location.uri),
+        ),
+        ...(tab.location.uri.startsWith('search://')
+          ? (() => {
+              const searchQuery = attrs.searchQueryForLocationUri?.(tab.location.uri);
+              return searchQuery === undefined ? {} : { searchQuery };
+            })()
+          : {}),
         tabs: resolvedTabOrder(pane).map((tabId) => {
           const paneTab = pane.tabsById[tabId];
+          const uri = paneTab?.location.uri;
+          const query = uri === undefined ? undefined : attrs.searchQueryForLocationUri?.(uri);
           return {
             id: tabId,
-            title: paneTab?.title ?? '',
-            path: paneTab === undefined ? '' : pathFromUri(paneTab.location.uri),
+            title: paneTab === undefined ? '' : displayTabTitle(uri ?? '', paneTab.title, query),
+            path: paneTab === undefined ? '' : displayPathFromUri(paneTab.location.uri, query),
           };
         }),
         activeTabId: pane.activeTabId,
@@ -430,6 +473,9 @@ export const WorkspaceLayoutView: FactoryComponent<WorkspaceLayoutViewAttrs> = (
   return {
     oninit: ({ attrs }) => {
       attrs.registerFlush?.(flushPendingLayoutUpdate);
+      attrs.registerFocusPane?.((paneId) => {
+        if (latestAttrs !== undefined) focusAndActivate(latestAttrs, paneId);
+      });
     },
     onremove: () => {
       stopDragging?.();
@@ -438,6 +484,7 @@ export const WorkspaceLayoutView: FactoryComponent<WorkspaceLayoutViewAttrs> = (
       }
     },
     view: ({ attrs }) => {
+      latestAttrs = attrs;
       if (sourceLayout !== attrs.workspace.layout) {
         sourceLayout = attrs.workspace.layout;
         displayedLayout = sourceLayout;

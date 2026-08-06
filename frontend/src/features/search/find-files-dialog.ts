@@ -41,11 +41,16 @@ export const FindFilesDialog: FactoryComponent<FindFilesDialogAttrs> = () => {
     onupdate: ({ attrs }) => {
       // ModalPanel keeps this component (and its input) permanently mounted
       // and only toggles CSS visibility, so a plain oncreate-focus only ever
-      // fires once at app boot. Reset state and (re-)focus explicitly on the
-      // false->true open transition instead.
+      // fires once at app boot. (Re-)focus explicitly on the false->true open
+      // transition instead. The previous query is kept (not reset) and fully
+      // selected, so re-running the same search is a single Enter press while
+      // typing anything replaces it, matching Explorer/TC-style find dialogs.
       if (attrs.open && !wasOpen) {
-        query = '';
-        document.getElementById('find-files-query')?.focus();
+        const input = document.getElementById('find-files-query');
+        if (input instanceof HTMLInputElement) {
+          input.focus();
+          input.select();
+        }
       }
       wasOpen = attrs.open;
     },

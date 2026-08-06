@@ -1365,6 +1365,47 @@ describe('AppShell', () => {
     );
   });
 
+  it('shows the search term in the breadcrumb/tab title and focuses/selects the first result so ArrowDown moves the cursor', async () => {
+    const client = new MockFileManagerClient();
+    m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
+    await vi.waitFor(() => expect(root.textContent).toContain('Documents'));
+
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'F7', altKey: true, bubbles: true }),
+    );
+    m.redraw.sync();
+    const input = root.querySelector<HTMLInputElement>('#find-files-query');
+    if (input === null) throw new Error('input missing');
+    input.value = 'e';
+    input.dispatchEvent(new InputEvent('input', { bubbles: true }));
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+
+    await vi.waitFor(() =>
+      expect(root.querySelector('.fm-pane-tab-title')?.textContent).toBe('search: e'),
+    );
+    const activePane = root.querySelector<HTMLElement>('[data-active="true"] > .fm-pane');
+    expect(
+      [...(activePane?.querySelectorAll('.fm-breadcrumb-segment') ?? [])].map(
+        (segment) => segment.textContent,
+      ),
+    ).toEqual(['/', 'search', 'local', 'e']);
+
+    // Focus lands in the pane (not e.g. document.body) so keyboard cursor
+    // navigation works immediately, without an extra click.
+    expect(document.activeElement).toBe(activePane);
+    const firstCursorRow = activePane?.querySelector('.fm-cursor-row')?.textContent;
+    expect(firstCursorRow).not.toBeUndefined();
+    // The first result is selected too, not just cursored (matches the same guarantee as
+    // freshly entering a real directory - see the "selects a row... with Enter" test above).
+    expect(activePane?.querySelector('.fm-selected-row')?.textContent).toBe(firstCursorRow);
+
+    document.activeElement?.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }),
+    );
+    m.redraw.sync();
+    expect(activePane?.querySelector('.fm-cursor-row')?.textContent).not.toBe(firstCursorRow);
+  });
+
   it('enters a local archive as a folder with Enter', async () => {
     const client = new MockFileManagerClient();
     const originalListDirectory = client.listDirectory.bind(client);

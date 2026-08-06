@@ -2,7 +2,13 @@ import m from 'mithril';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { ActionDescriptor, EntryId, EntrySummary, TabId } from '../../models';
-import { breadcrumbSegments, Pane, type PaneAttrs, type PaneTab } from './pane';
+import {
+  breadcrumbSegments,
+  Pane,
+  type PaneAttrs,
+  type PaneTab,
+  searchBreadcrumbSegments,
+} from './pane';
 
 let root: HTMLElement;
 
@@ -226,6 +232,51 @@ describe('breadcrumbSegments', () => {
       { label: 'Users', path: 'C:\\Users' },
       { label: 'Erik', path: 'C:\\Users\\Erik' },
     ]);
+  });
+});
+
+describe('searchBreadcrumbSegments', () => {
+  it('shows the originating query in place of the opaque search id', () => {
+    expect(searchBreadcrumbSegments('search://local/abc-123', '*.svg')).toEqual([
+      { label: '/', path: '/' },
+      { label: 'search', path: 'search' },
+      { label: 'local', path: 'local' },
+      { label: '*.svg', path: '*.svg' },
+    ]);
+  });
+
+  it('falls back to the raw search id when the query is not known', () => {
+    expect(searchBreadcrumbSegments('search://local/abc-123', undefined)).toEqual([
+      { label: '/', path: '/' },
+      { label: 'search', path: 'search' },
+      { label: 'local', path: 'local' },
+      { label: 'abc-123', path: 'abc-123' },
+    ]);
+  });
+});
+
+describe('Pane search breadcrumb rendering', () => {
+  it('renders search:// breadcrumbs as non-clickable spans instead of navigable buttons', () => {
+    mount(
+      attrs({
+        path: 'search://local/abc-123',
+        searchQuery: '*.svg',
+        tabs: [{ id: 'tab-1' as TabId, title: 'search: *.svg', path: 'search://local/abc-123' }],
+      }),
+    );
+
+    const segments = [...root.querySelectorAll<HTMLElement>('.fm-breadcrumb-segment')];
+    expect(segments.map((segment) => segment.tagName)).toEqual(['SPAN', 'SPAN', 'SPAN', 'SPAN']);
+    expect(segments.map((segment) => segment.textContent)).toEqual([
+      '/',
+      'search',
+      'local',
+      '*.svg',
+    ]);
+
+    segments[3]?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+    m.redraw.sync();
+    expect(root.querySelector('.fm-path-input')).toBeNull();
   });
 });
 

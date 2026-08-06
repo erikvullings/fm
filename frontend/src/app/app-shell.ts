@@ -266,6 +266,12 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
   let findFilesSearchId: string | undefined;
   let findFilesError: string | undefined;
   const findFilesRootsByLocationUri = new Map<string, Location>();
+  /** The query text each `search://` result location was started with, so the breadcrumb/tab can
+   * show `search: <query>` instead of the opaque search id in the location's URI. */
+  const findFilesQueriesByLocationUri = new Map<string, string>();
+  /** Registered by `WorkspaceLayoutView` (task 0089): moves DOM focus into a pane so keyboard
+   * cursor navigation works immediately, e.g. right after a filename search closes its dialog. */
+  let focusPane: ((paneId: PaneId) => void) | undefined;
   let commandPaletteOpen = false;
   let openTerminalSupported = false;
   let nativeIconLoader: NativeIconLoader | undefined;
@@ -999,10 +1005,19 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
         }
         findFilesSearchId = result.searchId;
         findFilesRootsByLocationUri.set(result.location.uri, root);
+        findFilesQueriesByLocationUri.set(result.location.uri, query);
         const paneId = activeDirectory()?.paneId ?? workspace?.activePaneId;
         if (paneId === undefined) return;
         dismissFindFiles();
-        void navigation.navigate(paneId, result.location).then(() => navigation.load(paneId));
+        void navigation
+          .navigate(paneId, result.location)
+          .then(() => navigation.load(paneId))
+          .then(() => {
+            // Land keyboard focus in the pane so arrow keys move the cursor immediately,
+            // matching the UX of navigating there by clicking (task 0089 follow-up).
+            focusPane?.(paneId);
+            m.redraw();
+          });
       })
       .catch((error: unknown) => {
         if (generation !== findFilesGeneration) return;
@@ -2578,6 +2593,10 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
                   registerFlush: (flush) => {
                     flushPendingLayoutUpdate = flush;
                   },
+                  registerFocusPane: (focus) => {
+                    focusPane = focus;
+                  },
+                  searchQueryForLocationUri: (uri) => findFilesQueriesByLocationUri.get(uri),
                 }),
           ]),
           clipboardMessage === undefined

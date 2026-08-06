@@ -87,7 +87,7 @@ describe('FindFilesDialog', () => {
     ).toBe(true);
   });
 
-  it('resets the query and blurs before cancel when Cancel is clicked', () => {
+  it('blurs before cancel when Cancel is clicked', () => {
     const onCancel = vi.fn();
     m.mount(root, {
       view: () =>
@@ -106,5 +106,44 @@ describe('FindFilesDialog', () => {
     cancelButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
 
     expect(onCancel).toHaveBeenCalledOnce();
+  });
+
+  it('keeps the previous query on reopen, fully selected, so typing replaces it and Enter re-searches', () => {
+    let open = true;
+    const onSearch = vi.fn();
+    m.mount(root, {
+      view: () =>
+        m(FindFilesDialog, {
+          open,
+          scopeLabel: 'file:///Documents',
+          onSearch,
+          onCancel: vi.fn(),
+        }),
+    });
+    m.redraw.sync();
+    const input = document.querySelector<HTMLInputElement>('#find-files-query');
+    if (!input) throw new Error('input missing');
+
+    input.value = '*.svg';
+    input.dispatchEvent(new InputEvent('input', { bubbles: true }));
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    expect(onSearch).toHaveBeenCalledWith('*.svg');
+
+    // Simulate the parent closing the dialog after a successful search, then reopening it
+    // for a second search (e.g. via Alt+F7 again).
+    open = false;
+    m.redraw.sync();
+    open = true;
+    m.redraw.sync();
+
+    expect(input.value).toBe('*.svg');
+    expect(document.activeElement).toBe(input);
+    expect(input.selectionStart).toBe(0);
+    expect(input.selectionEnd).toBe(input.value.length);
+
+    // Pressing Enter immediately re-runs the same search.
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    expect(onSearch).toHaveBeenCalledTimes(2);
+    expect(onSearch).toHaveBeenLastCalledWith('*.svg');
   });
 });
