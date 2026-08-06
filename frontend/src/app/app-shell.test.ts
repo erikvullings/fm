@@ -121,6 +121,9 @@ describe('AppShell', () => {
 
     await vi.waitFor(() => expect(activePane?.textContent).toContain('report.pdf'));
     expect(activePane?.querySelector('.fm-cursor-row')?.textContent).toContain('Projects');
+    // The first entry of a freshly entered directory must be selected too, not
+    // just highlighted, so single-selection actions (e.g. F3) work immediately.
+    expect(activePane?.querySelector('.fm-selected-row')?.textContent).toContain('Projects');
     activePane?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
     m.redraw.sync();
     expect(activePane?.querySelector('.fm-cursor-row')?.textContent).toContain('report.pdf');
@@ -249,6 +252,10 @@ describe('AppShell', () => {
     await vi.waitFor(() => expect(activePane?.textContent).not.toContain('report.pdf'));
     expect(activePane?.textContent).toContain('Documents');
     expect(activePane?.querySelector('.fm-directory-row')?.textContent).not.toContain('..');
+    // Navigating back up must select (not just highlight) the child directory
+    // just exited, matching how entering a fresh directory selects its first entry.
+    expect(activePane?.querySelector('.fm-cursor-row')?.textContent).toContain('Documents');
+    expect(activePane?.querySelector('.fm-selected-row')?.textContent).toContain('Documents');
   });
 
   it('composes the complete main-window workspace regions', async () => {

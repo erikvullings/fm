@@ -922,7 +922,14 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
               }
             },
             onContextMenu: (index, x, y) => {
-              const target = index === undefined ? undefined : attrs.entries[index];
+              // A right-click on empty space below/around the rows always means
+              // the location-level menu, regardless of which entry happens to be
+              // selected (the cursor/selection now always lands somewhere).
+              if (index === undefined) {
+                attrs.onContextMenu([], x, y);
+                return;
+              }
+              const target = attrs.entries[index];
               if (
                 target !== undefined &&
                 !isParentEntry(target.id) &&

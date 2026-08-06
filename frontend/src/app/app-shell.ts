@@ -2229,8 +2229,10 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
             const preferredEntry = view.entries.find((entry) => entry.name === preferredCursorName);
             const firstEntry = preferredEntry ?? view.entries[0];
             selections.set(key, {
-              selectedEntryIds: [],
-              ...(firstEntry === undefined ? {} : { cursorEntryId: firstEntry.id }),
+              selectedEntryIds: firstEntry === undefined ? [] : [firstEntry.id],
+              ...(firstEntry === undefined
+                ? {}
+                : { cursorEntryId: firstEntry.id, anchorEntryId: firstEntry.id }),
             });
           }
           m.redraw();
