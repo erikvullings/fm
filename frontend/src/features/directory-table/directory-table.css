@@ -175,15 +175,13 @@ img.fm-native-entry-icon {
   opacity: 0.72;
 }
 
-.fm-entry-status {
-  display: inline-block;
+.fm-entry-symlink-indicator {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
   margin-inline-start: 0.5rem;
-  border: 1px solid currentcolor;
-  border-radius: var(--fm-radius);
-  padding: 0 0.25rem;
   color: var(--fm-text-muted);
-  font-size: 0.8em;
-  font-style: normal;
+  opacity: 0.72;
 }
 
 .fm-entry-hidden-indicator {

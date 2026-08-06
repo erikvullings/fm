@@ -299,7 +299,7 @@ describe('DirectoryTable rows', () => {
     expect(root.querySelector<HTMLElement>('.fm-directory-table')?.style.height).toBe('100%');
   });
 
-  it('renders semantic columns and a hidden icon and textual link indicator', () => {
+  it('renders semantic columns and a hidden icon and a symlink icon indicator', () => {
     mount({
       state: { type: 'loaded' },
       source: entryArraySource([
@@ -318,7 +318,11 @@ describe('DirectoryTable rows', () => {
     expect(root.querySelectorAll('[role="columnheader"]')).toHaveLength(4);
     expect(root.querySelectorAll('[role="row"]')).toHaveLength(3);
     expect(root.querySelector('[aria-label="Hidden entry"]')).not.toBeNull();
-    expect(root.textContent).toContain('↗ Link');
+    expect(root.querySelector('[aria-label="Link entry"]')).not.toBeNull();
+    expect(root.querySelector('.fm-entry-symlink-indicator svg')?.getAttribute('class')).toContain(
+      'fm-icon-link',
+    );
+    expect(root.textContent).not.toContain('Link');
     expect(root.querySelector('.fm-hidden-entry')).not.toBeNull();
   });
 
@@ -347,6 +351,7 @@ describe('DirectoryTable rows', () => {
     expect(rows[0]?.querySelector('.fm-directory-size')?.textContent).toBe('');
     expect(rows[0]?.querySelector('.fm-directory-modified')?.textContent).toBe('');
     expect(rows[1]?.querySelector('.fm-directory-size')?.textContent).toBe('');
+    expect(rows[1]?.querySelector('.fm-directory-type')?.textContent).toBe('');
   });
 
   it.each([1_000, 10_000, 100_000])(

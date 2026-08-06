@@ -1,5 +1,5 @@
 import m, { type FactoryComponent, type VnodeDOM } from 'mithril';
-import { eyeOffIcon } from '../../components/tabler-icons';
+import { eyeOffIcon, linkIcon } from '../../components/tabler-icons';
 import type { EntryId, EntrySummary, LoadingState, SortDescriptor } from '../../models';
 import {
   DEFAULT_ENTRY_FORMAT_SETTINGS,
@@ -84,11 +84,8 @@ function readRowHeight(element: HTMLElement): number {
 }
 
 function typeLabel(entry: EntrySummary): string {
-  if (entry.kind === 'directory') {
+  if (entry.kind === 'directory' || entry.kind === 'symlink') {
     return '';
-  }
-  if (entry.kind === 'symlink') {
-    return 'Link';
   }
   return entry.extension ?? entry.mimeType ?? 'File';
 }
@@ -160,7 +157,11 @@ const INITIAL_COLUMNS: readonly DirectoryColumnDescriptor[] = [
               ],
         ]),
         entry.kind === 'symlink'
-          ? m('span.fm-entry-status', { title: 'Link entry' }, ['↗ ', 'Link'])
+          ? m(
+              'span.fm-entry-symlink-indicator',
+              { title: 'Link entry', 'aria-label': 'Link entry' },
+              linkIcon({ size: 14 }),
+            )
           : undefined,
         entry.hidden
           ? m(
