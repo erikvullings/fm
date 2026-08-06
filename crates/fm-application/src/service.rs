@@ -421,10 +421,11 @@ impl FileManagerService {
                     create_intermediates: request.create_intermediate_directories,
                 })
             }
-            OperationKindDto::Rename => {
+            OperationKindDto::Rename if request.destinations.is_empty() => {
                 if request.sources.len() != 1 {
                     return Err(ApplicationError::InvalidRequest(
-                        "rename requires exactly one source".into(),
+                        "rename requires exactly one source, or a destinations entry per source"
+                            .into(),
                     ));
                 }
                 let destination = destination.clone().ok_or_else(|| {
@@ -450,6 +451,48 @@ impl FileManagerService {
                     source,
                     destination,
                 })
+            }
+            // Batch rename (task 0072 multi-rename): one destination per source, applied as a
+            // single cancellable operation reusing the same per-item `RenameExecutor` as the
+            // single-entry path above (never a copy+delete fallback).
+            OperationKindDto::Rename => {
+                if request.sources.is_empty() {
+                    return Err(ApplicationError::InvalidRequest(
+                        "rename requires at least one source".into(),
+                    ));
+                }
+                if request.destinations.len() != request.sources.len() {
+                    return Err(ApplicationError::InvalidRequest(
+                        "rename destinations must include exactly one entry per source".into(),
+                    ));
+                }
+                let mut renames = Vec::with_capacity(request.sources.len());
+                for (source_dto, destination_dto) in
+                    request.sources.iter().zip(request.destinations.iter())
+                {
+                    let source: fm_domain::Location = source_dto.clone().into();
+                    let destination: fm_domain::Location = destination_dto.clone().into();
+                    let provider = self
+                        .providers
+                        .resolve(&source)
+                        .map_err(ApplicationError::from)?;
+                    if source.provider_id != destination.provider_id {
+                        return Err(ApplicationError::InvalidRequest(
+                            "rename cannot cross providers".into(),
+                        ));
+                    }
+                    provider
+                        .capabilities_for(&source)
+                        .map_err(ApplicationError::from)?
+                        .require(ProviderCapabilities::RENAME)
+                        .map_err(ApplicationError::from)?;
+                    renames.push(RenameExecutor {
+                        provider,
+                        source,
+                        destination,
+                    });
+                }
+                Arc::new(RenameGroupExecutor { renames })
             }
             OperationKindDto::Copy => {
                 if request.sources.is_empty() {
@@ -1575,6 +1618,12 @@ struct RenameExecutor {
     provider: Arc<dyn FileSystemProvider>,
     source: fm_domain::Location,
     destination: fm_domain::Location,
+}
+
+/// Batch rename (task 0072 multi-rename): one [`RenameExecutor`] per source/destination pair,
+/// executed as a single cancellable operation. Never falls back to copy+delete.
+struct RenameGroupExecutor {
+    renames: Vec<RenameExecutor>,
 }
 
 #[derive(Clone)]
@@ -2848,6 +2897,54 @@ impl OperationExecutor for RenameExecutor {
             .rename(&source, &self.destination, cancellation.clone())
             .await?;
         Ok(ExecutionOutcome::Completed)
+    }
+
+    async fn cleanup_partial(&self, _operation: &Operation) -> Result<(), ExecutionError> {
+        Ok(())
+    }
+}
+
+#[async_trait]
+impl OperationExecutor for RenameGroupExecutor {
+    async fn plan(
+        &self,
+        _operation: &Operation,
+        _cancellation: &CancellationToken,
+    ) -> Result<OperationPlan, ExecutionError> {
+        Ok(OperationPlan::new(
+            self.renames
+                .iter()
+                .map(|executor| {
+                    PlanItem::new(
+                        EntryRef {
+                            id: fm_domain::EntryId::new(),
+                            location: executor.source.clone(),
+                        },
+                        0,
+                    )
+                })
+                .collect(),
+        ))
+    }
+
+    async fn execute(
+        &self,
+        operation: &Operation,
+        item: &PlanItem,
+        resolution: Option<fm_operations::ConflictResolution>,
+        pause: &PauseToken,
+        cancellation: &CancellationToken,
+    ) -> Result<fm_operations::ExecutionOutcome, ExecutionError> {
+        for executor in &self.renames {
+            if executor.source == item.entry.location {
+                return executor
+                    .execute(operation, item, resolution, pause, cancellation)
+                    .await;
+            }
+        }
+        Err(ExecutionError::Failed(
+            "rename plan entry is missing".into(),
+        ))
     }
 
     async fn cleanup_partial(&self, _operation: &Operation) -> Result<(), ExecutionError> {
@@ -4342,6 +4439,7 @@ mod tests {
                 })
                 .collect(),
             destination: None,
+            destinations: vec![],
             conflict_policy: OperationConflictPolicyDto::Ask,
             name: None,
             create_intermediate_directories: false,
@@ -4657,6 +4755,7 @@ mod tests {
             operation_type: OperationKindDto::CreateDirectory,
             sources: Vec::new(),
             destination: Some(destination),
+            destinations: vec![],
             conflict_policy: OperationConflictPolicyDto::Ask,
             name: Some("child".to_owned()),
             create_intermediate_directories: false,

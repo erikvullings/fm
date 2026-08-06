@@ -291,8 +291,13 @@ export class HttpFileManagerClient implements FileManagerClient {
   }
 
   async startOperation(request: StartOperationRequest, signal?: AbortSignal): Promise<Operation> {
+    const { destinations, ...rest } = request;
     const response = await requestOperationStart(
-      { ...request, sources: [...request.sources] },
+      {
+        ...rest,
+        sources: [...rest.sources],
+        ...(destinations === undefined ? {} : { destinations: [...destinations] }),
+      },
       signal === undefined ? undefined : { signal },
     );
     if (response.status !== 201) {

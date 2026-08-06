@@ -148,6 +148,27 @@ describe('Pane inline rename', () => {
     input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
     expect(onRename).toHaveBeenCalledWith(entries[0], 'renamed.txt');
   });
+
+  it('opens the multi-rename dialog instead of inline rename when F2 is pressed with more than one entry selected', () => {
+    const onRename = vi.fn();
+    const onMultiRename = vi.fn();
+    mount(
+      attrs({
+        cursorIndex: 0,
+        selectedEntryIds: new Set(['one' as EntryId, 'two' as EntryId]),
+        onRename,
+        onMultiRename,
+      }),
+    );
+    const pane = root.querySelector<HTMLElement>('.fm-pane');
+
+    pane?.dispatchEvent(new KeyboardEvent('keydown', { key: 'F2', bubbles: true }));
+    m.redraw.sync();
+
+    expect(onMultiRename).toHaveBeenCalledWith([entries[0], entries[1]]);
+    expect(onRename).not.toHaveBeenCalled();
+    expect(root.querySelector('.fm-inline-rename-input')).toBeNull();
+  });
 });
 
 function mount(paneAttrs: PaneAttrs): void {

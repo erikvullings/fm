@@ -34,6 +34,7 @@ fn start_copy(
                     .map(|path| Location::from_native_path(path).unwrap().into())
                     .collect(),
                 destination: Some(Location::from_native_path(destination).unwrap().into()),
+                destinations: vec![],
                 conflict_policy: policy,
                 name: None,
                 create_intermediate_directories: false,

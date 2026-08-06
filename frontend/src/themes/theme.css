@@ -864,3 +864,74 @@ input[type="text"].fm-command-palette-input {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* biome-ignore-start lint/complexity/noImportantStyles: overrides ModalPanel's inline styles */
+.modal.fm-multi-rename-modal {
+  max-width: min(48rem, calc(100vw - 2rem)) !important;
+}
+/* biome-ignore-end lint/complexity/noImportantStyles: overrides ModalPanel's inline styles */
+
+.fm-multi-rename-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.fm-multi-rename-rules {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.6rem;
+}
+
+.fm-multi-rename-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  font-size: 0.85rem;
+}
+
+.fm-multi-rename-field input,
+.fm-multi-rename-field select {
+  padding: 0.3rem 0.4rem;
+  font: inherit;
+  background: var(--fm-surface);
+  color: var(--fm-text);
+  border: 1px solid var(--fm-border);
+  border-radius: 2px;
+}
+
+.fm-multi-rename-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+}
+
+.fm-multi-rename-sequence {
+  display: flex;
+  gap: 0.6rem;
+}
+
+.fm-multi-rename-sequence input {
+  width: 4rem;
+}
+
+.fm-multi-rename-preview {
+  width: 100%;
+  max-height: min(40vh, 20rem);
+  overflow-y: auto;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.fm-multi-rename-preview th,
+.fm-multi-rename-preview td {
+  padding: 0.3rem 0.5rem;
+  text-align: left;
+  border-bottom: 1px solid var(--fm-border);
+}
+
+.fm-multi-rename-row--problem td {
+  background: var(--fm-error-surface, rgb(255 0 0 / 8%));
+}

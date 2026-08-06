@@ -42,6 +42,7 @@ async fn duplicates_files_and_directory_trees_with_collision_safe_names() {
                     Location::from_native_path(&unicode).unwrap().into(),
                 ],
                 destination: None,
+                destinations: vec![],
                 conflict_policy: OperationConflictPolicyDto::Ask,
                 name: None,
                 create_intermediate_directories: false,

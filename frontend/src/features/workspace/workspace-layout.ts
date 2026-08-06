@@ -69,6 +69,9 @@ export interface WorkspacePaneContent {
   readonly onFilterCommit: () => void;
   readonly onFilterClose: () => void;
   readonly onRename: (entry: EntrySummary, name: string) => void | Promise<void>;
+  /** F2 with more than one entry selected opens the multi-rename dialog (task 0072) instead of
+   * the single-entry inline rename input. */
+  readonly onMultiRename?: (entries: readonly EntrySummary[]) => void;
   readonly onContextMenu?: (entries: readonly EntrySummary[], x: number, y: number) => void;
   /** When set, replaces the pane's directory-listing surface with this content (task 0088). */
   readonly viewerContent?: m.Children;
@@ -389,6 +392,7 @@ export const WorkspaceLayoutView: FactoryComponent<WorkspaceLayoutViewAttrs> = (
         onFilterCommit: content.onFilterCommit,
         onFilterClose: content.onFilterClose,
         onRename: content.onRename,
+        ...(content.onMultiRename === undefined ? {} : { onMultiRename: content.onMultiRename }),
         onContextMenu: content.onContextMenu ?? (() => undefined),
       }),
     );

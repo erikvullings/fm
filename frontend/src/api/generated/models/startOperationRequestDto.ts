@@ -17,6 +17,12 @@ export interface StartOperationRequestDto {
   createIntermediateDirectories?: boolean;
   destination?: null | LocationDto;
   /**
+     * Per-source destinations for a batch `rename` (task 0072 multi-rename), one entry per
+     * `sources` item in the same order. Empty for every other operation kind and for a
+     * single-entry rename, which keeps using `destination` instead.
+     */
+  destinations?: LocationDto[];
+  /**
      * New child name for `createDirectory`.
      * @nullable
      */

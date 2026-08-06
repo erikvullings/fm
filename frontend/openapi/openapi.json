@@ -2434,6 +2434,13 @@
               }
             ]
           },
+          "destinations": {
+            "description": "Per-source destinations for a batch `rename` (task 0072 multi-rename), one entry per\n`sources` item in the same order. Empty for every other operation kind and for a\nsingle-entry rename, which keeps using `destination` instead.",
+            "items": {
+              "$ref": "#/components/schemas/LocationDto"
+            },
+            "type": "array"
+          },
           "name": {
             "description": "New child name for `createDirectory`.",
             "type": [

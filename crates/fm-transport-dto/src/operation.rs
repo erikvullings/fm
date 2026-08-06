@@ -18,6 +18,11 @@ pub struct StartOperationRequestDto {
     pub sources: Vec<LocationDto>,
     /// Optional target directory or entry.
     pub destination: Option<LocationDto>,
+    /// Per-source destinations for a batch `rename` (task 0072 multi-rename), one entry per
+    /// `sources` item in the same order. Empty for every other operation kind and for a
+    /// single-entry rename, which keeps using `destination` instead.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub destinations: Vec<LocationDto>,
     /// Conflict behavior selected before execution.
     pub conflict_policy: OperationConflictPolicyDto,
     /// New child name for `createDirectory`.

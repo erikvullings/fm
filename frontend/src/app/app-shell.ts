@@ -45,6 +45,7 @@ import {
 } from '../features/navigation/navigation';
 import { ConflictDialog } from '../features/operations/conflict-dialog';
 import { CreateDirectoryDialog } from '../features/operations/create-directory-dialog';
+import { MultiRenameDialog } from '../features/operations/multi-rename-dialog';
 import { OperationCentre } from '../features/operations/operation-centre';
 import {
   createOperationsState,
@@ -244,6 +245,10 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
   let flushPendingLayoutUpdate: (() => void) | undefined;
   let createDirectoryOpen = false;
   let createDirectoryLocation: Location | undefined;
+  let multiRenameOpen = false;
+  let multiRenameEntries: readonly EntrySummary[] = [];
+  let multiRenameLocation: Location | undefined;
+  let multiRenameExistingNames: ReadonlySet<string> = new Set();
   let pendingArchiveCredential:
     | {
         readonly location: Location;
@@ -2133,6 +2138,18 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
         });
       },
       onContextMenu: (entries, x, y) => openContextMenu(paneId, entries, x, y),
+      onMultiRename: (selected) => {
+        if (tab === undefined) return;
+        multiRenameOpen = true;
+        multiRenameEntries = selected;
+        multiRenameLocation = tab.location;
+        const selectedIds = new Set(selected.map((entry) => entry.id));
+        multiRenameExistingNames = new Set(
+          directory.entries
+            .filter((entry) => !selectedIds.has(entry.id))
+            .map((entry) => entry.name),
+        );
+      },
       ...(viewerByPane.has(paneId)
         ? {
             viewerContent: (() => {
@@ -2601,6 +2618,42 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
                 .catch(() => {
                   pendingCreatedLocation = undefined;
                 });
+            },
+          }),
+          m(MultiRenameDialog, {
+            open: multiRenameOpen,
+            entries: multiRenameEntries,
+            existingSiblingNames: multiRenameExistingNames,
+            onCancel: () => {
+              multiRenameOpen = false;
+              multiRenameEntries = [];
+              multiRenameLocation = undefined;
+              multiRenameExistingNames = new Set();
+            },
+            onApply: (renamed) => {
+              const location = multiRenameLocation;
+              multiRenameOpen = false;
+              if (location === undefined) return;
+              const entriesById = new Map(multiRenameEntries.map((entry) => [entry.id, entry]));
+              const sources: Location[] = [];
+              const destinations: Location[] = [];
+              for (const { id, newName } of renamed) {
+                const entry = entriesById.get(id);
+                if (entry === undefined) continue;
+                const destinationUri = `${location.uri.replace(/\/$/u, '')}/${encodeURIComponent(newName)}`;
+                sources.push(entry.location);
+                destinations.push({ ...entry.location, uri: destinationUri });
+              }
+              multiRenameEntries = [];
+              multiRenameLocation = undefined;
+              multiRenameExistingNames = new Set();
+              if (sources.length === 0) return;
+              void attrs.client.startOperation({
+                type: 'rename',
+                sources,
+                destinations,
+                conflictPolicy: 'ask',
+              });
             },
           }),
           m(ArchivePasswordDialog, {

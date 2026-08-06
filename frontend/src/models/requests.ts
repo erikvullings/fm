@@ -64,6 +64,12 @@ export interface StartOperationRequest {
   type: OperationKind;
   sources: readonly Location[];
   destination?: Location;
+  /**
+   * Per-source destinations for a batch `rename` (task 0072 multi-rename), one entry per
+   * `sources` item in the same order. Omitted for every other operation kind and for a
+   * single-entry rename, which keeps using `destination` instead.
+   */
+  destinations?: readonly Location[];
   conflictPolicy: ConflictPolicy;
   name?: string;
   createIntermediateDirectories?: boolean;

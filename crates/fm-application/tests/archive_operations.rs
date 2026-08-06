@@ -36,6 +36,7 @@ async fn run(
                 operation_type: kind,
                 sources: sources.into_iter().map(Into::into).collect(),
                 destination: destination.map(Into::into),
+                destinations: vec![],
                 conflict_policy: OperationConflictPolicyDto::Ask,
                 name: None,
                 create_intermediate_directories: false,

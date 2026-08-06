@@ -34,6 +34,7 @@ async fn create(
                 operation_type: OperationKindDto::CreateDirectory,
                 sources: Vec::new(),
                 destination: Some(LocationDto::from(parent.clone())),
+                destinations: vec![],
                 conflict_policy: OperationConflictPolicyDto::Ask,
                 name: Some(name.to_owned()),
                 create_intermediate_directories: create_intermediates,

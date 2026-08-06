@@ -112,6 +112,9 @@ export interface PaneAttrs {
   readonly onLoadNextPage: () => void | Promise<void>;
   readonly onSortChange: (sort: readonly SortDescriptor[]) => void;
   readonly onRename: (entry: EntrySummary, name: string) => void | Promise<void>;
+  /** F2 with more than one entry selected opens the multi-rename dialog (task 0072) instead of
+   * the single-entry inline rename input. */
+  readonly onMultiRename?: (entries: readonly EntrySummary[]) => void;
   readonly onContextMenu: (entries: readonly EntrySummary[], x: number, y: number) => void;
   /** When set, replaces the entire directory-listing surface with this content (task 0088's
    * Lister-style viewer, opened in the opposite pane). */
@@ -290,6 +293,13 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
   }
 
   function beginRename(attrs: PaneAttrs): void {
+    const selectedEntries = attrs.entries.filter(
+      (entry) => attrs.selectedEntryIds.has(entry.id) && !isParentEntry(entry.id),
+    );
+    if (selectedEntries.length > 1) {
+      attrs.onMultiRename?.(selectedEntries);
+      return;
+    }
     const entry = attrs.cursorIndex === undefined ? undefined : attrs.entries[attrs.cursorIndex];
     if (entry === undefined || isParentEntry(entry.id)) return;
     renamingEntry = entry;
