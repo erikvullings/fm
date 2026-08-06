@@ -97,7 +97,7 @@ test('audit job reports cargo audit and pnpm audit without blocking the workflow
   );
 });
 
-test('no code-signing steps are present (out of scope until 0063)', () => {
+test('pull-request CI contains no code-signing or notarization steps', () => {
   const text = JSON.stringify(workflow).toLowerCase();
   assert.ok(!text.includes('codesign'));
   assert.ok(!text.includes('notariz'));

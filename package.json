@@ -22,7 +22,7 @@
     "build": "pnpm run build:rust && pnpm run build:frontend",
     "build:rust": "cargo build --workspace --release",
     "build:frontend": "pnpm --dir frontend build",
-    "build:tauri": "cd apps/fm-desktop/src-tauri && pnpm exec tauri build"
+    "build:tauri": "node scripts/build-tauri.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.6",

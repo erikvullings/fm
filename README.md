@@ -163,3 +163,44 @@ aborted and responses are correlated by request ID before they may replace the v
 
 Pull-request builds never perform code signing or notarization; that is reserved for protected
 release workflows (tracked separately).
+
+## Desktop releases
+
+Desktop product identity has one source: `[package.metadata.desktop]` in
+`apps/fm-desktop/src-tauri/Cargo.toml`. The desktop crate inherits its version from
+`[workspace.package]` in the root `Cargo.toml`; `pnpm build:tauri` resolves both through
+`cargo metadata` and supplies them to Tauri. On macOS it produces a `.app` and `.dmg`; on Windows
+it produces `.msi` and NSIS `-setup.exe` installers. Do not duplicate the version or product
+identity in `tauri.conf.json`. The base config contains only a schema-required bootstrap copy of
+the identifier; the packaging contract test requires it to match the Cargo-owned value.
+
+To prepare a release:
+
+1. Update `[workspace.package].version` in `Cargo.toml` and refresh `Cargo.lock` with
+   `cargo check -p fm-desktop`.
+2. Add the user-facing release notes to the GitHub release/tag description or the commits that
+   GitHub's generated release notes will collect. Note platform limitations and manual checks.
+3. Run `pnpm lint`, `pnpm test`, and `pnpm build:tauri` on a supported desktop host.
+4. Commit the version change, then push an annotated `v<version>` tag (for example `v0.2.0`). The
+   workflow rejects tags that do not exactly match the Cargo version.
+
+The tag-only `.github/workflows/release-desktop.yml` workflow uses the protected
+`desktop-release` GitHub environment. Configure environment approval rules and repository secrets
+for the Apple Developer ID certificate/keychain password and Apple notarization account, plus the
+Windows PFX/password/thumbprint. Pull-request CI does not reference those secrets. The workflow
+verifies macOS signatures and stapled notarization tickets and verifies Windows Authenticode
+signatures before publishing the generated release notes and installers.
+
+CI performs an unsigned packaging smoke test on disposable macOS and Windows runners: it copies or
+installs an artefact, launches the packaged executable, verifies that it remains running, and then
+cleans up. Before promoting a release, also perform this manual smoke on each supported platform:
+
+- macOS: download the `.dmg` on a different Mac, mount it, drag Procyon to Applications, launch it,
+  confirm Gatekeeper reports an identified developer, browse a directory, and quit normally.
+- Windows: download both installers on a clean Windows VM, verify Digital Signatures properties,
+  install one format, launch Procyon, browse a directory, quit, uninstall, and repeat with the other
+  installer format.
+
+Linux packaging is out of scope for the first release; Linux workspace builds and tests remain in
+CI so the Rust/Tauri host is not broken there. Auto-update is not included in the first-release
+packaging design; releases are downloaded and installed manually.

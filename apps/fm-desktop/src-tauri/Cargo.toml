@@ -6,6 +6,21 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 
+# `scripts/build-tauri.mjs` reads this through `cargo metadata` and supplies it
+# to Tauri as a generated config overlay. Keep desktop identity in this one
+# Cargo-owned source so the resolved workspace crate version cannot drift from
+# installer metadata.
+[package.metadata.desktop]
+product-name = "Procyon"
+identifier = "dev.fm.desktop"
+icons = [
+  "icons/32x32.png",
+  "icons/128x128.png",
+  "icons/128x128@2x.png",
+  "icons/icon.icns",
+  "icons/icon.ico",
+]
+
 [lib]
 # A library target lets the mock-runtime smoke test build the same `run`
 # entry point `main.rs` calls, matching `fm-server`'s `lib.rs`/`main.rs` split.

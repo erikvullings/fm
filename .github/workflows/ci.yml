@@ -71,8 +71,11 @@ jobs:
           cache: pnpm
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-      - name: Build Tauri app (task 0015)
+      - name: Build unsigned Tauri installers
         run: pnpm run build:tauri
+      - name: Install and launch packaged desktop app
+        working-directory: apps/fm-desktop/src-tauri
+        run: node ../../../scripts/smoke-desktop-package.mjs
 
   audit:
     name: Dependency audit

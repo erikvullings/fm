@@ -1,6 +1,6 @@
 # 0063 Desktop packaging, signing and notarization
 
-Status: open
+Status: done
 Priority: low
 Owner: unassigned
 Agent: unassigned
@@ -29,4 +29,16 @@ and §37 (signed macOS and Windows installers).
 - Auto-update is not in scope; note the decision.
 
 ## Agent Notes
-- Not started.
+- 2026-08-06 Codex: Added Cargo-owned desktop product metadata and a typed Tauri build wrapper that
+  resolves the inherited Rust crate version into macOS `.app`/`.dmg` and Windows `.msi`/NSIS
+  targets. Added credential-free PR packaging with disposable-runner install/launch smoke checks,
+  plus a tag-only protected release workflow that imports repository certificates, notarizes and
+  verifies macOS bundles, signs and verifies Windows installers, and publishes generated release
+  notes. Documented versioning, environment secrets, manual platform verification, Linux scope,
+  and the no-auto-update decision. Verified 7 task-specific tests via
+  `node --test scripts/desktop-packaging.test.mjs`, clean frontend typecheck, `cargo check -p
+  fm-desktop`, `pnpm run lint`, a local macOS `.app`/`.dmg` build, and the macOS install/launch smoke
+  test. Windows packaging/signing remains platform-untested locally and is exercised by the Windows
+  CI/release jobs. The full `pnpm test` run encountered an unrelated transient conflict-resolution
+  timeout that passed in isolation; `pnpm run test:scripts` also retains the pre-existing failure
+  that expects exactly 10 ADRs although the repository now contains ADR 0011.
