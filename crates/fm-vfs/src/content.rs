@@ -23,13 +23,30 @@ const MAX_LINE_BYTES: usize = 4 * 1024 * 1024;
 /// How often (in underlying reads) cancellation is polled.
 const CANCELLATION_CHECK_INTERVAL_READS: u32 = 64;
 
+/// UTF-16/UTF-32 byte-order marks. Files with these leading bytes are legitimately text (e.g.
+/// Windows-authored `.xml`/`.xsd` are often saved as UTF-16) even though every ASCII-range
+/// character is followed (or preceded) by a NUL byte, so they must be exempted from the NUL-byte
+/// heuristic below rather than misdetected as binary.
+const UTF16_LE_BOM: &[u8] = &[0xFF, 0xFE];
+const UTF16_BE_BOM: &[u8] = &[0xFE, 0xFF];
+const UTF32_LE_BOM: &[u8] = &[0xFF, 0xFE, 0x00, 0x00];
+const UTF32_BE_BOM: &[u8] = &[0x00, 0x00, 0xFE, 0xFF];
+
 /// Sniffs whether a byte sample looks like non-text (binary) content.
 ///
 /// Uses the same NUL-byte heuristic convention as other file managers (spec/task 0088): text-like
 /// content essentially never contains a NUL byte, while most binary formats do within their first
-/// bytes.
+/// bytes. A leading UTF-16/UTF-32 BOM is exempted from this check since that encoding legitimately
+/// puts a NUL byte around every ASCII-range character.
 #[must_use]
 pub fn looks_like_binary(sample: &[u8]) -> bool {
+    if sample.starts_with(UTF32_LE_BOM)
+        || sample.starts_with(UTF32_BE_BOM)
+        || sample.starts_with(UTF16_LE_BOM)
+        || sample.starts_with(UTF16_BE_BOM)
+    {
+        return false;
+    }
     sample.contains(&0)
 }
 
@@ -488,5 +505,27 @@ mod tests {
     fn looks_like_binary_detects_a_nul_byte() {
         assert!(looks_like_binary(b"hello\0world"));
         assert!(!looks_like_binary(b"hello world"));
+    }
+
+    #[test]
+    fn looks_like_binary_exempts_utf16_and_utf32_boms() {
+        // "<?xml" encoded as UTF-16LE, as commonly produced by Windows tooling for .xml/.xsd.
+        let utf16_le: Vec<u8> = "<?xml".encode_utf16().flat_map(u16::to_le_bytes).collect();
+        let mut sample = UTF16_LE_BOM.to_vec();
+        sample.extend(utf16_le);
+        assert!(!looks_like_binary(&sample));
+
+        let utf16_be: Vec<u8> = "<?xml".encode_utf16().flat_map(u16::to_be_bytes).collect();
+        let mut sample = UTF16_BE_BOM.to_vec();
+        sample.extend(utf16_be);
+        assert!(!looks_like_binary(&sample));
+
+        let mut sample = UTF32_LE_BOM.to_vec();
+        sample.extend([b'<', 0, 0, 0]);
+        assert!(!looks_like_binary(&sample));
+
+        let mut sample = UTF32_BE_BOM.to_vec();
+        sample.extend([0, 0, 0, b'<']);
+        assert!(!looks_like_binary(&sample));
     }
 }

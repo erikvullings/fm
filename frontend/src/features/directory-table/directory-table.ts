@@ -174,7 +174,7 @@ const INITIAL_COLUMNS: readonly DirectoryColumnDescriptor[] = [
   },
   {
     id: 'core.extension',
-    label: 'Extension',
+    label: 'Ext',
     cellClass: 'fm-directory-type',
     render: typeLabel,
   },
