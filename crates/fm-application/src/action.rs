@@ -445,7 +445,7 @@ fn core_actions(capabilities: PlatformCapabilities) -> Vec<ActionDescriptor> {
         ),
         core_action(
             "core.copyPath",
-            "Copy Path",
+            "Copy Full Path",
             "clipboard",
             Vec::new(),
             ActionContextRequirements::selection(),

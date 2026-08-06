@@ -37,6 +37,12 @@ const SELECTION_ACTION_IDS = new Set([
   'core.copyRelativePath',
 ]);
 
+const CONTEXT_MENU_SELECTION_ORDER = new Map([
+  ['core.copyName', 0],
+  ['core.copyPath', 1],
+  ['core.copyRelativePath', 2],
+]);
+
 // `core.trash` is deliberately excluded: unlike rename/move/permanent-delete,
 // trashing is reversible and requires no `overrideReadOnly` escape hatch, so
 // read-only selected entries stay trashable (task 0043).
@@ -97,10 +103,15 @@ export function menuActionsForContext(
   context: CommandAvailabilityContext,
 ): readonly AvailableAction[] {
   const selected = context.selectedEntries.length > 0;
-  return availableActions(
-    actions.filter((action) =>
-      selected ? SELECTION_ACTION_IDS.has(action.id) : LOCATION_ACTION_IDS.has(action.id),
-    ),
-    context,
+  const matchingActions = actions.filter((action) =>
+    selected ? SELECTION_ACTION_IDS.has(action.id) : LOCATION_ACTION_IDS.has(action.id),
   );
+  if (selected) {
+    matchingActions.sort(
+      (left, right) =>
+        (CONTEXT_MENU_SELECTION_ORDER.get(left.id) ?? Number.MAX_SAFE_INTEGER) -
+        (CONTEXT_MENU_SELECTION_ORDER.get(right.id) ?? Number.MAX_SAFE_INTEGER),
+    );
+  }
+  return availableActions(matchingActions, context);
 }

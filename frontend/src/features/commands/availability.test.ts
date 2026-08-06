@@ -150,16 +150,17 @@ describe('command availability', () => {
 
   it('includes the available copy name and path actions in the selection-context menu (task 0093)', () => {
     const actions = [
-      action('core.copyName', { requiresSelection: true }),
-      action('core.copyPath', { requiresSelection: true }),
       action('core.copyRelativePath', { requiresSelection: true }),
+      action('core.copyPath', { requiresSelection: true }),
+      action('core.rename', { requiresSelection: true }),
+      action('core.copyName', { requiresSelection: true }),
     ];
 
-    expect(menuActionsForContext(actions, context({ selectedEntries: [entry('file')] }))).toEqual([
-      { action: actions[0], available: true },
-      { action: actions[1], available: true },
-      { action: actions[2], available: true },
-    ]);
+    expect(
+      menuActionsForContext(actions, context({ selectedEntries: [entry('file')] })).map(
+        (item) => item.action.id,
+      ),
+    ).toEqual(['core.copyName', 'core.copyPath', 'core.copyRelativePath', 'core.rename']);
   });
 
   it('keeps core.trash available for a read-only selection, unlike core.delete (task 0043)', () => {
