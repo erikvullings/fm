@@ -167,9 +167,3 @@ the workspace-service tasks; see Step 2b above).
 - [ ] 0075 Directory comparison and synchronization
 - [ ] 0076 Archive provider: browse, mutate and passwords
 - [ ] 0077 Checksums and duplicate-file detection
-
-## MVP definition (§36)
-
-The MVP is met once 0001–0057 plus 0064 are `done`: both hosts start, two panes navigate the local
-filesystem, the seven operations run through the engine with progress/cancel/conflicts, OpenAPI and
-the generated client are CI-checked, events flow over both transports, and both sample plugins load.
