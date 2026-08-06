@@ -28,6 +28,12 @@ function findButton(text: string): HTMLButtonElement {
   return button;
 }
 
+function findInput(id: string): HTMLInputElement {
+  const input = document.getElementById(id);
+  if (!(input instanceof HTMLInputElement)) throw new Error(`input "#${id}" missing`);
+  return input;
+}
+
 describe('MultiRenameDialog', () => {
   it('renders a preview row per entry, unchanged by default', () => {
     m.mount(root, {
@@ -61,9 +67,8 @@ describe('MultiRenameDialog', () => {
     });
     m.redraw.sync();
 
-    const search = document.querySelector<HTMLInputElement>('#multi-rename-search');
-    const replace = document.querySelector<HTMLInputElement>('#multi-rename-replace');
-    if (!search || !replace) throw new Error('rule inputs missing');
+    const search = findInput('multi-rename-search');
+    const replace = findInput('multi-rename-replace');
     search.value = 'alpha';
     search.dispatchEvent(new InputEvent('input', { bubbles: true }));
     replace.value = 'gamma';
@@ -89,10 +94,9 @@ describe('MultiRenameDialog', () => {
     });
     m.redraw.sync();
 
-    const prefix = document.querySelector<HTMLInputElement>('#multi-rename-prefix');
-    if (!prefix) throw new Error('prefix input missing');
-    prefix.value = 'new-';
-    prefix.dispatchEvent(new InputEvent('input', { bubbles: true }));
+    const nameMask = findInput('multi-rename-name-mask');
+    nameMask.value = 'new-[N]';
+    nameMask.dispatchEvent(new InputEvent('input', { bubbles: true }));
     m.redraw.sync();
 
     findButton('Rename').dispatchEvent(new MouseEvent('click', { bubbles: true }));
@@ -116,13 +120,9 @@ describe('MultiRenameDialog', () => {
     });
     m.redraw.sync();
 
-    const regexCheckbox = document.querySelector<HTMLInputElement>(
-      '.fm-multi-rename-checkbox input[type="checkbox"]',
-    );
-    const search = document.querySelector<HTMLInputElement>('#multi-rename-search');
-    if (!regexCheckbox || !search) throw new Error('inputs missing');
-    regexCheckbox.checked = true;
-    regexCheckbox.dispatchEvent(new Event('change', { bubbles: true }));
+    const regexCheckbox = findInput('multi-rename-use-regex');
+    const search = findInput('multi-rename-search');
+    regexCheckbox.click();
     search.value = '(unterminated';
     search.dispatchEvent(new InputEvent('input', { bubbles: true }));
     m.redraw.sync();
@@ -144,9 +144,8 @@ describe('MultiRenameDialog', () => {
     });
     m.redraw.sync();
 
-    const search = document.querySelector<HTMLInputElement>('#multi-rename-search');
-    const replace = document.querySelector<HTMLInputElement>('#multi-rename-replace');
-    if (!search || !replace) throw new Error('rule inputs missing');
+    const search = findInput('multi-rename-search');
+    const replace = findInput('multi-rename-replace');
     search.value = 'alpha';
     search.dispatchEvent(new InputEvent('input', { bubbles: true }));
     replace.value = 'same';
@@ -192,19 +191,41 @@ describe('MultiRenameDialog', () => {
     });
     m.redraw.sync();
 
-    const prefix = document.querySelector<HTMLInputElement>('#multi-rename-prefix');
-    if (!prefix) throw new Error('prefix input missing');
-    prefix.value = 'temp-';
-    prefix.dispatchEvent(new InputEvent('input', { bubbles: true }));
+    const nameMask = findInput('multi-rename-name-mask');
+    nameMask.value = 'temp-[N]';
+    nameMask.dispatchEvent(new InputEvent('input', { bubbles: true }));
     m.redraw.sync();
-    expect(prefix.value).toBe('temp-');
+    expect(nameMask.value).toBe('temp-[N]');
 
     open = false;
     m.redraw.sync();
     open = true;
     m.redraw.sync();
 
-    const reopenedPrefix = document.querySelector<HTMLInputElement>('#multi-rename-prefix');
-    expect(reopenedPrefix?.value).toBe('');
+    const reopenedNameMask = findInput('multi-rename-name-mask');
+    expect(reopenedNameMask.value).toBe('[N]');
+  });
+
+  it('composes the name mask from tokens, live', () => {
+    m.mount(root, {
+      view: () =>
+        m(MultiRenameDialog, {
+          open: true,
+          entries,
+          existingSiblingNames: new Set<string>(),
+          onApply: vi.fn(),
+          onCancel: vi.fn(),
+        }),
+    });
+    m.redraw.sync();
+
+    const nameMask = findInput('multi-rename-name-mask');
+    nameMask.value = '[N1-3]-[C]';
+    nameMask.dispatchEvent(new InputEvent('input', { bubbles: true }));
+    m.redraw.sync();
+
+    const rows = [...document.querySelectorAll('.fm-multi-rename-preview tbody tr')];
+    expect(rows[0]?.textContent).toContain('alp-1.txt');
+    expect(rows[1]?.textContent).toContain('bet-2.txt');
   });
 });

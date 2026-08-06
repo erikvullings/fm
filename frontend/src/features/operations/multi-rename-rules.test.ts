@@ -90,45 +90,112 @@ describe('proposeRenames: search & replace', () => {
   });
 });
 
-describe('proposeRenames: prefix & suffix', () => {
-  it('adds a prefix before the stem', () => {
+describe('proposeRenames: name & extension masks', () => {
+  it('defaults to [N].[E], leaving names unchanged', () => {
     const entries = [target('1', 'report.pdf')];
-    const proposals = proposeRenames(entries, rules({ prefix: 'final-' }), new Set());
+    const proposals = proposeRenames(entries, rules(), new Set());
+    expect(proposals[0]?.newName).toBe('report.pdf');
+    expect(proposals[0]?.changed).toBe(false);
+  });
+
+  it('adds literal text around [N] in the name mask', () => {
+    const entries = [target('1', 'report.pdf')];
+    const proposals = proposeRenames(entries, rules({ nameMask: 'final-[N]' }), new Set());
     expect(proposals[0]?.newName).toBe('final-report.pdf');
   });
 
-  it('adds a suffix after the stem, before the extension', () => {
+  it('adds literal text around [N] as a suffix', () => {
     const entries = [target('1', 'report.pdf')];
-    const proposals = proposeRenames(entries, rules({ suffix: '-v2' }), new Set());
+    const proposals = proposeRenames(entries, rules({ nameMask: '[N]-v2' }), new Set());
     expect(proposals[0]?.newName).toBe('report-v2.pdf');
   });
 
-  it('combines prefix and suffix', () => {
-    const entries = [target('1', 'report.pdf')];
-    const proposals = proposeRenames(entries, rules({ prefix: 'a-', suffix: '-b' }), new Set());
-    expect(proposals[0]?.newName).toBe('a-report-b.pdf');
+  it('takes a 1-based, inclusive character range with [N#-#]', () => {
+    const entries = [target('1', 'holiday-photo.jpg')];
+    const proposals = proposeRenames(entries, rules({ nameMask: '[N1-7]' }), new Set());
+    expect(proposals[0]?.newName).toBe('holiday.jpg');
   });
-});
 
-describe('proposeRenames: sequence numbering', () => {
-  it('appends a padded sequence number per entry, in order', () => {
+  it('substitutes the extension with [E] and a range with [E#-#]', () => {
+    const entries = [target('1', 'report.pdf')];
+    const proposals = proposeRenames(
+      entries,
+      rules({ nameMask: '[N]', extensionMask: '[E1-2]' }),
+      new Set(),
+    );
+    expect(proposals[0]?.newName).toBe('report.pd');
+  });
+
+  it('drops the extension entirely when the extension mask resolves to an empty string', () => {
+    const entries = [target('1', 'report.pdf')];
+    const proposals = proposeRenames(entries, rules({ extensionMask: '' }), new Set());
+    expect(proposals[0]?.newName).toBe('report');
+  });
+
+  it('inserts the counter with [C] in the name mask', () => {
     const entries = [target('1', 'a.txt'), target('2', 'b.txt'), target('3', 'c.txt')];
     const proposals = proposeRenames(
       entries,
-      rules({ suffix: '', sequence: { start: 1, step: 1, padding: 3 } }),
+      rules({ nameMask: '[N]-[C]', sequence: { start: 1, step: 1, padding: 3 } }),
       new Set(),
     );
-    expect(proposals.map((p) => p.newName)).toEqual(['a001.txt', 'b002.txt', 'c003.txt']);
+    expect(proposals.map((p) => p.newName)).toEqual(['a-001.txt', 'b-002.txt', 'c-003.txt']);
   });
 
-  it('honors a custom start and step', () => {
+  it('honors a custom counter start and step', () => {
     const entries = [target('1', 'a.txt'), target('2', 'b.txt')];
     const proposals = proposeRenames(
       entries,
-      rules({ sequence: { start: 10, step: 5, padding: 1 } }),
+      rules({ nameMask: '[N][C]', sequence: { start: 10, step: 5, padding: 1 } }),
       new Set(),
     );
     expect(proposals.map((p) => p.newName)).toEqual(['a10.txt', 'b15.txt']);
+  });
+
+  it('inserts the counter in the extension mask too', () => {
+    const entries = [target('1', 'a.txt'), target('2', 'b.txt')];
+    const proposals = proposeRenames(
+      entries,
+      rules({ nameMask: '[N]', extensionMask: '[C]' }),
+      new Set(),
+    );
+    expect(proposals.map((p) => p.newName)).toEqual(['a.1', 'b.2']);
+  });
+
+  it("inserts today's date with [YMD]", () => {
+    const entries = [target('1', 'a.txt')];
+    const now = new Date(2026, 7, 6); // 2026-08-06 (month is 0-based)
+    const proposals = proposeRenames(entries, rules({ nameMask: '[N]-[YMD]' }), new Set(), now);
+    expect(proposals[0]?.newName).toBe('a-20260806.txt');
+  });
+
+  it('inserts the current time with [hms]', () => {
+    const entries = [target('1', 'a.txt')];
+    const now = new Date(2026, 7, 6, 9, 5, 3);
+    const proposals = proposeRenames(entries, rules({ nameMask: '[N]-[hms]' }), new Set(), now);
+    expect(proposals[0]?.newName).toBe('a-090503.txt');
+  });
+
+  it('combines several tokens in one mask', () => {
+    const entries = [target('1', 'holiday-photo.jpg')];
+    const now = new Date(2026, 7, 6);
+    const proposals = proposeRenames(
+      entries,
+      rules({ nameMask: '[N1-5][C]-[YMD]', sequence: { start: 1, step: 1, padding: 1 } }),
+      new Set(),
+      now,
+    );
+    expect(proposals[0]?.newName).toBe('holid1-20260806.jpg');
+  });
+
+  it('runs search & replace before the stem is substituted into [N]', () => {
+    const entries = [target('1', 'holiday-photo.jpg')];
+    const proposals = proposeRenames(
+      entries,
+      rules({ search: 'holiday', replace: 'vacation', nameMask: '[N]' }),
+      new Set(),
+    );
+    expect(proposals[0]?.newName).toBe('vacation-photo.jpg');
   });
 });
 
@@ -169,7 +236,7 @@ describe('proposeRenames: collision detection', () => {
     const entries = [target('1', 'a.txt')];
     const proposals = proposeRenames(
       entries,
-      rules({ prefix: 'existing-', search: 'a', replace: '' }),
+      rules({ nameMask: 'existing-[N]', search: 'a', replace: '' }),
       new Set(['existing-.txt']),
     );
     expect(proposals[0]?.newName).toBe('existing-.txt');
@@ -219,7 +286,7 @@ describe('canApplyRenamePlan', () => {
 
   it('is true when at least one entry changed and nothing is invalid or colliding', () => {
     const entries = [target('1', 'a.txt')];
-    const proposals = proposeRenames(entries, rules({ prefix: 'new-' }), new Set());
+    const proposals = proposeRenames(entries, rules({ nameMask: 'new-[N]' }), new Set());
     expect(canApplyRenamePlan(proposals)).toBe(true);
   });
 

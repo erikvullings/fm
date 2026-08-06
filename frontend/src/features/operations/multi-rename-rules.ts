@@ -3,21 +3,25 @@ import { validateDirectoryName } from './create-directory-dialog';
 /** How the whole proposed name is cased after every other rule has been applied. */
 export type CaseTransform = 'unchanged' | 'upper' | 'lower' | 'title';
 
-/** A counter appended to each proposed name, in selection order. */
+/** A counter available to the `[C]` mask token, in selection order. */
 export interface SequenceRule {
   readonly start: number;
   readonly step: number;
   readonly padding: number;
 }
 
-/** The rule set configured in the multi-rename dialog (spec §16). */
+/**
+ * The rule set configured in the multi-rename dialog (spec §16), modeled on Total Commander's
+ * Multi-Rename Tool: `nameMask`/`extensionMask` are independently composed from tokens
+ * (`[N]`/`[N#-#]`, `[E]`/`[E#-#]`, `[C]`, `[YMD]`, `[hms]`) and joined with a dot.
+ */
 export interface MultiRenameRules {
   readonly search: string;
   readonly replace: string;
   readonly useRegex: boolean;
-  readonly prefix: string;
-  readonly suffix: string;
-  readonly sequence?: SequenceRule;
+  readonly nameMask: string;
+  readonly extensionMask: string;
+  readonly sequence: SequenceRule;
   readonly caseTransform: CaseTransform;
 }
 
@@ -25,8 +29,9 @@ export const EMPTY_MULTI_RENAME_RULES: MultiRenameRules = {
   search: '',
   replace: '',
   useRegex: false,
-  prefix: '',
-  suffix: '',
+  nameMask: '[N]',
+  extensionMask: '[E]',
+  sequence: { start: 1, step: 1, padding: 1 },
   caseTransform: 'unchanged',
 };
 
@@ -66,7 +71,7 @@ function splitExtension(name: string): { stem: string; extension: string } {
   // No extension, or a leading dot (dotfile) with nothing before it: keep the whole name as the
   // stem so a leading dot is never mistaken for an empty-stem extension.
   if (lastDot <= 0) return { stem: name, extension: '' };
-  return { stem: name.slice(0, lastDot), extension: name.slice(lastDot) };
+  return { stem: name.slice(0, lastDot), extension: name.slice(lastDot + 1) };
 }
 
 function escapeRegExp(value: string): string {
@@ -82,33 +87,108 @@ function applySearchReplace(stem: string, rules: MultiRenameRules): string {
   return stem.replace(new RegExp(escapeRegExp(rules.search), 'gu'), rules.replace);
 }
 
-function applyCaseTransform(name: string, extension: string, transform: CaseTransform): string {
-  switch (transform) {
-    case 'upper':
-      return `${name}${extension}`.toUpperCase();
-    case 'lower':
-      return `${name}${extension}`.toLowerCase();
-    case 'title':
-      // Title-casing only makes sense on the words in the name itself; the extension is left
-      // as-is (an all-caps ".JPG" wouldn't become ".Jpg").
-      return `${name.replace(/\b\w/gu, (letter) => letter.toUpperCase())}${extension}`;
-    case 'unchanged':
-      return `${name}${extension}`;
-  }
-}
-
 function formatSequence(index: number, sequence: SequenceRule): string {
   const value = sequence.start + index * sequence.step;
   return String(Math.abs(value)).padStart(sequence.padding, '0');
 }
 
+function formatDate(now: Date): string {
+  const year = String(now.getFullYear()).padStart(4, '0');
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}${month}${day}`;
+}
+
+function formatTime(now: Date): string {
+  const hours = String(now.getHours()).padStart(2, '0');
+  const minutes = String(now.getMinutes()).padStart(2, '0');
+  const seconds = String(now.getSeconds()).padStart(2, '0');
+  return `${hours}${minutes}${seconds}`;
+}
+
+/** A 1-based, inclusive `start-end` slice of `value`; out-of-range bounds yield an empty string. */
+function sliceRange(value: string, start: number, end: number): string {
+  if (start < 1 || end < start) return '';
+  return value.slice(start - 1, end);
+}
+
+interface MaskContext {
+  readonly stem: string;
+  readonly extension: string;
+  readonly index: number;
+  readonly sequence: SequenceRule;
+  readonly now: Date;
+}
+
+// Total Commander-style mask tokens: [N]/[N#-#] the (search & replace'd) stem, [E]/[E#-#] the
+// extension, [C] the counter, [YMD] today's date, [hms] the current time. Both mask fields accept
+// every token, so e.g. a counter can be used in either the name or the extension mask.
+const MASK_TOKEN = /\[N(?:(\d+)-(\d+))?\]|\[E(?:(\d+)-(\d+))?\]|\[C\]|\[YMD\]|\[hms\]/gu;
+
+function applyMask(mask: string, ctx: MaskContext): string {
+  return mask.replace(
+    MASK_TOKEN,
+    (match, nStart?: string, nEnd?: string, eStart?: string, eEnd?: string) => {
+      if (match.startsWith('[N')) {
+        return nStart !== undefined && nEnd !== undefined
+          ? sliceRange(ctx.stem, Number(nStart), Number(nEnd))
+          : ctx.stem;
+      }
+      if (match.startsWith('[E')) {
+        return eStart !== undefined && eEnd !== undefined
+          ? sliceRange(ctx.extension, Number(eStart), Number(eEnd))
+          : ctx.extension;
+      }
+      if (match === '[C]') return formatSequence(ctx.index, ctx.sequence);
+      if (match === '[YMD]') return formatDate(ctx.now);
+      return formatTime(ctx.now); // [hms]
+    },
+  );
+}
+
+function applyCaseTransform(
+  namePart: string,
+  extensionPart: string,
+  transform: CaseTransform,
+): { namePart: string; extensionPart: string } {
+  switch (transform) {
+    case 'upper':
+      return { namePart: namePart.toUpperCase(), extensionPart: extensionPart.toUpperCase() };
+    case 'lower':
+      return { namePart: namePart.toLowerCase(), extensionPart: extensionPart.toLowerCase() };
+    case 'title':
+      // Title-casing only makes sense on the words in the name itself; the extension is left
+      // as-is (an all-caps ".JPG" wouldn't become ".Jpg").
+      return {
+        namePart: namePart.replace(/\b\w/gu, (letter) => letter.toUpperCase()),
+        extensionPart,
+      };
+    case 'unchanged':
+      return { namePart, extensionPart };
+  }
+}
+
 /** Composes every rule into a single proposed name for one entry. */
-export function proposeName(entry: RenameTarget, index: number, rules: MultiRenameRules): string {
+export function proposeName(
+  entry: RenameTarget,
+  index: number,
+  rules: MultiRenameRules,
+  now: Date = new Date(),
+): string {
   const { stem, extension } = splitExtension(entry.name);
-  const replaced = applySearchReplace(stem, rules);
-  const sequenceToken = rules.sequence === undefined ? '' : formatSequence(index, rules.sequence);
-  const composed = `${rules.prefix}${replaced}${sequenceToken}${rules.suffix}`;
-  return applyCaseTransform(composed, extension, rules.caseTransform);
+  const ctx: MaskContext = {
+    stem: applySearchReplace(stem, rules),
+    extension,
+    index,
+    sequence: rules.sequence,
+    now,
+  };
+  const { namePart, extensionPart } = applyCaseTransform(
+    applyMask(rules.nameMask, ctx),
+    applyMask(rules.extensionMask, ctx),
+    rules.caseTransform,
+  );
+  return extensionPart.length > 0 ? `${namePart}.${extensionPart}` : namePart;
 }
 
 function foldForCollision(name: string): string {
@@ -125,9 +205,10 @@ export function proposeRenames(
   entries: readonly RenameTarget[],
   rules: MultiRenameRules,
   existingSiblingNames: ReadonlySet<string>,
+  now: Date = new Date(),
 ): RenameProposal[] {
   const foldedExisting = new Set(Array.from(existingSiblingNames, foldForCollision));
-  const newNames = entries.map((entry, index) => proposeName(entry, index, rules));
+  const newNames = entries.map((entry, index) => proposeName(entry, index, rules, now));
   const foldedCounts = new Map<string, number>();
   for (const name of newNames) {
     const folded = foldForCollision(name);

@@ -126,7 +126,7 @@ the workspace-service tasks; see Step 2b above).
 - [ ] 0060 Windows platform integration
 - [x] 0061 Open with default application, reveal in file manager, open terminal
 - [ ] 0062 Drag and drop within the app and with the OS
-- [ ] 0063 Desktop packaging, signing and notarization
+- [x] 0063 Desktop packaging, signing and notarization
 
 ## Cross-cutting quality
 
