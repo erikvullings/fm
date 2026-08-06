@@ -34,7 +34,8 @@ export interface EntryIconRegistry {
 /** Extensions rendered as images by the icon registry and the preview/viewer features. */
 export const IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg', 'avif'];
 const ARCHIVE_EXTENSIONS = ['zip', 'tar', 'gz', 'tgz', 'rar', '7z', 'bz2', 'xz'];
-const AUDIO_EXTENSIONS = ['mp3', 'wav', 'flac', 'ogg', 'm4a', 'aac'];
+/** Extensions rendered as audio by the icon registry and the preview/viewer features. */
+export const AUDIO_EXTENSIONS = ['mp3', 'wav', 'flac', 'ogg', 'm4a', 'aac'];
 const VIDEO_EXTENSIONS = ['mp4', 'mov', 'avi', 'mkv', 'webm', 'm4v'];
 const PDF_EXTENSIONS = ['pdf'];
 

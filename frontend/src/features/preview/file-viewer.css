@@ -131,6 +131,8 @@
 }
 
 .fm-file-viewer-body {
+  /* Always the last grid row (search bar is row 2 and only present for text previews). */
+  grid-row: 3;
   overflow: auto;
   min-height: 0;
   padding: 0.5rem;
@@ -213,4 +215,31 @@
   max-width: 100%;
   max-height: 100%;
   object-fit: contain;
+}
+
+.fm-file-viewer-body-audio {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.fm-file-viewer-body-audio audio {
+  width: 100%;
+  max-width: 32rem;
+  accent-color: var(--fm-accent);
+}
+
+/* Non-standard pseudo-elements (Chromium/WebKit) styling the native control panel so it
+ * follows the active theme's blue-tinted surface instead of the browser's default chrome. */
+.fm-file-viewer-body-audio audio::-webkit-media-controls-panel {
+  background-color: var(--fm-surface-elevated);
+  border-radius: var(--fm-radius);
+}
+
+.fm-file-viewer-body-audio audio::-webkit-media-controls-play-button,
+.fm-file-viewer-body-audio audio::-webkit-media-controls-mute-button,
+.fm-file-viewer-body-audio audio::-webkit-media-controls-overflow-button,
+.fm-file-viewer-body-audio audio::-webkit-media-controls-current-time-display,
+.fm-file-viewer-body-audio audio::-webkit-media-controls-time-remaining-display {
+  color: var(--fm-text);
 }

@@ -629,6 +629,77 @@ describe('AppShell', () => {
     }
   });
 
+  it('keeps F3 View in the footer even when the OS-open fallback is unavailable in the browser (task 0088)', async () => {
+    const client = new MockFileManagerClient();
+    vi.spyOn(client, 'listActions').mockResolvedValue([
+      {
+        id: 'core.view',
+        title: 'View',
+        category: 'fileOperations',
+        defaultShortcuts: [{ key: 'F3' }],
+        contextRequirements: { requiresSelection: true, requiresSingleSelection: true },
+        source: { kind: 'core' },
+      },
+      {
+        id: 'core.open',
+        title: 'Open',
+        category: 'fileOperations',
+        defaultShortcuts: [{ key: 'Enter' }],
+        contextRequirements: { featureAvailable: false },
+        source: { kind: 'core' },
+      },
+    ]);
+    m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
+    await vi.waitFor(() => expect(root.textContent).toContain('.env'));
+
+    const footerKey = [...root.querySelectorAll<HTMLElement>('.fm-function-key')].find((span) =>
+      span.textContent?.includes('F3 View'),
+    );
+    expect(footerKey).not.toBeUndefined();
+  });
+
+  it('shows a friendly toast instead of an error for the Alt+F3 OS-open fallback when it is unavailable in the browser', async () => {
+    const client = new MockFileManagerClient();
+    vi.spyOn(client, 'listActions').mockResolvedValue([
+      {
+        id: 'core.view',
+        title: 'View',
+        category: 'fileOperations',
+        defaultShortcuts: [{ key: 'F3' }],
+        contextRequirements: { requiresSelection: true, requiresSingleSelection: true },
+        source: { kind: 'core' },
+      },
+      {
+        id: 'core.open',
+        title: 'Open',
+        category: 'fileOperations',
+        defaultShortcuts: [{ key: 'Enter' }],
+        contextRequirements: { featureAvailable: false },
+        source: { kind: 'core' },
+      },
+    ]);
+    const invokeAction = vi.spyOn(client, 'invokeAction');
+    m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
+    await vi.waitFor(() => expect(root.textContent).toContain('.env'));
+    const activePane = root.querySelector<HTMLElement>('[data-active="true"] > .fm-pane');
+    const file = [...(activePane?.querySelectorAll<HTMLElement>('.fm-directory-row') ?? [])].find(
+      (row) => row.textContent?.includes('.env'),
+    );
+    file?.click();
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'F3', altKey: true, bubbles: true }),
+    );
+
+    try {
+      await vi.waitFor(() => expect(document.querySelector('.toast')).not.toBeNull());
+      expect(document.querySelector('.toast')?.textContent).toContain("isn't available");
+      expect(invokeAction).not.toHaveBeenCalled();
+    } finally {
+      Toast.dismissAll();
+      await vi.waitFor(() => expect(document.getElementById('toast-container')).toBeNull());
+    }
+  });
+
   it('cuts a selection, dims it, and pastes the move into the active pane', async () => {
     const client = new MockFileManagerClient();
     const startOperation = vi.spyOn(client, 'startOperation');

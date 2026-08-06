@@ -239,6 +239,20 @@ function renderImageBody(
   );
 }
 
+function renderAudioBody(state: Extract<FileViewerState, { status: 'ready' }>): m.Children {
+  const content = state.content;
+  if (content.kind !== 'audio') return undefined;
+  return m(
+    '.fm-file-viewer-body.fm-file-viewer-body-audio',
+    m('audio', {
+      controls: true,
+      autoplay: false,
+      src: content.dataUri,
+      'aria-label': state.entry.name,
+    }),
+  );
+}
+
 export const FileViewer: FactoryComponent<FileViewerAttrs> = () => {
   const highlightScrollState: HighlightScrollState = { lastKey: undefined };
   return {
@@ -281,7 +295,9 @@ export const FileViewer: FactoryComponent<FileViewerAttrs> = () => {
               ? m('.fm-file-viewer-body', m('span', state.message))
               : state.content.kind === 'text'
                 ? renderTextBody(attrs, state, highlightScrollState)
-                : renderImageBody(attrs, state),
+                : state.content.kind === 'audio'
+                  ? renderAudioBody(state)
+                  : renderImageBody(attrs, state),
       ]);
     },
   };

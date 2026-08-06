@@ -2,10 +2,12 @@ import { describe, expect, it, vi } from 'vitest';
 
 import type { EntrySummary } from '../../models';
 import {
+  audioMimeTypeFor,
   bytesToDataUri,
   IMAGE_RANGE_CHUNK_BYTES,
   imageMimeTypeFor,
   PREVIEW_SIZE_LIMIT_BYTES,
+  readFullAudioDataUri,
   readFullImageDataUri,
   resolvePreviewKind,
 } from './content-preview';
@@ -34,6 +36,11 @@ describe('resolvePreviewKind', () => {
     expect(resolvePreviewKind(entry({ name: 'photo.JPEG', extension: 'JPEG' }))).toBe('image');
   });
 
+  it('resolves an audio extension to audio', () => {
+    expect(resolvePreviewKind(entry({ name: 'song.mp3', extension: 'mp3' }))).toBe('audio');
+    expect(resolvePreviewKind(entry({ name: 'song.FLAC', extension: 'FLAC' }))).toBe('audio');
+  });
+
   it('resolves any other file extension to text', () => {
     expect(resolvePreviewKind(entry({ name: 'report.txt', extension: 'txt' }))).toBe('text');
     expect(resolvePreviewKind(entry({ name: 'archive.zip', extension: 'zip' }))).toBe('text');
@@ -55,6 +62,24 @@ describe('imageMimeTypeFor', () => {
 
   it('falls back to a generic type when neither is known', () => {
     expect(imageMimeTypeFor(entry())).toBe('application/octet-stream');
+  });
+});
+
+describe('audioMimeTypeFor', () => {
+  it('prefers a known extension over the reported mimeType', () => {
+    expect(
+      audioMimeTypeFor(entry({ extension: 'mp3', mimeType: 'application/octet-stream' })),
+    ).toBe('audio/mpeg');
+  });
+
+  it('falls back to the reported mimeType for an unknown extension', () => {
+    expect(audioMimeTypeFor(entry({ extension: 'xyz', mimeType: 'audio/x-custom' }))).toBe(
+      'audio/x-custom',
+    );
+  });
+
+  it('falls back to a generic type when neither is known', () => {
+    expect(audioMimeTypeFor(entry())).toBe('application/octet-stream');
   });
 });
 
@@ -103,5 +128,20 @@ describe('readFullImageDataUri', () => {
       new AbortController().signal,
     );
     expect(uri).toBe(`data:image/png;base64,${btoa('Hello')}`);
+  });
+});
+
+describe('readFullAudioDataUri', () => {
+  it('concatenates multiple chunks and encodes with the audio MIME type', async () => {
+    const readFileRange = vi
+      .fn()
+      .mockResolvedValueOnce({ data: [72, 101], eof: false, length: 2, offset: 0 })
+      .mockResolvedValueOnce({ data: [108, 108, 111], eof: true, length: 3, offset: 2 });
+    const uri = await readFullAudioDataUri(
+      { readFileRange },
+      entry({ name: 'song.mp3', extension: 'mp3' }),
+      new AbortController().signal,
+    );
+    expect(uri).toBe(`data:audio/mpeg;base64,${btoa('Hello')}`);
   });
 });

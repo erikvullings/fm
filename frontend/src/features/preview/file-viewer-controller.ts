@@ -1,6 +1,6 @@
 import type { FileManagerClient } from '../../api/client/file-manager-client';
 import type { EntrySummary, SearchInFileMatch } from '../../models';
-import { readFullImageDataUri, resolvePreviewKind } from './content-preview';
+import { readFullAudioDataUri, readFullImageDataUri, resolvePreviewKind } from './content-preview';
 
 /** Client surface required to drive a Lister-style large-file viewer. */
 export type FileViewerClient = Pick<FileManagerClient, 'readFileRange' | 'searchInFile'>;
@@ -41,6 +41,13 @@ export interface FileViewerImageContent {
   readonly fitToContainer: boolean;
 }
 
+/** The currently loaded (full) audio file, played back via the native `<audio>` element - which
+ * reports its own duration/position, so no metadata needs fetching separately. */
+export interface FileViewerAudioContent {
+  readonly kind: 'audio';
+  readonly dataUri: string;
+}
+
 /** Search bar state for text-mode viewing (task 0088's VS-Code-like content search). */
 export interface FileViewerSearchState {
   readonly query: string;
@@ -61,7 +68,7 @@ export type FileViewerState =
   | {
       readonly status: 'ready';
       readonly entry: EntrySummary;
-      readonly content: FileViewerTextContent | FileViewerImageContent;
+      readonly content: FileViewerTextContent | FileViewerImageContent | FileViewerAudioContent;
       readonly search?: FileViewerSearchState;
     };
 
@@ -169,6 +176,16 @@ export function createFileViewerController(
     });
   }
 
+  async function loadAudio(controller: AbortController): Promise<void> {
+    const dataUri = await readFullAudioDataUri(client, entry, controller.signal);
+    if (!isCurrent(controller)) return;
+    publish({
+      status: 'ready',
+      entry,
+      content: { kind: 'audio', dataUri },
+    });
+  }
+
   async function load(): Promise<void> {
     const controller = beginRequest();
     publish({ status: 'loading', entry });
@@ -176,6 +193,8 @@ export function createFileViewerController(
       const kind = resolvePreviewKind(entry);
       if (kind === 'image') {
         await loadImage(controller);
+      } else if (kind === 'audio') {
+        await loadAudio(controller);
       } else if (kind === 'text') {
         await loadInitialText(controller);
       } else {

@@ -182,10 +182,15 @@ fn capability_gated_selection(feature_available: bool) -> ActionContextRequireme
 /// additionally carries a `Ctrl+Enter` (`Cmd+Enter` on macOS, via
 /// [`primary`]) shortcut, matching the Marta file manager's "open with"
 /// convention, alongside its existing command-palette-only binding.
-/// `core.view` (task 0087) is a stopgap that shares the same capability and
-/// dispatch as `core.open`, documented on [`crate::FileManagerService`]'s
-/// platform dispatch: task 0088 tracks the real in-app viewer it will
-/// switch to without changing the shortcut, title or footer wiring.
+/// `core.view` (task 0087) originally shared the same capability and
+/// dispatch as `core.open`; task 0088's in-app Lister viewer
+/// ([`crate::FileManagerService`]'s platform dispatch doc comment) now
+/// handles the common case on every host without needing OS integration, so
+/// `core.view` itself is never permanently gated - only the OS-open
+/// fallback it still dispatches to for directories, multi-selections,
+/// single-pane workspaces and the forced Alt+F3 shortcut is capability-
+/// dependent, and the frontend checks `core.open`'s `feature_available` for
+/// that fallback path instead.
 /// `core.edit` (task 0086) opens the selected file in a text editor rather
 /// than its default application, gated by the same capability since no
 /// platform adapter exposes a distinct "text editor" capability bit yet
@@ -239,7 +244,10 @@ fn core_actions(capabilities: PlatformCapabilities) -> Vec<ActionDescriptor> {
             "View",
             "fileOperations",
             vec![key("F3")],
-            capability_gated_single_selection(open_available),
+            // Never platform-gated (task 0088): the in-app Lister viewer works on every
+            // host, so `feature_available` must stay true even without
+            // `OPEN_WITH_DEFAULT_APPLICATION` - unlike `core.open`/`core.edit`/`core.openWith`.
+            ActionContextRequirements::single_selection(),
         ),
         core_action(
             "core.edit",
@@ -606,7 +614,6 @@ mod tests {
         context.selected_entry_ids.push(fm_domain::EntryId::new());
         for id in [
             "core.open",
-            "core.view",
             "core.edit",
             "core.openWith",
             "core.revealInSystemFileManager",
@@ -623,6 +630,18 @@ mod tests {
             .require_available(&action_id, &ActionInvocationContext::default())
             .expect_err("openTerminal must be unavailable without OPEN_TERMINAL");
         assert_eq!(error, ApplicationError::ActionUnavailable(action_id));
+    }
+
+    #[test]
+    fn view_stays_available_without_any_platform_capability() {
+        // Unlike core.open/core.edit/core.openWith, core.view (task 0088) is backed by an
+        // in-app viewer that needs no OS integration, so it must never report unavailable.
+        let registry = ActionRegistry::with_core_actions(PlatformCapabilities::empty());
+        let mut context = ActionInvocationContext::default();
+        context.selected_entry_ids.push(fm_domain::EntryId::new());
+        registry
+            .require_available(&ActionId::new("core.view"), &context)
+            .expect("core.view must stay available with no platform capabilities");
     }
 
     #[test]
@@ -670,7 +689,6 @@ mod tests {
             .push(fm_domain::EntryId::new());
         for id in [
             "core.open",
-            "core.view",
             "core.edit",
             "core.openWith",
             "core.revealInSystemFileManager",

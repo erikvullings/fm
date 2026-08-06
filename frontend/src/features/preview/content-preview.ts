@@ -1,6 +1,6 @@
 import type { FileManagerClient } from '../../api/client/file-manager-client';
 import type { EntrySummary } from '../../models';
-import { IMAGE_EXTENSIONS } from '../directory-table/entry-icons';
+import { AUDIO_EXTENSIONS, IMAGE_EXTENSIONS } from '../directory-table/entry-icons';
 
 /**
  * Which inline preview renderer applies to an entry (task 0071's renderer registry, shared by
@@ -8,7 +8,7 @@ import { IMAGE_EXTENSIONS } from '../directory-table/entry-icons';
  * alone never proves an entry is safely textual - callers must also check the fetched chunk's
  * `probablyBinary` flag before rendering "text" content.
  */
-export type PreviewKind = 'text' | 'image' | 'metadata' | 'unsupported';
+export type PreviewKind = 'text' | 'image' | 'audio' | 'metadata' | 'unsupported';
 
 /**
  * Above this size, the lightweight cursor-driven preview panel shows a "too large to preview"
@@ -29,6 +29,9 @@ export function resolvePreviewKind(entry: EntrySummary): PreviewKind {
   const extension = entry.extension?.toLowerCase();
   if (extension !== undefined && IMAGE_EXTENSIONS.includes(extension)) {
     return 'image';
+  }
+  if (extension !== undefined && AUDIO_EXTENSIONS.includes(extension)) {
+    return 'audio';
   }
   return 'text';
 }
@@ -53,6 +56,24 @@ export function imageMimeTypeFor(entry: EntrySummary): string {
   return byExtension ?? entry.mimeType ?? 'application/octet-stream';
 }
 
+const AUDIO_MIME_TYPES_BY_EXTENSION: Readonly<Record<string, string>> = {
+  mp3: 'audio/mpeg',
+  wav: 'audio/wav',
+  flac: 'audio/flac',
+  ogg: 'audio/ogg',
+  m4a: 'audio/mp4',
+  aac: 'audio/aac',
+};
+
+/** The MIME type to use for an `<audio>` data URI, preferring the extension over a stale/generic
+ * server-reported `mimeType`. */
+export function audioMimeTypeFor(entry: EntrySummary): string {
+  const extension = entry.extension?.toLowerCase();
+  const byExtension =
+    extension === undefined ? undefined : AUDIO_MIME_TYPES_BY_EXTENSION[extension];
+  return byExtension ?? entry.mimeType ?? 'application/octet-stream';
+}
+
 /**
  * Encodes raw bytes as a `data:` URI, the same approach `NativeIconLoader` uses for native icons
  * - avoids `URL.createObjectURL`, which jsdom does not implement, and needs no explicit revoke.
@@ -65,24 +86,25 @@ export function bytesToDataUri(bytes: Uint8Array, mimeType: string): string {
   return `data:${mimeType};base64,${btoa(binary)}`;
 }
 
-/** Bytes fetched per `readFileRange` call when reading a whole image - matches the backend's
- * `MAX_RANGE_LENGTH` cap so every request is served in one round trip when possible. */
+/** Bytes fetched per `readFileRange` call when reading a whole image/audio file - matches the
+ * backend's `MAX_RANGE_LENGTH` cap so every request is served in one round trip when possible. */
 export const IMAGE_RANGE_CHUNK_BYTES = 1024 * 1024;
 
-/** Client surface required to read an image's full bytes in range-sized chunks. */
+/** Client surface required to read a file's full bytes in range-sized chunks. */
 export type ImageRangeClient = Pick<FileManagerClient, 'readFileRange'>;
 
 /**
- * Reads an entire image file as range-sized chunks (respecting the backend's per-request byte
- * cap) and encodes it as a `data:` URI. Shared by the cursor-driven preview panel (which never
- * reaches this for entries over {@link PREVIEW_SIZE_LIMIT_BYTES}) and the Lister-style viewer
- * (which has no such limit - full images are always shown, per Total Commander convention).
+ * Reads an entire file as range-sized chunks (respecting the backend's per-request byte cap).
+ * Shared by {@link readFullImageDataUri} and {@link readFullAudioDataUri} - neither the cursor-
+ * driven preview panel (which never reaches this for entries over
+ * {@link PREVIEW_SIZE_LIMIT_BYTES}) nor the Lister-style viewer (which has no such limit - full
+ * images/audio are always loaded, per Total Commander convention) impose a size cap here.
  */
-export async function readFullImageDataUri(
+async function readEntireFileBytes(
   client: ImageRangeClient,
   entry: EntrySummary,
   signal: AbortSignal,
-): Promise<string> {
+): Promise<Uint8Array> {
   // Accumulate as typed-array segments rather than spreading each chunk's `number[]` into a
   // shared array (`chunks.push(...chunk.data)`) - for a 1 MiB chunk that spreads ~1,048,576
   // arguments into a single call and throws "Maximum call stack size exceeded".
@@ -106,5 +128,26 @@ export async function readFullImageDataUri(
     bytes.set(segment, position);
     position += segment.length;
   }
+  return bytes;
+}
+
+/** Reads an entire image file and encodes it as a `data:` URI (see {@link readEntireFileBytes}). */
+export async function readFullImageDataUri(
+  client: ImageRangeClient,
+  entry: EntrySummary,
+  signal: AbortSignal,
+): Promise<string> {
+  const bytes = await readEntireFileBytes(client, entry, signal);
   return bytesToDataUri(bytes, imageMimeTypeFor(entry));
+}
+
+/** Reads an entire audio file and encodes it as a `data:` URI (see {@link readEntireFileBytes}),
+ * for the Lister viewer's native `<audio>` playback. */
+export async function readFullAudioDataUri(
+  client: ImageRangeClient,
+  entry: EntrySummary,
+  signal: AbortSignal,
+): Promise<string> {
+  const bytes = await readEntireFileBytes(client, entry, signal);
+  return bytesToDataUri(bytes, audioMimeTypeFor(entry));
 }

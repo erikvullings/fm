@@ -1520,13 +1520,21 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       viewActionId === 'core.openWith'
     ) {
       const action = registeredActions.find((candidate) => candidate.id === viewActionId);
-      if (action?.contextRequirements.featureAvailable === false) {
+      // `core.view` itself is never permanently gated (task 0088: its in-app viewer works on
+      // every host), but every path that reaches this block dispatches the OS-open fallback
+      // instead (directories, multi-selections, single-pane workspaces, forced Alt+F3) - so
+      // check `core.open`'s capability, which mirrors what the backend will actually dispatch to.
+      const capabilityAction =
+        viewActionId === 'core.view'
+          ? registeredActions.find((candidate) => candidate.id === 'core.open')
+          : action;
+      if (capabilityAction?.contextRequirements.featureAvailable === false) {
         // The shortcut is still reachable by keyboard even though its footer
         // hint is hidden (task 0061 follow-up): warn briefly instead of
         // invoking, which would otherwise surface a persistent top-of-screen
         // error from the backend rejecting a known-unavailable action.
         event.preventDefault();
-        toast({ html: `${action.title} isn't available in the browser.` });
+        toast({ html: `${action?.title ?? 'View'} isn't available in the browser.` });
         return;
       }
       const active = activeDirectory();
