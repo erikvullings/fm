@@ -50,7 +50,7 @@
 .fm-pane-tabs {
   display: flex;
   align-items: stretch;
-  min-height: var(--fm-row-height);
+  min-height: var(--fm-header-height);
   overflow-x: auto;
   border-bottom: 1px solid var(--fm-border);
   background: var(--fm-surface-elevated);
