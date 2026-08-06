@@ -835,6 +835,20 @@ input[type="text"].fm-command-palette-input {
 }
 
 /*
+ * ModalPanel's title renders as a plain `h4`, inheriting the page's 2.28rem
+ * type-scale font-size and hardcoding `margin: 0 0 20px 0` inline (needs
+ * !important to override). Shrink it for every dialog by default -- lower
+ * specificity than the per-modal overrides below, so those still win.
+ */
+/* biome-ignore-start lint/complexity/noImportantStyles: overrides ModalPanel's inline title margin */
+.fm-app-shell .modal-content h4 {
+  margin: 0 0 0.6rem 0 !important;
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+/* biome-ignore-end lint/complexity/noImportantStyles: overrides ModalPanel's inline title margin */
+
+/*
  * ModalPanel (mithril-materialized) sets width/padding/title size via inline
  * styles, so overriding them for a denser look requires !important here.
  */
