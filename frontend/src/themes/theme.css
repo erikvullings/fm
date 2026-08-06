@@ -963,134 +963,92 @@ input[type="text"].fm-command-palette-input {
   white-space: nowrap;
 }
 
-/* biome-ignore-start lint/complexity/noImportantStyles: overrides ModalPanel's inline styles */
+/*
+ * biome-ignore-start lint/complexity/noImportantStyles: overrides ModalPanel's inline styles.
+ * `.modal-content` uses `max-height` (not a fixed `height`) so a short plan still shrinks to fit;
+ * once content exceeds it, the flex column below caps the dialog and only the preview listbox
+ * scrolls, keeping the Cancel/Rename footer always visible.
+ */
 .modal.fm-multi-rename-modal {
   max-width: min(48rem, calc(100vw - 2rem)) !important;
+  max-height: min(85vh, 44rem) !important;
+  /* Without a floor, the fixed-size rules form above the preview list (which can't shrink
+     below its own content) squeezes the list to nothing on short viewports -- the table
+     scrolls into invisibility instead of just showing fewer rows. Reserve enough height for
+     the title, rules form, footer, and the preview list's own `min-height` floor combined
+     (measured ~34rem at the default font size, plus a buffer); still capped by max-height
+     above and 90vh below so the dialog never grows past the viewport. */
+  min-height: min(38rem, 90vh) !important;
+}
+
+.modal.fm-multi-rename-modal .modal-content {
+  position: static !important;
+  height: auto !important;
+  max-height: none !important;
+  overflow: hidden !important;
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 0 !important;
+  min-height: 0;
+}
+
+/* mm's own `.modal-fixed-footer .modal-footer` CSS sets `position: absolute; bottom: 0`, taking
+   the footer out of the flex flow entirely -- `.modal-content` then claims the dialog's FULL
+   height (nothing left to leave room for) and the footer just overlays whatever content ends up
+   underneath it, instead of the preview list stopping above it. Restore normal flex flow so the
+   two properly share the dialog's height. */
+.modal.fm-multi-rename-modal .modal-footer {
+  position: static !important;
+  flex: 0 0 auto;
+}
+
+/* ModalPanel wraps its `description` prop in an unclassed div; without shrink styling of its
+   own, that wrapper blocks the flex-shrink chain and the whole preview list overflows uncapped
+   instead of scrolling. `overflow-y: auto` (not `hidden`) is a deliberate fallback: on an
+   extremely short viewport where even the rules form's own unshrinkable min-content height plus
+   the preview list's `min-height` floor can't both fit within the dialog's 90vh-capped height,
+   this lets the whole rules+preview area scroll together as one unit instead of letting the
+   preview list's floor render past this wrapper's edge and overlap the (always flex-fixed)
+   footer below.  */
+.modal.fm-multi-rename-modal .modal-content > div {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
 }
 /* biome-ignore-end lint/complexity/noImportantStyles: overrides ModalPanel's inline styles */
 
 .fm-multi-rename-body {
   display: flex;
   flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
   gap: 0.75rem;
 }
 
-.fm-multi-rename-rules {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  gap: 0.6rem;
-}
-
-.fm-multi-rename-field {
-  display: flex;
-  flex-direction: column;
-  gap: 0.2rem;
-  font-size: 0.85rem;
-}
-
-/* See `.fm-app-shell .fm-create-directory-field input` above for why `.fm-app-shell` is needed here. */
-.fm-app-shell .fm-multi-rename-field input,
-.fm-app-shell .fm-multi-rename-field select {
-  box-sizing: border-box;
-  width: 100%;
-  height: var(--fm-row-height);
-  margin: 0;
-  padding: 0 0.35rem;
+/* Its own scrollable listbox: grows to fill the space left by the rules above, and scrolls
+   independently so a long rename plan never makes the whole modal (and its footer) scroll. */
+.fm-multi-rename-preview-container {
+  flex: 1 1 auto;
+  min-height: 5rem;
+  overflow-y: auto;
   border: 1px solid var(--fm-border);
   border-radius: 2px;
-  background: var(--fm-surface);
-  color: var(--fm-text);
-  font: inherit;
-}
-
-.fm-app-shell .fm-multi-rename-field input:focus,
-.fm-app-shell .fm-multi-rename-field select:focus {
-  outline: none;
-  border-color: var(--fm-accent);
-}
-
-.fm-app-shell .fm-multi-rename-field input:disabled,
-.fm-app-shell .fm-multi-rename-field select:disabled {
-  opacity: 0.5;
-}
-
-/*
- * mm's plain `select` rule sets `opacity: 0` (it expects its own JS-enhanced
- * `.select-dropdown`, which this raw `<select>` never gets) -- without this it
- * renders fully invisible while still occupying its 3rem-tall box.
- */
-.fm-app-shell .fm-multi-rename-field select {
-  opacity: 1;
-  appearance: none;
-}
-
-.fm-multi-rename-checkbox {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  font-size: 0.85rem;
-}
-
-/* Match the row-height inputs; box uses border-box so its 18px footprint fits inside. */
-.fm-app-shell .fm-multi-rename-checkbox input[type="checkbox"] + span:not(.lever) {
-  height: 20px;
-  line-height: 20px;
-  padding-left: 24px;
-}
-
-/*
- * mm's checked-state checkbox reuses `::before` to fake a check by stretching
- * it into a rotated 12x22 rectangle -- looks distorted. Reset it back to a
- * plain static box and draw a fixed-size checkmark on `::after` instead. mm's
- * box is content-box (18px + 2x2px border = 22px footprint, taller than the
- * 20px row height); border-box keeps its footprint at the declared 18px.
- */
-.fm-app-shell .fm-multi-rename-checkbox input[type="checkbox"] + span:not(.lever)::before {
-  box-sizing: border-box;
-  margin-top: 1px;
-  border-color: var(--fm-border);
-}
-
-.fm-app-shell .fm-multi-rename-checkbox input[type="checkbox"]:checked + span:not(.lever)::before {
-  top: 0;
-  left: 0;
-  width: 18px;
-  height: 18px;
-  margin-top: 1px;
-  box-sizing: border-box;
-  border: 2px solid var(--fm-accent);
-  background-color: var(--fm-accent);
-  transform: none;
-}
-
-.fm-app-shell .fm-multi-rename-checkbox input[type="checkbox"]:checked + span:not(.lever)::after {
-  content: "";
-  position: absolute;
-  top: 1px;
-  left: 6px;
-  width: 6px;
-  height: 10px;
-  border: solid var(--fm-surface);
-  border-width: 0 2px 2px 0;
-  transform: rotate(45deg);
-}
-
-.fm-multi-rename-sequence {
-  display: flex;
-  gap: 0.6rem;
-}
-
-.fm-app-shell .fm-multi-rename-sequence input {
-  width: 4rem;
 }
 
 .fm-multi-rename-preview {
   width: 100%;
-  max-height: min(40vh, 20rem);
-  overflow-y: auto;
-  border-collapse: collapse;
+  border-collapse: separate;
+  border-spacing: 0;
   font-size: 0.85rem;
+}
+
+.fm-multi-rename-preview th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--fm-surface);
 }
 
 .fm-multi-rename-preview th,
