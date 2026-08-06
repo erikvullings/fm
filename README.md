@@ -187,9 +187,34 @@ To prepare a release:
 The tag-only `.github/workflows/release-desktop.yml` workflow uses the protected
 `desktop-release` GitHub environment. Configure environment approval rules and repository secrets
 for the Apple Developer ID certificate/keychain password and Apple notarization account, plus the
-Windows PFX/password/thumbprint. Pull-request CI does not reference those secrets. The workflow
-verifies macOS signatures and stapled notarization tickets and verifies Windows Authenticode
-signatures before publishing the generated release notes and installers.
+Windows PFX/password/thumbprint. Also configure:
+
+- the `HOMEBREW_TAP_REPOSITORY` environment variable as the `owner/homebrew-tap` repository that
+  will hold the cask, and `HOMEBREW_TAP_TOKEN` as a fine-grained token allowed to write to it;
+- `CHOCOLATEY_API_KEY` as the API key for the `procyon` package on the Chocolatey Community
+  Repository.
+
+Pull-request CI does not reference those secrets. The workflow verifies macOS signatures and
+stapled notarization tickets and verifies Windows Authenticode signatures before publishing the
+generated release notes and installers. It then calculates checksums from those exact release
+assets, updates `Casks/procyon.rb` in the configured Homebrew tap, and generates and pushes the
+Chocolatey package. The macOS release is a universal binary for Apple Silicon and Intel Macs.
+
+After the first packages have been published, users can install Procyon with:
+
+```sh
+brew tap erikvullings/tap
+brew install --cask procyon
+```
+
+or, from an elevated Windows terminal:
+
+```powershell
+choco install procyon
+```
+
+New Chocolatey package versions may remain unavailable until Community Repository moderation has
+completed.
 
 CI performs an unsigned packaging smoke test on disposable macOS and Windows runners: it copies or
 installs an artefact, launches the packaged executable, verifies that it remains running, and then

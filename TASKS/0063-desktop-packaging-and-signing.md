@@ -42,3 +42,12 @@ and §37 (signed macOS and Windows installers).
   CI/release jobs. The full `pnpm test` run encountered an unrelated transient conflict-resolution
   timeout that passed in isolation; `pnpm run test:scripts` also retains the pre-existing failure
   that expects exactly 10 ADRs although the repository now contains ADR 0011.
+- 2026-08-06 Codex follow-up: Extended tag releases with a universal macOS build, generated
+  Homebrew cask publication to a configurable tap, and generated Chocolatey packaging/publication
+  from the signed NSIS asset. Package metadata and checksums are derived from the exact GitHub
+  release downloads; repository configuration and user install commands are documented in README.
+  Verified all 9 desktop packaging tests, focused Biome checks, Node syntax, and whitespace checks.
+  The external Homebrew push and Windows-only `choco pack`/push remain release-runner tested. The
+  full suite reached an unrelated macOS mounted-volume test failure and was stopped after three
+  other native-platform tests exceeded 60 seconds; repository-wide lint is also blocked by
+  unrelated concurrent Rust formatting and multi-rename frontend changes.

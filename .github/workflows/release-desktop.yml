@@ -22,6 +22,8 @@ jobs:
           cache: pnpm
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+      - name: Install universal macOS Rust targets
+        run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
       - name: Require tag to match the Cargo-owned desktop version
         run: node scripts/check-desktop-release.mjs "$GITHUB_REF_NAME"
       - name: Import Developer ID certificate
@@ -45,17 +47,17 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-        run: pnpm run build:tauri
+        run: pnpm run build:tauri --target universal-apple-darwin
       - name: Verify macOS signatures and notarization tickets
         run: |
-          codesign --verify --deep --strict --verbose=2 target/release/bundle/macos/Procyon.app
-          xcrun stapler validate target/release/bundle/macos/Procyon.app
-          xcrun stapler validate target/release/bundle/dmg/*.dmg
+          codesign --verify --deep --strict --verbose=2 target/universal-apple-darwin/release/bundle/macos/Procyon.app
+          xcrun stapler validate target/universal-apple-darwin/release/bundle/macos/Procyon.app
+          xcrun stapler validate target/universal-apple-darwin/release/bundle/dmg/*.dmg
       - uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
           files: |
-            target/release/bundle/dmg/*.dmg
+            target/universal-apple-darwin/release/bundle/dmg/*.dmg
 
   windows:
     name: Signed Windows installers
@@ -97,3 +99,79 @@ jobs:
           files: |
             target/release/bundle/msi/*.msi
             target/release/bundle/nsis/*-setup.exe
+
+  homebrew:
+    name: Publish Homebrew cask
+    needs: [macos]
+    runs-on: macos-latest
+    environment: desktop-release
+    steps:
+      - uses: actions/checkout@v5
+      - name: Download the notarized DMG
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release download "$GITHUB_REF_NAME" --pattern "*.dmg" --dir package-input
+      - name: Generate the cask from the released asset
+        run: |
+          DMG_PATH="$(find package-input -type f -name '*.dmg' -print -quit)"
+          test -n "$DMG_PATH"
+          VERSION="${GITHUB_REF_NAME#v}"
+          SHA256="$(shasum -a 256 "$DMG_PATH" | cut -d ' ' -f 1)"
+          node scripts/generate-package-manager-files.mjs homebrew \
+            --version "$VERSION" \
+            --sha256 "$SHA256" \
+            --repository "$GITHUB_REPOSITORY" \
+            --asset "$(basename "$DMG_PATH")" \
+            --output generated-cask/procyon.rb
+      - uses: actions/checkout@v5
+        with:
+          repository: ${{ vars.HOMEBREW_TAP_REPOSITORY }}
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: homebrew-tap
+      - name: Commit the cask to the tap
+        env:
+          HOMEBREW_TAP_REPOSITORY: ${{ vars.HOMEBREW_TAP_REPOSITORY }}
+        run: |
+          mkdir -p homebrew-tap/Casks
+          cp generated-cask/procyon.rb homebrew-tap/Casks/procyon.rb
+          git -C homebrew-tap config user.name "github-actions[bot]"
+          git -C homebrew-tap config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git -C homebrew-tap add Casks/procyon.rb
+          git -C homebrew-tap diff --cached --quiet && exit 0
+          git -C homebrew-tap commit -m "procyon ${GITHUB_REF_NAME#v}"
+          git -C homebrew-tap push
+
+  chocolatey:
+    name: Publish Chocolatey package
+    needs: windows
+    runs-on: windows-latest
+    environment: desktop-release
+    steps:
+      - uses: actions/checkout@v5
+      - name: Download the signed NSIS installer
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release download "$env:GITHUB_REF_NAME" --pattern "*-setup.exe" --dir package-input
+      - name: Generate and pack the Chocolatey package
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem package-input -Filter *-setup.exe | Select-Object -First 1
+          if (-not $installer) { throw "The GitHub release has no NSIS setup executable" }
+          $version = $env:GITHUB_REF_NAME.Substring(1)
+          $checksum = (Get-FileHash $installer.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          node scripts/generate-package-manager-files.mjs chocolatey `
+            --version $version `
+            --sha256 $checksum `
+            --repository $env:GITHUB_REPOSITORY `
+            --asset $installer.Name `
+            --output chocolatey-package
+          choco pack chocolatey-package/procyon.nuspec --output-directory chocolatey-output
+      - name: Push to the Chocolatey Community Repository
+        shell: pwsh
+        env:
+          CHOCOLATEY_API_KEY: ${{ secrets.CHOCOLATEY_API_KEY }}
+        run: |
+          $package = Get-ChildItem chocolatey-output -Filter *.nupkg | Select-Object -First 1
+          if (-not $package) { throw "Chocolatey package was not created" }
+          choco push $package.FullName --source https://push.chocolatey.org/ --api-key $env:CHOCOLATEY_API_KEY
