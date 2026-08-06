@@ -2306,12 +2306,14 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
         .then(() => attrs.client.listOperations())
         .then((listed) => {
           if (!removed) {
-            operations = createOperationsState(listed);
-            for (const operation of listed) {
-              if (isAutoDismissibleState(operation.state)) {
-                scheduleAutoDismiss(operation.id, AUTO_DISMISS_DELAY_MS);
-              }
-            }
+            // History is loaded from a PAST session - the user never watched these
+            // run, so an auto-dismissible one (completed/cancelled/interrupted) would
+            // only flash and vanish a few seconds later for no reason. Only surface
+            // ones that still need attention (failed) or are still genuinely active.
+            const relevant = listed.filter(
+              (operation) => !isAutoDismissibleState(operation.state),
+            );
+            operations = createOperationsState(relevant);
             m.redraw();
           }
         })
