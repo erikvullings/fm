@@ -179,7 +179,8 @@ img.fm-native-entry-icon {
   display: inline-flex;
   flex: 0 0 auto;
   align-items: center;
-  margin-inline-start: 0.5rem;
+  margin-inline-start: auto;
+  padding-inline-start: 0.5rem;
   color: var(--fm-text-muted);
   opacity: 0.72;
 }
