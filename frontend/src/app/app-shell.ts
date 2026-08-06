@@ -21,6 +21,10 @@ import {
   isCutLocation,
   validatePasteTarget,
 } from '../features/clipboard/clipboard';
+import {
+  copySelectionToClipboard,
+  isCopySelectionAction,
+} from '../features/clipboard/copy-selection-actions';
 import { CommandPalette } from '../features/command-palette/command-palette';
 import {
   type CommandAvailabilityContext,
@@ -1151,6 +1155,21 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       directory === undefined
         ? []
         : directory.entries.filter((entry) => context.selectedEntryIds?.includes(entry.id));
+    if (isCopySelectionAction(action.id)) {
+      if (directory === undefined) return;
+      void copySelectionToClipboard(action.id, selectedEntries, directory.location)
+        .then((copied) => {
+          if (copied) commandPaletteRecency.set(action.id, Date.now());
+          m.redraw();
+        })
+        .catch((error: unknown) => {
+          toast({
+            html: error instanceof Error ? error.message : 'Unable to write to the system clipboard.',
+          });
+          m.redraw();
+        });
+      return;
+    }
     const effectiveParameters =
       parameters ?? platformActionParameters(action.id, selectedEntries, directory?.location);
     invokeActionById(action.id, effectiveParameters, context);

@@ -32,6 +32,7 @@ const SELECTION_ACTION_IDS = new Set([
   'core.rename',
   'core.trash',
   'core.delete',
+  'core.copyName',
   'core.copyPath',
   'core.copyRelativePath',
 ]);

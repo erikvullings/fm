@@ -123,7 +123,9 @@ in `docs/architecture/file-copy-metadata.md`.
 Ctrl/Cmd+C, Ctrl/Cmd+X and Ctrl/Cmd+V retain an in-application clipboard of provider-neutral
 locations across panes and tabs. Paste validates the visible destination before it queues a copy or
 move operation; cut rows remain dimmed until that move is accepted. System clipboard integration is
-kept behind the platform-adapter capability boundary.
+kept behind the platform-adapter capability boundary. The command palette and selection context menu
+also copy selected filenames, full paths, or paths relative to the active directory as newline-
+separated plain text using the host clipboard.
 The shared application service now exposes semantic operation start/list/get/cancel/pause/resume
 and conflict-resolution methods through matching Axum REST endpoints and Tauri commands. REST
 starts accept `Idempotency-Key` so retries return the original job rather than queueing duplicates;

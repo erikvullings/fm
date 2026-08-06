@@ -143,7 +143,7 @@ the workspace-service tasks; see Step 2b above).
 - [ ] 0090 Total Commander-style selection toggles (invert, select/deselect by mask)
 - [x] 0091 Native file icon overlay (backend-served, layered over 0085) *(after 0085; needs 0059)*
 - [x] 0092 Catppuccin icon theme *(after 0085)*
-- [ ] 0093 Copy filename and path actions
+- [x] 0093 Copy filename and path actions
 - [x] 0094 Tabler icons toolbar
 - [x] 0095 Distributable icon theme plugins *(after 0053, 0085, 0092)*
 - [ ] 0096 Mounted volume capacity

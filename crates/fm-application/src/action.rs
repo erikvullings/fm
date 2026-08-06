@@ -196,9 +196,10 @@ fn capability_gated_selection(feature_available: bool) -> ActionContextRequireme
 /// platform adapter exposes a distinct "text editor" capability bit yet
 /// (see [`fm_platform::PlatformAdapter::open_in_text_editor`]'s doc
 /// comment).
-/// `core.copyPath` and `core.copyRelativePath` have no backend
-/// feature yet (the system-clipboard/relative-path work tracked alongside
-/// this task), so they stay registered as permanently unavailable.
+/// `core.copyName`, `core.copyPath` and `core.copyRelativePath` are
+/// frontend-owned system-clipboard actions (task 0093). They are available
+/// whenever at least one entry is selected; the frontend derives their text
+/// from the loaded entry locations and writes it to the host clipboard.
 ///
 /// `core.trash` and `core.delete` split ownership of the `F8`/`Delete` keys
 /// based on [`PlatformCapabilities::TRASH`] (task 0043): when trash is
@@ -436,18 +437,25 @@ fn core_actions(capabilities: PlatformCapabilities) -> Vec<ActionDescriptor> {
             capability_gated_none(open_terminal_available),
         ),
         core_action(
+            "core.copyName",
+            "Copy Filename",
+            "clipboard",
+            Vec::new(),
+            ActionContextRequirements::selection(),
+        ),
+        core_action(
             "core.copyPath",
             "Copy Path",
             "clipboard",
             Vec::new(),
-            ActionContextRequirements::unimplemented(),
+            ActionContextRequirements::selection(),
         ),
         core_action(
             "core.copyRelativePath",
             "Copy Relative Path",
             "clipboard",
             Vec::new(),
-            ActionContextRequirements::unimplemented(),
+            ActionContextRequirements::selection(),
         ),
     ]
     .into_iter()
@@ -575,6 +583,7 @@ mod tests {
             "core.previousTab",
             "core.reopenClosedTab",
             "core.openTerminal",
+            "core.copyName",
             "core.copyPath",
             "core.copyRelativePath",
             "core.moveCursorUp",
@@ -595,15 +604,15 @@ mod tests {
     }
 
     #[test]
-    fn features_without_an_implementation_are_registered_as_unavailable() {
+    fn copy_selection_actions_are_available_for_a_non_empty_selection() {
         let registry = ActionRegistry::with_core_actions(PlatformCapabilities::empty());
-        let context = ActionInvocationContext::default();
-        for id in ["core.copyPath", "core.copyRelativePath"] {
+        let mut context = ActionInvocationContext::default();
+        context.selected_entry_ids.push(fm_domain::EntryId::new());
+        for id in ["core.copyName", "core.copyPath", "core.copyRelativePath"] {
             let action_id = ActionId::new(id);
-            let error = registry
+            registry
                 .require_available(&action_id, &context)
-                .expect_err("unimplemented actions must report unavailable");
-            assert_eq!(error, ApplicationError::ActionUnavailable(action_id));
+                .expect("copy selection action must be available");
         }
     }
 

@@ -1,6 +1,6 @@
 # 0093 Copy filename and path actions
 
-Status: open
+Status: done
 Priority: medium
 Owner: unassigned
 Agent: unassigned
@@ -74,3 +74,12 @@ core actions, not the plugin.
   `user-select: none` on `.fm-directory-table`); this task tracks the
   filename/path export command itself, which was not implemented as part of
   that fix.
+- 2026-08-06 Codex: Added available `core.copyName`, `core.copyPath`, and
+  `core.copyRelativePath` registry actions and frontend handlers that copy
+  newline-separated multi-selections to the system clipboard. Full paths use
+  the existing decoded location-path display convention; relative paths are
+  rooted at the active directory. Added a Clipboard API implementation with a
+  document-copy fallback for WebViews, updated mock actions/context-menu
+  availability, and documented the behavior. Verified 5 task-specific tests
+  (3 clipboard formatting/writing, 1 menu-availability, 1 action-registry),
+  `pnpm --dir frontend typecheck`, `pnpm run lint`, and `pnpm test`.
