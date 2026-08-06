@@ -170,9 +170,10 @@ Desktop product identity has one source: `[package.metadata.desktop]` in
 `apps/fm-desktop/src-tauri/Cargo.toml`. The desktop crate inherits its version from
 `[workspace.package]` in the root `Cargo.toml`; `pnpm build:tauri` resolves both through
 `cargo metadata` and supplies them to Tauri. On macOS it produces a `.app` and `.dmg`; on Windows
-it produces `.msi` and NSIS `-setup.exe` installers. Do not duplicate the version or product
-identity in `tauri.conf.json`. The base config contains only a schema-required bootstrap copy of
-the identifier; the packaging contract test requires it to match the Cargo-owned value.
+it produces `.msi` and NSIS `-setup.exe` installers; on Linux it produces `.deb` and `.AppImage`
+packages. Do not duplicate the version or product identity in `tauri.conf.json`. The base config
+contains only a schema-required bootstrap copy of the identifier; the packaging contract test
+requires it to match the Cargo-owned value.
 
 To prepare a release:
 
@@ -185,20 +186,23 @@ To prepare a release:
    workflow rejects tags that do not exactly match the Cargo version.
 
 The tag-only `.github/workflows/release-desktop.yml` workflow uses the protected
-`desktop-release` GitHub environment. Configure environment approval rules and repository secrets
-for the Apple Developer ID certificate/keychain password and Apple notarization account, plus the
-Windows PFX/password/thumbprint. Also configure:
+`desktop-release` GitHub environment. No Apple or Windows signing certificates are required: the
+macOS and Windows artefacts are deliberately published unsigned, and the macOS build is not
+notarized. Configure only:
 
 - the `HOMEBREW_TAP_REPOSITORY` environment variable as the `owner/homebrew-tap` repository that
   will hold the cask, and `HOMEBREW_TAP_TOKEN` as a fine-grained token allowed to write to it;
 - `CHOCOLATEY_API_KEY` as the API key for the `procyon` package on the Chocolatey Community
   Repository.
 
-Pull-request CI does not reference those secrets. The workflow verifies macOS signatures and
-stapled notarization tickets and verifies Windows Authenticode signatures before publishing the
-generated release notes and installers. It then calculates checksums from those exact release
-assets, updates `Casks/procyon.rb` in the configured Homebrew tap, and generates and pushes the
-Chocolatey package. The macOS release is a universal binary for Apple Silicon and Intel Macs.
+Pull-request CI does not reference those secrets. The workflow publishes generated release notes,
+unsigned macOS and Windows installers, and Linux packages. It then calculates checksums from those
+exact release assets, updates `Casks/procyon.rb` in the configured Homebrew tap, and generates and
+pushes the Chocolatey package. The unsigned macOS release is a universal binary for Apple Silicon
+and Intel Macs. Installing it through Homebrew does not bypass Gatekeeper: users must explicitly
+approve the app in macOS Privacy & Security or remove the quarantine attribute only if they trust
+the downloaded release. Windows users should expect a Microsoft Defender SmartScreen warning and
+must choose to run the installer only after verifying that it came from the official release.
 
 After the first packages have been published, users can install Procyon with:
 
@@ -220,12 +224,14 @@ CI performs an unsigned packaging smoke test on disposable macOS and Windows run
 installs an artefact, launches the packaged executable, verifies that it remains running, and then
 cleans up. Before promoting a release, also perform this manual smoke on each supported platform:
 
-- macOS: download the `.dmg` on a different Mac, mount it, drag Procyon to Applications, launch it,
-  confirm Gatekeeper reports an identified developer, browse a directory, and quit normally.
-- Windows: download both installers on a clean Windows VM, verify Digital Signatures properties,
-  install one format, launch Procyon, browse a directory, quit, uninstall, and repeat with the other
-  installer format.
+- macOS: download the `.dmg` on a different Mac, mount it, drag Procyon to Applications, confirm the
+  expected Gatekeeper warning for the unsigned macOS app, explicitly approve it in Privacy &
+  Security, browse a directory, and quit normally.
+- Windows: download both installers on a clean Windows VM, confirm the expected SmartScreen warning
+  for the unsigned publisher, install one format only after verifying its source, launch Procyon,
+  browse a directory, quit, uninstall, and repeat with the other installer format.
+- Linux: install the `.deb` on Ubuntu 22.04 or run the `.AppImage` after marking it executable;
+  launch Procyon, browse a directory, quit, and remove the installed package or downloaded image.
 
-Linux packaging is out of scope for the first release; Linux workspace builds and tests remain in
-CI so the Rust/Tauri host is not broken there. Auto-update is not included in the first-release
-packaging design; releases are downloaded and installed manually.
+Auto-update is not included in the first-release packaging design; releases are downloaded and
+installed manually.

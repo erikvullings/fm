@@ -61,9 +61,9 @@ test('the root Tauri build command uses the metadata-derived build wrapper', () 
   assert.equal(rootPackage.scripts['build:tauri'], 'node scripts/build-tauri.mjs');
 });
 
-test('Tauri targets installable macOS and Windows bundle formats', () => {
+test('Tauri targets installable macOS, Windows, and Linux bundle formats', () => {
   const config = JSON.parse(read('apps', 'fm-desktop', 'src-tauri', 'tauri.conf.json'));
-  assert.deepEqual(config.bundle.targets, ['app', 'dmg', 'msi', 'nsis']);
+  assert.deepEqual(config.bundle.targets, ['app', 'dmg', 'msi', 'nsis', 'deb', 'appimage']);
 });
 
 test('pull-request CI builds desktop bundles without any signing credentials', () => {
@@ -77,37 +77,31 @@ test('pull-request CI builds desktop bundles without any signing credentials', (
   assert.doesNotMatch(ciText, /APPLE_|WINDOWS_|CERTIFICATE|SIGNING|notariz/i);
 });
 
-test('tag-only protected release workflow signs macOS and Windows with repository secrets', () => {
+test('tag-only protected release workflow publishes unsigned desktop packages', () => {
   const releaseText = workflowText('release-desktop.yml');
   const release = workflow('release-desktop.yml');
   assert.deepEqual(release.on.push.tags, ['v*']);
   assert.equal(release.on.pull_request, undefined);
 
-  for (const jobName of ['macos', 'windows']) {
+  for (const jobName of ['macos', 'windows', 'linux']) {
     assert.equal(release.jobs[jobName].environment, 'desktop-release');
   }
 
-  for (const secret of [
-    'APPLE_CERTIFICATE',
-    'APPLE_CERTIFICATE_PASSWORD',
-    'APPLE_ID',
-    'APPLE_PASSWORD',
-    'APPLE_TEAM_ID',
-    'WINDOWS_CERTIFICATE',
-    'WINDOWS_CERTIFICATE_PASSWORD',
-    'WINDOWS_CERTIFICATE_THUMBPRINT',
-  ]) {
-    assert.ok(releaseText.includes(`secrets.${secret}`), `release must consume ${secret}`);
-  }
-  assert.match(releaseText, /codesign --verify/);
-  assert.match(releaseText, /signtool verify/i);
+  assert.doesNotMatch(
+    releaseText,
+    /APPLE_|WINDOWS_CERTIFICATE|Developer ID|codesign|notariz|stapler|signtool/i,
+  );
 });
 
-test('release workflow publishes universal macOS and signed Windows packages to package managers', () => {
+test('release workflow publishes unsigned macOS, Windows, and Linux packages', () => {
   const releaseText = workflowText('release-desktop.yml');
   const release = workflow('release-desktop.yml');
 
   assert.match(releaseText, /build:tauri --target universal-apple-darwin/);
+  assert.equal(release.jobs.linux['runs-on'], 'ubuntu-22.04');
+  assert.match(releaseText, /libwebkit2gtk-4\.1-dev/);
+  assert.match(releaseText, /bundle\/deb\/\*\.deb/);
+  assert.match(releaseText, /bundle\/appimage\/\*\.AppImage/);
   assert.deepEqual(release.jobs.homebrew.needs, ['macos']);
   assert.equal(release.jobs.homebrew.environment, 'desktop-release');
   assert.equal(release.jobs.chocolatey.needs, 'windows');
@@ -182,12 +176,19 @@ test('README documents release versioning, package managers, smoke checks, and n
   assert.match(readme, /Cargo\.toml/);
   assert.match(readme, /v<version>/);
   assert.match(readme, /release notes/i);
-  assert.match(readme, /notari/i);
+  assert.match(readme, /unsigned macOS/i);
+  assert.match(readme, /Gatekeeper/i);
+  assert.match(readme, /SmartScreen/i);
+  assert.doesNotMatch(
+    readme,
+    /APPLE_CERTIFICATE|APPLE_ID|APPLE_PASSWORD|APPLE_TEAM_ID|WINDOWS_CERTIFICATE/,
+  );
   assert.match(readme, /manual smoke/i);
   assert.match(readme, /brew install --cask/);
   assert.match(readme, /choco install procyon/);
   assert.match(readme, /HOMEBREW_TAP_TOKEN/);
   assert.match(readme, /CHOCOLATEY_API_KEY/);
   assert.match(readme, /auto-update is not included/i);
-  assert.match(readme, /Linux packaging is out of scope/i);
+  assert.match(readme, /\.deb/);
+  assert.match(readme, /AppImage/);
 });

@@ -9,7 +9,7 @@ permissions:
 
 jobs:
   macos:
-    name: Signed and notarized macOS bundles
+    name: Unsigned macOS bundles
     runs-on: macos-latest
     environment: desktop-release
     steps:
@@ -26,41 +26,49 @@ jobs:
         run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
       - name: Require tag to match the Cargo-owned desktop version
         run: node scripts/check-desktop-release.mjs "$GITHUB_REF_NAME"
-      - name: Import Developer ID certificate
-        env:
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
-        run: |
-          echo "$APPLE_CERTIFICATE" | base64 --decode > certificate.p12
-          security create-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
-          security default-keychain -s build.keychain
-          security unlock-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
-          security set-keychain-settings -t 3600 -u build.keychain
-          security import certificate.p12 -k build.keychain -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
-          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" build.keychain
-          APPLE_SIGNING_IDENTITY="$(security find-identity -v -p codesigning build.keychain | sed -n 's/.*"\(Developer ID Application:[^"]*\)".*/\1/p' | head -1)"
-          test -n "$APPLE_SIGNING_IDENTITY"
-          echo "APPLE_SIGNING_IDENTITY=$APPLE_SIGNING_IDENTITY" >> "$GITHUB_ENV"
-      - name: Build, sign and notarize macOS bundles
-        env:
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      - name: Build unsigned macOS bundles
         run: pnpm run build:tauri --target universal-apple-darwin
-      - name: Verify macOS signatures and notarization tickets
-        run: |
-          codesign --verify --deep --strict --verbose=2 target/universal-apple-darwin/release/bundle/macos/Procyon.app
-          xcrun stapler validate target/universal-apple-darwin/release/bundle/macos/Procyon.app
-          xcrun stapler validate target/universal-apple-darwin/release/bundle/dmg/*.dmg
       - uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
           files: |
             target/universal-apple-darwin/release/bundle/dmg/*.dmg
 
+  linux:
+    name: Linux packages
+    runs-on: ubuntu-22.04
+    environment: desktop-release
+    steps:
+      - uses: actions/checkout@v5
+      - uses: Swatinem/rust-cache@v2
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Require tag to match the Cargo-owned desktop version
+        run: node scripts/check-desktop-release.mjs "$GITHUB_REF_NAME"
+      - name: Build Linux packages
+        run: pnpm run build:tauri
+      - uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            target/release/bundle/deb/*.deb
+            target/release/bundle/appimage/*.AppImage
+
   windows:
-    name: Signed Windows installers
+    name: Unsigned Windows installers
     runs-on: windows-latest
     environment: desktop-release
     steps:
@@ -75,24 +83,8 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Require tag to match the Cargo-owned desktop version
         run: node scripts/check-desktop-release.mjs "$env:GITHUB_REF_NAME"
-      - name: Import Windows signing certificate
-        shell: pwsh
-        env:
-          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
-          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
-        run: |
-          [IO.File]::WriteAllBytes("certificate.pfx", [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE))
-          $password = ConvertTo-SecureString $env:WINDOWS_CERTIFICATE_PASSWORD -AsPlainText -Force
-          Import-PfxCertificate -FilePath certificate.pfx -CertStoreLocation Cert:\CurrentUser\My -Password $password
-      - name: Build and sign Windows installers
-        env:
-          FM_WINDOWS_CERTIFICATE_THUMBPRINT: ${{ secrets.WINDOWS_CERTIFICATE_THUMBPRINT }}
+      - name: Build unsigned Windows installers
         run: pnpm run build:tauri
-      - name: Verify Windows installer signatures
-        shell: pwsh
-        run: |
-          Get-ChildItem target/release/bundle -Recurse -Include *.msi,*-setup.exe |
-            ForEach-Object { signtool verify /pa /v $_.FullName; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE } }
       - uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
@@ -107,7 +99,7 @@ jobs:
     environment: desktop-release
     steps:
       - uses: actions/checkout@v5
-      - name: Download the notarized DMG
+      - name: Download the unsigned DMG
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release download "$GITHUB_REF_NAME" --pattern "*.dmg" --dir package-input
@@ -148,7 +140,7 @@ jobs:
     environment: desktop-release
     steps:
       - uses: actions/checkout@v5
-      - name: Download the signed NSIS installer
+      - name: Download the unsigned NSIS installer
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}

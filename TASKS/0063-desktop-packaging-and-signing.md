@@ -51,3 +51,15 @@ and §37 (signed macOS and Windows installers).
   full suite reached an unrelated macOS mounted-volume test failure and was stopped after three
   other native-platform tests exceeded 60 seconds; repository-wide lint is also blocked by
   unrelated concurrent Rust formatting and multi-rename frontend changes.
+- 2026-08-06 Codex follow-up: Replaced paid Apple Developer signing and notarization with an
+  explicitly unsigned universal macOS DMG, while retaining signed Windows installers. Added `.deb`
+  and `.AppImage` targets and an Ubuntu 22.04 release job, and documented the macOS Gatekeeper
+  warning and Linux smoke checks. The Linux and Windows packages remain platform-tested by their
+  release runners rather than this macOS development host. Verified all 9 packaging contract
+  tests, whitespace checks, and repository lint (with pre-existing CSS `!important` warnings). The
+  full test run reached three environment-dependent `fm-platform-macos` failures: mounted-volume
+  enumeration, Launch Services application discovery, and Trash permission.
+- 2026-08-06 Codex follow-up: Removed the remaining Windows certificate import, signing, and
+  signature verification so the freeware release pipeline requires no paid platform certificates.
+  Chocolatey now packages the unsigned NSIS installer, and the README documents the expected
+  Microsoft Defender SmartScreen warning.

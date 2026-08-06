@@ -24,6 +24,6 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["app", "dmg", "msi", "nsis"]
+    "targets": ["app", "dmg", "msi", "nsis", "deb", "appimage"]
   }
 }
