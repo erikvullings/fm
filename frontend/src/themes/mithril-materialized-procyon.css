@@ -40,11 +40,20 @@
 }
 
 .fm-app-shell .input-field {
+  display: flex;
+  flex-direction: column;
   min-height: 0;
   margin: 0.2rem 0 0.3rem;
 }
 
+/*
+ * mm renders `<input>` before `<label>` (its floating-label trick relies on
+ * `input:focus + label` sibling selectors), so a plain static label falls
+ * below the input. `order` visually promotes it above the input without
+ * touching DOM order, keeping any mm sibling-selector behavior intact.
+ */
 .fm-app-shell .input-field > label {
+  order: -1;
   position: static;
   display: block;
   margin: 0 0 0.2rem;
@@ -54,6 +63,17 @@
   line-height: 1.15;
   transform: none;
   transition: none;
+}
+
+/*
+ * mm's own `.input-field > label:not(.label-icon).active` rule matches this
+ * selector's specificity (3 classes, 1 type) and would otherwise win on
+ * source order for any populated/focused field, re-floating the label with
+ * `translateY(-14px) scale(0.8)` on top of the static layout above and
+ * making it overlap the input's own text.
+ */
+.fm-app-shell .input-field > label.active {
+  transform: none;
 }
 
 .fm-app-shell .input-field input:not([type="checkbox"]),
@@ -94,6 +114,12 @@
 .fm-app-shell select.browser-default {
   width: 100%;
   line-height: calc(var(--fm-row-height) - 2px);
+}
+
+/* mm's own `.switch, .switch * { margin: 12px 0 17px 0; }` inflates every switch descendant. */
+.fm-app-shell .switch,
+.fm-app-shell .switch * {
+  margin: 0;
 }
 
 .fm-app-shell .switch,
