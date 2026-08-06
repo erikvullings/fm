@@ -178,6 +178,12 @@
   display: block;
 }
 
+.fm-favourites-menu-backdrop {
+  position: fixed;
+  z-index: 4;
+  inset: 0;
+}
+
 .fm-favourites-menu {
   position: absolute;
   z-index: 5;

@@ -2407,6 +2407,12 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
                 },
                 layoutGridIcon(),
               ),
+              m('.fm-workspace-switcher-backdrop', {
+                onclick: (event: MouseEvent) => {
+                  const disclosure = (event.currentTarget as HTMLElement).closest('details');
+                  if (disclosure instanceof HTMLDetailsElement) disclosure.open = false;
+                },
+              }),
               m('.fm-workspace-switcher-panel', { role: 'dialog', 'aria-label': 'Workspaces' }, [
                 m('.fm-workspace-switcher-heading', [
                   m('strong', 'Workspaces'),

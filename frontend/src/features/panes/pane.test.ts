@@ -376,6 +376,85 @@ describe('Pane breadcrumb editing', () => {
     expect(favourite?.disabled).toBe(true);
     expect(favourite?.textContent).toContain('unavailable');
   });
+
+  it('opens with Ctrl+D and closes with Ctrl+D again', () => {
+    mount(attrs());
+    const pane = root.querySelector<HTMLElement>('.fm-pane');
+
+    pane?.dispatchEvent(new KeyboardEvent('keydown', { key: 'd', ctrlKey: true, bubbles: true }));
+    m.redraw.sync();
+    expect(root.querySelector('[role="menu"]')).not.toBeNull();
+
+    pane?.dispatchEvent(new KeyboardEvent('keydown', { key: 'd', ctrlKey: true, bubbles: true }));
+    m.redraw.sync();
+    expect(root.querySelector('[role="menu"]')).toBeNull();
+  });
+
+  it('focuses the first favourite so Enter navigates immediately, and Down arrow reaches recents', async () => {
+    const location = { providerId: 'local' as const, uri: 'file:///home/erik/Projects' };
+    const recent = { providerId: 'local' as const, uri: 'file:///home/erik/Recent' };
+    const onNavigateLocation = vi.fn();
+    mount(
+      attrs({
+        location,
+        favouriteLocations: [{ label: 'Projects', location }],
+        recentLocations: [recent],
+        onNavigateLocation,
+      }),
+    );
+
+    root.querySelector<HTMLButtonElement>('.fm-pane-tab-favourites')?.click();
+    m.redraw.sync();
+
+    const menuItems = root.querySelectorAll<HTMLButtonElement>('[role="menuitem"]');
+    expect(document.activeElement).toBe(menuItems[0]);
+
+    menuItems[0]?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+    expect(document.activeElement).toBe(menuItems[1]);
+
+    document.activeElement?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await vi.waitFor(() => expect(onNavigateLocation).toHaveBeenCalledWith(recent));
+  });
+
+  it('closes the favourites menu on Escape and on an outside click', () => {
+    mount(attrs({ favouriteLocations: [] }));
+
+    root.querySelector<HTMLButtonElement>('.fm-pane-tab-favourites')?.click();
+    m.redraw.sync();
+    expect(root.querySelector('.fm-favourites-menu')).not.toBeNull();
+
+    root
+      .querySelector('.fm-favourites-menu')
+      ?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    m.redraw.sync();
+    expect(root.querySelector('.fm-favourites-menu')).toBeNull();
+
+    root.querySelector<HTMLButtonElement>('.fm-pane-tab-favourites')?.click();
+    m.redraw.sync();
+    expect(root.querySelector('.fm-favourites-menu')).not.toBeNull();
+
+    root
+      .querySelector<HTMLElement>('.fm-favourites-menu-backdrop')
+      ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    m.redraw.sync();
+    expect(root.querySelector('.fm-favourites-menu')).toBeNull();
+  });
+
+  it('truncates long recent-location paths from the middle, keeping the scheme and trailing segment', () => {
+    const longUri = `file:///Users/erik/dev/${'sub/'.repeat(20)}project`;
+    mount(attrs({ recentLocations: [{ providerId: 'local', uri: longUri }] }));
+
+    root.querySelector<HTMLButtonElement>('.fm-pane-tab-favourites')?.click();
+    m.redraw.sync();
+
+    const recentButton = root.querySelector<HTMLButtonElement>(
+      '.fm-favourites-recents [role="menuitem"]',
+    );
+    expect(recentButton?.textContent).not.toBe(longUri);
+    expect(recentButton?.textContent?.startsWith('file://')).toBe(true);
+    expect(recentButton?.textContent?.endsWith('project')).toBe(true);
+    expect(recentButton?.title).toBe(longUri);
+  });
 });
 
 describe('Pane status bar', () => {

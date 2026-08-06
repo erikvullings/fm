@@ -159,7 +159,7 @@ the workspace-service tasks; see Step 2b above).
 - [x] 0069 Tabs per pane
 - [x] 0070 Favourites, bookmarks and recent locations
 - [ ] 0071 Preview service and initial preview panel
-- [ ] 0072 Multi-rename tool
+- [x] 0072 Multi-rename tool
 - [x] 0084 Workspace management UI *(after 0069; 0082 already complete)*
 
 ## Milestone 5 backlog (§16.5, §37)

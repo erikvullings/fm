@@ -2066,6 +2066,20 @@ describe('workspace management (task 0084)', () => {
     await vi.waitFor(() => expect(row(root, second.id)?.getAttribute('data-active')).toBe('true'));
   });
 
+  it('closes the workspace switcher when clicking outside it', async () => {
+    const client = new MockFileManagerClient();
+    m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
+    await vi.waitFor(() => expect(root.textContent).toContain('Documents'));
+    await openWorkspaceSwitcher();
+
+    expect(root.querySelector<HTMLDetailsElement>('.fm-workspace-disclosure')?.open).toBe(true);
+    root
+      .querySelector<HTMLElement>('.fm-workspace-switcher-backdrop')
+      ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    m.redraw.sync();
+    expect(root.querySelector<HTMLDetailsElement>('.fm-workspace-disclosure')?.open).toBe(false);
+  });
+
   it('creates a new workspace and activates it immediately', async () => {
     const client = new MockFileManagerClient();
     m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });

@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import type { Location } from '../../models';
-import { MAX_RECENT_LOCATIONS, recordRecentLocation, reorderFavourites } from './favourites';
+import {
+  MAX_RECENT_LOCATIONS,
+  recordRecentLocation,
+  reorderFavourites,
+  truncateLocationForDisplay,
+} from './favourites';
 
 const location = (name: string): Location => ({ providerId: 'local', uri: `file:///tmp/${name}` });
 
@@ -39,5 +44,29 @@ describe('reorderFavourites', () => {
       'One',
       'Two',
     ]);
+  });
+});
+
+describe('truncateLocationForDisplay', () => {
+  it('returns the uri unchanged when it already fits', () => {
+    expect(truncateLocationForDisplay('file:///tmp/short', 56)).toBe('file:///tmp/short');
+  });
+
+  it('cuts the middle of the path, keeping the scheme and the trailing segment', () => {
+    const uri = `file:///Users/erik/dev/${'a'.repeat(60)}/reports/quarterly/summary.pdf`;
+    const result = truncateLocationForDisplay(uri, 56);
+
+    expect(result.length).toBe(56);
+    expect(result.startsWith('file://')).toBe(true);
+    expect(result.endsWith('summary.pdf')).toBe(true);
+    expect(result).toContain('…');
+  });
+
+  it('preserves an archive:// scheme through truncation', () => {
+    const uri = `archive:///${'a'.repeat(80)}/inner.txt`;
+    const result = truncateLocationForDisplay(uri, 40);
+
+    expect(result.startsWith('archive://')).toBe(true);
+    expect(result.endsWith('inner.txt')).toBe(true);
   });
 });

@@ -1,7 +1,11 @@
 import m, { type FactoryComponent, type VnodeDOM } from 'mithril';
 import { IconButton } from 'mithril-materialized';
 import { heartIcon, plusIcon } from '../../components/tabler-icons';
-import { dispatchKeybinding, type KeybindingRuntime } from '../../keybindings/dispatcher';
+import {
+  dispatchKeybinding,
+  hasPrimaryModifier,
+  type KeybindingRuntime,
+} from '../../keybindings/dispatcher';
 import type {
   ActionDescriptor,
   EntryId,
@@ -19,6 +23,7 @@ import {
 } from '../directory-table/directory-table';
 import type { NativeIconLoader } from '../directory-table/native-icon-loader';
 import type { EntryFormatSettings } from '../entry-formatting/entry-formatting';
+import { truncateLocationForDisplay } from '../favourites/favourites';
 import { validateDirectoryName } from '../operations/create-directory-dialog';
 import { QuickFilterInput } from '../quick-filter/quick-filter-input';
 import {
@@ -268,13 +273,28 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
   let favouritesOpen = false;
   let favouriteLabel = '';
   let favouriteError: string | undefined;
+  /** Restored when the favourites menu closes, so keyboard users don't lose their place. */
+  let favouritesPreviousFocus: HTMLElement | undefined;
+
+  function openFavourites(attrs: PaneAttrs): void {
+    favouritesPreviousFocus = document.activeElement as HTMLElement;
+    favouriteLabel = defaultFavouriteLabel(attrs.path);
+    favouriteError = undefined;
+    favouritesOpen = true;
+  }
+
+  function closeFavourites(): void {
+    favouritesOpen = false;
+    favouritesPreviousFocus?.focus();
+    favouritesPreviousFocus = undefined;
+  }
 
   async function navigateFavourite(location: Location, attrs: PaneAttrs): Promise<void> {
     if (attrs.onNavigateLocation === undefined) return;
     try {
       await attrs.onNavigateLocation(location);
       favouriteError = undefined;
-      favouritesOpen = false;
+      closeFavourites();
     } catch (error: unknown) {
       favouriteError = errorMessage(error);
     }
@@ -286,6 +306,28 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
     const label = favouriteLabel.trim() || defaultFavouriteLabel(attrs.path);
     void attrs.onAddFavourite(label, attrs.location);
     favouriteLabel = '';
+  }
+
+  /** Focuses the first selectable favourite/recent so Enter navigates immediately (TC hotlist-style). */
+  function focusFirstFavouritesItem(menu: HTMLElement): void {
+    const first = menu.querySelector<HTMLButtonElement>('[role="menuitem"]:not(:disabled)');
+    if (first === null) {
+      menu.focus();
+      return;
+    }
+    first.focus();
+  }
+
+  /** Moves focus between favourites and recent locations as one continuous, wrapping list. */
+  function moveFavouritesFocus(menu: HTMLElement, offset: 1 | -1): void {
+    const items = Array.from(
+      menu.querySelectorAll<HTMLButtonElement>('[role="menuitem"]:not(:disabled)'),
+    );
+    if (items.length === 0) return;
+    const currentIndex = items.indexOf(document.activeElement as HTMLButtonElement);
+    const nextIndex =
+      currentIndex === -1 ? 0 : (currentIndex + offset + items.length) % items.length;
+    items[nextIndex]?.focus();
   }
 
   function locationKey(location: Location): string {
@@ -477,6 +519,20 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
           tabindex: -1,
           onkeydown: (event: KeyboardEvent) => {
             if (isEditableTarget(event.target)) return;
+            // Ctrl/Cmd+D opens the favourites menu directly, TC hotlist-style, regardless of
+            // whether it's also bound as a palette-visible action.
+            if (
+              hasPrimaryModifier(event, attrs.platform) &&
+              !event.altKey &&
+              !event.shiftKey &&
+              event.key.toLowerCase() === 'd'
+            ) {
+              event.preventDefault();
+              if (favouritesOpen) closeFavourites();
+              else openFavourites(attrs);
+              m.redraw();
+              return;
+            }
             const actionId = dispatchKeybinding(
               event,
               {
@@ -707,110 +763,138 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
                 tooltip: 'Favourites',
                 'aria-expanded': String(favouritesOpen),
                 onclick: () => {
-                  const opening = !favouritesOpen;
-                  favouritesOpen = opening;
-                  favouriteError = undefined;
-                  if (opening) favouriteLabel = defaultFavouriteLabel(attrs.path);
+                  if (favouritesOpen) closeFavourites();
+                  else openFavourites(attrs);
                 },
               },
               heartIcon(),
             ),
           ]),
           favouritesOpen
-            ? m('.fm-favourites-menu', { role: 'menu', 'aria-label': 'Favourites' }, [
-                attrs.location !== undefined && attrs.onAddFavourite !== undefined
-                  ? m(
-                      'form.fm-favourites-add',
-                      {
-                        onsubmit: (event: SubmitEvent) => {
-                          event.preventDefault();
-                          addCurrentFavourite(attrs);
-                        },
-                      },
-                      [
-                        m('input[type=text]', {
-                          value: favouriteLabel,
-                          placeholder: 'Favourite name',
-                          'aria-label': 'Favourite name',
-                          oninput: (event: InputEvent) => {
-                            favouriteLabel = (event.currentTarget as HTMLInputElement).value;
-                          },
-                        }),
-                        m(
-                          IconButton,
+            ? [
+                m('.fm-favourites-menu-backdrop', { onclick: () => closeFavourites() }),
+                m(
+                  '.fm-favourites-menu',
+                  {
+                    role: 'menu',
+                    tabindex: -1,
+                    'aria-label': 'Favourites',
+                    oncreate: ({ dom }: VnodeDOM) => focusFirstFavouritesItem(dom as HTMLElement),
+                    onkeydown: (event: KeyboardEvent) => {
+                      if (event.key === 'Escape') {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        closeFavourites();
+                        m.redraw();
+                      } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        moveFavouritesFocus(
+                          event.currentTarget as HTMLElement,
+                          event.key === 'ArrowDown' ? 1 : -1,
+                        );
+                      }
+                    },
+                  },
+                  [
+                    attrs.location !== undefined && attrs.onAddFavourite !== undefined
+                      ? m(
+                          'form.fm-favourites-add',
                           {
-                            className: 'fm-favourites-add-button',
-                            'aria-label': 'Add current location',
-                            'data-tooltip': 'Add current location',
-                            onclick: () => addCurrentFavourite(attrs),
+                            onsubmit: (event: SubmitEvent) => {
+                              event.preventDefault();
+                              addCurrentFavourite(attrs);
+                            },
                           },
-                          plusIcon(),
-                        ),
-                      ],
-                    )
-                  : undefined,
-                ...(attrs.favouriteLocations ?? []).map((favourite, index) =>
-                  m('.fm-favourites-item', [
-                    m(
-                      'button',
-                      {
-                        type: 'button',
-                        role: 'menuitem',
-                        onclick: () => void navigateFavourite(favourite.location, attrs),
-                        disabled: attrs.unavailableLocations?.has(locationKey(favourite.location)),
-                      },
-                      attrs.unavailableLocations?.has(locationKey(favourite.location))
-                        ? `${favourite.label} (unavailable)`
-                        : favourite.label,
-                    ),
-                    attrs.onReorderFavourites === undefined
-                      ? undefined
-                      : m(
-                          'button',
-                          {
-                            type: 'button',
-                            disabled: index === 0,
-                            'aria-label': `Move ${favourite.label} up`,
-                            onclick: () => void attrs.onReorderFavourites?.(index, index - 1),
-                          },
-                          '↑',
-                        ),
-                    attrs.onDeleteFavourite === undefined
-                      ? undefined
-                      : m(
-                          'button',
-                          {
-                            type: 'button',
-                            'aria-label': `Remove ${favourite.label}`,
-                            onclick: () => void attrs.onDeleteFavourite?.(favourite.location),
-                          },
-                          '×',
-                        ),
-                  ]),
-                ),
-                (attrs.recentLocations?.length ?? 0) > 0
-                  ? m('.fm-favourites-recents', [
-                      m('strong', 'Recent locations'),
-                      ...(attrs.recentLocations ?? []).map((location) =>
+                          [
+                            m('input[type=text]', {
+                              value: favouriteLabel,
+                              placeholder: 'Favourite name',
+                              'aria-label': 'Favourite name',
+                              oninput: (event: InputEvent) => {
+                                favouriteLabel = (event.currentTarget as HTMLInputElement).value;
+                              },
+                            }),
+                            m(
+                              IconButton,
+                              {
+                                className: 'fm-favourites-add-button',
+                                'aria-label': 'Add current location',
+                                'data-tooltip': 'Add current location',
+                                onclick: () => addCurrentFavourite(attrs),
+                              },
+                              plusIcon(),
+                            ),
+                          ],
+                        )
+                      : undefined,
+                    ...(attrs.favouriteLocations ?? []).map((favourite, index) =>
+                      m('.fm-favourites-item', [
                         m(
                           'button',
                           {
                             type: 'button',
                             role: 'menuitem',
-                            onclick: () => void navigateFavourite(location, attrs),
-                            disabled: attrs.unavailableLocations?.has(locationKey(location)),
+                            onclick: () => void navigateFavourite(favourite.location, attrs),
+                            disabled: attrs.unavailableLocations?.has(
+                              locationKey(favourite.location),
+                            ),
                           },
-                          attrs.unavailableLocations?.has(locationKey(location))
-                            ? `${location.uri} (unavailable)`
-                            : location.uri,
+                          attrs.unavailableLocations?.has(locationKey(favourite.location))
+                            ? `${favourite.label} (unavailable)`
+                            : favourite.label,
                         ),
-                      ),
-                    ])
-                  : undefined,
-                favouriteError === undefined
-                  ? undefined
-                  : m('.fm-path-error', { role: 'alert' }, favouriteError),
-              ])
+                        attrs.onReorderFavourites === undefined
+                          ? undefined
+                          : m(
+                              'button',
+                              {
+                                type: 'button',
+                                disabled: index === 0,
+                                'aria-label': `Move ${favourite.label} up`,
+                                onclick: () => void attrs.onReorderFavourites?.(index, index - 1),
+                              },
+                              '↑',
+                            ),
+                        attrs.onDeleteFavourite === undefined
+                          ? undefined
+                          : m(
+                              'button',
+                              {
+                                type: 'button',
+                                'aria-label': `Remove ${favourite.label}`,
+                                onclick: () => void attrs.onDeleteFavourite?.(favourite.location),
+                              },
+                              '×',
+                            ),
+                      ]),
+                    ),
+                    (attrs.recentLocations?.length ?? 0) > 0
+                      ? m('.fm-favourites-recents', [
+                          m('strong', 'Recent locations'),
+                          ...(attrs.recentLocations ?? []).map((location) =>
+                            m(
+                              'button',
+                              {
+                                type: 'button',
+                                role: 'menuitem',
+                                title: location.uri,
+                                onclick: () => void navigateFavourite(location, attrs),
+                                disabled: attrs.unavailableLocations?.has(locationKey(location)),
+                              },
+                              attrs.unavailableLocations?.has(locationKey(location))
+                                ? `${truncateLocationForDisplay(location.uri)} (unavailable)`
+                                : truncateLocationForDisplay(location.uri),
+                            ),
+                          ),
+                        ])
+                      : undefined,
+                    favouriteError === undefined
+                      ? undefined
+                      : m('.fm-path-error', { role: 'alert' }, favouriteError),
+                  ],
+                ),
+              ]
             : // A text vnode keeps this sibling slot present without becoming a grid item. Mithril
               // otherwise treats the conditional `undefined` as a fragment hole beside keyed tab
               // descendants during redraw.
