@@ -67,7 +67,6 @@
 .fm-pane-tab {
   display: flex;
   align-items: center;
-  gap: 0.375rem;
   flex: 1 1 0;
   min-width: 0;
   min-height: var(--fm-row-height);
@@ -80,6 +79,7 @@
   font-weight: 600;
   white-space: nowrap;
   cursor: pointer;
+  position: relative;
 }
 
 .fm-pane-tab[aria-selected="true"] {
@@ -88,36 +88,50 @@
 }
 
 .fm-pane-tab-title {
-  display: flex;
-  flex: 1;
-  align-items: center;
-  justify-content: center;
-  gap: 0.25rem;
+  flex: 1 1 0;
   min-width: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
   text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fm-pane-tab-title > * {
+  display: inline !important;
 }
 
 .fm-pane-tab-search-icon {
-  flex: 0 0 auto;
+  vertical-align: baseline;
   color: var(--fm-text-muted);
+  margin-right: 4px;
 }
 
-.fm-pane-tab-close {
-  flex: 0 0 auto;
-  border: 0;
-  background: transparent;
-  color: inherit;
+/* Close button rendered as a pseudo-element so it doesn't affect title centering */
+.fm-pane-tab::after {
+  position: absolute;
+  top: 4px;
+  right: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: var(--fm-row-height);
+  content: "×";
+  border-radius: var(--fm-radius);
+  background: var(--fm-surface);
   font: inherit;
   line-height: 1;
-  cursor: pointer;
   opacity: 0;
+  pointer-events: none;
 }
 
-.fm-pane-tab:hover .fm-pane-tab-close,
-.fm-pane-tab-close:focus-visible {
+.fm-pane-tab:hover::after {
   opacity: 1;
+  background: var(--fm-surface);
+}
+
+.fm-pane-tab[aria-selected="true"]:hover::after {
+  background: var(--fm-hover);
 }
 
 .fm-pane-tab-new {

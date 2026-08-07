@@ -727,7 +727,16 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
                   draggable: true,
                   title: tab.path,
                   'aria-selected': tab.id === attrs.activeTabId ? 'true' : 'false',
-                  onclick: () => attrs.onSelectTab(tab.id),
+onclick: (event: MouseEvent) => {
+                      // Clicks in the rightmost ~28 px hit the pseudo-element close button.
+                      const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+                      if (event.clientX - rect.right > -28) {
+                        event.stopPropagation();
+                        attrs.onCloseTab(tab.id);
+                      } else {
+                        attrs.onSelectTab(tab.id);
+                      }
+                    },
                   onkeydown: (event: KeyboardEvent) => {
                     if (event.key === 'Enter' || event.key === ' ') {
                       event.preventDefault();
@@ -766,18 +775,6 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
                     tab.isSearchTab === true
                       ? [searchIcon({ size: 14, className: 'fm-pane-tab-search-icon' }), tab.title]
                       : tab.title,
-                  ),
-                  m(
-                    'button.fm-pane-tab-close',
-                    {
-                      type: 'button',
-                      'aria-label': `Close ${tab.isSearchTab === true ? `search: ${tab.title}` : tab.title}`,
-                      onclick: (event: MouseEvent) => {
-                        event.stopPropagation();
-                        attrs.onCloseTab(tab.id);
-                      },
-                    },
-                    '×',
                   ),
                 ],
               ),
