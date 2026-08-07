@@ -55,8 +55,6 @@ export const ArchivePasswordDialog: FactoryComponent<ArchivePasswordDialogAttrs>
             value: password,
             required: true,
             autocomplete: 'current-password',
-            autofocus: true,
-            oncreate: ({ dom }) => (dom as HTMLInputElement).focus(),
             oninput: (event: InputEvent) => {
               password = (event.currentTarget as HTMLInputElement).value;
             },

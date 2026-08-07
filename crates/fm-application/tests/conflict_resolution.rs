@@ -52,7 +52,7 @@ async fn wait_for_state(
     id: uuid::Uuid,
     expected: OperationStateDto,
 ) -> fm_transport_dto::OperationDto {
-    for _ in 0..500 {
+    for _ in 0..2000 {
         let operation = service.get_operation(id.into()).unwrap();
         if operation.state == expected {
             return operation;

@@ -82,7 +82,13 @@ export const FindFilesDialog: FactoryComponent<FindFilesDialogAttrs> = () => {
               type: 'text',
               value: filenameQuery,
               placeholder: 'Filename or glob, e.g. *.md',
-              oncreate: ({ dom }) => (dom as HTMLInputElement).focus(),
+              // No oncreate-focus here: ModalPanel keeps this input permanently mounted
+              // and only toggles CSS visibility, so an oncreate-focus would only ever
+              // fire once at app boot (before the dialog is ever shown) - and doing so
+              // poisons ModalPanel's own focus-restore-on-close logic, which captures
+              // whatever is focused when the dialog opens and refocuses it when the
+              // dialog closes. The onupdate hook below focuses on the real open
+              // transition instead.
               oninput: (event: InputEvent) => {
                 filenameQuery = (event.currentTarget as HTMLInputElement).value;
               },

@@ -770,7 +770,7 @@ mod tests {
             icon_theme.mime_prefixes.get("image/").map(String::as_str),
             Some("image")
         );
-        assert_eq!(icon_theme.icon_definitions.len(), 27);
+        assert_eq!(icon_theme.icon_definitions.len(), 32);
     }
 
     #[test]

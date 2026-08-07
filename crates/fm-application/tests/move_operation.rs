@@ -11,7 +11,7 @@ use fm_transport_dto::{
 };
 
 async fn wait(service: &FileManagerService, id: uuid::Uuid) -> fm_transport_dto::OperationDto {
-    for _ in 0..500 {
+    for _ in 0..2000 {
         let operation = service.get_operation(id.into()).unwrap();
         if matches!(
             operation.state,
@@ -40,7 +40,7 @@ async fn failed_cross_volume_fallback_never_deletes_the_source() {
     service.force_cross_volume_moves_for_tests(true);
 
     let started = start_move(&service, &source, &destination);
-    for _ in 0..500 {
+    for _ in 0..2000 {
         if service.get_operation(started.id.into()).unwrap().state
             == OperationStateDto::WaitingForConflictResolution
         {

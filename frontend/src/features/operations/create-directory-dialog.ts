@@ -77,9 +77,7 @@ export const CreateDirectoryDialog: FactoryComponent<CreateDirectoryDialogAttrs>
             type: 'text',
             value: name,
             required: true,
-            autofocus: true,
             'aria-invalid': error === undefined ? undefined : 'true',
-            oncreate: ({ dom }) => (dom as HTMLInputElement).focus(),
             oninput: (event: InputEvent) => {
               name = (event.currentTarget as HTMLInputElement).value;
               error = validateDirectoryName(name);

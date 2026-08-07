@@ -1391,8 +1391,10 @@ describe('AppShell', () => {
     ).toEqual(['/', 'search', 'local', 'e']);
 
     // Focus lands in the pane (not e.g. document.body) so keyboard cursor
-    // navigation works immediately, without an extra click.
-    expect(document.activeElement).toBe(activePane);
+    // navigation works immediately, without an extra click. This happens after an
+    // additional microtask (navigation.navigate() resolving), so wait for it rather
+    // than asserting immediately after the tab-title waitFor above resolves.
+    await vi.waitFor(() => expect(document.activeElement).toBe(activePane));
     const firstCursorRow = activePane?.querySelector('.fm-cursor-row')?.textContent;
     expect(firstCursorRow).not.toBeUndefined();
     // The first result is selected too, not just cursored (matches the same guarantee as
