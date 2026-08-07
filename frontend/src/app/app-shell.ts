@@ -108,6 +108,7 @@ import type {
   ActionDescriptor,
   ActionInvocationContext,
   BackendEvent,
+  ContentMatchSummary,
   DirectoryDelta,
   EntryId,
   EntrySummary,
@@ -270,6 +271,22 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
   /** The query text each `search://` result location was started with, so the breadcrumb/tab can
    * show `search: <query>` instead of the opaque search id in the location's URI. */
   const findFilesQueriesByLocationUri = new Map<string, string>();
+  /** The full search params each `search://` result location was started with - kept separately
+   * from the display-label map above (which is a plain filename string when one was given, not
+   * JSON) so F3's content-query lookup always has a real params object to read, instead of
+   * needing to `JSON.parse` a string that usually isn't JSON at all. */
+  const findFilesParamsByLocationUri = new Map<string, FindFilesSearchParams>();
+  /** Content matches are only ever delivered on the live `search.resultsBatch` SSE event -
+   * `EntrySummaryDto` (the REST `listDirectory` wire type used to refresh/page a `search://`
+   * pane) has no `contentMatches` field at all, so an entry refetched via `navigation.load()`
+   * never carries them, even though the backend found and streamed them moments earlier. Caching
+   * them here by entry location as batches arrive lets F3/double-click pre-populate the content
+   * search regardless of whether the specific `entry` object in hand came from the SSE batch or
+   * a subsequent REST refresh. */
+  const contentMatchesByEntryUri = new Map<string, readonly ContentMatchSummary[]>();
+  /** Panes with a `search.resultsBatch`-triggered reload already in flight - see the handler
+   * below for why this debounce is needed to make results stream in incrementally. */
+  const searchBatchReloadInFlight = new Set<PaneId>();
   /** Registered by `WorkspaceLayoutView` (task 0089): moves DOM focus into a pane so keyboard
    * cursor navigation works immediately, e.g. right after a filename search closes its dialog. */
   let focusPane: ((paneId: PaneId) => void) | undefined;
@@ -661,21 +678,20 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
         readonly wholeWord: boolean;
       }
     | undefined {
-    if (!entry.contentMatches || entry.contentMatches.length === 0) return undefined;
-    const storedQuery = findFilesQueriesByLocationUri.get(locationUri);
-    if (storedQuery === undefined) return undefined;
-    let contentQuery: string | undefined;
-    let contentRegex = false;
-    try {
-      const params: FindFilesSearchParams = JSON.parse(storedQuery);
-      contentQuery = params.contentQuery;
-      contentRegex = params.contentRegex;
-    } catch {
-      // Stored query is a plain string (filename-only search), ignore.
-      return undefined;
-    }
-    if (!contentQuery) return undefined;
-    return { query: contentQuery, regex: contentRegex, caseSensitive: false, wholeWord: true };
+    const params = findFilesParamsByLocationUri.get(locationUri);
+    if (params?.contentQuery === undefined || params.contentQuery === '') return undefined;
+    // A directory listing refetched via REST (`navigation.load()`, e.g. after a subsequent
+    // search batch or a plain tab switch) never carries `contentMatches` - only the live
+    // `search.resultsBatch` SSE event does (`EntrySummaryDto` has no such field) - so fall back
+    // to whatever that event most recently cached for this entry's location.
+    const matches = entry.contentMatches ?? contentMatchesByEntryUri.get(entry.location.uri);
+    if (matches === undefined || matches.length === 0) return undefined;
+    return {
+      query: params.contentQuery,
+      regex: params.contentRegex,
+      caseSensitive: false,
+      wholeWord: true,
+    };
   }
 
   /** Opens the Lister-style viewer (task 0088) for `entry` in `paneId`, replacing any viewer
@@ -928,7 +944,13 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
   function refetchAffectedPanes(paneId?: PaneId): void {
     if (workspace === undefined) return;
     for (const candidate of workspace.paneOrder) {
-      if (paneId === undefined || candidate === paneId) void navigation.load(candidate);
+      // `background: true` - this is a filesystem-watch-triggered refresh, not a user-requested
+      // one. It must never abort an explicit navigation already in flight for the pane's tab
+      // (e.g. `navigate()` to a fresh `search://` location), or it silently discards that
+      // navigation's own snapshot fetch with no error and no results ever appearing.
+      if (paneId === undefined || candidate === paneId) {
+        void navigation.load(candidate, { background: true });
+      }
     }
   }
 
@@ -1063,6 +1085,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
           result.location.uri,
           params.filenameQuery || JSON.stringify(params),
         );
+        findFilesParamsByLocationUri.set(result.location.uri, params);
         const paneId = activeDirectory()?.paneId ?? workspace?.activePaneId;
         if (paneId === undefined) return;
         dismissFindFiles();
@@ -1448,6 +1471,36 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       }
       return;
     }
+    if (dispatchedAction === 'core.pack') {
+      const active = activeDirectory();
+      const selection = active === undefined ? undefined : selections.get(activeTabKey(active.paneId));
+      const directory = active === undefined ? undefined : directories.get(activeTabKey(active.paneId));
+      const selected = directory?.entries.filter((entry) => selection?.selectedEntryIds.includes(entry.id) === true);
+      if (selected !== undefined && selected.length > 0 && directory?.location !== undefined) {
+        event.preventDefault();
+        void attrsClient.startOperation({
+          type: 'createArchive',
+          sources: selected.map((entry) => entry.location),
+          destination: { ...directory.location, uri: `${directory.location.uri.replace(/\/$/u, '')}/archive.zip` },
+          conflictPolicy: 'ask',
+        });
+      }
+      return;
+    }
+    if (dispatchedAction === 'core.extract') {
+      const active = activeDirectory();
+      const selection = active === undefined ? undefined : selections.get(activeTabKey(active.paneId));
+      const directory = active === undefined ? undefined : directories.get(activeTabKey(active.paneId));
+      const cursor = selection?.cursorEntryId;
+      const selected = directory?.entries.filter((entry) => entry.id === cursor);
+      const otherPaneId = workspace?.paneOrder.find((paneId) => paneId !== active?.paneId);
+      const destination = otherPaneId === undefined ? undefined : directories.get(activeTabKey(otherPaneId))?.location;
+      if (selected !== undefined && selected.length === 1 && destination !== undefined) {
+        event.preventDefault();
+        void attrsClient.startOperation({ type: 'copy', sources: [selected[0].location], destination, conflictPolicy: 'ask' });
+      }
+      return;
+    }
     if (dispatchedAction === 'core.move') {
       const active = activeDirectory();
       const selection =
@@ -1574,6 +1627,13 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       return;
     }
     if (dispatchedAction === 'core.view' && !forceSystemView) {
+      // If a viewer is open in the active pane, F3 navigates to the next search match.
+      const activeViewer = viewerByPane.get(workspace?.activePaneId);
+      if (activeViewer !== undefined) {
+        event.preventDefault();
+        activeViewer.controller.goToNextMatch();
+        return;
+      }
       const active = activeDirectory();
       const selection =
         active === undefined ? undefined : selections.get(activeTabKey(active.paneId));
@@ -1748,13 +1808,34 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     }
     if (payload.type === 'search.resultsBatch') {
       if (payload.searchId !== findFilesSearchId) return;
+      for (const entry of payload.entries) {
+        if (entry.contentMatches !== undefined && entry.contentMatches.length > 0) {
+          contentMatchesByEntryUri.set(entry.location.uri, entry.contentMatches);
+        }
+      }
       const searchUri = `search://local/${payload.searchId}`;
       if (workspace !== undefined) {
         for (const [paneId, pane] of Object.entries(workspace.panesById) as Array<
           [PaneId, WorkspaceProjection['panesById'][PaneId]]
         >) {
           const tab = pane.tabsById[pane.activeTabId];
-          if (tab?.location.uri === searchUri) void navigation.load(paneId);
+          if (tab?.location.uri !== searchUri) continue;
+          // Batches arrive roughly every 100ms while a search is running. Reloading on every
+          // single one used to abort-and-restart the previous reload's still-in-flight fetch
+          // each time (`navigation.load()` without `background: true` always preempts), so only
+          // the very last reload - after the search finished - ever won the race to complete,
+          // making results appear all at once instead of streaming in. Debouncing here so at
+          // most one reload is in flight per pane (plus always forcing one final reload once the
+          // search completes) lets intermediate reloads land as they finish.
+          if (payload.isComplete) {
+            void navigation.load(paneId);
+            continue;
+          }
+          if (searchBatchReloadInFlight.has(paneId)) continue;
+          searchBatchReloadInFlight.add(paneId);
+          void navigation
+            .load(paneId, { background: true })
+            .finally(() => searchBatchReloadInFlight.delete(paneId));
         }
       }
       m.redraw();

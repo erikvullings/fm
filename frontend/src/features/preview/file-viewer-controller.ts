@@ -289,7 +289,7 @@ export function createFileViewerController(
       searchDebounceTimer = undefined;
     }
     if (search.query.trim() === '') {
-      // Nothing to search - clear any stale results immediately rather than waiting on the debounce.
+      // Nothing to search - clear stale results and highlight immediately rather than waiting on the debounce.
       search = {
         ...search,
         matches: [],
@@ -298,7 +298,20 @@ export function createFileViewerController(
         searching: false,
         error: undefined,
       };
-      if (current.status === 'ready') publish({ ...current, search });
+      if (current.status === 'ready') {
+        const readyState = current as Extract<FileViewerState, { status: 'ready' }>;
+        // Also clear any stale highlight from the content state.
+        if (readyState.content.kind === 'text' && (readyState.content.highlightOffset !== undefined || readyState.content.highlightLength !== undefined)) {
+          const { highlightOffset, highlightLength, ...contentRest } = readyState.content;
+          publish({
+            ...readyState,
+            content: contentRest,
+            search,
+          });
+        } else {
+          publish({ ...current, search });
+        }
+      }
       return;
     }
     searchDebounceTimer = setTimeout(() => {
@@ -386,6 +399,16 @@ export function createFileViewerController(
       if (current.status === 'ready') publish({ ...current, search });
       if (result.matches.length > 0) {
         await jumpToMatch(0);
+      } else {
+        // No matches - clear stale highlight from the content state.
+        const content = textContent();
+        if (content !== undefined && (content.highlightOffset !== undefined || content.highlightLength !== undefined)) {
+          const { highlightOffset, highlightLength, ...contentRest } = content;
+          publish({
+            ...(current as Extract<FileViewerState, { status: 'ready' }>),
+            content: contentRest,
+          });
+        }
       }
     } catch (error: unknown) {
       if (!isCurrent(controller)) return;
