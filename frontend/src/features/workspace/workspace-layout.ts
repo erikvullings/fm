@@ -150,6 +150,13 @@ function displayTabTitle(uri: string, title: string, query: string | undefined):
   return uri.startsWith('search://') && query !== undefined ? `search: ${query}` : title;
 }
 
+/** Bare (unprefixed) tab title for `search://` tabs - the tab strip shows a search icon instead
+ * of the textual `search: ` prefix (task 0089 follow-up), so the visible label only needs the
+ * query text; see `PaneTab.isSearchTab` for the icon/prefix decision. */
+function bareTabTitle(uri: string, title: string, query: string | undefined): string {
+  return uri.startsWith('search://') && query !== undefined ? query : title;
+}
+
 function paneIdsInLayout(layout: WorkspaceLayout): readonly PaneId[] {
   if (layout.type === 'pane') {
     return [layout.paneId];
@@ -354,8 +361,9 @@ export const WorkspaceLayoutView: FactoryComponent<WorkspaceLayoutViewAttrs> = (
           const query = uri === undefined ? undefined : attrs.searchQueryForLocationUri?.(uri);
           return {
             id: tabId,
-            title: paneTab === undefined ? '' : displayTabTitle(uri ?? '', paneTab.title, query),
+            title: paneTab === undefined ? '' : bareTabTitle(uri ?? '', paneTab.title, query),
             path: paneTab === undefined ? '' : displayPathFromUri(paneTab.location.uri, query),
+            isSearchTab: uri?.startsWith('search://') ?? false,
           };
         }),
         activeTabId: pane.activeTabId,

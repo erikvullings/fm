@@ -1,6 +1,6 @@
 import m, { type FactoryComponent, type VnodeDOM } from 'mithril';
 import { IconButton } from 'mithril-materialized';
-import { heartIcon, plusIcon } from '../../components/tabler-icons';
+import { heartIcon, plusIcon, searchIcon } from '../../components/tabler-icons';
 import {
   dispatchKeybinding,
   hasPrimaryModifier,
@@ -48,6 +48,9 @@ export interface PaneTab {
   readonly title: string;
   /** Full path shown as the tab's tooltip. */
   readonly path: string;
+  /** Whether this tab is a `search://` results tab - shown with a search icon instead of a
+   * `search:` text prefix in the tab strip (task 0089 follow-up). */
+  readonly isSearchTab?: boolean;
 }
 
 /** Inputs for the presentation-only pane surface. */
@@ -758,12 +761,20 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
                   },
                 },
                 [
-                  m('span.fm-pane-tab-title', tab.title),
+                  m(
+                    'span.fm-pane-tab-title',
+                    tab.isSearchTab === true
+                      ? [
+                          searchIcon({ size: 14, className: 'fm-pane-tab-search-icon' }),
+                          `: ${tab.title}`,
+                        ]
+                      : tab.title,
+                  ),
                   m(
                     'button.fm-pane-tab-close',
                     {
                       type: 'button',
-                      'aria-label': `Close ${tab.title}`,
+                      'aria-label': `Close ${tab.isSearchTab === true ? `search: ${tab.title}` : tab.title}`,
                       onclick: (event: MouseEvent) => {
                         event.stopPropagation();
                         attrs.onCloseTab(tab.id);

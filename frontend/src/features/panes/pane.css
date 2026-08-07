@@ -88,11 +88,20 @@
 }
 
 .fm-pane-tab-title {
+  display: flex;
   flex: 1;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   text-align: center;
+}
+
+.fm-pane-tab-search-icon {
+  flex: 0 0 auto;
+  color: var(--fm-text-muted);
 }
 
 .fm-pane-tab-close {
