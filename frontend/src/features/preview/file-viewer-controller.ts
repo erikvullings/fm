@@ -28,7 +28,15 @@ export interface FileViewerTextContent {
   readonly atStart: boolean;
   readonly atEnd: boolean;
   readonly loadingMore: boolean;
-  /** Byte offset/length of the active search match within the file, for scroll/highlight. */
+  /**
+   * Character offset/length of the active search match within `text`, for scroll/highlight.
+   *
+   * The backend reports match positions as UTF-8 BYTE offsets (`SearchInFileMatch.offset`), which
+   * do not equal JS string (UTF-16 code unit) offsets once any multi-byte character precedes the
+   * match - using the raw byte offset directly made the highlight drift later and later into the
+   * file, worsening with every prior non-ASCII character. These fields are already converted to
+   * `text`-relative character positions (see `jumpToMatch`), so no further conversion is needed.
+   */
   readonly highlightOffset?: number;
   readonly highlightLength?: number;
 }
@@ -315,6 +323,14 @@ export function createFileViewerController(
         controller.signal,
       );
       if (!isCurrent(controller)) return;
+      const bytes = new Uint8Array(chunk.data);
+      // Convert the match's byte offset/length (relative to this window) into character offsets by
+      // decoding only the bytes before/within the match - see `FileViewerTextContent`'s doc comment.
+      const matchStartInChunk = match.offset - windowOffset;
+      const highlightOffset = new TextDecoder().decode(bytes.subarray(0, matchStartInChunk)).length;
+      const highlightLength = new TextDecoder().decode(
+        bytes.subarray(matchStartInChunk, matchStartInChunk + match.length),
+      ).length;
       publish({
         status: 'ready',
         entry,
@@ -322,12 +338,12 @@ export function createFileViewerController(
           kind: 'text',
           windowOffset,
           windowEnd: windowOffset + chunk.length,
-          text: new TextDecoder().decode(new Uint8Array(chunk.data)),
+          text: new TextDecoder().decode(bytes),
           atStart: windowOffset === 0,
           atEnd: chunk.eof,
           loadingMore: false,
-          highlightOffset: match.offset,
-          highlightLength: match.length,
+          highlightOffset,
+          highlightLength,
         },
         ...(search === undefined ? {} : { search }),
       });

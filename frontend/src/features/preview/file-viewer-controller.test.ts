@@ -188,10 +188,54 @@ describe('file viewer controller', () => {
     const last = context.states.at(-1);
     expect(last).toMatchObject({
       status: 'ready',
-      content: { windowOffset: expectedWindowOffset, highlightOffset: 40_000, highlightLength: 3 },
+      content: { windowOffset: expectedWindowOffset, highlightOffset: 9, highlightLength: 0 },
       search: {
         matches: [{ offset: 40_000, length: 3, lineNumber: 1200 }],
         currentMatchIndex: 0,
+      },
+    });
+  });
+
+  it('converts the match byte offset to a character offset when multi-byte text precedes it', async () => {
+    // "café — cat": byte offset of "cat" is 10 (é=2 bytes, — =3 bytes), but its character offset
+    // is only 7 - using the raw byte offset directly (the bug) would highlight 3 characters late.
+    const fileText = 'café — cat';
+    const fileBytes = new TextEncoder().encode(fileText);
+    const matchOffset = fileBytes.indexOf('c'.charCodeAt(0), 8); // byte offset of "cat"
+    const context = setup();
+    vi.mocked(context.client.readFileRange).mockResolvedValueOnce({
+      data: Array.from(fileBytes),
+      offset: 0,
+      length: fileBytes.length,
+      eof: true,
+    });
+    const controller = createFileViewerController({
+      client: context.client,
+      entry: entry(),
+      update: (state) => context.states.push(state),
+    });
+    await vi.waitFor(() => expect(context.states.at(-1)?.status).toBe('ready'));
+
+    vi.mocked(context.client.searchInFile).mockResolvedValue({
+      matches: [{ offset: matchOffset, length: 3, lineNumber: 1 }],
+      truncated: false,
+    });
+    vi.mocked(context.client.readFileRange).mockResolvedValueOnce({
+      data: Array.from(fileBytes),
+      offset: 0,
+      length: fileBytes.length,
+      eof: true,
+    });
+    controller.setSearchOptions({ query: 'cat' });
+    await controller.runSearch();
+
+    const last = context.states.at(-1);
+    expect(last).toMatchObject({
+      status: 'ready',
+      content: {
+        windowOffset: 0,
+        highlightOffset: fileText.indexOf('cat'),
+        highlightLength: 3,
       },
     });
   });

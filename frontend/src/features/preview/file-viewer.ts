@@ -161,10 +161,7 @@ function updateHighlightedTextBody(
   element.innerHTML = highlightToHtml(content.text, language);
   element.classList.toggle('hljs', language !== undefined);
 
-  const start =
-    content.highlightOffset === undefined
-      ? undefined
-      : content.highlightOffset - content.windowOffset;
+  const start = content.highlightOffset;
   const end =
     start === undefined || content.highlightLength === undefined
       ? undefined
