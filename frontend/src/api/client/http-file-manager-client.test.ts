@@ -385,6 +385,40 @@ describe('HttpFileManagerClient', () => {
       ).rejects.toThrow('Unexpected startSearch response status: 400');
     });
 
+    it('forwards the content-search fields to the backend (regression: these were silently dropped)', async () => {
+      requestStartSearch.mockResolvedValue({
+        status: 201,
+        headers: new Headers(),
+        data: {
+          searchId: 'search-1',
+          location: { providerId: 'local', uri: 'search://local/search-1' },
+        },
+      });
+      const client = new HttpFileManagerClient();
+
+      await client.startSearch({
+        query: '*.md',
+        contentQuery: 'archive',
+        contentRegex: false,
+        contentCaseSensitive: false,
+        contentWholeWord: true,
+        recurse: true,
+        roots: [{ providerId: 'local', uri: 'file:///Documents' }],
+        workspaceId: 'workspace-1',
+      });
+
+      expect(requestStartSearch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          contentQuery: 'archive',
+          contentRegex: false,
+          contentCaseSensitive: false,
+          contentWholeWord: true,
+          recurse: true,
+        }),
+        undefined,
+      );
+    });
+
     it('cancels a search', async () => {
       requestCancelSearch.mockResolvedValue({ status: 204, headers: new Headers() });
       const client = new HttpFileManagerClient();

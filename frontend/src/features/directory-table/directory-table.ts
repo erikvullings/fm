@@ -83,6 +83,20 @@ function readRowHeight(element: HTMLElement): number {
   return Number.isFinite(configured) && configured > 0 ? configured : DEFAULT_ROW_HEIGHT;
 }
 
+/** The viewport always reserves scrollbar space (`overflow-y: scroll`, see directory-table.css),
+ * so its content is consistently narrower than the header above it by the platform's actual
+ * scrollbar width. Measuring and republishing that width as a CSS custom property lets the
+ * header reserve the same amount via `padding-inline-end`, keeping every column aligned whether
+ * or not the list is actually tall enough to need scrolling. */
+function syncScrollbarWidth(viewport: HTMLElement): void {
+  const width = viewport.offsetWidth - viewport.clientWidth;
+  const table = viewport.parentElement;
+  if (table === null) return;
+  const current = table.style.getPropertyValue('--fm-scrollbar-width');
+  const next = `${width}px`;
+  if (current !== next) table.style.setProperty('--fm-scrollbar-width', next);
+}
+
 function typeLabel(entry: EntrySummary): string {
   if (entry.kind === 'directory' || entry.kind === 'symlink') {
     return '';
@@ -554,8 +568,10 @@ export const DirectoryTable: FactoryComponent<DirectoryTableAttrs> = () => {
               'aria-busy': attrs.state.type === 'loading' ? 'true' : undefined,
               'data-active': attrs.active ? 'true' : 'false',
               oncreate: (vnode: VnodeDOM) => {
-                element = vnode.dom as HTMLElement;
-                rowHeight = readRowHeight(element);
+                const viewport = vnode.dom as HTMLElement;
+                element = viewport;
+                rowHeight = readRowHeight(viewport);
+                syncScrollbarWidth(viewport);
                 if (
                   attrs.pluginColumns?.some((column) => column.id === fileAgeColumn.id) === true
                 ) {
@@ -565,14 +581,18 @@ export const DirectoryTable: FactoryComponent<DirectoryTableAttrs> = () => {
                 // redraw on its own, so the row window (sized off `element.clientHeight`)
                 // would otherwise only catch up once something unrelated redraws.
                 if (attrs.viewportHeight === undefined && typeof ResizeObserver !== 'undefined') {
-                  resizeObserver = new ResizeObserver(() => m.redraw());
-                  resizeObserver.observe(element);
+                  resizeObserver = new ResizeObserver(() => {
+                    syncScrollbarWidth(viewport);
+                    m.redraw();
+                  });
+                  resizeObserver.observe(viewport);
                 }
                 syncCursor(attrs);
                 m.redraw();
               },
               onupdate: (vnode: VnodeDOM) => {
                 element = vnode.dom as HTMLElement;
+                syncScrollbarWidth(element);
                 const heightChangedAfterLayout =
                   attrs.viewportHeight === undefined && element.clientHeight !== viewportHeight;
                 if (heightChangedAfterLayout || recheckScroll(vnode.attrs as DirectoryTableAttrs)) {

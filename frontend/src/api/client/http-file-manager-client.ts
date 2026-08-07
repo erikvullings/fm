@@ -353,7 +353,20 @@ export class HttpFileManagerClient implements FileManagerClient {
 
   async startSearch(request: StartSearchRequest, signal?: AbortSignal): Promise<StartSearchResult> {
     const response = await requestSearchStart(
-      { query: request.query, roots: [...request.roots], workspaceId: request.workspaceId },
+      {
+        query: request.query,
+        ...(request.contentQuery === undefined ? {} : { contentQuery: request.contentQuery }),
+        ...(request.contentRegex === undefined ? {} : { contentRegex: request.contentRegex }),
+        ...(request.contentCaseSensitive === undefined
+          ? {}
+          : { contentCaseSensitive: request.contentCaseSensitive }),
+        ...(request.contentWholeWord === undefined
+          ? {}
+          : { contentWholeWord: request.contentWholeWord }),
+        ...(request.recurse === undefined ? {} : { recurse: request.recurse }),
+        roots: [...request.roots],
+        workspaceId: request.workspaceId,
+      },
       signal === undefined ? undefined : { signal },
     );
     if (response.status !== 201) {

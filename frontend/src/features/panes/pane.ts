@@ -764,10 +764,7 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
                   m(
                     'span.fm-pane-tab-title',
                     tab.isSearchTab === true
-                      ? [
-                          searchIcon({ size: 14, className: 'fm-pane-tab-search-icon' }),
-                          `: ${tab.title}`,
-                        ]
+                      ? [searchIcon({ size: 14, className: 'fm-pane-tab-search-icon' }), tab.title]
                       : tab.title,
                   ),
                   m(

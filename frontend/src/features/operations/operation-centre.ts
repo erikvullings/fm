@@ -29,9 +29,21 @@ function currentEntryName(operation: Operation): string | undefined {
   return segment === undefined ? uri : decodeURIComponent(segment);
 }
 
+/** Search operations show a running match count instead of the current-entry filename - the
+ * filename being scanned right now is rarely the interesting bit (and looks like a bug report
+ * of its own when it lands on some unrelated file deep in `node_modules`), whereas "N files
+ * found" directly answers "is this working / how many results so far". */
+function searchProgressSummary(operation: Operation): string {
+  const count = operation.progress.completedItems;
+  return `${count} ${count === 1 ? 'file' : 'files'} found…`;
+}
+
 function cancelledResult(operation: Operation): string {
   const { completedItems, totalItems, completedBytes, totalBytes } = operation.progress;
   const items = `${completedItems}${hasValue(totalItems) ? ` / ${totalItems}` : ''}`;
+  if (operation.kind === 'search') {
+    return operation.result?.message ?? `Cancelled after finding ${items} files.`;
+  }
   const bytes = `${formatBytes(completedBytes)}${
     hasValue(totalBytes) ? ` / ${formatBytes(totalBytes)}` : ''
   }`;
@@ -57,6 +69,7 @@ export const OperationCentre: Component<OperationCentreAttrs> = {
       operations.map((operation) => {
         const progress = operation.progress;
         const failure = attrs.state.failuresById[operation.id];
+        const isSearch = operation.kind === 'search';
         const terminal =
           operation.state === 'completed' ||
           operation.state === 'completedWithWarnings' ||
@@ -69,18 +82,25 @@ export const OperationCentre: Component<OperationCentreAttrs> = {
             operation.queuePosition === undefined
               ? undefined
               : m('span', `Queue position ${operation.queuePosition}`),
-            currentEntryName(operation) === undefined
+            isSearch && operation.state === 'running'
+              ? m('span', searchProgressSummary(operation))
+              : undefined,
+            !isSearch && currentEntryName(operation) !== undefined
+              ? m('span', currentEntryName(operation))
+              : undefined,
+            isSearch
               ? undefined
-              : m('span', currentEntryName(operation)),
-            m(
-              'span',
-              `${progress.completedItems}${hasValue(progress.totalItems) ? ` / ${progress.totalItems}` : ''} items`,
-            ),
-            m(
-              'span',
-              `${formatBytes(progress.completedBytes)}${hasValue(progress.totalBytes) ? ` / ${formatBytes(progress.totalBytes)}` : ''}`,
-            ),
-            hasValue(progress.bytesPerSecond)
+              : m(
+                  'span',
+                  `${progress.completedItems}${hasValue(progress.totalItems) ? ` / ${progress.totalItems}` : ''} items`,
+                ),
+            isSearch
+              ? undefined
+              : m(
+                  'span',
+                  `${formatBytes(progress.completedBytes)}${hasValue(progress.totalBytes) ? ` / ${formatBytes(progress.totalBytes)}` : ''}`,
+                ),
+            hasValue(progress.bytesPerSecond) && !isSearch
               ? m('span', `${formatBytes(progress.bytesPerSecond)}/s`)
               : undefined,
           ]),
@@ -98,7 +118,9 @@ export const OperationCentre: Component<OperationCentreAttrs> = {
             : m(
                 '.fm-operation-result',
                 operation.result?.message ??
-                  `Completed ${operation.progress.completedItems} items (${formatBytes(operation.progress.completedBytes)}).`,
+                  (isSearch
+                    ? `Found ${operation.progress.completedItems} files.`
+                    : `Completed ${operation.progress.completedItems} items (${formatBytes(operation.progress.completedBytes)}).`),
               ),
           failure === undefined
             ? undefined

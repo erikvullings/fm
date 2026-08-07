@@ -220,4 +220,52 @@ describe('OperationCentre states', () => {
     expect(root.querySelector('.fm-operation-centre')).toBeNull();
     expect(root.textContent).toBe('');
   });
+
+  it('shows a match count instead of the current-entry filename for a running search', () => {
+    const search: Operation = {
+      ...operation('running', 'search'),
+      kind: 'search',
+      progress: {
+        ...operation('running').progress,
+        completedItems: 15,
+      },
+    };
+
+    m.mount(root, {
+      view: () =>
+        m(OperationCentre, {
+          state: createOperationsState([search]),
+          onCancel: vi.fn(),
+          onPause: vi.fn(),
+          onResume: vi.fn(),
+          onDismiss: vi.fn(),
+        }),
+    });
+
+    const summary = root.querySelector('[data-operation-id="search"] .fm-operation-summary');
+    expect(summary?.textContent).toContain('15 files found');
+    // Neither the scanned-entry filename nor the generic "items"/bytes readout should show.
+    expect(summary?.textContent).not.toContain('report.pdf');
+    expect(summary?.textContent).not.toContain('items');
+    expect(summary?.textContent).not.toContain('B');
+  });
+
+  it('reports a cancelled search in files, not bytes', () => {
+    const search: Operation = { ...operation('cancelled', 'search'), kind: 'search' };
+
+    m.mount(root, {
+      view: () =>
+        m(OperationCentre, {
+          state: createOperationsState([search]),
+          onCancel: vi.fn(),
+          onPause: vi.fn(),
+          onResume: vi.fn(),
+          onDismiss: vi.fn(),
+        }),
+    });
+
+    const result = root.querySelector('[data-operation-id="search"] .fm-operation-result');
+    expect(result?.textContent).toBe('Cancelled after finding 2 / 4 files.');
+  });
 });
+

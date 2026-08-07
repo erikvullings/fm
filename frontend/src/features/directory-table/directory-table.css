@@ -10,12 +10,17 @@
   font-size: 0.92em;
 }
 
-/* Header lives outside the scrollable viewport so the scrollbar starts below it. */
+/* Header lives outside the scrollable viewport so the scrollbar starts below it. The viewport
+ * always reserves scrollbar space (`overflow-y: scroll` rather than `auto`) and the header
+ * mirrors that reserved width via `--fm-scrollbar-width` (set from JS - see directory-table.ts),
+ * otherwise a directory with enough rows to actually show a scrollbar renders its columns a few
+ * pixels narrower than the header above them, visibly misaligning every column after the first. */
 .fm-directory-viewport {
   position: relative;
   flex: 1 1 auto;
   min-height: 0;
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: scroll;
   outline: none;
 }
 
@@ -38,6 +43,7 @@
 .fm-directory-header {
   flex: 0 0 auto;
   height: var(--fm-row-height);
+  padding-inline-end: var(--fm-scrollbar-width, 0px);
   border-bottom: 1px solid var(--fm-border);
   background: var(--fm-surface-elevated);
   color: var(--fm-text-muted);
@@ -154,11 +160,13 @@
 /* Full search-result paths (task 0089 follow-up) truncate at the START instead of the end, so the
  * most interesting part - the file name - stays visible even when the parent path is long. This
  * uses the classic rtl/ltr trick: reversing the block's direction flips which end the ellipsis
- * appears on, while `unicode-bidi: plaintext` keeps the (LTR) path text itself in reading order. */
+ * appears on. `unicode-bidi: plaintext` must NOT be added here - it makes the browser re-detect
+ * the paragraph's base direction from the (LTR) path text itself, which silently overrides
+ * `direction: rtl` and puts the ellipsis right back at the end, undoing this rule entirely. Plain
+ * `direction: rtl` alone still renders each LTR run (path segment) in correct reading order. */
 .fm-entry-name--path {
   direction: rtl;
   text-align: left;
-  unicode-bidi: plaintext;
 }
 
 img.fm-native-entry-icon {
