@@ -144,18 +144,23 @@ const INITIAL_COLUMNS: readonly DirectoryColumnDescriptor[] = [
               alt: '',
               'aria-hidden': 'true',
             }),
-        m('span.fm-entry-name', [
-          matchIndex < 0 || nameMatchPrefix === undefined
-            ? name
-            : [
-                name.slice(0, matchIndex),
-                m(
-                  'span.fm-typeahead-match',
-                  name.slice(matchIndex, matchIndex + nameMatchPrefix.length),
-                ),
-                name.slice(matchIndex + nameMatchPrefix.length),
-              ],
-        ]),
+        m(
+          showFullPath && !isParentEntry(entry.id)
+            ? 'span.fm-entry-name.fm-entry-name--path'
+            : 'span.fm-entry-name',
+          [
+            matchIndex < 0 || nameMatchPrefix === undefined
+              ? name
+              : [
+                  name.slice(0, matchIndex),
+                  m(
+                    'span.fm-typeahead-match',
+                    name.slice(matchIndex, matchIndex + nameMatchPrefix.length),
+                  ),
+                  name.slice(matchIndex + nameMatchPrefix.length),
+                ],
+          ],
+        ),
         entry.kind === 'symlink'
           ? m(
               'span.fm-entry-symlink-indicator',

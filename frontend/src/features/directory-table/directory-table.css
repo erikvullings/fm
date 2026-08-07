@@ -143,6 +143,24 @@
   color: var(--fm-text-muted);
 }
 
+.fm-entry-name {
+  overflow: hidden;
+  flex: 1 1 auto;
+  min-width: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Full search-result paths (task 0089 follow-up) truncate at the START instead of the end, so the
+ * most interesting part - the file name - stays visible even when the parent path is long. This
+ * uses the classic rtl/ltr trick: reversing the block's direction flips which end the ellipsis
+ * appears on, while `unicode-bidi: plaintext` keeps the (LTR) path text itself in reading order. */
+.fm-entry-name--path {
+  direction: rtl;
+  text-align: left;
+  unicode-bidi: plaintext;
+}
+
 img.fm-native-entry-icon {
   width: 16px;
   height: 16px;
