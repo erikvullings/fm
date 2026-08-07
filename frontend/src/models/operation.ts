@@ -9,7 +9,8 @@ export type OperationKind =
   | 'move'
   | 'duplicate'
   | 'trash'
-  | 'delete';
+  | 'delete'
+  | 'search';
 
 /** Operation lifecycle states (spec §17). */
 export type OperationState =

@@ -387,6 +387,8 @@ pub enum OperationKindPayload {
     Trash,
     /// Permanently delete entries.
     Delete,
+    /// Search files.
+    Search,
 }
 
 /// Operation lifecycle states from specification §17.

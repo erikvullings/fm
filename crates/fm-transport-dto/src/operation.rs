@@ -64,6 +64,8 @@ pub enum OperationKindDto {
     Duplicate,
     Trash,
     Delete,
+    /// Search files.
+    Search,
 }
 
 /// Conflict policy carried by an operation request and snapshot.

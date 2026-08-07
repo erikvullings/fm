@@ -9,9 +9,10 @@
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-use fm_domain::{EntryId, EntryKind, EntrySummary, Location, ProviderId};
+use fm_domain::{EntryId, EntryKind, EntrySummary, Location, OperationId, ProviderId};
 use fm_events::{
-    BackendEventPayload, ContentMatchSummary, EntrySummaryPayload, EventAudience, EventBus,
+    BackendEventPayload, ContentMatchSummary, EntryRefPayload, EntrySummaryPayload, EventAudience,
+    EventBus, OperationProgressDetails, OperationProgressPayload,
 };
 use fm_vfs::ContentQuery;
 use std::sync::Arc;
@@ -63,6 +64,9 @@ pub struct SearchOptions {
     /// When false, only search the root directories themselves without
     /// descending into subdirectories.
     pub recurse: bool,
+    /// When present, the engine emits `operation.*` events for progress
+    /// tracking in the operation centre.
+    pub operation_id: Option<OperationId>,
 }
 
 impl SearchEngine {
@@ -149,6 +153,15 @@ impl SearchEngine {
 /// traversal cycle-free without a visited-inode set and matches the
 /// "no symlink-following by default" requirement. Unreadable directories
 /// increment a warning counter instead of aborting the whole search.
+/// Immutable context shared by every [`flush`] call within a single search run.
+struct SearchContext<'a> {
+    search_id: Uuid,
+    store: &'a SearchResultsStore,
+    events: &'a EventBus,
+    audience: &'a EventAudience,
+    operation_id: Option<OperationId>,
+}
+
 fn run_search(
     search_id: Uuid,
     roots: Vec<PathBuf>,
@@ -158,6 +171,13 @@ fn run_search(
     events: &EventBus,
     audience: &EventAudience,
 ) {
+    let ctx = SearchContext {
+        search_id,
+        store,
+        events,
+        audience,
+        operation_id: options.operation_id,
+    };
     let filename_mode = detect_match_mode(&options.filename_query);
     let has_filename_filter = !options.filename_query.is_empty();
     let has_content_query = options.content_query.is_some();
@@ -166,6 +186,7 @@ fn run_search(
         Vec::with_capacity(BATCH_SIZE);
     let mut warnings_count = 0_u32;
     let mut last_flush = Instant::now();
+    let mut entries_scanned: u64 = 0;
 
     let max_depth = if options.recurse { usize::MAX } else { 1 };
     'roots: for root in roots {
@@ -199,6 +220,9 @@ fn run_search(
                     let Some(summary) = build_entry_summary(search_id, path) else {
                         continue;
                     };
+
+                    // Count every file we examine.
+                    entries_scanned += 1;
 
                     // Scan content if requested.
                     if has_content_query {
@@ -250,28 +274,12 @@ fn run_search(
             if buffer.len() >= BATCH_SIZE
                 || (!buffer.is_empty() && last_flush.elapsed() >= BATCH_INTERVAL)
             {
-                flush(
-                    search_id,
-                    store,
-                    events,
-                    audience,
-                    &mut buffer,
-                    warnings_count,
-                    false,
-                );
+                flush(&ctx, &mut buffer, warnings_count, false, entries_scanned);
                 last_flush = Instant::now();
             }
         }
     }
-    flush(
-        search_id,
-        store,
-        events,
-        audience,
-        &mut buffer,
-        warnings_count,
-        true,
-    );
+    flush(&ctx, &mut buffer, warnings_count, true, entries_scanned);
     store.mark_complete(search_id);
 }
 
@@ -280,13 +288,11 @@ fn run_search(
 /// A final (`is_complete: true`) flush is always sent, even with an empty
 /// buffer, so listeners can reliably detect that no further batches follow.
 fn flush(
-    search_id: Uuid,
-    store: &SearchResultsStore,
-    events: &EventBus,
-    audience: &EventAudience,
+    ctx: &SearchContext<'_>,
     buffer: &mut Vec<(EntrySummary, Option<Vec<ContentMatchSummary>>)>,
     warnings_count: u32,
     is_complete: bool,
+    entries_scanned: u64,
 ) {
     if buffer.is_empty() && !is_complete {
         return;
@@ -300,16 +306,43 @@ fn flush(
         })
         .collect();
     let summary_batch: Vec<EntrySummary> = batch.into_iter().map(|(e, _)| e).collect();
-    store.append(search_id, summary_batch, warnings_count);
-    events.publish(
-        audience.clone(),
+    ctx.store
+        .append(ctx.search_id, summary_batch, warnings_count);
+
+    let current_entry_ref = payload_entries.first().map(|e| EntryRefPayload {
+        id: e.id,
+        location: e.location.clone(),
+    });
+
+    ctx.events.publish(
+        ctx.audience.clone(),
         BackendEventPayload::SearchResultsBatch {
-            search_id,
+            search_id: ctx.search_id,
             entries: payload_entries,
             is_complete,
             warnings_count,
         },
     );
+
+    // Emit operation progress if the operation centre is tracking this search.
+    if let Some(op_id) = ctx.operation_id {
+        ctx.events.publish(
+            ctx.audience.clone(),
+            BackendEventPayload::OperationProgress {
+                progress: OperationProgressPayload {
+                    operation_id: op_id,
+                    progress: OperationProgressDetails {
+                        completed_items: entries_scanned,
+                        total_items: None,
+                        completed_bytes: 0,
+                        total_bytes: None,
+                        current_entry: current_entry_ref,
+                        bytes_per_second: None,
+                    },
+                },
+            },
+        );
+    }
 }
 
 /// Builds an [`EntrySummary`] for a matched path, or `None` if its metadata
@@ -416,6 +449,7 @@ mod tests {
             filename_query: filename.to_owned(),
             content_query: None,
             recurse: true,
+            operation_id: None,
         }
     }
 
@@ -618,6 +652,7 @@ mod tests {
                     filename_query: String::new(),
                     content_query: Some(ContentQuery::new("needle", false, false, false).unwrap()),
                     recurse: true,
+                    operation_id: None,
                 },
                 EventAudience::Global,
             )
@@ -665,6 +700,7 @@ mod tests {
                     filename_query: "report".to_owned(),
                     content_query: Some(ContentQuery::new("needle", false, false, false).unwrap()),
                     recurse: true,
+                    operation_id: None,
                 },
                 EventAudience::Global,
             )
@@ -697,6 +733,7 @@ mod tests {
                     filename_query: String::new(),
                     content_query: Some(ContentQuery::new("needle", false, false, false).unwrap()),
                     recurse: true,
+                    operation_id: None,
                 },
                 EventAudience::Global,
             )
@@ -733,6 +770,7 @@ mod tests {
                     filename_query: String::new(),
                     content_query: Some(ContentQuery::new("match", false, false, false).unwrap()),
                     recurse: false,
+                    operation_id: None,
                 },
                 EventAudience::Global,
             )
@@ -768,6 +806,7 @@ mod tests {
                     filename_query: String::new(),
                     content_query: Some(ContentQuery::new("ERROR.*", true, false, false).unwrap()),
                     recurse: true,
+                    operation_id: None,
                 },
                 EventAudience::Global,
             )
@@ -807,6 +846,7 @@ mod tests {
                         ContentQuery::new("nonexistent_needle", false, false, false).unwrap(),
                     ),
                     recurse: true,
+                    operation_id: None,
                 },
                 EventAudience::Global,
             )
@@ -841,6 +881,7 @@ mod tests {
                     filename_query: String::new(),
                     content_query: Some(ContentQuery::new("needle", false, false, false).unwrap()),
                     recurse: true,
+                    operation_id: None,
                 },
                 EventAudience::Global,
             )

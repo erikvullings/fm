@@ -76,6 +76,13 @@ export interface FileViewerControllerOptions {
   readonly client: FileViewerClient;
   readonly entry: EntrySummary;
   readonly update: (state: FileViewerState) => void;
+  /** Pre-populated search query to run as soon as text content is ready (task 0089). */
+  readonly initialSearch?: {
+    readonly query: string;
+    readonly regex: boolean;
+    readonly caseSensitive: boolean;
+    readonly wholeWord: boolean;
+  };
 }
 
 /** Cancellable operations exposed to the presentational `FileViewer` component. */
@@ -122,6 +129,14 @@ export function createFileViewerController(
   let activeController: AbortController | undefined;
   let current: FileViewerState = { status: 'loading', entry };
   let search: FileViewerSearchState | undefined;
+  // If an initial search query was provided, pre-populate the search state so it
+  // runs as soon as text content is ready.
+  if (options.initialSearch) {
+    search = {
+      ...DEFAULT_SEARCH_STATE,
+      ...options.initialSearch,
+    };
+  }
   let searchDebounceTimer: ReturnType<typeof setTimeout> | undefined;
 
   function publish(next: FileViewerState): void {
@@ -197,6 +212,10 @@ export function createFileViewerController(
         await loadAudio(controller);
       } else if (kind === 'text') {
         await loadInitialText(controller);
+        // Run initial search if pre-populated from content search results.
+        if (search?.query.trim()) {
+          await runSearch();
+        }
       } else {
         publish({ status: 'unsupported', entry });
       }

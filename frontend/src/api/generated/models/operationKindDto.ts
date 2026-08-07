@@ -17,4 +17,5 @@ export const OperationKindDto = {
   duplicate: 'duplicate',
   trash: 'trash',
   delete: 'delete',
+  search: 'search',
 } as const;

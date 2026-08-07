@@ -16,8 +16,9 @@ use fm_domain::{
     EntryId, EntryKind, EntryMetadata, Location, PluginId,
 };
 use fm_events::{
-    BackendEventPayload, EventAudience, EventBus, NotificationLevelPayload, NotificationPayload,
-    PluginPayload,
+    BackendEventPayload, ConflictPolicyPayload, EntryRefPayload, EventAudience, EventBus,
+    NotificationLevelPayload, NotificationPayload, OperationKindPayload, OperationPayload,
+    OperationProgressDetails, OperationStatePayload, PluginPayload,
 };
 use fm_operations::{
     ConflictResolution, ExecutionError, ExecutionOutcome, Operation, OperationExecutor,
@@ -684,6 +685,11 @@ impl FileManagerService {
                 Arc::new(TrashExecutor {
                     platform: Arc::clone(&self.platform),
                 })
+            }
+            OperationKindDto::Search => {
+                return Err(ApplicationError::InvalidRequest(
+                    "search is handled via start_search, not the operation executor".into(),
+                ));
             }
         };
         let sources: Vec<EntryRef> = request
@@ -1484,18 +1490,51 @@ impl FileManagerService {
                 .map_err(|e| ApplicationError::InvalidRequest(e.to_string()))
             })
             .transpose()?;
+        let operation_id = OperationId::from(Uuid::new_v4());
+        let audience = EventAudience::Workspace(request.workspace_id.into());
+
+        // Emit operation.created so the operation centre tracks this search.
+        let op_payload = OperationPayload {
+            id: operation_id,
+            kind: OperationKindPayload::Search,
+            state: OperationStatePayload::Running,
+            sources: roots
+                .iter()
+                .map(|loc| EntryRefPayload {
+                    id: EntryId::from(operation_id.into_inner()),
+                    location: loc.clone().into(),
+                })
+                .collect(),
+            destination: None,
+            progress: OperationProgressDetails {
+                completed_items: 0,
+                total_items: None,
+                completed_bytes: 0,
+                total_bytes: None,
+                current_entry: None,
+                bytes_per_second: None,
+            },
+            conflict_policy: ConflictPolicyPayload::Ask,
+            created_at: chrono::Utc::now(),
+            started_at: None,
+            completed_at: None,
+        };
+        self.events.publish(
+            audience.clone(),
+            BackendEventPayload::OperationCreated {
+                operation: op_payload,
+            },
+        );
+
         let options = fm_search::SearchOptions {
             filename_query: request.query,
             content_query,
             recurse: request.recurse,
+            operation_id: Some(operation_id),
         };
         let (search_id, location) = self
             .search
-            .start(
-                roots,
-                options,
-                EventAudience::Workspace(request.workspace_id.into()),
-            )
+            .start(roots, options, audience)
             .map_err(|error| ApplicationError::InvalidRequest(error.to_string()))?;
         Ok(StartSearchResponseDto {
             search_id,
@@ -3024,7 +3063,7 @@ fn map_scheduler_error(error: SchedulerError) -> ApplicationError {
     }
 }
 
-const fn operation_kind(kind: OperationKindDto) -> fm_operations::OperationKind {
+fn operation_kind(kind: OperationKindDto) -> fm_operations::OperationKind {
     match kind {
         OperationKindDto::CreateDirectory => fm_operations::OperationKind::CreateDirectory,
         OperationKindDto::Rename => fm_operations::OperationKind::Rename,
@@ -3033,6 +3072,10 @@ const fn operation_kind(kind: OperationKindDto) -> fm_operations::OperationKind 
         OperationKindDto::Duplicate => fm_operations::OperationKind::Duplicate,
         OperationKindDto::Trash => fm_operations::OperationKind::Trash,
         OperationKindDto::Delete => fm_operations::OperationKind::Delete,
+        // Search is handled via start_search, not the executor.
+        OperationKindDto::Search => {
+            unreachable!("search must be handled before calling operation_kind")
+        }
     }
 }
 

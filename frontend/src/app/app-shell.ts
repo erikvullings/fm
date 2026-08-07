@@ -647,11 +647,22 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
 
   /** Opens the Lister-style viewer (task 0088) for `entry` in `paneId`, replacing any viewer
    * already open there. */
-  function openViewer(client: FileManagerClient, paneId: PaneId, entry: EntrySummary): void {
+  function openViewer(
+    client: FileManagerClient,
+    paneId: PaneId,
+    entry: EntrySummary,
+    initialSearch?: {
+      readonly query: string;
+      readonly regex: boolean;
+      readonly caseSensitive: boolean;
+      readonly wholeWord: boolean;
+    },
+  ): void {
     viewerByPane.get(paneId)?.controller.dispose();
     const controller = createFileViewerController({
       client,
       entry,
+      ...(initialSearch ? { initialSearch } : {}),
       update: (state) => {
         const existing = viewerByPane.get(paneId);
         if (existing === undefined) return;
@@ -1003,7 +1014,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
         contentQuery: params.contentQuery,
         contentRegex: params.contentRegex,
         contentCaseSensitive: false,
-        contentWholeWord: false,
+        contentWholeWord: true,
         recurse: params.recurse,
         roots: [root],
         workspaceId: workspace.id,
@@ -1022,15 +1033,12 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
         const paneId = activeDirectory()?.paneId ?? workspace?.activePaneId;
         if (paneId === undefined) return;
         dismissFindFiles();
-        void navigation
-          .navigate(paneId, result.location)
-          .then(() => navigation.load(paneId))
-          .then(() => {
-            // Land keyboard focus in the pane so arrow keys move the cursor immediately,
-            // matching the UX of navigating there by clicking (task 0089 follow-up).
-            focusPane?.(paneId);
-            m.redraw();
-          });
+        void navigation.navigate(paneId, result.location).then(() => {
+          // Land keyboard focus in the pane so arrow keys move the cursor immediately,
+          // matching the UX of navigating there by clicking (task 0089 follow-up).
+          focusPane?.(paneId);
+          m.redraw();
+        });
       })
       .catch((error: unknown) => {
         if (generation !== findFilesGeneration) return;
@@ -1184,7 +1192,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
         ? []
         : directory.entries.filter((entry) => context.selectedEntryIds?.includes(entry.id));
     if (isCopySelectionAction(action.id)) {
-      if (directory === undefined) return;
+      if (directory === undefined || directory.location === undefined) return;
       void copySelectionToClipboard(action.id, selectedEntries, directory.location)
         .then((copied) => {
           if (copied) commandPaletteRecency.set(action.id, Date.now());
@@ -1192,7 +1200,8 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
         })
         .catch((error: unknown) => {
           toast({
-            html: error instanceof Error ? error.message : 'Unable to write to the system clipboard.',
+            html:
+              error instanceof Error ? error.message : 'Unable to write to the system clipboard.',
           });
           m.redraw();
         });
@@ -2037,6 +2046,35 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
             : navigation.parent(paneId);
         }
         if (tab?.location.uri.startsWith('search://')) {
+          // If this entry has content matches from a content search, open the file
+          // viewer with the search query pre-populated so the user can jump to matches.
+          if (entry.contentMatches && entry.contentMatches.length > 0) {
+            const storedQuery = findFilesQueriesByLocationUri.get(tab.location.uri);
+            let contentQuery: string | undefined;
+            let contentRegex = false;
+            if (storedQuery) {
+              try {
+                const params: FindFilesSearchParams = JSON.parse(storedQuery);
+                contentQuery = params.contentQuery;
+                contentRegex = params.contentRegex;
+              } catch {
+                // Stored query is a plain string (filename-only search), ignore.
+              }
+            }
+            if (contentQuery) {
+              const otherPaneId = workspace?.paneOrder.find(
+                (candidatePaneId) => candidatePaneId !== paneId,
+              );
+              if (otherPaneId) {
+                return openViewer(attrsClient, otherPaneId, entry, {
+                  query: contentQuery,
+                  regex: contentRegex,
+                  caseSensitive: false,
+                  wholeWord: true,
+                });
+              }
+            }
+          }
           return navigation.navigate(paneId, parentLocation(entry.location), entry.name);
         }
         if (entry.kind === 'directory') return navigation.navigate(paneId, entry.location);
@@ -2323,9 +2361,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
             // run, so an auto-dismissible one (completed/cancelled/interrupted) would
             // only flash and vanish a few seconds later for no reason. Only surface
             // ones that still need attention (failed) or are still genuinely active.
-            const relevant = listed.filter(
-              (operation) => !isAutoDismissibleState(operation.state),
-            );
+            const relevant = listed.filter((operation) => !isAutoDismissibleState(operation.state));
             operations = createOperationsState(relevant);
             m.redraw();
           }

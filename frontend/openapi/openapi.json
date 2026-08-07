@@ -1405,7 +1405,8 @@
           "move",
           "duplicate",
           "trash",
-          "delete"
+          "delete",
+          "search"
         ],
         "type": "string"
       },
