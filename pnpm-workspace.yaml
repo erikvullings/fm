@@ -4,4 +4,4 @@ allowBuilds:
   esbuild: true
 minimumReleaseAgeExclude:
   - jsdom@30.0.1
-  - mithril-materialized@3.17.7
+  - mithril-materialized@3.17.7 || 3.17.9
