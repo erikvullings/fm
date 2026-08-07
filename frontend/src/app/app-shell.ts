@@ -68,6 +68,7 @@ import {
   type FileViewerState,
 } from '../features/preview/file-viewer-controller';
 import { filterEntries, hiddenSelectedEntryCount } from '../features/quick-filter/quick-filter';
+import type { FindFilesSearchParams } from '../features/search/find-files-dialog';
 import { FindFilesDialog } from '../features/search/find-files-dialog';
 import type { SelectionPlatform } from '../features/selection/keybindings';
 import {
@@ -985,8 +986,8 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     findFilesError = undefined;
   }
 
-  /** Starts (or restarts) a filename search rooted at the dialog's current directory. */
-  function startFindFilesSearch(query: string): void {
+  /** Starts (or restarts) a search rooted at the dialog's current directory. */
+  function startFindFilesSearch(params: FindFilesSearchParams): void {
     const root = findFilesRoot;
     if (root === undefined || workspace === undefined) return;
     if (findFilesSearchId !== undefined) {
@@ -997,7 +998,16 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     findFilesError = undefined;
     findFilesSearchId = undefined;
     void attrsClient
-      .startSearch({ query, roots: [root], workspaceId: workspace.id })
+      .startSearch({
+        query: params.filenameQuery,
+        contentQuery: params.contentQuery,
+        contentRegex: params.contentRegex,
+        contentCaseSensitive: false,
+        contentWholeWord: false,
+        recurse: params.recurse,
+        roots: [root],
+        workspaceId: workspace.id,
+      })
       .then((result) => {
         if (generation !== findFilesGeneration) {
           void attrsClient.cancelSearch(result.searchId).catch(() => undefined);
@@ -1005,7 +1015,10 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
         }
         findFilesSearchId = result.searchId;
         findFilesRootsByLocationUri.set(result.location.uri, root);
-        findFilesQueriesByLocationUri.set(result.location.uri, query);
+        findFilesQueriesByLocationUri.set(
+          result.location.uri,
+          params.filenameQuery || JSON.stringify(params),
+        );
         const paneId = activeDirectory()?.paneId ?? workspace?.activePaneId;
         if (paneId === undefined) return;
         dismissFindFiles();
@@ -2750,7 +2763,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
             open: findFilesOpen,
             scopeLabel: findFilesRoot === undefined ? '' : pathFromUri(findFilesRoot.uri),
             ...(findFilesError === undefined ? {} : { error: findFilesError }),
-            onSearch: (query: string) => startFindFilesSearch(query),
+            onSearch: (params: FindFilesSearchParams) => startFindFilesSearch(params),
             onCancel: () => closeFindFiles(),
           }),
           m(PermanentDeleteDialog, {

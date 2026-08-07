@@ -1,4 +1,5 @@
-//! Cancellable recursive filesystem traversal (spec §24).
+//! Cancellable recursive filesystem traversal with optional content search
+//! (spec §24, task 0089).
 //!
 //! [`SearchEngine::start`] resolves every root eagerly (so a bad root is
 //! rejected synchronously) then hands traversal to a blocking task: entries
@@ -9,12 +10,16 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use fm_domain::{EntryId, EntryKind, EntrySummary, Location, ProviderId};
-use fm_events::{BackendEventPayload, EntrySummaryPayload, EventAudience, EventBus};
+use fm_events::{
+    BackendEventPayload, ContentMatchSummary, EntrySummaryPayload, EventAudience, EventBus,
+};
+use fm_vfs::ContentQuery;
 use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 use crate::matcher::{detect_match_mode, matches_name};
+use crate::scanner::{FileScanError, scan_file};
 use crate::store::SearchResultsStore;
 
 /// Maximum number of matches buffered before a batch is flushed.
@@ -35,13 +40,29 @@ pub enum SearchError {
     /// No search is tracked under this id.
     #[error("no search is tracked with id {0}")]
     NotFound(Uuid),
+    /// Content query is invalid (empty or bad regex).
+    #[error("invalid content query: {0}")]
+    InvalidContentQuery(String),
 }
 
-/// Starts and cancels recursive filename searches, streaming matches over
-/// the event bus as they are found.
+/// Starts and cancels recursive searches (filename and/or content), streaming
+/// matches over the event bus as they are found.
 pub struct SearchEngine {
     store: Arc<SearchResultsStore>,
     events: EventBus,
+}
+
+/// Parameters for a search request.
+#[derive(Debug, Clone)]
+pub struct SearchOptions {
+    /// Filename query. Empty string means "match all filenames".
+    pub filename_query: String,
+    /// Optional content query. When present, matching files are scanned for
+    /// the content pattern.
+    pub content_query: Option<ContentQuery>,
+    /// When false, only search the root directories themselves without
+    /// descending into subdirectories.
+    pub recurse: bool,
 }
 
 impl SearchEngine {
@@ -52,7 +73,7 @@ impl SearchEngine {
         Self { store, events }
     }
 
-    /// Starts a new cancellable search over `roots` for `query`, publishing
+    /// Starts a new cancellable search over `roots` with `options`, publishing
     /// matches to `audience` as they are found.
     ///
     /// Returns the search id and the virtual `search://local/{searchId}`
@@ -60,13 +81,13 @@ impl SearchEngine {
     ///
     /// # Errors
     ///
-    /// Returns [`SearchError::NoRoots`] if `roots` is empty, or
-    /// [`SearchError::InvalidRoot`] if a root cannot be resolved to a native
-    /// path.
+    /// Returns [`SearchError::NoRoots`] if `roots` is empty,
+    /// [`SearchError::InvalidRoot`] if a root cannot be resolved, or
+    /// [`SearchError::InvalidContentQuery`] if the content query is malformed.
     pub fn start(
         &self,
         roots: Vec<Location>,
-        query: String,
+        options: SearchOptions,
         audience: EventAudience,
     ) -> Result<(Uuid, Location), SearchError> {
         if roots.is_empty() {
@@ -90,7 +111,7 @@ impl SearchEngine {
             run_search(
                 search_id,
                 root_paths,
-                &query,
+                &options,
                 &cancellation,
                 &store,
                 &events,
@@ -118,7 +139,11 @@ impl SearchEngine {
     }
 }
 
-/// Walks every root depth-first, streaming filename matches in batches.
+/// Walks every root depth-first, streaming matches in batches.
+///
+/// When a content query is provided, files that pass the filename filter
+/// (or all files if the filename query is empty) are scanned for content
+/// matches. Binary files and oversized files are skipped.
 ///
 /// Symlinks are never followed (`follow_links(false)`), which both keeps
 /// traversal cycle-free without a visited-inode set and matches the
@@ -127,29 +152,97 @@ impl SearchEngine {
 fn run_search(
     search_id: Uuid,
     roots: Vec<PathBuf>,
-    query: &str,
+    options: &SearchOptions,
     cancellation: &CancellationToken,
     store: &SearchResultsStore,
     events: &EventBus,
     audience: &EventAudience,
 ) {
-    let mode = detect_match_mode(query);
-    let mut buffer: Vec<EntrySummary> = Vec::with_capacity(BATCH_SIZE);
+    let filename_mode = detect_match_mode(&options.filename_query);
+    let has_filename_filter = !options.filename_query.is_empty();
+    let has_content_query = options.content_query.is_some();
+    // Buffer carries (entry, optional content matches).
+    let mut buffer: Vec<(EntrySummary, Option<Vec<ContentMatchSummary>>)> =
+        Vec::with_capacity(BATCH_SIZE);
     let mut warnings_count = 0_u32;
     let mut last_flush = Instant::now();
 
+    let max_depth = if options.recurse { usize::MAX } else { 1 };
     'roots: for root in roots {
-        for entry in walkdir::WalkDir::new(&root).follow_links(false) {
+        for entry in walkdir::WalkDir::new(&root)
+            .follow_links(false)
+            .max_depth(max_depth)
+        {
             if cancellation.is_cancelled() {
                 break 'roots;
             }
             match entry {
                 Ok(dir_entry) => {
-                    if let Some(name) = dir_entry.file_name().to_str()
-                        && matches_name(name, query, mode)
-                        && let Some(summary) = build_entry_summary(search_id, dir_entry.path())
-                    {
-                        buffer.push(summary);
+                    let path = dir_entry.path();
+                    // Skip directories — content search only applies to files.
+                    if dir_entry.file_type().is_dir() {
+                        continue;
+                    }
+
+                    // Check filename match (if a filter is given).
+                    if has_filename_filter {
+                        let name = match dir_entry.file_name().to_str() {
+                            Some(n) => n,
+                            None => continue,
+                        };
+                        if !matches_name(name, &options.filename_query, filename_mode) {
+                            continue;
+                        }
+                    }
+
+                    // Build entry summary first.
+                    let Some(summary) = build_entry_summary(search_id, path) else {
+                        continue;
+                    };
+
+                    // Scan content if requested.
+                    if has_content_query {
+                        let content_query = options
+                            .content_query
+                            .as_ref()
+                            .expect("has_content_query guarantees content_query is Some");
+                        let runtime = tokio::runtime::Handle::current();
+                        let matches =
+                            match runtime.block_on(scan_file(path, content_query, cancellation)) {
+                                Ok(result) => {
+                                    if !result.matches.is_empty() {
+                                        Some(
+                                            result
+                                                .matches
+                                                .iter()
+                                                .map(|m| ContentMatchSummary {
+                                                    line_number: m.line_number,
+                                                    offset: m.match_start,
+                                                    length: m.match_len,
+                                                })
+                                                .collect(),
+                                        )
+                                    } else {
+                                        None
+                                    }
+                                }
+                                Err(FileScanError::Cancelled) => {
+                                    cancellation.cancel();
+                                    break 'roots;
+                                }
+                                Err(_) => {
+                                    // Binary, too large, or I/O error — skip silently.
+                                    None
+                                }
+                            };
+
+                        // Only emit entry if we found content matches.
+                        if let Some(cm) = matches {
+                            buffer.push((summary, Some(cm)));
+                        }
+                    } else {
+                        // Filename-only search.
+                        buffer.push((summary, None));
                     }
                 }
                 Err(_) => warnings_count += 1,
@@ -191,7 +284,7 @@ fn flush(
     store: &SearchResultsStore,
     events: &EventBus,
     audience: &EventAudience,
-    buffer: &mut Vec<EntrySummary>,
+    buffer: &mut Vec<(EntrySummary, Option<Vec<ContentMatchSummary>>)>,
     warnings_count: u32,
     is_complete: bool,
 ) {
@@ -201,10 +294,13 @@ fn flush(
     let batch = std::mem::take(buffer);
     let payload_entries: Vec<EntrySummaryPayload> = batch
         .iter()
-        .cloned()
-        .map(EntrySummaryPayload::from)
+        .map(|(entry, matches_list)| match matches_list {
+            Some(list) => EntrySummaryPayload::with_matches(entry, list.clone()),
+            None => entry.clone().into(),
+        })
         .collect();
-    store.append(search_id, batch, warnings_count);
+    let summary_batch: Vec<EntrySummary> = batch.into_iter().map(|(e, _)| e).collect();
+    store.append(search_id, summary_batch, warnings_count);
     events.publish(
         audience.clone(),
         BackendEventPayload::SearchResultsBatch {
@@ -290,7 +386,9 @@ mod tests {
         events.subscribe_all_workspaces(SessionId::new("test"), None)
     }
 
-    async fn collect_batches(mut subscription: EventSubscription) -> Vec<(usize, bool, u32)> {
+    async fn collect_batches(
+        mut subscription: EventSubscription,
+    ) -> Vec<(Vec<EntrySummaryPayload>, bool, u32)> {
         let mut batches = Vec::new();
         loop {
             let event = subscription.recv().await.expect("event bus must not close");
@@ -298,18 +396,26 @@ mod tests {
                 continue;
             };
             let BackendEventPayload::SearchResultsBatch {
+                search_id: _,
                 entries,
                 is_complete,
                 warnings_count,
-                ..
             } = envelope.payload
             else {
                 continue;
             };
-            batches.push((entries.len(), is_complete, warnings_count));
+            batches.push((entries, is_complete, warnings_count));
             if is_complete {
                 return batches;
             }
+        }
+    }
+
+    fn base_options(filename: &str) -> SearchOptions {
+        SearchOptions {
+            filename_query: filename.to_owned(),
+            content_query: None,
+            recurse: true,
         }
     }
 
@@ -330,13 +436,13 @@ mod tests {
         let (search_id, _location) = engine
             .start(
                 vec![root_location],
-                "report".to_owned(),
+                base_options("report"),
                 EventAudience::Global,
             )
             .unwrap();
 
         let batches = collect_batches(subscription).await;
-        let total: usize = batches.iter().map(|(count, _, _)| count).sum();
+        let total: usize = batches.iter().map(|(entries, _, _)| entries.len()).sum();
         assert_eq!(total, 2);
         assert!(
             batches.last().unwrap().1,
@@ -364,14 +470,14 @@ mod tests {
         let (search_id, _location) = engine
             .start(
                 vec![root_location],
-                "match".to_owned(),
+                base_options("match"),
                 EventAudience::Global,
             )
             .unwrap();
 
         engine.cancel(search_id).unwrap();
         let batches = collect_batches(subscription).await;
-        let total: usize = batches.iter().map(|(count, _, _)| count).sum();
+        let total: usize = batches.iter().map(|(entries, _, _)| entries.len()).sum();
         assert!(
             total < 2000,
             "cancellation must stop traversal before it finds every match"
@@ -397,13 +503,13 @@ mod tests {
         let (_search_id, _location) = engine
             .start(
                 vec![root_location],
-                "report".to_owned(),
+                base_options("report"),
                 EventAudience::Global,
             )
             .unwrap();
 
         let batches = collect_batches(subscription).await;
-        let total: usize = batches.iter().map(|(count, _, _)| count).sum();
+        let total: usize = batches.iter().map(|(entries, _, _)| entries.len()).sum();
         let warnings = batches.last().unwrap().2;
 
         fs::set_permissions(&locked, fs::Permissions::from_mode(0o755)).unwrap();
@@ -430,7 +536,7 @@ mod tests {
         let (_search_id, _location) = engine
             .start(
                 vec![root_location],
-                "report".to_owned(),
+                base_options("report"),
                 EventAudience::Global,
             )
             .unwrap();
@@ -438,7 +544,7 @@ mod tests {
         let batches = tokio::time::timeout(Duration::from_secs(10), collect_batches(subscription))
             .await
             .expect("search must terminate instead of looping the symlink cycle forever");
-        let total: usize = batches.iter().map(|(count, _, _)| count).sum();
+        let total: usize = batches.iter().map(|(entries, _, _)| entries.len()).sum();
         assert_eq!(total, 1);
     }
 
@@ -457,13 +563,13 @@ mod tests {
         let (_search_id, _location) = engine
             .start(
                 vec![root_location],
-                "日本語".to_owned(),
+                base_options("日本語"),
                 EventAudience::Global,
             )
             .unwrap();
 
         let batches = collect_batches(subscription).await;
-        let total: usize = batches.iter().map(|(count, _, _)| count).sum();
+        let total: usize = batches.iter().map(|(entries, _, _)| entries.len()).sum();
         assert_eq!(total, 1);
     }
 
@@ -474,7 +580,7 @@ mod tests {
         let engine = SearchEngine::new(store, events);
 
         let error = engine
-            .start(vec![], "x".to_owned(), EventAudience::Global)
+            .start(vec![], base_options("x"), EventAudience::Global)
             .unwrap_err();
         assert!(matches!(error, SearchError::NoRoots));
     }
@@ -488,5 +594,260 @@ mod tests {
         let unknown = Uuid::new_v4();
         let error = engine.cancel(unknown).unwrap_err();
         assert!(matches!(error, SearchError::NotFound(id) if id == unknown));
+    }
+
+    // --- Content search tests ---
+
+    #[tokio::test]
+    async fn content_search_finds_text_in_files() {
+        let root = tempdir().unwrap();
+        fs::write(root.path().join("a.txt"), b"alpha\nneedle here\nbeta\n").unwrap();
+        fs::write(root.path().join("b.txt"), b"no match here\n").unwrap();
+        fs::write(root.path().join("c.txt"), b"another needle\n").unwrap();
+
+        let store = Arc::new(SearchResultsStore::new());
+        let events = EventBus::new(16);
+        let engine = SearchEngine::new(Arc::clone(&store), events.clone());
+        let subscription = subscribe(&events);
+
+        let root_location = Location::from_native_path(root.path()).unwrap();
+        let (_search_id, _location) = engine
+            .start(
+                vec![root_location],
+                SearchOptions {
+                    filename_query: String::new(),
+                    content_query: Some(ContentQuery::new("needle", false, false, false).unwrap()),
+                    recurse: true,
+                },
+                EventAudience::Global,
+            )
+            .unwrap();
+
+        let batches = collect_batches(subscription).await;
+        let total: usize = batches.iter().map(|(entries, _, _)| entries.len()).sum();
+        assert_eq!(total, 2, "only a.txt and c.txt should match");
+
+        // Verify content_matches are present with correct line numbers.
+        let entries_by_name: std::collections::HashMap<_, _> = batches
+            .iter()
+            .flat_map(|(entries, _, _)| entries.iter())
+            .map(|e| (e.name.clone(), e))
+            .collect();
+        assert_eq!(entries_by_name.len(), 2, "two entries with match info");
+        let a_matches = entries_by_name
+            .get("a.txt")
+            .and_then(|e| e.content_matches.as_ref())
+            .expect("a.txt must have content matches");
+        let c_matches = entries_by_name
+            .get("c.txt")
+            .and_then(|e| e.content_matches.as_ref())
+            .expect("c.txt must have content matches");
+        assert_eq!(a_matches[0].line_number, 2);
+        assert_eq!(c_matches[0].line_number, 1);
+    }
+
+    #[tokio::test]
+    async fn content_search_with_filename_filter_only_scans_matching_files() {
+        let root = tempdir().unwrap();
+        fs::write(root.path().join("report.txt"), b"needle").unwrap();
+        fs::write(root.path().join("data.csv"), b"needle").unwrap();
+
+        let store = Arc::new(SearchResultsStore::new());
+        let events = EventBus::new(16);
+        let engine = SearchEngine::new(Arc::clone(&store), events.clone());
+        let subscription = subscribe(&events);
+
+        let root_location = Location::from_native_path(root.path()).unwrap();
+        let (_search_id, _location) = engine
+            .start(
+                vec![root_location],
+                SearchOptions {
+                    filename_query: "report".to_owned(),
+                    content_query: Some(ContentQuery::new("needle", false, false, false).unwrap()),
+                    recurse: true,
+                },
+                EventAudience::Global,
+            )
+            .unwrap();
+
+        let batches = collect_batches(subscription).await;
+        let total: usize = batches.iter().map(|(entries, _, _)| entries.len()).sum();
+        assert_eq!(
+            total, 1,
+            "only report.txt matches filename filter, data.csv is skipped"
+        );
+    }
+
+    #[tokio::test]
+    async fn content_search_skips_binary_files() {
+        let root = tempdir().unwrap();
+        fs::write(root.path().join("data.bin"), [0x00, 0x01, b'n', b'e', 0x02]).unwrap();
+        fs::write(root.path().join("text.txt"), b"needle").unwrap();
+
+        let store = Arc::new(SearchResultsStore::new());
+        let events = EventBus::new(16);
+        let engine = SearchEngine::new(Arc::clone(&store), events.clone());
+        let subscription = subscribe(&events);
+
+        let root_location = Location::from_native_path(root.path()).unwrap();
+        let (_search_id, _location) = engine
+            .start(
+                vec![root_location],
+                SearchOptions {
+                    filename_query: String::new(),
+                    content_query: Some(ContentQuery::new("needle", false, false, false).unwrap()),
+                    recurse: true,
+                },
+                EventAudience::Global,
+            )
+            .unwrap();
+
+        let batches = collect_batches(subscription).await;
+        let total: usize = batches.iter().map(|(entries, _, _)| entries.len()).sum();
+        assert_eq!(total, 1, "binary file skipped, only text.txt matches");
+        let names: Vec<_> = batches
+            .iter()
+            .flat_map(|(entries, _, _)| entries.iter())
+            .map(|e| e.name.as_str())
+            .collect();
+        assert_eq!(names, ["text.txt"]);
+    }
+
+    #[tokio::test]
+    async fn non_recursive_search_only_scans_root_directories() {
+        let root = tempdir().unwrap();
+        fs::create_dir_all(root.path().join("sub")).unwrap();
+        fs::write(root.path().join("top.txt"), b"match").unwrap();
+        fs::write(root.path().join("sub/deep.txt"), b"match").unwrap();
+
+        let store = Arc::new(SearchResultsStore::new());
+        let events = EventBus::new(16);
+        let engine = SearchEngine::new(Arc::clone(&store), events.clone());
+        let subscription = subscribe(&events);
+
+        let root_location = Location::from_native_path(root.path()).unwrap();
+        let (_search_id, _location) = engine
+            .start(
+                vec![root_location],
+                SearchOptions {
+                    filename_query: String::new(),
+                    content_query: Some(ContentQuery::new("match", false, false, false).unwrap()),
+                    recurse: false,
+                },
+                EventAudience::Global,
+            )
+            .unwrap();
+
+        let batches = collect_batches(subscription).await;
+        let total: usize = batches.iter().map(|(entries, _, _)| entries.len()).sum();
+        assert_eq!(
+            total, 1,
+            "non-recursive: only top.txt found, sub/deep.txt skipped"
+        );
+    }
+
+    #[tokio::test]
+    async fn content_search_regex_matches() {
+        let root = tempdir().unwrap();
+        fs::write(
+            root.path().join("log.txt"),
+            b"ERROR: something failed\nINFO: ok\nERROR: another fail\n",
+        )
+        .unwrap();
+
+        let store = Arc::new(SearchResultsStore::new());
+        let events = EventBus::new(16);
+        let engine = SearchEngine::new(Arc::clone(&store), events.clone());
+        let subscription = subscribe(&events);
+
+        let root_location = Location::from_native_path(root.path()).unwrap();
+        let (_search_id, _location) = engine
+            .start(
+                vec![root_location],
+                SearchOptions {
+                    filename_query: String::new(),
+                    content_query: Some(ContentQuery::new("ERROR.*", true, false, false).unwrap()),
+                    recurse: true,
+                },
+                EventAudience::Global,
+            )
+            .unwrap();
+
+        let batches = collect_batches(subscription).await;
+        let all_matches: Vec<_> = batches
+            .iter()
+            .flat_map(|(entries, _, _)| entries.iter())
+            .filter_map(|e| e.content_matches.clone())
+            .collect();
+        assert_eq!(all_matches.len(), 1, "one file with matches");
+        assert_eq!(all_matches[0].len(), 2, "two ERROR lines matched");
+        assert_eq!(all_matches[0][0].line_number, 1);
+        assert_eq!(all_matches[0][1].line_number, 3);
+    }
+
+    #[tokio::test]
+    async fn content_search_large_file_is_bounded() {
+        let root = tempdir().unwrap();
+        // Write a file just under the scan limit with no matches.
+        let content = "x".repeat(9 * 1024 * 1024);
+        fs::write(root.path().join("large.txt"), content.into_bytes()).unwrap();
+
+        let store = Arc::new(SearchResultsStore::new());
+        let events = EventBus::new(16);
+        let engine = SearchEngine::new(Arc::clone(&store), events.clone());
+        let subscription = subscribe(&events);
+
+        let root_location = Location::from_native_path(root.path()).unwrap();
+        let (_search_id, _location) = engine
+            .start(
+                vec![root_location],
+                SearchOptions {
+                    filename_query: String::new(),
+                    content_query: Some(
+                        ContentQuery::new("nonexistent_needle", false, false, false).unwrap(),
+                    ),
+                    recurse: true,
+                },
+                EventAudience::Global,
+            )
+            .unwrap();
+
+        // Should complete promptly (bounded scan) rather than hang.
+        let batches = tokio::time::timeout(Duration::from_secs(10), collect_batches(subscription))
+            .await
+            .expect("large file scan must be bounded");
+        let total: usize = batches.iter().map(|(entries, _, _)| entries.len()).sum();
+        assert_eq!(total, 0, "no matches in large file without the needle");
+    }
+
+    #[tokio::test]
+    async fn content_search_does_not_break_when_file_removed_mid_search() {
+        let root = tempdir().unwrap();
+        let path = root.path().join("fleeting.txt");
+        fs::write(&path, b"needle").unwrap();
+        // Remove before scan starts (race condition handled gracefully).
+        fs::remove_file(&path).unwrap();
+
+        let store = Arc::new(SearchResultsStore::new());
+        let events = EventBus::new(16);
+        let engine = SearchEngine::new(Arc::clone(&store), events.clone());
+        let subscription = subscribe(&events);
+
+        let root_location = Location::from_native_path(root.path()).unwrap();
+        let (_search_id, _location) = engine
+            .start(
+                vec![root_location],
+                SearchOptions {
+                    filename_query: String::new(),
+                    content_query: Some(ContentQuery::new("needle", false, false, false).unwrap()),
+                    recurse: true,
+                },
+                EventAudience::Global,
+            )
+            .unwrap();
+
+        let batches = collect_batches(subscription).await;
+        let total: usize = batches.iter().map(|(entries, _, _)| entries.len()).sum();
+        assert_eq!(total, 0, "deleted file should not crash the search");
     }
 }

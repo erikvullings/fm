@@ -137,3 +137,58 @@ async fn starting_a_search_with_no_roots_is_a_bad_request() {
         .expect("request must succeed");
     assert_eq!(response.status(), reqwest::StatusCode::BAD_REQUEST);
 }
+
+#[tokio::test]
+async fn content_search_finds_text_across_files() {
+    let root = tempfile::tempdir().expect("must create a temp directory");
+    std::fs::write(root.path().join("a.txt"), b"alpha\nneedle here\n")
+        .expect("must create fixture");
+    std::fs::write(root.path().join("b.txt"), b"no match\n").expect("must create fixture");
+    let server = TestServer::spawn().await;
+    let client = reqwest::Client::new();
+
+    let response = client
+        .post(format!("{}/api/v1/search", server.base_url))
+        .json(&json!({
+            "workspaceId": Uuid::new_v4(),
+            "roots": [location_json(root.path())],
+            "query": "",
+            "contentQuery": "needle",
+            "contentRegex": false,
+            "recurse": true,
+        }))
+        .send()
+        .await
+        .expect("request must succeed");
+    assert_eq!(response.status(), reqwest::StatusCode::CREATED);
+    let started: Value = response.json().await.expect("body must be JSON");
+    let search_location = started["location"].clone();
+
+    let listing = poll_until_complete(&client, &server.base_url, &search_location).await;
+    let entries = listing["entries"].as_array().unwrap();
+    assert_eq!(entries.len(), 1, "only a.txt should match content");
+    assert_eq!(entries[0]["name"], "a.txt");
+}
+
+#[tokio::test]
+async fn content_search_with_invalid_regex_is_rejected() {
+    let root = tempfile::tempdir().expect("must create a temp directory");
+    std::fs::write(root.path().join("x.txt"), b"x").expect("must create fixture");
+    let server = TestServer::spawn().await;
+    let client = reqwest::Client::new();
+
+    let response = client
+        .post(format!("{}/api/v1/search", server.base_url))
+        .json(&json!({
+            "workspaceId": Uuid::new_v4(),
+            "roots": [location_json(root.path())],
+            "query": "",
+            "contentQuery": "[invalid",
+            "contentRegex": true,
+            "recurse": true,
+        }))
+        .send()
+        .await
+        .expect("request must succeed");
+    assert_eq!(response.status(), reqwest::StatusCode::BAD_REQUEST);
+}

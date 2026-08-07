@@ -13,7 +13,7 @@ fm-domain.workspace = true
 fm-events.workspace = true
 fm-vfs = { path = "../fm-vfs" }
 thiserror.workspace = true
-tokio = { workspace = true, features = ["rt"] }
+tokio = { workspace = true, features = ["fs", "io-util", "rt", "time"] }
 tokio-util.workspace = true
 uuid.workspace = true
 walkdir.workspace = true

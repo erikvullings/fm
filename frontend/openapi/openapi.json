@@ -2480,9 +2480,11 @@
         "type": "object"
       },
       "StartSearchRequestDto": {
-        "description": "Starts a new recursive, cancellable filename search\n(`POST /api/v1/search`).",
+        "description": "Starts a new recursive, cancellable search (filename and/or content)\n(`POST /api/v1/search`).",
         "example": {
+          "contentQuery": "TODO",
           "query": "report*.pdf",
+          "recurse": true,
           "roots": [
             {
               "providerId": "local",
@@ -2492,12 +2494,35 @@
           "workspaceId": "7136d9bc-90f1-4c67-8527-9d30683167ec"
         },
         "properties": {
+          "contentCaseSensitive": {
+            "description": "Make the content search case-sensitive. Defaults to `false` (case-insensitive).",
+            "type": "boolean"
+          },
+          "contentQuery": {
+            "description": "Optional content-search query. When present, files that pass the\nfilename filter (or all files if `query` is empty) are scanned for\nthis content pattern (task 0089).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "contentRegex": {
+            "description": "Treat `content_query` as a regular expression. Defaults to `false`.",
+            "type": "boolean"
+          },
+          "contentWholeWord": {
+            "description": "Only match `content_query` at word boundaries. Defaults to `false`.",
+            "type": "boolean"
+          },
           "query": {
-            "description": "Plain filename query. Matched as a case-insensitive substring unless\nit contains `*` or `?`, in which case it is treated as a glob\npattern; size/date/type filters and content search are not yet\nsupported (spec §24).",
+            "description": "Filename query. Matched as a case-insensitive substring unless it\ncontains `*` or `?`, in which case it is treated as a glob pattern.\nEmpty string means \"match all filenames\".",
             "type": "string"
           },
+          "recurse": {
+            "description": "Recurse into subdirectories. Defaults to `true`. When `false`, only\nthe root directories' immediate children are scanned.",
+            "type": "boolean"
+          },
           "roots": {
-            "description": "One or more roots to search recursively.",
+            "description": "One or more roots to search.",
             "items": {
               "$ref": "#/components/schemas/LocationDto"
             },

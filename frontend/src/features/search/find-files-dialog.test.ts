@@ -1,6 +1,7 @@
 import m from 'mithril';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { FindFilesSearchParams } from './find-files-dialog';
 import { FindFilesDialog } from './find-files-dialog';
 
 let root: HTMLElement;
@@ -37,7 +38,12 @@ describe('FindFilesDialog', () => {
     input.dispatchEvent(new InputEvent('input', { bubbles: true }));
     input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
 
-    expect(onSearch).toHaveBeenCalledWith('report');
+    expect(onSearch).toHaveBeenCalledWith<{ filenameQuery: string; contentQuery: string | undefined; contentRegex: boolean; recurse: boolean }>({
+      filenameQuery: 'report',
+      contentQuery: undefined,
+      contentRegex: false,
+      recurse: true,
+    });
     expect(document.activeElement).not.toBe(input);
 
     input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
@@ -127,7 +133,13 @@ describe('FindFilesDialog', () => {
     input.value = '*.svg';
     input.dispatchEvent(new InputEvent('input', { bubbles: true }));
     input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
-    expect(onSearch).toHaveBeenCalledWith('*.svg');
+    const expected: FindFilesSearchParams = {
+      filenameQuery: '*.svg',
+      contentQuery: undefined,
+      contentRegex: false,
+      recurse: true,
+    };
+    expect(onSearch).toHaveBeenCalledWith(expected);
 
     // Simulate the parent closing the dialog after a successful search, then reopening it
     // for a second search (e.g. via Alt+F7 again).
@@ -144,6 +156,59 @@ describe('FindFilesDialog', () => {
     // Pressing Enter immediately re-runs the same search.
     input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
     expect(onSearch).toHaveBeenCalledTimes(2);
-    expect(onSearch).toHaveBeenLastCalledWith('*.svg');
+    expect(onSearch).toHaveBeenLastCalledWith(expected);
+  });
+
+  it('passes content query and options when content search is used', () => {
+    const onSearch = vi.fn();
+    m.mount(root, {
+      view: () =>
+        m(FindFilesDialog, {
+          open: true,
+          scopeLabel: 'file:///Documents',
+          onSearch,
+          onCancel: vi.fn(),
+        }),
+    });
+    m.redraw.sync();
+
+    const contentInput = document.querySelectorAll<HTMLInputElement>(
+      '.fm-find-files-body input',
+    )[1];
+    if (!contentInput) throw new Error('content input missing');
+    contentInput.value = 'TODO';
+    contentInput.dispatchEvent(new InputEvent('input', { bubbles: true }));
+
+    // Trigger search from the filename input
+    const files = document.querySelector<HTMLInputElement>('#find-files-query');
+    if (!files) throw new Error('filename input missing');
+    files.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+
+    expect(onSearch).toHaveBeenCalledWith<FindFilesSearchParams>(
+      expect.objectContaining({
+        filenameQuery: '',
+        contentQuery: 'TODO',
+        contentRegex: false,
+        recurse: true,
+      }),
+    );
+  });
+
+  it('shows recurse and regex toggles', () => {
+    m.mount(root, {
+      view: () =>
+        m(FindFilesDialog, {
+          open: true,
+          scopeLabel: 'file:///Documents',
+          onSearch: vi.fn(),
+          onCancel: vi.fn(),
+        }),
+    });
+    m.redraw.sync();
+
+    const options = document.querySelector('.fm-find-files-options');
+    expect(options).not.toBeNull();
+    expect(options?.textContent).toContain('Recurse subdirectories');
+    expect(options?.textContent).toContain('Use regex');
   });
 });

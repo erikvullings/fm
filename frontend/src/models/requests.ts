@@ -95,11 +95,16 @@ export interface InvokeActionRequest {
 }
 
 /**
- * Starts a recursive, cancellable filename search (`POST /api/v1/search`,
- * task 0068), mirroring `fm_transport_dto::StartSearchRequestDto`.
+ * Starts a recursive, cancellable search (filename and/or content,
+ * `POST /api/v1/search`, task 0068/0089), mirroring `fm_transport_dto::StartSearchRequestDto`.
  */
 export interface StartSearchRequest {
   query: string;
+  contentQuery?: string | undefined;
+  contentRegex?: boolean;
+  contentCaseSensitive?: boolean;
+  contentWholeWord?: boolean;
+  recurse?: boolean;
   roots: readonly Location[];
   workspaceId: string;
 }

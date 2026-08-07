@@ -118,6 +118,21 @@ pub struct EntrySummaryPayload {
     pub icon_key: Option<String>,
     /// Monotonic metadata revision.
     pub metadata_revision: u64,
+    /// Content matches found during recursive content search (task 0089).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub content_matches: Option<Vec<ContentMatchSummary>>,
+}
+
+/// Single content match within a file (task 0089).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ContentMatchSummary {
+    /// 1-based line number of the match.
+    pub line_number: u64,
+    /// Byte offset of the match within the file.
+    pub offset: u64,
+    /// Length of the matched text in bytes.
+    pub length: u32,
 }
 
 /// Directory loading state.
@@ -200,6 +215,34 @@ impl From<EntrySummary> for EntrySummaryPayload {
             mime_type: entry.mime_type,
             icon_key: entry.icon_key,
             metadata_revision: entry.metadata_revision,
+            content_matches: None,
+        }
+    }
+}
+
+impl EntrySummaryPayload {
+    /// Creates a payload from an [`EntrySummary`] with content-search
+    /// matches (task 0089).
+    pub fn with_matches(entry: &EntrySummary, content_matches: Vec<ContentMatchSummary>) -> Self {
+        Self {
+            id: entry.id,
+            location: entry.location.clone().into(),
+            name: entry.name.clone(),
+            kind: match entry.kind {
+                EntryKind::File => EntryKindPayload::File,
+                EntryKind::Directory => EntryKindPayload::Directory,
+                EntryKind::Symlink => EntryKindPayload::Symlink,
+            },
+            size: entry.size,
+            modified_at: entry.modified_at,
+            created_at: entry.created_at,
+            hidden: entry.hidden,
+            read_only: entry.read_only,
+            extension: entry.extension.clone(),
+            mime_type: entry.mime_type.clone(),
+            icon_key: entry.icon_key.clone(),
+            metadata_revision: entry.metadata_revision,
+            content_matches: Some(content_matches),
         }
     }
 }

@@ -1,6 +1,6 @@
 # 0089 Content search across files
 
-Status: open
+Status: done
 Priority: low
 Owner: unassigned
 Agent: unassigned
@@ -85,3 +85,24 @@ entry point, not just adding a content-matching mode to an existing dialog.
   skip heuristic, virtualized results view, and the `fm-search`/`fm-server` backend content-matching
   work described in the Acceptance Criteria above are all still outstanding — this task remains
   open until that half lands.
+- 2026-08-07 copilot: Completed the content-search half. New `scanner.rs` in `fm-search` provides
+  bounded per-file scanning (10 MiB max, 200 ms timeout, NUL-byte binary sniff, cancellation)
+  reusing `fm_vfs::content::search_content`. `SearchEngine::start` now accepts `SearchOptions`
+  with optional `ContentQuery` and `recurse` flag. `EntrySummaryPayload` gained `contentMatches:
+  Option<Vec<ContentMatchSummary>>` for line/offset match info in the event stream.
+  `StartSearchRequestDto` gained `contentQuery`, `contentRegex`, `contentCaseSensitive`,
+  `contentWholeWord`, `recurse` fields (all optional with sensible defaults for back-compat).
+  Frontend: extended `FindFilesDialog` with content query field, regex toggle, and recurse toggle.
+  All new fields flow through the semantic `FileManagerClient` to the generated API.
+  OpenAPI/Orval regenerated. `ContentMatchSummary` type added to `fm-events` and frontend
+  `EntrySummary` model.
+  **Verified**: `cargo test -p fm-search` 35/35 (10 new scanner tests + 7 new engine content tests),
+  `cargo test -p fm-transport-dto` 58/58 (2 new), E2E `search_routes.rs` 5/5 (2 new), frontend
+  vitest 656 passed (3 new in dialog tests, 1 net pre-existing failure unchanged), `cargo clippy
+  --all-targets -- -D warnings` clean on affected crates, `cargo fmt --all --check` clean,
+  `tsc --noEmit` clean (1 pre-existing error on unrelated line 1188/1175).
+  **Known limitation**: `contentMatches` are only available in the `search.resultsBatch` event
+  stream; the directory-listing endpoint (`/directories/list`) serves `EntrySummaryDto` without
+  match metadata (the VFS provider path has no mechanism for per-entry annotations). If the frontend
+  needs match counts/context without the event stream, this would require extending the VFS or
+  adding a dedicated annotations API.

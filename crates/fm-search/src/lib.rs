@@ -7,9 +7,11 @@
 mod engine;
 mod matcher;
 mod provider;
+mod scanner;
 mod store;
 
-pub use engine::{SearchEngine, SearchError};
+pub use engine::{SearchEngine, SearchError, SearchOptions};
 pub use matcher::{MatchMode, detect_match_mode, matches_name};
 pub use provider::SearchFileSystemProvider;
+pub use scanner::{FileScanError, FileScanResult, scan_file};
 pub use store::SearchResultsStore;

@@ -5,18 +5,35 @@
 import type { LocationDto } from './locationDto';
 
 /**
- * Starts a new recursive, cancellable filename search
+ * Starts a new recursive, cancellable search (filename and/or content)
  * (`POST /api/v1/search`).
  */
 export interface StartSearchRequestDto {
+  /** Make the content search case-sensitive. Defaults to `false` (case-insensitive). */
+  contentCaseSensitive?: boolean;
   /**
-     * Plain filename query. Matched as a case-insensitive substring unless
-     * it contains `*` or `?`, in which case it is treated as a glob
-     * pattern; size/date/type filters and content search are not yet
-     * supported (spec §24).
+     * Optional content-search query. When present, files that pass the
+     * filename filter (or all files if `query` is empty) are scanned for
+     * this content pattern (task 0089).
+     * @nullable
+     */
+  contentQuery?: string | null;
+  /** Treat `content_query` as a regular expression. Defaults to `false`. */
+  contentRegex?: boolean;
+  /** Only match `content_query` at word boundaries. Defaults to `false`. */
+  contentWholeWord?: boolean;
+  /**
+     * Filename query. Matched as a case-insensitive substring unless it
+     * contains `*` or `?`, in which case it is treated as a glob pattern.
+     * Empty string means "match all filenames".
      */
   query: string;
-  /** One or more roots to search recursively. */
+  /**
+     * Recurse into subdirectories. Defaults to `true`. When `false`, only
+     * the root directories' immediate children are scanned.
+     */
+  recurse?: boolean;
+  /** One or more roots to search. */
   roots: LocationDto[];
   /** Workspace that owns the search and receives its result-batch events. */
   workspaceId: string;

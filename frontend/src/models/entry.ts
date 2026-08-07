@@ -14,6 +14,16 @@ export type EntryKind = 'file' | 'directory' | 'symlink';
  * A compact summary of a directory entry, suitable for directory listings
  * (spec §5.2), mirroring `fm_transport_dto::EntrySummaryDto`.
  */
+/** Single content match within a file from a recursive content search (task 0089). */
+export interface ContentMatchSummary {
+  /** 1-based line number of the match. */
+  lineNumber: number;
+  /** Byte offset of the match within the file. */
+  offset: number;
+  /** Length of the matched text in bytes. */
+  length: number;
+}
+
 export interface EntrySummary {
   id: EntryId;
   location: Location;
@@ -28,6 +38,8 @@ export interface EntrySummary {
   mimeType?: string;
   iconKey?: string;
   metadataRevision: number;
+  /** Content matches from recursive search, when this entry came from a content query (task 0089). */
+  contentMatches?: ContentMatchSummary[];
 }
 
 /** Filesystem permission information for an entry. */

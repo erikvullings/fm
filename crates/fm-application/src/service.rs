@@ -1471,11 +1471,29 @@ impl FileManagerService {
         request: StartSearchRequestDto,
     ) -> Result<StartSearchResponseDto, ApplicationError> {
         let roots: Vec<Location> = request.roots.into_iter().map(Into::into).collect();
+        let content_query = request
+            .content_query
+            .as_ref()
+            .map(|q| {
+                fm_vfs::ContentQuery::new(
+                    q,
+                    request.content_regex,
+                    request.content_case_sensitive,
+                    request.content_whole_word,
+                )
+                .map_err(|e| ApplicationError::InvalidRequest(e.to_string()))
+            })
+            .transpose()?;
+        let options = fm_search::SearchOptions {
+            filename_query: request.query,
+            content_query,
+            recurse: request.recurse,
+        };
         let (search_id, location) = self
             .search
             .start(
                 roots,
-                request.query,
+                options,
                 EventAudience::Workspace(request.workspace_id.into()),
             )
             .map_err(|error| ApplicationError::InvalidRequest(error.to_string()))?;
