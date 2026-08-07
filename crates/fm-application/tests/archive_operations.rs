@@ -8,6 +8,7 @@ use fm_transport_dto::{
     OperationConflictPolicyDto, OperationKindDto, OperationStateDto, RuntimeKindDto,
     StartOperationRequestDto,
 };
+use fm_vfs::FileSystemProvider;
 use zip::{ZipWriter, write::SimpleFileOptions};
 
 fn service(root: &tempfile::TempDir) -> FileManagerService {
@@ -169,4 +170,38 @@ async fn ordinary_engine_copies_into_within_and_out_of_zip_then_deletes() {
     )
     .await;
     assert_eq!(deleted.state, OperationStateDto::Completed);
+}
+
+#[tokio::test]
+async fn selected_files_can_be_packaged_as_zip_or_7z_operations() {
+    let root = tempfile::tempdir().expect("temporary root");
+    let source = root.path().join("report.txt");
+    fs::write(&source, b"packed content").expect("write source");
+    let service = service(&root);
+
+    for name in ["reports.zip", "reports.7z"] {
+        let archive = root.path().join(name);
+        let operation = run(
+            &service,
+            OperationKindDto::CreateArchive,
+            vec![Location::from_native_path(&source).expect("source location")],
+            Some(Location::from_native_path(&archive).expect("archive location")),
+        )
+        .await;
+        assert_eq!(
+            operation.state,
+            OperationStateDto::Completed,
+            "{operation:?}"
+        );
+        let provider = fm_archive::ArchiveFileSystemProvider::new();
+        let entries = provider
+            .list(
+                &archive_root(&archive),
+                Default::default(),
+                tokio_util::sync::CancellationToken::new(),
+            )
+            .await
+            .expect("created archive is readable");
+        assert_eq!(entries.entries[0].name, "report.txt");
+    }
 }

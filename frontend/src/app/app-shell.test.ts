@@ -391,6 +391,28 @@ describe('AppShell', () => {
     });
   });
 
+  it('packages the selected entries into a ZIP with Alt+F5', async () => {
+    const client = new MockFileManagerClient();
+    const startOperation = vi.spyOn(client, 'startOperation');
+    m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
+    await vi.waitFor(() => expect(root.textContent).toContain('.env'));
+    const activePane = root.querySelector<HTMLElement>('[data-active="true"] > .fm-pane');
+    const file = [...(activePane?.querySelectorAll<HTMLElement>('.fm-directory-row') ?? [])].find(
+      (row) => row.textContent?.includes('.env'),
+    );
+    file?.click();
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'F5', altKey: true, bubbles: true }),
+    );
+
+    await vi.waitFor(() => expect(startOperation).toHaveBeenCalledOnce());
+    expect(startOperation.mock.calls[0]?.[0]).toMatchObject({
+      type: 'createArchive',
+      sources: [{ uri: 'mock:///.env' }],
+      destination: { uri: 'mock:///archive.zip' },
+    });
+  });
+
   it('copies one selected file to the other pane by clicking the F5 footer hint (Tauri parity fix)', async () => {
     const client = new MockFileManagerClient();
     const startOperation = vi.spyOn(client, 'startOperation');
@@ -1425,7 +1447,7 @@ describe('AppShell', () => {
     await vi.waitFor(() =>
       // The "search: " text prefix is replaced by a search icon in the tab strip (task 0089
       // follow-up) - only the bare query text remains in the tab title's textContent.
-      expect(root.querySelector('.fm-pane-tab-title')?.textContent).toBe(': e'),
+      expect(root.querySelector('.fm-pane-tab-title')?.textContent).toBe('e'),
     );
     expect(root.querySelector('.fm-pane-tab-search-icon')).not.toBeNull();
     const activePane = root.querySelector<HTMLElement>('[data-active="true"] > .fm-pane');

@@ -57,6 +57,8 @@ pub enum SymlinkPolicyDto {
 #[serde(rename_all = "camelCase")]
 #[allow(missing_docs)]
 pub enum OperationKindDto {
+    /// Package selected local entries into a new archive.
+    CreateArchive,
     CreateDirectory,
     Rename,
     Copy,

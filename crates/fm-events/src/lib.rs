@@ -373,6 +373,8 @@ pub enum WorkspaceLayoutPayload {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum OperationKindPayload {
+    /// Package selected entries into an archive.
+    CreateArchive,
     /// Create a directory.
     CreateDirectory,
     /// Rename one entry.

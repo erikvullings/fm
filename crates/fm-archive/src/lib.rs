@@ -107,6 +107,175 @@ impl ArchiveFileSystemProvider {
     }
 }
 
+/// Creates a ZIP archive from local filesystem entries.
+///
+/// The archive is written to a sibling temporary file and renamed only after
+/// `finish` and `sync_all` succeed.  Callers retain ownership of the selected
+/// paths; this helper never removes them.
+pub fn create_zip_archive(
+    destination: &Path,
+    sources: &[PathBuf],
+    compression_level: Option<i64>,
+    cancellation: &CancellationToken,
+) -> Result<(), VfsError> {
+    let parent = destination
+        .parent()
+        .ok_or_else(|| VfsError::InvalidLocation {
+            location: destination.display().to_string(),
+        })?;
+    let temporary = parent.join(format!(".fm-archive-create-{}.tmp", Uuid::new_v4()));
+    let mut guard = TemporaryFileGuard::new(temporary.clone());
+    let file = File::create(&temporary).map_err(|error| io_error(error, &temporary))?;
+    let options = zip::write::SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Deflated)
+        .compression_level(compression_level);
+    let mut writer = zip::ZipWriter::new(file);
+    for source in sources {
+        if cancellation.is_cancelled() {
+            return Err(VfsError::Cancelled);
+        }
+        let name = source
+            .file_name()
+            .and_then(|name| name.to_str())
+            .ok_or_else(|| VfsError::InvalidLocation {
+                location: source.display().to_string(),
+            })?;
+        append_zip_path(&mut writer, source, Path::new(name), options, cancellation)?;
+    }
+    let file = writer.finish().map_err(zip_error)?;
+    file.sync_all()
+        .map_err(|error| io_error(error, &temporary))?;
+    if cancellation.is_cancelled() {
+        return Err(VfsError::Cancelled);
+    }
+    std::fs::rename(&temporary, destination).map_err(|error| io_error(error, destination))?;
+    guard.disarm();
+    Ok(())
+}
+
+/// Creates a 7z archive from local filesystem entries using the maintained
+/// `sevenz-rust2` backend.  Like ZIP creation, publication is transactional.
+pub fn create_7z_archive(
+    destination: &Path,
+    sources: &[PathBuf],
+    cancellation: &CancellationToken,
+) -> Result<(), VfsError> {
+    let parent = destination
+        .parent()
+        .ok_or_else(|| VfsError::InvalidLocation {
+            location: destination.display().to_string(),
+        })?;
+    let temporary = parent.join(format!(".fm-archive-create-{}.tmp", Uuid::new_v4()));
+    let mut guard = TemporaryFileGuard::new(temporary.clone());
+    let mut writer = sevenz_rust2::ArchiveWriter::create(&temporary).map_err(seven_zip_error)?;
+    for source in sources {
+        let name = source
+            .file_name()
+            .and_then(|name| name.to_str())
+            .ok_or_else(|| VfsError::InvalidLocation {
+                location: source.display().to_string(),
+            })?;
+        append_7z_path(&mut writer, source, Path::new(name), cancellation)?;
+    }
+    if cancellation.is_cancelled() {
+        return Err(VfsError::Cancelled);
+    }
+    writer.finish().map_err(|error| VfsError::Io {
+        message: error.to_string(),
+    })?;
+    std::fs::File::open(&temporary)
+        .and_then(|file| file.sync_all())
+        .map_err(|error| io_error(error, &temporary))?;
+    std::fs::rename(&temporary, destination).map_err(|error| io_error(error, destination))?;
+    guard.disarm();
+    Ok(())
+}
+
+fn append_7z_path(
+    writer: &mut sevenz_rust2::ArchiveWriter<File>,
+    source: &Path,
+    name: &Path,
+    cancellation: &CancellationToken,
+) -> Result<(), VfsError> {
+    if cancellation.is_cancelled() {
+        return Err(VfsError::Cancelled);
+    }
+    let entry_name = name.to_string_lossy().replace('\\', "/");
+    let metadata = std::fs::symlink_metadata(source).map_err(|error| io_error(error, source))?;
+    if metadata.file_type().is_symlink() {
+        return Err(VfsError::Io {
+            message: format!("refusing to archive symbolic link {}", source.display()),
+        });
+    }
+    if metadata.is_dir() {
+        writer
+            .push_archive_entry(
+                sevenz_rust2::ArchiveEntry::new_directory(&entry_name),
+                None::<&[u8]>,
+            )
+            .map_err(seven_zip_error)?;
+        for child in std::fs::read_dir(source).map_err(|error| io_error(error, source))? {
+            let child = child.map_err(|error| io_error(error, source))?;
+            append_7z_path(
+                writer,
+                &child.path(),
+                &name.join(child.file_name()),
+                cancellation,
+            )?;
+        }
+    } else if metadata.is_file() {
+        let contents = std::fs::read(source).map_err(|error| io_error(error, source))?;
+        writer
+            .push_archive_entry(
+                sevenz_rust2::ArchiveEntry::new_file(&entry_name),
+                Some(contents.as_slice()),
+            )
+            .map_err(seven_zip_error)?;
+    }
+    Ok(())
+}
+
+fn append_zip_path(
+    writer: &mut zip::ZipWriter<File>,
+    source: &Path,
+    name: &Path,
+    options: zip::write::SimpleFileOptions,
+    cancellation: &CancellationToken,
+) -> Result<(), VfsError> {
+    if cancellation.is_cancelled() {
+        return Err(VfsError::Cancelled);
+    }
+    let entry_name = name.to_string_lossy().replace('\\', "/");
+    let metadata = std::fs::symlink_metadata(source).map_err(|error| io_error(error, source))?;
+    if metadata.file_type().is_symlink() {
+        return Err(VfsError::Io {
+            message: format!("refusing to archive symbolic link {}", source.display()),
+        });
+    }
+    if metadata.is_dir() {
+        writer
+            .add_directory(format!("{entry_name}/"), options)
+            .map_err(zip_error)?;
+        for child in std::fs::read_dir(source).map_err(|error| io_error(error, source))? {
+            let child = child.map_err(|error| io_error(error, source))?;
+            append_zip_path(
+                writer,
+                &child.path(),
+                &name.join(child.file_name()),
+                options,
+                cancellation,
+            )?;
+        }
+    } else if metadata.is_file() {
+        writer.start_file(entry_name, options).map_err(zip_error)?;
+        let mut input = File::open(source).map_err(|error| io_error(error, source))?;
+        std::io::copy(&mut input, writer).map_err(|error| VfsError::Io {
+            message: error.to_string(),
+        })?;
+    }
+    Ok(())
+}
+
 #[async_trait]
 impl FileSystemProvider for ArchiveFileSystemProvider {
     fn id(&self) -> ProviderId {

@@ -2,6 +2,8 @@
   { "id": "core.refresh", "title": "Refresh", "category": "navigation", "defaultShortcuts": [{ "key": "r", "ctrl": true }], "contextRequirements": {}, "source": { "kind": "core" } },
   { "id": "core.rename", "title": "Rename", "category": "fileOperations", "defaultShortcuts": [{ "key": "F2" }], "contextRequirements": {}, "source": { "kind": "core" } },
   { "id": "core.copy", "title": "Copy", "category": "fileOperations", "defaultShortcuts": [{ "key": "F5" }], "contextRequirements": {}, "source": { "kind": "core" } },
+  { "id": "core.pack", "title": "Pack to Archive", "category": "fileOperations", "defaultShortcuts": [{ "key": "F5", "alt": true }], "contextRequirements": { "requiresSelection": true }, "source": { "kind": "core" } },
+  { "id": "core.extract", "title": "Extract Archive", "category": "fileOperations", "defaultShortcuts": [{ "key": "F6", "alt": true }], "contextRequirements": { "requiresSingleSelection": true }, "source": { "kind": "core" } },
   { "id": "core.move", "title": "Move", "category": "fileOperations", "defaultShortcuts": [{ "key": "F6" }], "contextRequirements": {}, "source": { "kind": "core" } },
   { "id": "core.createDirectory", "title": "New folder", "category": "fileOperations", "defaultShortcuts": [{ "key": "F7" }], "contextRequirements": {}, "source": { "kind": "core" } },
   { "id": "core.paste", "title": "Paste", "category": "fileOperations", "defaultShortcuts": [], "contextRequirements": {}, "source": { "kind": "core" } },

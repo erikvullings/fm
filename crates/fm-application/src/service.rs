@@ -9,7 +9,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
-use fm_archive::ArchiveFileSystemProvider;
+use fm_archive::{ArchiveFileSystemProvider, create_7z_archive, create_zip_archive};
 use fm_domain::OperationId;
 use fm_domain::{
     ActionContextRequirements, ActionDescriptor, ActionId, ActionSource, DirectorySnapshot,
@@ -397,6 +397,37 @@ impl FileManagerService {
         }
         let destination = request.destination.clone().map(Into::into);
         let executor: Arc<dyn OperationExecutor> = match request.operation_type {
+            OperationKindDto::CreateArchive => {
+                if request.sources.is_empty() {
+                    return Err(ApplicationError::InvalidRequest(
+                        "createArchive requires at least one source".into(),
+                    ));
+                }
+                let destination: Location = destination.clone().ok_or_else(|| {
+                    ApplicationError::InvalidRequest(
+                        "createArchive requires an archive destination".into(),
+                    )
+                })?;
+                let destination_path = destination
+                    .to_native_path()
+                    .map_err(|error| ApplicationError::InvalidRequest(error.to_string()))?;
+                let format = ArchiveCreationFormat::from_destination(&destination_path)?;
+                let sources = request
+                    .sources
+                    .iter()
+                    .map(|source| {
+                        let source: Location = source.clone().into();
+                        source
+                            .to_native_path()
+                            .map_err(|error| ApplicationError::InvalidRequest(error.to_string()))
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+                Arc::new(CreateArchiveExecutor {
+                    destination: destination_path,
+                    sources,
+                    format,
+                })
+            }
             OperationKindDto::CreateDirectory => {
                 let parent = destination.clone().ok_or_else(|| {
                     ApplicationError::InvalidRequest(
@@ -1723,6 +1754,80 @@ struct CopyExecutor {
 struct CopyGroupExecutor {
     copies: Vec<CopyExecutor>,
     stale_sources: Mutex<HashMap<String, EntryRef>>,
+}
+
+/// One atomic archive-creation job.  The codec implementation lives in
+/// `fm-archive`; this adapter only gives it normal operation lifecycle and
+/// cancellation semantics.
+struct CreateArchiveExecutor {
+    destination: PathBuf,
+    sources: Vec<PathBuf>,
+    format: ArchiveCreationFormat,
+}
+
+#[async_trait]
+impl OperationExecutor for CreateArchiveExecutor {
+    async fn plan(
+        &self,
+        _operation: &Operation,
+        _cancellation: &CancellationToken,
+    ) -> Result<OperationPlan, ExecutionError> {
+        Ok(OperationPlan::new(vec![PlanItem::new(
+            EntryRef {
+                id: fm_domain::EntryId::new(),
+                location: Location::from_native_path(&self.destination)
+                    .map_err(|error| ExecutionError::Failed(error.to_string()))?,
+            },
+            0,
+        )]))
+    }
+
+    async fn execute(
+        &self,
+        _operation: &Operation,
+        _item: &PlanItem,
+        _resolution: Option<ConflictResolution>,
+        _pause: &PauseToken,
+        cancellation: &CancellationToken,
+    ) -> Result<ExecutionOutcome, ExecutionError> {
+        let destination = self.destination.clone();
+        let sources = self.sources.clone();
+        let format = self.format;
+        let cancellation = cancellation.clone();
+        tokio::task::spawn_blocking(move || match format {
+            ArchiveCreationFormat::Zip => {
+                create_zip_archive(&destination, &sources, Some(6), &cancellation)
+            }
+            ArchiveCreationFormat::SevenZip => {
+                create_7z_archive(&destination, &sources, &cancellation)
+            }
+        })
+        .await
+        .map_err(|error| ExecutionError::Failed(error.to_string()))??;
+        Ok(ExecutionOutcome::Completed)
+    }
+
+    async fn cleanup_partial(&self, _operation: &Operation) -> Result<(), ExecutionError> {
+        Ok(())
+    }
+}
+
+#[derive(Clone, Copy)]
+enum ArchiveCreationFormat {
+    Zip,
+    SevenZip,
+}
+
+impl ArchiveCreationFormat {
+    fn from_destination(path: &Path) -> Result<Self, ApplicationError> {
+        match path.extension().and_then(|extension| extension.to_str()) {
+            Some(extension) if extension.eq_ignore_ascii_case("zip") => Ok(Self::Zip),
+            Some(extension) if extension.eq_ignore_ascii_case("7z") => Ok(Self::SevenZip),
+            _ => Err(ApplicationError::InvalidRequest(
+                "archive destination must end in .zip or .7z".into(),
+            )),
+        }
+    }
 }
 
 struct DuplicateExecutor {
@@ -3080,6 +3185,7 @@ fn map_scheduler_error(error: SchedulerError) -> ApplicationError {
 
 fn operation_kind(kind: OperationKindDto) -> fm_operations::OperationKind {
     match kind {
+        OperationKindDto::CreateArchive => fm_operations::OperationKind::CreateArchive,
         OperationKindDto::CreateDirectory => fm_operations::OperationKind::CreateDirectory,
         OperationKindDto::Rename => fm_operations::OperationKind::Rename,
         OperationKindDto::Copy => fm_operations::OperationKind::Copy,
@@ -3117,6 +3223,7 @@ const fn conflict_policy(
 /// the frontend-only selection/navigation actions reserved by task 0028).
 fn mutating_operation_kind(id: &ActionId) -> Option<OperationKindDto> {
     match id.as_str() {
+        "core.pack" => Some(OperationKindDto::CreateArchive),
         "core.copy" => Some(OperationKindDto::Copy),
         "core.move" => Some(OperationKindDto::Move),
         "core.rename" => Some(OperationKindDto::Rename),
@@ -3266,6 +3373,7 @@ fn operation_dto(operation: Operation, queue_position: Option<u64>) -> Operation
     OperationDto {
         id: operation.id.into(),
         operation_type: match operation.kind {
+            fm_operations::OperationKind::CreateArchive => OperationKindDto::CreateArchive,
             fm_operations::OperationKind::CreateDirectory => OperationKindDto::CreateDirectory,
             fm_operations::OperationKind::Rename => OperationKindDto::Rename,
             fm_operations::OperationKind::Copy => OperationKindDto::Copy,
