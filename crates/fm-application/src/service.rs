@@ -1576,6 +1576,7 @@ impl FileManagerService {
             filename_query: request.query,
             content_query,
             recurse: request.recurse,
+            show_hidden: request.show_hidden,
             operation_id: Some(operation_id),
         };
         let location = self

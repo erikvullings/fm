@@ -186,6 +186,7 @@ function collectMatches(
   rootUri: string,
   query: string,
   contentQuery: string | undefined,
+  showHidden: boolean,
   getContent: (uri: string) => Uint8Array,
 ): import('../../models').EntrySummary[] {
   const results: import('../../models').EntrySummary[] = [];
@@ -197,6 +198,7 @@ function collectMatches(
     if (fixtures === undefined) continue;
     for (const fixture of fixtures) {
       const entry = fixtureEntry(uri, fixture);
+      if (entry.hidden && !showHidden) continue;
       if (fixture.kind === 'directory') {
         pending.push(entry.location.uri);
       }
@@ -828,8 +830,12 @@ export class MockFileManagerClient implements FileManagerClient {
       const searchId = `mock-search-${this.seed}-${this.searchSequence}`;
       const location: Location = { providerId: 'local', uri: `search://local/${searchId}` };
       const entries = request.roots.flatMap((root) =>
-        collectMatches(root.uri, request.query, request.contentQuery, (uri) =>
-          this.fileContentFor(uri),
+        collectMatches(
+          root.uri,
+          request.query,
+          request.contentQuery,
+          request.showHidden ?? true,
+          (uri) => this.fileContentFor(uri),
         ),
       );
       this.searches.set(searchId, { cancelled: false, entries });

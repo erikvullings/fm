@@ -2529,6 +2529,10 @@
             },
             "type": "array"
           },
+          "showHidden": {
+            "description": "Search hidden files/directories (dotfiles, and anything ignored by\n`.gitignore`/`.ignore`). Defaults to `true` for back-compat with\ncallers that don't set it; the frontend sends the pane's current\n\"show hidden files\" setting explicitly.",
+            "type": "boolean"
+          },
           "workspaceId": {
             "description": "Workspace that owns the search and receives its result-batch events.",
             "format": "uuid",

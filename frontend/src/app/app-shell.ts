@@ -1019,6 +1019,13 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     return paneId === undefined || location === undefined ? undefined : { paneId, location };
   }
 
+  /** The active tab's current "show hidden files" setting, so a new search respects it. */
+  function activeShowHidden(paneId: PaneId): boolean {
+    const pane = workspace?.panesById[paneId];
+    const tab = pane === undefined ? undefined : pane.tabsById[pane.activeTabId];
+    return tab?.view.showHidden ?? false;
+  }
+
   /** Opens filename search at the real directory that produced a virtual search location. */
   function openFindFiles(): void {
     const active = activeDirectory();
@@ -1063,6 +1070,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     const generation = findFilesGeneration;
     findFilesError = undefined;
     findFilesSearchId = undefined;
+    const searchPaneId = activeDirectory()?.paneId ?? workspace.activePaneId;
     void attrsClient
       .startSearch({
         query: params.filenameQuery,
@@ -1071,6 +1079,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
         contentCaseSensitive: false,
         contentWholeWord: true,
         recurse: params.recurse,
+        showHidden: searchPaneId === undefined ? false : activeShowHidden(searchPaneId),
         roots: [root],
         workspaceId: workspace.id,
       })

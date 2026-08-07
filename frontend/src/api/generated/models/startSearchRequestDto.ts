@@ -35,6 +35,13 @@ export interface StartSearchRequestDto {
   recurse?: boolean;
   /** One or more roots to search. */
   roots: LocationDto[];
+  /**
+     * Search hidden files/directories (dotfiles, and anything ignored by
+     * `.gitignore`/`.ignore`). Defaults to `true` for back-compat with
+     * callers that don't set it; the frontend sends the pane's current
+     * "show hidden files" setting explicitly.
+     */
+  showHidden?: boolean;
   /** Workspace that owns the search and receives its result-batch events. */
   workspaceId: string;
 }

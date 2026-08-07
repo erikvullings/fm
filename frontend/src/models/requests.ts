@@ -105,6 +105,7 @@ export interface StartSearchRequest {
   contentCaseSensitive?: boolean;
   contentWholeWord?: boolean;
   recurse?: boolean;
+  showHidden?: boolean;
   roots: readonly Location[];
   workspaceId: string;
 }

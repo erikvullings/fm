@@ -45,9 +45,19 @@ pub struct StartSearchRequestDto {
     /// the root directories' immediate children are scanned.
     #[serde(default = "default_recurse")]
     pub recurse: bool,
+    /// Search hidden files/directories (dotfiles, and anything ignored by
+    /// `.gitignore`/`.ignore`). Defaults to `true` for back-compat with
+    /// callers that don't set it; the frontend sends the pane's current
+    /// "show hidden files" setting explicitly.
+    #[serde(default = "default_show_hidden")]
+    pub show_hidden: bool,
 }
 
 fn default_recurse() -> bool {
+    true
+}
+
+fn default_show_hidden() -> bool {
     true
 }
 
@@ -92,6 +102,7 @@ mod tests {
             content_case_sensitive: false,
             content_whole_word: false,
             recurse: true,
+            show_hidden: true,
         };
         let json = serde_json::to_string(&request).expect("serialization must succeed");
         assert!(json.contains("\"workspaceId\""));
@@ -113,6 +124,7 @@ mod tests {
             content_case_sensitive: false,
             content_whole_word: true,
             recurse: false,
+            show_hidden: false,
         };
         let json = serde_json::to_string(&request).expect("serialization must succeed");
         assert!(json.contains("\"contentQuery\""));
@@ -135,6 +147,7 @@ mod tests {
         assert!(!parsed.content_case_sensitive);
         assert!(!parsed.content_whole_word);
         assert!(parsed.recurse, "recurse defaults to true");
+        assert!(parsed.show_hidden, "show_hidden defaults to true");
     }
 
     #[test]

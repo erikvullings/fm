@@ -364,6 +364,7 @@ export class HttpFileManagerClient implements FileManagerClient {
           ? {}
           : { contentWholeWord: request.contentWholeWord }),
         ...(request.recurse === undefined ? {} : { recurse: request.recurse }),
+        ...(request.showHidden === undefined ? {} : { showHidden: request.showHidden }),
         roots: [...request.roots],
         workspaceId: request.workspaceId,
       },

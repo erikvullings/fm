@@ -12,11 +12,11 @@ chrono.workspace = true
 fm-domain.workspace = true
 fm-events.workspace = true
 fm-vfs = { path = "../fm-vfs" }
+ignore.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = ["fs", "io-util", "rt", "time"] }
 tokio-util.workspace = true
 uuid.workspace = true
-walkdir.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

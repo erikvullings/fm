@@ -64,6 +64,11 @@ pub struct SearchOptions {
     /// When false, only search the root directories themselves without
     /// descending into subdirectories.
     pub recurse: bool,
+    /// When false, hidden files/directories (dotfiles, and anything ignored
+    /// by `.gitignore`/`.ignore`) are never descended into or matched,
+    /// mirroring the pane's "show hidden files" setting. Defaults to `true`
+    /// (search everything) for back-compat with callers that don't set it.
+    pub show_hidden: bool,
     /// When present, the engine emits `operation.*` events for progress
     /// tracking in the operation centre.
     pub operation_id: Option<OperationId>,
@@ -159,11 +164,17 @@ impl SearchEngine {
 /// "no symlink-following by default" requirement. Unreadable directories
 /// increment a warning counter instead of aborting the whole search.
 ///
-/// `.git` directories are never descended into (`filter_entry`) — their
-/// object databases are typically huge, never contain user content worth
-/// searching, and walking them was a significant unnecessary slowdown on
-/// any repository root. Other hidden files/directories are still walked
-/// and matched normally; only entries named exactly `.git` are pruned.
+/// Traversal uses the `ignore` crate (the same traversal engine ripgrep is
+/// built on) rather than a plain recursive walk: it respects `.gitignore`/
+/// `.ignore`/global git-ignore rules, so build output and dependency
+/// directories (`target/`, `node_modules/`, `dist/`, ...) are pruned
+/// entirely instead of being descended into on every search — this was the
+/// dominant cost of a repository-rooted search, far more than raw syscall
+/// overhead. `.git` is pruned explicitly (`filter_entry`) as a belt-and-
+/// braces measure regardless of hidden-file settings, since its object
+/// database is never useful search content. When `show_hidden` is `false`,
+/// dotfiles/dot-directories are pruned too (`hidden(true)`); when `true`,
+/// only ignored/`.git` content is skipped.
 /// Immutable context shared by every [`flush`] call within a single search run.
 struct SearchContext<'a> {
     search_id: Uuid,
@@ -204,22 +215,24 @@ fn run_search(
     // scanning: <file>" even while a long content scan finds nothing yet.
     let mut current_entry: Option<EntryRefPayload> = None;
 
-    let max_depth = if options.recurse { usize::MAX } else { 1 };
+    let max_depth = if options.recurse { None } else { Some(1) };
     'roots: for root in roots {
-        for entry in walkdir::WalkDir::new(&root)
+        let walker = ignore::WalkBuilder::new(&root)
             .follow_links(false)
             .max_depth(max_depth)
-            .into_iter()
+            .hidden(!options.show_hidden)
             .filter_entry(|entry| entry.file_name().to_str() != Some(".git"))
-        {
+            .build();
+        for entry in walker {
             if cancellation.is_cancelled() {
                 break 'roots;
             }
             match entry {
                 Ok(dir_entry) => {
                     let path = dir_entry.path();
-                    // Skip directories — content search only applies to files.
-                    if dir_entry.file_type().is_dir() {
+                    // Skip directories (and anything `ignore` couldn't stat, e.g. stdin) —
+                    // content search only applies to regular files.
+                    if dir_entry.file_type().is_none_or(|ft| !ft.is_file()) {
                         continue;
                     }
 
@@ -502,6 +515,7 @@ mod tests {
             filename_query: filename.to_owned(),
             content_query: None,
             recurse: true,
+            show_hidden: true,
             operation_id: None,
         }
     }
@@ -569,6 +583,112 @@ mod tests {
         let batches = collect_batches(subscription).await;
         let total: usize = batches.iter().map(|(entries, _, _)| entries.len()).sum();
         assert_eq!(total, 1, "the .git directory must not be descended into");
+    }
+
+    #[tokio::test]
+    async fn hidden_files_are_skipped_when_show_hidden_is_false() {
+        let root = tempdir().unwrap();
+        fs::create_dir_all(root.path().join(".hidden-dir")).unwrap();
+        fs::write(root.path().join(".hidden-dir/report.txt"), b"a").unwrap();
+        fs::write(root.path().join(".report.txt"), b"b").unwrap();
+        fs::write(root.path().join("report.txt"), b"c").unwrap();
+
+        let store = Arc::new(SearchResultsStore::new());
+        let events = EventBus::new(16);
+        let engine = SearchEngine::new(Arc::clone(&store), events.clone());
+        let subscription = subscribe(&events);
+
+        let root_location = Location::from_native_path(root.path()).unwrap();
+        let search_id = Uuid::new_v4();
+        let _location = engine
+            .start(
+                search_id,
+                vec![root_location],
+                SearchOptions {
+                    filename_query: "report".to_owned(),
+                    content_query: None,
+                    recurse: true,
+                    show_hidden: false,
+                    operation_id: None,
+                },
+                EventAudience::Global,
+            )
+            .unwrap();
+
+        let batches = collect_batches(subscription).await;
+        let names: Vec<_> = batches
+            .iter()
+            .flat_map(|(entries, _, _)| entries.iter())
+            .map(|e| e.name.clone())
+            .collect();
+        assert_eq!(
+            names,
+            vec!["report.txt".to_string()],
+            "dotfiles and dot-directories must be skipped when show_hidden is false"
+        );
+    }
+
+    #[tokio::test]
+    async fn hidden_files_are_included_when_show_hidden_is_true() {
+        let root = tempdir().unwrap();
+        fs::write(root.path().join(".report.txt"), b"a").unwrap();
+        fs::write(root.path().join("report.txt"), b"b").unwrap();
+
+        let store = Arc::new(SearchResultsStore::new());
+        let events = EventBus::new(16);
+        let engine = SearchEngine::new(Arc::clone(&store), events.clone());
+        let subscription = subscribe(&events);
+
+        let root_location = Location::from_native_path(root.path()).unwrap();
+        let search_id = Uuid::new_v4();
+        let _location = engine
+            .start(
+                search_id,
+                vec![root_location],
+                base_options("report"),
+                EventAudience::Global,
+            )
+            .unwrap();
+
+        let batches = collect_batches(subscription).await;
+        let total: usize = batches.iter().map(|(entries, _, _)| entries.len()).sum();
+        assert_eq!(
+            total, 2,
+            "both the dotfile and the regular file match when show_hidden is true"
+        );
+    }
+
+    #[tokio::test]
+    async fn gitignored_paths_are_skipped() {
+        let root = tempdir().unwrap();
+        fs::create_dir_all(root.path().join(".git")).unwrap();
+        fs::write(root.path().join(".gitignore"), b"ignored-dir/\n").unwrap();
+        fs::create_dir_all(root.path().join("ignored-dir")).unwrap();
+        fs::write(root.path().join("ignored-dir/report.txt"), b"a").unwrap();
+        fs::write(root.path().join("report.txt"), b"b").unwrap();
+
+        let store = Arc::new(SearchResultsStore::new());
+        let events = EventBus::new(16);
+        let engine = SearchEngine::new(Arc::clone(&store), events.clone());
+        let subscription = subscribe(&events);
+
+        let root_location = Location::from_native_path(root.path()).unwrap();
+        let search_id = Uuid::new_v4();
+        let _location = engine
+            .start(
+                search_id,
+                vec![root_location],
+                base_options("report"),
+                EventAudience::Global,
+            )
+            .unwrap();
+
+        let batches = collect_batches(subscription).await;
+        let total: usize = batches.iter().map(|(entries, _, _)| entries.len()).sum();
+        assert_eq!(
+            total, 1,
+            "paths matched by .gitignore must not be descended into"
+        );
     }
 
     #[tokio::test]
@@ -750,6 +870,7 @@ mod tests {
                     filename_query: String::new(),
                     content_query: Some(ContentQuery::new("needle", false, false, false).unwrap()),
                     recurse: true,
+                    show_hidden: true,
                     operation_id: None,
                 },
                 EventAudience::Global,
@@ -800,6 +921,7 @@ mod tests {
                     filename_query: "report".to_owned(),
                     content_query: Some(ContentQuery::new("needle", false, false, false).unwrap()),
                     recurse: true,
+                    show_hidden: true,
                     operation_id: None,
                 },
                 EventAudience::Global,
@@ -835,6 +957,7 @@ mod tests {
                     filename_query: String::new(),
                     content_query: Some(ContentQuery::new("needle", false, false, false).unwrap()),
                     recurse: true,
+                    show_hidden: true,
                     operation_id: None,
                 },
                 EventAudience::Global,
@@ -874,6 +997,7 @@ mod tests {
                     filename_query: String::new(),
                     content_query: Some(ContentQuery::new("match", false, false, false).unwrap()),
                     recurse: false,
+                    show_hidden: true,
                     operation_id: None,
                 },
                 EventAudience::Global,
@@ -912,6 +1036,7 @@ mod tests {
                     filename_query: String::new(),
                     content_query: Some(ContentQuery::new("ERROR.*", true, false, false).unwrap()),
                     recurse: true,
+                    show_hidden: true,
                     operation_id: None,
                 },
                 EventAudience::Global,
@@ -954,6 +1079,7 @@ mod tests {
                         ContentQuery::new("nonexistent_needle", false, false, false).unwrap(),
                     ),
                     recurse: true,
+                    show_hidden: true,
                     operation_id: None,
                 },
                 EventAudience::Global,
@@ -991,6 +1117,7 @@ mod tests {
                     filename_query: String::new(),
                     content_query: Some(ContentQuery::new("needle", false, false, false).unwrap()),
                     recurse: true,
+                    show_hidden: true,
                     operation_id: None,
                 },
                 EventAudience::Global,

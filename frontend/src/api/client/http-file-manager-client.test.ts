@@ -419,6 +419,31 @@ describe('HttpFileManagerClient', () => {
       );
     });
 
+    it('forwards showHidden to the backend so hidden files are excluded when show-hidden is off', async () => {
+      requestStartSearch.mockResolvedValue({
+        status: 201,
+        headers: new Headers(),
+        data: {
+          searchId: 'search-1',
+          location: { providerId: 'local', uri: 'search://local/search-1' },
+        },
+      });
+      const client = new HttpFileManagerClient();
+
+      await client.startSearch({
+        query: '*.md',
+        recurse: true,
+        showHidden: false,
+        roots: [{ providerId: 'local', uri: 'file:///Documents' }],
+        workspaceId: 'workspace-1',
+      });
+
+      expect(requestStartSearch).toHaveBeenCalledWith(
+        expect.objectContaining({ showHidden: false }),
+        undefined,
+      );
+    });
+
     it('cancels a search', async () => {
       requestCancelSearch.mockResolvedValue({ status: 204, headers: new Headers() });
       const client = new HttpFileManagerClient();
