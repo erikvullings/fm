@@ -1,6 +1,7 @@
 .fm-pane {
   display: grid;
   position: relative;
+  outline: none;
   /*
    * Every conceptual row gets its own always-present, explicitly numbered track (auto-sized
    * tracks with no content collapse to 0 height) so optional siblings (entry content) can never

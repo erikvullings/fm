@@ -14,7 +14,7 @@
     "benchmark:directory-table": "vitest run src/features/directory-table/directory-table.benchmark.test.ts"
   },
   "dependencies": {
-    "@tauri-apps/api": "^2",
+    "@tauri-apps/api": "^2.11.1",
     "highlight.js": "^11.11.1",
     "meiosis-setup": "^6.2.3",
     "mithril": "^2.3.8",
@@ -27,7 +27,7 @@
     "jsdom": "^30.0.1",
     "orval": "^8.23.0",
     "typescript": "^7.0.2",
-    "vite": "^8.1.5",
+    "vite": "^8.2.1",
     "vitest": "^4.1.10"
   }
 }

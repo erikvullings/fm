@@ -584,32 +584,32 @@ export class MockFileManagerClient implements FileManagerClient {
           const nextTab =
             command.type === 'navigateTab'
               ? {
-                  ...tab,
-                  location: navigatedLocation,
-                  canNavigateBack: history.back.length > 0,
-                  canNavigateForward: history.forward.length > 0,
-                }
+                ...tab,
+                location: navigatedLocation,
+                canNavigateBack: history.back.length > 0,
+                canNavigateForward: history.forward.length > 0,
+              }
               : command.type === 'updateView'
                 ? {
-                    ...tab,
-                    view: {
-                      ...tab.view,
-                      ...Object.fromEntries(
-                        Object.entries(command.patch).filter(
-                          ([key, value]) => key !== 'quickFilter' && value !== null,
-                        ),
+                  ...tab,
+                  view: {
+                    ...tab.view,
+                    ...Object.fromEntries(
+                      Object.entries(command.patch).filter(
+                        ([key, value]) => key !== 'quickFilter' && value !== null,
                       ),
-                      ...(command.patch.quickFilter === undefined
-                        ? {}
-                        : {
-                            quickFilter:
-                              command.patch.quickFilter === null ||
-                              command.patch.quickFilter.type === 'clear'
-                                ? null
-                                : command.patch.quickFilter.filter,
-                          }),
-                    },
-                  }
+                    ),
+                    ...(command.patch.quickFilter === undefined
+                      ? {}
+                      : {
+                        quickFilter:
+                          command.patch.quickFilter === null ||
+                            command.patch.quickFilter.type === 'clear'
+                            ? null
+                            : command.patch.quickFilter.filter,
+                      }),
+                  },
+                }
                 : tab;
           changed = {
             ...current,

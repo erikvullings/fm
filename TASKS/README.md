@@ -139,7 +139,7 @@ the workspace-service tasks; see Step 2b above).
 - [x] 0086 F4 edit-in-external-editor action
 - [x] 0087 F3 view action
 - [ ] 0088 Lister-style instant large-file viewer with lazy search
-- [ ] 0089 Content search across files
+- [x] 0089 Content search across files
 - [ ] 0090 Total Commander-style selection toggles (invert, select/deselect by mask)
 - [x] 0091 Native file icon overlay (backend-served, layered over 0085) *(after 0085; needs 0059)*
 - [x] 0092 Catppuccin icon theme *(after 0085)*

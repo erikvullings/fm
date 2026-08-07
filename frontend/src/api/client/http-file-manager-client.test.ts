@@ -59,7 +59,7 @@ vi.mock('../generated/file-manager-api', () => ({
 const { HttpFileManagerClient } = await import('./http-file-manager-client');
 
 class TestEventSource extends EventTarget {
-  close(): void {}
+  close(): void { }
 }
 
 beforeEach(() => {
@@ -194,7 +194,7 @@ describe('HttpFileManagerClient', () => {
     it('connects the shared SSE stream and returns its listener unsubscribe', async () => {
       const client = new HttpFileManagerClient();
 
-      const unsubscribe = await client.subscribe(() => {});
+      const unsubscribe = await client.subscribe(() => { });
 
       expect(() => unsubscribe()).not.toThrow();
       expect(client.connection.get()).toBe('connecting');

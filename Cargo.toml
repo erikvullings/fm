@@ -60,7 +60,11 @@ reqwest = { version = "0.13.4", default-features = false, features = [
 ] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
-sevenz-rust2 = { version = "0.21.3", default-features = false, features = ["aes256", "compress", "util"] }
+sevenz-rust2 = { version = "0.21.3", default-features = false, features = [
+  "aes256",
+  "compress",
+  "util",
+] }
 rars = "0.4.8"
 tar = "0.4"
 tempfile = "3.15.0"
@@ -89,7 +93,12 @@ utoipa = { version = "5.5.0", features = ["chrono", "uuid"] }
 utoipa-axum = "0.2.0"
 utoipa-swagger-ui = { version = "9.0.2", features = ["axum"] }
 uuid = { version = "1.24.0", features = ["serde", "v4", "v5"] }
-zip = { version = "8.6.0", default-features = false, features = ["aes-crypto", "deflate", "deflate64", "time"] }
+zip = { version = "8.6.0", default-features = false, features = [
+  "aes-crypto",
+  "deflate",
+  "deflate64",
+  "time",
+] }
 zeroize = "1.8.2"
 flate2 = "1"
 bzip2 = "0.6"

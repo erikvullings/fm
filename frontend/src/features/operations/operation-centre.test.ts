@@ -268,4 +268,3 @@ describe('OperationCentre states', () => {
     expect(result?.textContent).toBe('Cancelled after finding 2 / 4 files.');
   });
 });
-
