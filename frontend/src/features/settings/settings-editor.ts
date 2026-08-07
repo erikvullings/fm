@@ -326,7 +326,7 @@ export const SettingsEditor: FactoryComponent<SettingsEditorAttrs> = () => {
                 m('span.fm-settings-keybinding-title', action.title),
                 m(TextInput, {
                   className: 'fm-settings-keybinding-input',
-                  label: 'Shortcut',
+                  // label: 'Shortcut',
                   value: activeDraft.keybindings[action.id] ?? '',
                   placeholder: shortcut?.shortcut ?? 'None',
                   oninput: (value: string) =>

@@ -38,7 +38,7 @@ describe('FindFilesDialog', () => {
     input.dispatchEvent(new InputEvent('input', { bubbles: true }));
     input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
 
-    expect(onSearch).toHaveBeenCalledWith<{ filenameQuery: string; contentQuery: string | undefined; contentRegex: boolean; recurse: boolean }>({
+    expect(onSearch).toHaveBeenCalledWith({
       filenameQuery: 'report',
       contentQuery: undefined,
       contentRegex: false,
@@ -184,7 +184,7 @@ describe('FindFilesDialog', () => {
     if (!files) throw new Error('filename input missing');
     files.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
 
-    expect(onSearch).toHaveBeenCalledWith<FindFilesSearchParams>(
+    expect(onSearch).toHaveBeenCalledWith(
       expect.objectContaining({
         filenameQuery: '',
         contentQuery: 'TODO',

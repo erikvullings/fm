@@ -2,9 +2,9 @@ import { describe, expect, it, vi } from 'vitest';
 
 import type { EntryId, EntrySummary, Location } from '../../models';
 import {
+  type CopySelectionActionId,
   copySelectionToClipboard,
   selectionClipboardText,
-  type CopySelectionActionId,
 } from './copy-selection-actions';
 
 function location(uri: string): Location {

@@ -199,7 +199,10 @@ export function breadcrumbSegments(path: string): readonly BreadcrumbSegment[] {
  * e.g. `/ > search > local > *.svg` - falls back to the raw search id when the originating query
  * text isn't known. There is no real filesystem path behind any of these segments, so callers
  * must not treat their `path` as navigable (see the non-button rendering in the view below). */
-export function searchBreadcrumbSegments(uri: string, query: string | undefined): readonly BreadcrumbSegment[] {
+export function searchBreadcrumbSegments(
+  uri: string,
+  query: string | undefined,
+): readonly BreadcrumbSegment[] {
   const withoutScheme = uri.slice('search://'.length);
   const separatorIndex = withoutScheme.indexOf('/');
   const providerId = separatorIndex === -1 ? withoutScheme : withoutScheme.slice(0, separatorIndex);

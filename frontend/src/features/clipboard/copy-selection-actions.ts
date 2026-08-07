@@ -40,7 +40,9 @@ export function selectionClipboardText(
     .map((entry) => {
       if (actionId === 'core.copyName') return entry.name;
       const path = pathFromUri(entry.location.uri);
-      return actionId === 'core.copyPath' ? path : relativePath(pathFromUri(activeDirectory.uri), path);
+      return actionId === 'core.copyPath'
+        ? path
+        : relativePath(pathFromUri(activeDirectory.uri), path);
     })
     .join('\n');
 }
