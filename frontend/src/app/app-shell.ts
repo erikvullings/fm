@@ -645,6 +645,39 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     return quickFilterOpen.get(key) === true || (tab?.view.quickFilter ?? null) !== null;
   }
 
+  /** If `entry` came from a content-search results tab (`locationUri`) and has content matches,
+   * returns the original content-search query so the viewer can pre-populate and highlight it
+   * (task 0089 follow-up) - otherwise `undefined`. Shared by both the double-click/Enter open
+   * path and the F3 view shortcut, so pressing either while a search result is selected jumps
+   * straight to the match instead of opening a blank/unsearched viewer. */
+  function contentSearchInitialQuery(
+    locationUri: string,
+    entry: EntrySummary,
+  ):
+    | {
+        readonly query: string;
+        readonly regex: boolean;
+        readonly caseSensitive: boolean;
+        readonly wholeWord: boolean;
+      }
+    | undefined {
+    if (!entry.contentMatches || entry.contentMatches.length === 0) return undefined;
+    const storedQuery = findFilesQueriesByLocationUri.get(locationUri);
+    if (storedQuery === undefined) return undefined;
+    let contentQuery: string | undefined;
+    let contentRegex = false;
+    try {
+      const params: FindFilesSearchParams = JSON.parse(storedQuery);
+      contentQuery = params.contentQuery;
+      contentRegex = params.contentRegex;
+    } catch {
+      // Stored query is a plain string (filename-only search), ignore.
+      return undefined;
+    }
+    if (!contentQuery) return undefined;
+    return { query: contentQuery, regex: contentRegex, caseSensitive: false, wholeWord: true };
+  }
+
   /** Opens the Lister-style viewer (task 0088) for `entry` in `paneId`, replacing any viewer
    * already open there. */
   function openViewer(
@@ -1563,7 +1596,14 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
         otherPaneId !== undefined
       ) {
         event.preventDefault();
-        openViewer(attrsClient, otherPaneId, viewEntry);
+        openViewer(
+          attrsClient,
+          otherPaneId,
+          viewEntry,
+          active === undefined
+            ? undefined
+            : contentSearchInitialQuery(active.location.uri, viewEntry),
+        );
         return;
       }
     }
@@ -2048,31 +2088,13 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
         if (tab?.location.uri.startsWith('search://')) {
           // If this entry has content matches from a content search, open the file
           // viewer with the search query pre-populated so the user can jump to matches.
-          if (entry.contentMatches && entry.contentMatches.length > 0) {
-            const storedQuery = findFilesQueriesByLocationUri.get(tab.location.uri);
-            let contentQuery: string | undefined;
-            let contentRegex = false;
-            if (storedQuery) {
-              try {
-                const params: FindFilesSearchParams = JSON.parse(storedQuery);
-                contentQuery = params.contentQuery;
-                contentRegex = params.contentRegex;
-              } catch {
-                // Stored query is a plain string (filename-only search), ignore.
-              }
-            }
-            if (contentQuery) {
-              const otherPaneId = workspace?.paneOrder.find(
-                (candidatePaneId) => candidatePaneId !== paneId,
-              );
-              if (otherPaneId) {
-                return openViewer(attrsClient, otherPaneId, entry, {
-                  query: contentQuery,
-                  regex: contentRegex,
-                  caseSensitive: false,
-                  wholeWord: true,
-                });
-              }
+          const initialSearch = contentSearchInitialQuery(tab.location.uri, entry);
+          if (initialSearch !== undefined) {
+            const otherPaneId = workspace?.paneOrder.find(
+              (candidatePaneId) => candidatePaneId !== paneId,
+            );
+            if (otherPaneId) {
+              return openViewer(attrsClient, otherPaneId, entry, initialSearch);
             }
           }
           return navigation.navigate(paneId, parentLocation(entry.location), entry.name);

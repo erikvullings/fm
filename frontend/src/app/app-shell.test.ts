@@ -520,6 +520,48 @@ describe('AppShell', () => {
     expect(invokeAction).not.toHaveBeenCalled();
   });
 
+  it('pre-populates and highlights the content-search term in the viewer when F3-ing a content-search result (task 0089 follow-up)', async () => {
+    const client = new MockFileManagerClient();
+    m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
+    await vi.waitFor(() => expect(root.textContent).toContain('Documents'));
+
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'F7', altKey: true, bubbles: true }),
+    );
+    m.redraw.sync();
+    const filenameInput = root.querySelector<HTMLInputElement>('#find-files-query');
+    const contentInput = [...root.querySelectorAll<HTMLInputElement>('input')].find(
+      (input) => input.placeholder === 'Text or regex to find in files',
+    );
+    if (filenameInput === null || contentInput === undefined) {
+      throw new Error('find files inputs missing');
+    }
+    filenameInput.value = '';
+    filenameInput.dispatchEvent(new InputEvent('input', { bubbles: true }));
+    contentInput.value = 'ERROR';
+    contentInput.dispatchEvent(new InputEvent('input', { bubbles: true }));
+    contentInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+
+    // Wait for the search results tab (marked with the search icon, task 0089 follow-up) to
+    // replace the dialog, confirming the async startSearch()/navigate() completed.
+    await vi.waitFor(() => expect(root.querySelector('.fm-pane-tab-search-icon')).not.toBeNull());
+    const activePane = () => root.querySelector<HTMLElement>('[data-active="true"] > .fm-pane');
+    // The search:// pane's first row is a synthetic ".." parent entry (for backing out of the
+    // virtual search results location) - skip it to select an actual result.
+    const resultRow = () =>
+      [...(activePane()?.querySelectorAll<HTMLElement>('.fm-directory-row') ?? [])].find(
+        (row) => !row.textContent?.includes('..'),
+      );
+    await vi.waitFor(() => expect(resultRow()).not.toBeUndefined());
+    resultRow()?.click();
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'F3', bubbles: true }));
+
+    await vi.waitFor(() => expect(root.querySelector('.fm-file-viewer')).not.toBeNull());
+    await vi.waitFor(() =>
+      expect(root.querySelector('.fm-file-viewer-highlight')?.textContent).toBe('ERROR'),
+    );
+  });
+
   it('closes the Lister viewer via its close button', async () => {
     const client = new MockFileManagerClient();
     m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
@@ -1381,8 +1423,11 @@ describe('AppShell', () => {
     input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
 
     await vi.waitFor(() =>
-      expect(root.querySelector('.fm-pane-tab-title')?.textContent).toBe('search: e'),
+      // The "search: " text prefix is replaced by a search icon in the tab strip (task 0089
+      // follow-up) - only the bare query text remains in the tab title's textContent.
+      expect(root.querySelector('.fm-pane-tab-title')?.textContent).toBe(': e'),
     );
+    expect(root.querySelector('.fm-pane-tab-search-icon')).not.toBeNull();
     const activePane = root.querySelector<HTMLElement>('[data-active="true"] > .fm-pane');
     expect(
       [...(activePane?.querySelectorAll('.fm-breadcrumb-segment') ?? [])].map(

@@ -176,8 +176,18 @@ function syntheticFileContent(uri: string): Uint8Array {
  * Recursively walks the fixture directory tree from `rootUri` (reduced
  * fidelity vs. the real `fm-search` traversal), silently skipping the
  * `Unreadable` fixture directory the same way `directorySnapshot` treats it.
+ *
+ * When `contentQuery` is given, only files matching BOTH the filename query and the content
+ * query are returned (mirroring the real backend's content-search-with-filename-filter AND
+ * semantics), and matching entries get a synthetic `contentMatches` entry pointing at the first
+ * match within the file's (deterministic, synthetic) content - see `syntheticFileContent`.
  */
-function collectMatches(rootUri: string, query: string): import('../../models').EntrySummary[] {
+function collectMatches(
+  rootUri: string,
+  query: string,
+  contentQuery: string | undefined,
+  getContent: (uri: string) => Uint8Array,
+): import('../../models').EntrySummary[] {
   const results: import('../../models').EntrySummary[] = [];
   const pending = [rootUri];
   while (pending.length > 0) {
@@ -187,11 +197,23 @@ function collectMatches(rootUri: string, query: string): import('../../models').
     if (fixtures === undefined) continue;
     for (const fixture of fixtures) {
       const entry = fixtureEntry(uri, fixture);
-      if (matchesQuery(fixture.name, query)) {
-        results.push(entry);
-      }
       if (fixture.kind === 'directory') {
         pending.push(entry.location.uri);
+      }
+      if (contentQuery !== undefined && contentQuery !== '') {
+        if (fixture.kind !== 'file' || !matchesQuery(fixture.name, query)) continue;
+        const text = new TextDecoder().decode(getContent(entry.location.uri));
+        const index = text.toLowerCase().indexOf(contentQuery.toLowerCase());
+        if (index === -1) continue;
+        const lineNumber = text.slice(0, index).split('\n').length;
+        results.push({
+          ...entry,
+          contentMatches: [{ lineNumber, offset: index, length: contentQuery.length }],
+        });
+        continue;
+      }
+      if (matchesQuery(fixture.name, query)) {
+        results.push(entry);
       }
     }
   }
@@ -805,7 +827,11 @@ export class MockFileManagerClient implements FileManagerClient {
       this.searchSequence += 1;
       const searchId = `mock-search-${this.seed}-${this.searchSequence}`;
       const location: Location = { providerId: 'local', uri: `search://local/${searchId}` };
-      const entries = request.roots.flatMap((root) => collectMatches(root.uri, request.query));
+      const entries = request.roots.flatMap((root) =>
+        collectMatches(root.uri, request.query, request.contentQuery, (uri) =>
+          this.fileContentFor(uri),
+        ),
+      );
       this.searches.set(searchId, { cancelled: false, entries });
       // Deferred with a macrotask (rather than a microtask) so it always runs
       // after this method's own promise has resolved and the caller has
