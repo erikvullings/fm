@@ -776,8 +776,20 @@ impl FileManagerService {
     }
 
     /// Requests cancellation of an operation.
+    ///
+    /// Searches are not registered with the mutation [`Scheduler`], so an
+    /// unknown id is retried against the search engine (search operations
+    /// share their `operation_id` and `search_id`, see [`Self::start_search`])
+    /// before giving up.
     pub fn cancel_operation(&self, id: OperationId) -> Result<(), ApplicationError> {
-        self.operations.cancel(id).map_err(map_scheduler_error)
+        match self.operations.cancel(id) {
+            Ok(()) => Ok(()),
+            Err(SchedulerError::UnknownOperation(_)) => self
+                .search
+                .cancel(id.into_inner())
+                .map_err(|_| ApplicationError::NotFound),
+            Err(error) => Err(map_scheduler_error(error)),
+        }
     }
 
     /// Forces move's copy/delete fallback for deterministic integration tests.
@@ -1490,7 +1502,10 @@ impl FileManagerService {
                 .map_err(|e| ApplicationError::InvalidRequest(e.to_string()))
             })
             .transpose()?;
-        let operation_id = OperationId::from(Uuid::new_v4());
+        // The search id doubles as the operation id (see `SearchEngine::start`),
+        // so the generic `/operations/{id}/cancel` route can cancel a search.
+        let search_id = Uuid::new_v4();
+        let operation_id = OperationId::from(search_id);
         let audience = EventAudience::Workspace(request.workspace_id.into());
 
         // Emit operation.created so the operation centre tracks this search.
@@ -1532,9 +1547,9 @@ impl FileManagerService {
             recurse: request.recurse,
             operation_id: Some(operation_id),
         };
-        let (search_id, location) = self
+        let location = self
             .search
-            .start(roots, options, audience)
+            .start(search_id, roots, options, audience)
             .map_err(|error| ApplicationError::InvalidRequest(error.to_string()))?;
         Ok(StartSearchResponseDto {
             search_id,

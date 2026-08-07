@@ -12,7 +12,7 @@ use std::time::{Duration, Instant};
 use fm_domain::{EntryId, EntryKind, EntrySummary, Location, OperationId, ProviderId};
 use fm_events::{
     BackendEventPayload, ContentMatchSummary, EntryRefPayload, EntrySummaryPayload, EventAudience,
-    EventBus, OperationProgressDetails, OperationProgressPayload,
+    EventBus, OperationProgressDetails, OperationProgressPayload, OperationStatePayload,
 };
 use fm_vfs::ContentQuery;
 use std::sync::Arc;
@@ -80,8 +80,13 @@ impl SearchEngine {
     /// Starts a new cancellable search over `roots` with `options`, publishing
     /// matches to `audience` as they are found.
     ///
-    /// Returns the search id and the virtual `search://local/{searchId}`
-    /// location that lists its results (spec §24).
+    /// `search_id` doubles as the search's `operation_id` (see
+    /// [`SearchOptions::operation_id`]) so the generic `/operations/{id}/cancel`
+    /// route and the operation centre can address a running search without a
+    /// separate id space.
+    ///
+    /// Returns the virtual `search://local/{searchId}` location that lists
+    /// its results (spec §24).
     ///
     /// # Errors
     ///
@@ -90,10 +95,11 @@ impl SearchEngine {
     /// [`SearchError::InvalidContentQuery`] if the content query is malformed.
     pub fn start(
         &self,
+        search_id: Uuid,
         roots: Vec<Location>,
         options: SearchOptions,
         audience: EventAudience,
-    ) -> Result<(Uuid, Location), SearchError> {
+    ) -> Result<Location, SearchError> {
         if roots.is_empty() {
             return Err(SearchError::NoRoots);
         }
@@ -105,7 +111,6 @@ impl SearchEngine {
             root_paths.push(path);
         }
 
-        let search_id = Uuid::new_v4();
         let cancellation = CancellationToken::new();
         self.store.register(search_id, cancellation.clone());
 
@@ -127,7 +132,7 @@ impl SearchEngine {
             ProviderId::new("search"),
             format!("search://local/{search_id}"),
         );
-        Ok((search_id, location))
+        Ok(location)
     }
 
     /// Requests prompt cancellation of a running search.
@@ -186,7 +191,12 @@ fn run_search(
         Vec::with_capacity(BATCH_SIZE);
     let mut warnings_count = 0_u32;
     let mut last_flush = Instant::now();
-    let mut entries_scanned: u64 = 0;
+    // Files added to the results so far; this is what the operation centre
+    // shows as the search's progress count (task 0089 follow-up).
+    let mut matches_found: u64 = 0;
+    // The most recently examined entry, so progress events can show "currently
+    // scanning: <file>" even while a long content scan finds nothing yet.
+    let mut current_entry: Option<EntryRefPayload> = None;
 
     let max_depth = if options.recurse { usize::MAX } else { 1 };
     'roots: for root in roots {
@@ -221,8 +231,10 @@ fn run_search(
                         continue;
                     };
 
-                    // Count every file we examine.
-                    entries_scanned += 1;
+                    current_entry = Some(EntryRefPayload {
+                        id: summary.id,
+                        location: summary.location.clone().into(),
+                    });
 
                     // Scan content if requested.
                     if has_content_query {
@@ -262,69 +274,102 @@ fn run_search(
 
                         // Only emit entry if we found content matches.
                         if let Some(cm) = matches {
+                            matches_found += 1;
                             buffer.push((summary, Some(cm)));
                         }
                     } else {
                         // Filename-only search.
+                        matches_found += 1;
                         buffer.push((summary, None));
                     }
                 }
                 Err(_) => warnings_count += 1,
             }
-            if buffer.len() >= BATCH_SIZE
-                || (!buffer.is_empty() && last_flush.elapsed() >= BATCH_INTERVAL)
-            {
-                flush(&ctx, &mut buffer, warnings_count, false, entries_scanned);
+            // Flush on a timer regardless of whether the buffer has anything
+            // in it, so a long content scan with sparse (or zero) matches
+            // still reports live progress instead of appearing stalled.
+            if buffer.len() >= BATCH_SIZE || last_flush.elapsed() >= BATCH_INTERVAL {
+                flush(
+                    &ctx,
+                    &mut buffer,
+                    warnings_count,
+                    false,
+                    matches_found,
+                    current_entry.clone(),
+                );
                 last_flush = Instant::now();
             }
         }
     }
-    flush(&ctx, &mut buffer, warnings_count, true, entries_scanned);
+    flush(
+        &ctx,
+        &mut buffer,
+        warnings_count,
+        true,
+        matches_found,
+        current_entry.clone(),
+    );
     store.mark_complete(search_id);
+
+    if let Some(op_id) = ctx.operation_id {
+        let state = if cancellation.is_cancelled() {
+            OperationStatePayload::Cancelled
+        } else {
+            OperationStatePayload::Completed
+        };
+        events.publish(
+            audience.clone(),
+            BackendEventPayload::OperationStateChanged {
+                operation_id: op_id,
+                state,
+            },
+        );
+    }
 }
 
 /// Flushes buffered matches to the store and publishes them as one event.
 ///
 /// A final (`is_complete: true`) flush is always sent, even with an empty
 /// buffer, so listeners can reliably detect that no further batches follow.
+/// Progress is published independently of the results batch whenever an
+/// `operation_id` is tracked, even if this particular flush found no new
+/// matches — otherwise a sparse or unmatched content search would appear
+/// to make no progress at all.
 fn flush(
     ctx: &SearchContext<'_>,
     buffer: &mut Vec<(EntrySummary, Option<Vec<ContentMatchSummary>>)>,
     warnings_count: u32,
     is_complete: bool,
-    entries_scanned: u64,
+    matches_found: u64,
+    current_entry: Option<EntryRefPayload>,
 ) {
-    if buffer.is_empty() && !is_complete {
-        return;
+    if !buffer.is_empty() || is_complete {
+        let batch = std::mem::take(buffer);
+        let payload_entries: Vec<EntrySummaryPayload> = batch
+            .iter()
+            .map(|(entry, matches_list)| match matches_list {
+                Some(list) => EntrySummaryPayload::with_matches(entry, list.clone()),
+                None => entry.clone().into(),
+            })
+            .collect();
+        let summary_batch: Vec<EntrySummary> = batch.into_iter().map(|(e, _)| e).collect();
+        ctx.store
+            .append(ctx.search_id, summary_batch, warnings_count);
+
+        ctx.events.publish(
+            ctx.audience.clone(),
+            BackendEventPayload::SearchResultsBatch {
+                search_id: ctx.search_id,
+                entries: payload_entries,
+                is_complete,
+                warnings_count,
+            },
+        );
     }
-    let batch = std::mem::take(buffer);
-    let payload_entries: Vec<EntrySummaryPayload> = batch
-        .iter()
-        .map(|(entry, matches_list)| match matches_list {
-            Some(list) => EntrySummaryPayload::with_matches(entry, list.clone()),
-            None => entry.clone().into(),
-        })
-        .collect();
-    let summary_batch: Vec<EntrySummary> = batch.into_iter().map(|(e, _)| e).collect();
-    ctx.store
-        .append(ctx.search_id, summary_batch, warnings_count);
 
-    let current_entry_ref = payload_entries.first().map(|e| EntryRefPayload {
-        id: e.id,
-        location: e.location.clone(),
-    });
-
-    ctx.events.publish(
-        ctx.audience.clone(),
-        BackendEventPayload::SearchResultsBatch {
-            search_id: ctx.search_id,
-            entries: payload_entries,
-            is_complete,
-            warnings_count,
-        },
-    );
-
-    // Emit operation progress if the operation centre is tracking this search.
+    // Emit operation progress if the operation centre is tracking this search,
+    // regardless of whether this flush produced any new matches — a sparse or
+    // zero-match content search must still show it's making progress.
     if let Some(op_id) = ctx.operation_id {
         ctx.events.publish(
             ctx.audience.clone(),
@@ -332,11 +377,11 @@ fn flush(
                 progress: OperationProgressPayload {
                     operation_id: op_id,
                     progress: OperationProgressDetails {
-                        completed_items: entries_scanned,
+                        completed_items: matches_found,
                         total_items: None,
                         completed_bytes: 0,
                         total_bytes: None,
-                        current_entry: current_entry_ref,
+                        current_entry,
                         bytes_per_second: None,
                     },
                 },
@@ -467,8 +512,10 @@ mod tests {
         let subscription = subscribe(&events);
 
         let root_location = Location::from_native_path(root.path()).unwrap();
-        let (search_id, _location) = engine
+        let search_id = Uuid::new_v4();
+        let _location = engine
             .start(
+                search_id,
                 vec![root_location],
                 base_options("report"),
                 EventAudience::Global,
@@ -501,8 +548,10 @@ mod tests {
         let subscription = subscribe(&events);
 
         let root_location = Location::from_native_path(root.path()).unwrap();
-        let (search_id, _location) = engine
+        let search_id = Uuid::new_v4();
+        let _location = engine
             .start(
+                search_id,
                 vec![root_location],
                 base_options("match"),
                 EventAudience::Global,
@@ -534,8 +583,10 @@ mod tests {
         let subscription = subscribe(&events);
 
         let root_location = Location::from_native_path(root.path()).unwrap();
-        let (_search_id, _location) = engine
+        let _search_id = Uuid::new_v4();
+        let _location = engine
             .start(
+                _search_id,
                 vec![root_location],
                 base_options("report"),
                 EventAudience::Global,
@@ -567,8 +618,10 @@ mod tests {
         let subscription = subscribe(&events);
 
         let root_location = Location::from_native_path(root.path()).unwrap();
-        let (_search_id, _location) = engine
+        let _search_id = Uuid::new_v4();
+        let _location = engine
             .start(
+                _search_id,
                 vec![root_location],
                 base_options("report"),
                 EventAudience::Global,
@@ -594,8 +647,10 @@ mod tests {
         let subscription = subscribe(&events);
 
         let root_location = Location::from_native_path(root.path()).unwrap();
-        let (_search_id, _location) = engine
+        let _search_id = Uuid::new_v4();
+        let _location = engine
             .start(
+                _search_id,
                 vec![root_location],
                 base_options("日本語"),
                 EventAudience::Global,
@@ -614,7 +669,12 @@ mod tests {
         let engine = SearchEngine::new(store, events);
 
         let error = engine
-            .start(vec![], base_options("x"), EventAudience::Global)
+            .start(
+                Uuid::new_v4(),
+                vec![],
+                base_options("x"),
+                EventAudience::Global,
+            )
             .unwrap_err();
         assert!(matches!(error, SearchError::NoRoots));
     }
@@ -645,8 +705,10 @@ mod tests {
         let subscription = subscribe(&events);
 
         let root_location = Location::from_native_path(root.path()).unwrap();
-        let (_search_id, _location) = engine
+        let _search_id = Uuid::new_v4();
+        let _location = engine
             .start(
+                _search_id,
                 vec![root_location],
                 SearchOptions {
                     filename_query: String::new(),
@@ -693,8 +755,10 @@ mod tests {
         let subscription = subscribe(&events);
 
         let root_location = Location::from_native_path(root.path()).unwrap();
-        let (_search_id, _location) = engine
+        let _search_id = Uuid::new_v4();
+        let _location = engine
             .start(
+                _search_id,
                 vec![root_location],
                 SearchOptions {
                     filename_query: "report".to_owned(),
@@ -726,8 +790,10 @@ mod tests {
         let subscription = subscribe(&events);
 
         let root_location = Location::from_native_path(root.path()).unwrap();
-        let (_search_id, _location) = engine
+        let _search_id = Uuid::new_v4();
+        let _location = engine
             .start(
+                _search_id,
                 vec![root_location],
                 SearchOptions {
                     filename_query: String::new(),
@@ -763,8 +829,10 @@ mod tests {
         let subscription = subscribe(&events);
 
         let root_location = Location::from_native_path(root.path()).unwrap();
-        let (_search_id, _location) = engine
+        let _search_id = Uuid::new_v4();
+        let _location = engine
             .start(
+                _search_id,
                 vec![root_location],
                 SearchOptions {
                     filename_query: String::new(),
@@ -799,8 +867,10 @@ mod tests {
         let subscription = subscribe(&events);
 
         let root_location = Location::from_native_path(root.path()).unwrap();
-        let (_search_id, _location) = engine
+        let _search_id = Uuid::new_v4();
+        let _location = engine
             .start(
+                _search_id,
                 vec![root_location],
                 SearchOptions {
                     filename_query: String::new(),
@@ -837,8 +907,10 @@ mod tests {
         let subscription = subscribe(&events);
 
         let root_location = Location::from_native_path(root.path()).unwrap();
-        let (_search_id, _location) = engine
+        let _search_id = Uuid::new_v4();
+        let _location = engine
             .start(
+                _search_id,
                 vec![root_location],
                 SearchOptions {
                     filename_query: String::new(),
@@ -874,8 +946,10 @@ mod tests {
         let subscription = subscribe(&events);
 
         let root_location = Location::from_native_path(root.path()).unwrap();
-        let (_search_id, _location) = engine
+        let _search_id = Uuid::new_v4();
+        let _location = engine
             .start(
+                _search_id,
                 vec![root_location],
                 SearchOptions {
                     filename_query: String::new(),
