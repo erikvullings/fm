@@ -1387,7 +1387,7 @@ describe('AppShell', () => {
     await vi.waitFor(() =>
       expect(
         [...root.querySelectorAll('.fm-entry-name')].some(
-          (name) => name.textContent === '/Documents/report.pdf',
+          (name) => name.textContent === 'Documents/report',
         ),
       ).toBe(true),
     );

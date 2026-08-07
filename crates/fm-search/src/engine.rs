@@ -158,6 +158,12 @@ impl SearchEngine {
 /// traversal cycle-free without a visited-inode set and matches the
 /// "no symlink-following by default" requirement. Unreadable directories
 /// increment a warning counter instead of aborting the whole search.
+///
+/// `.git` directories are never descended into (`filter_entry`) — their
+/// object databases are typically huge, never contain user content worth
+/// searching, and walking them was a significant unnecessary slowdown on
+/// any repository root. Other hidden files/directories are still walked
+/// and matched normally; only entries named exactly `.git` are pruned.
 /// Immutable context shared by every [`flush`] call within a single search run.
 struct SearchContext<'a> {
     search_id: Uuid,
@@ -203,6 +209,8 @@ fn run_search(
         for entry in walkdir::WalkDir::new(&root)
             .follow_links(false)
             .max_depth(max_depth)
+            .into_iter()
+            .filter_entry(|entry| entry.file_name().to_str() != Some(".git"))
         {
             if cancellation.is_cancelled() {
                 break 'roots;
@@ -533,6 +541,34 @@ mod tests {
         let (page, has_more) = store.page(search_id, 0, 10).unwrap();
         assert_eq!(page.len(), 2);
         assert!(!has_more);
+    }
+
+    #[tokio::test]
+    async fn skips_git_directories() {
+        let root = tempdir().unwrap();
+        fs::create_dir_all(root.path().join(".git/objects")).unwrap();
+        fs::write(root.path().join(".git/objects/report.txt"), b"a").unwrap();
+        fs::write(root.path().join("report.txt"), b"b").unwrap();
+
+        let store = Arc::new(SearchResultsStore::new());
+        let events = EventBus::new(16);
+        let engine = SearchEngine::new(Arc::clone(&store), events.clone());
+        let subscription = subscribe(&events);
+
+        let root_location = Location::from_native_path(root.path()).unwrap();
+        let search_id = Uuid::new_v4();
+        let _location = engine
+            .start(
+                search_id,
+                vec![root_location],
+                base_options("report"),
+                EventAudience::Global,
+            )
+            .unwrap();
+
+        let batches = collect_batches(subscription).await;
+        let total: usize = batches.iter().map(|(entries, _, _)| entries.len()).sum();
+        assert_eq!(total, 1, "the .git directory must not be descended into");
     }
 
     #[tokio::test]

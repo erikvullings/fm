@@ -127,11 +127,28 @@ export interface DirectoryColumnDescriptor {
   ): m.Children;
 }
 
+/** For search results, shows the entry's full path instead of its bare name (spec §24 follow-up):
+ * - the trailing `.ext` is stripped, since the adjacent Ext column already shows it.
+ * - the leading `/` is stripped. It is otherwise the only bidi-neutral character sitting right at
+ *   the start of the (RTL, see `.fm-entry-name--path` below) string, so the Unicode Bidi Algorithm
+ *   resolves it against the *paragraph's* direction (RTL) instead of the surrounding LTR text and
+ *   visually reorders it to the opposite end of the string - it rendered as a stray trailing slash
+ *   glued to the end of the filename, which every following interior `/` never did (those sit
+ *   between two LTR characters and resolve correctly). Dropping it removes both the redundant
+ *   character and this rendering artifact. */
 function displayName(entry: EntrySummary, showFullPath = false): string {
   if (!showFullPath || isParentEntry(entry.id)) return entry.name;
   try {
     const url = new URL(entry.location.uri);
-    return decodeURIComponent(url.pathname) || entry.name;
+    const path = decodeURIComponent(url.pathname) || entry.name;
+    const withoutLeadingSlash = path.replace(/^\/+/, '');
+    const { extension } = entry;
+    const withoutExtension =
+      extension !== undefined &&
+      withoutLeadingSlash.toLowerCase().endsWith(`.${extension.toLowerCase()}`)
+        ? withoutLeadingSlash.slice(0, -(extension.length + 1))
+        : withoutLeadingSlash;
+    return withoutExtension || entry.name;
   } catch {
     return entry.location.uri;
   }

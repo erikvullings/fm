@@ -200,7 +200,7 @@ describe('DirectoryTable rows', () => {
     expect(root.querySelectorAll('.fm-directory-row')[0]?.textContent).toContain('banana-an.txt');
   });
 
-  it('shows the full location for entries in a virtual search directory', () => {
+  it('shows the full location for entries in a virtual search directory, without the leading slash or extension', () => {
     mount({
       state: { type: 'loaded' },
       source: entryArraySource([
@@ -211,9 +211,21 @@ describe('DirectoryTable rows', () => {
       showFullPath: true,
     });
 
-    expect(root.querySelector('.fm-entry-name')?.textContent).toBe(
-      '/Users/erik/Documents/report.txt',
-    );
+    expect(root.querySelector('.fm-entry-name')?.textContent).toBe('Users/erik/Documents/report');
+  });
+
+  it('shows the full location unmodified for a directory match (no extension to strip)', () => {
+    const { extension: _extension, ...directory } = entry({
+      kind: 'directory',
+      location: { providerId: 'local', uri: 'file:///Users/erik/Documents/Reports' },
+    });
+    mount({
+      state: { type: 'loaded' },
+      source: entryArraySource([directory]),
+      showFullPath: true,
+    });
+
+    expect(root.querySelector('.fm-entry-name')?.textContent).toBe('Users/erik/Documents/Reports');
   });
 
   it('moves the cursor to a clicked row', () => {

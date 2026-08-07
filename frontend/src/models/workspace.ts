@@ -94,6 +94,52 @@ function titleFromLocation(location: Location): string {
   }
 }
 
+function isSessionOnlyLocation(location: Location): boolean {
+  return location.uri.startsWith('search://') || location.uri.startsWith('archive://');
+}
+
+/** An `archive://` tab's containing folder is derivable from its own URI alone: it always wraps
+ * a real `file:` location (before the `!`), regardless of how deep inside the archive the tab was
+ * browsing, so its parent directory needs no navigation history to reconstruct. */
+function containingFolderForArchive(location: Location): Location {
+  const outer = location.uri.slice('archive://'.length).split('!', 1)[0] ?? '';
+  try {
+    const url = new URL(`file://${outer}`);
+    const trimmed = url.pathname.replace(/\/+$/, '');
+    const finalSeparator = trimmed.lastIndexOf('/');
+    url.pathname = finalSeparator <= 0 ? '/' : trimmed.slice(0, finalSeparator);
+    return { providerId: 'local', uri: url.toString() };
+  } catch {
+    return location;
+  }
+}
+
+/** A `search://` tab carries no reconstructable location of its own (spec §24: search results are
+ * a virtual, session-only location) - its originating folder only survives in the tab's own
+ * back-navigation history, most recent last. */
+function containingFolderForSearch(history: { back: readonly Location[] }): Location | undefined {
+  for (let index = history.back.length - 1; index >= 0; index -= 1) {
+    const candidate = history.back[index];
+    if (candidate !== undefined && !isSessionOnlyLocation(candidate)) return candidate;
+  }
+  return undefined;
+}
+
+/** `search://` and `archive://` locations are only ever meaningful within the session that opened
+ * them (spec §24 for search; archives are never re-mounted from a persisted layout) - reloading a
+ * workspace must never try to redisplay or refetch one, so it is swapped for its containing real
+ * folder here, once, at hydration time. */
+function displayedLocation(tab: {
+  location: Location;
+  history: { back: readonly Location[] };
+}): Location {
+  if (tab.location.uri.startsWith('archive://')) return containingFolderForArchive(tab.location);
+  if (tab.location.uri.startsWith('search://')) {
+    return containingFolderForSearch(tab.history) ?? tab.location;
+  }
+  return tab.location;
+}
+
 /** Converts the persisted DTO into the normalized, directory-free frontend projection. */
 export function workspaceProjectionFromDto(workspace: WorkspaceDto): WorkspaceProjection {
   const paneOrder: PaneId[] = [];
@@ -105,12 +151,16 @@ export function workspaceProjectionFromDto(workspace: WorkspaceDto): WorkspacePr
     const tabsById: Record<TabId, TabProjection> = {};
     for (const tab of pane.tabs) {
       tabOrder.push(tab.id);
+      const location = displayedLocation(tab);
+      const redirected = location !== tab.location;
       tabsById[tab.id] = {
         id: tab.id,
-        title: tab.titleOverride ?? titleFromLocation(tab.location),
-        location: tab.location,
-        canNavigateBack: tab.history.back.length > 0,
-        canNavigateForward: tab.history.forward.length > 0,
+        title: redirected
+          ? titleFromLocation(location)
+          : (tab.titleOverride ?? titleFromLocation(tab.location)),
+        location,
+        canNavigateBack: redirected ? false : tab.history.back.length > 0,
+        canNavigateForward: redirected ? false : tab.history.forward.length > 0,
         view: tab.view,
       };
     }
