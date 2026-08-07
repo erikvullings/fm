@@ -7,6 +7,15 @@ export interface ConflictDialogAttrs {
   readonly onResolve: (resolution: ConflictResolution, applyToAllSimilar: boolean) => void;
 }
 
+/** Compact, stable metadata for comparing two conflicting entries. */
+export function formatConflictMetadata(entry: OperationConflict['source']): string {
+  const size = entry.size === undefined ? 'size unavailable' : `${entry.size}b`;
+  const date = entry.modifiedAt === undefined
+    ? 'modified time unavailable'
+    : new Date(entry.modifiedAt).toISOString().slice(0, 19).replace('T', ' ');
+  return `${entry.name} · ${size} · ${date}`;
+}
+
 /**
  * Explicit request/response dialog for a pending filesystem conflict.
  *
@@ -41,12 +50,12 @@ export const ConflictDialog: FactoryComponent<ConflictDialogAttrs> = () => {
             m('dt', 'Source'),
             m(
               'dd',
-              `${conflict.source.name} · ${conflict.source.size ?? 'size unavailable'} · ${conflict.source.modifiedAt ?? 'modified time unavailable'}`,
+              formatConflictMetadata(conflict.source),
             ),
             m('dt', 'Destination'),
             m(
               'dd',
-              `${conflict.destination.name} · ${conflict.destination.size ?? 'size unavailable'} · ${conflict.destination.modifiedAt ?? 'modified time unavailable'}`,
+              formatConflictMetadata(conflict.destination),
             ),
           ]),
           m('label.fm-conflict-dialog-checkbox', [
