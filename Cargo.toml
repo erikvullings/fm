@@ -13,6 +13,12 @@ edition = "2024"
 rust-version = "1.97"
 license = "MIT OR Apache-2.0"
 
+# Line-tables-only debug info is enough for backtraces/line-level debugging
+# and is much cheaper to generate and link than full debug info, which
+# matters here given how much gets statically linked into fm-server/fm-cli.
+[profile.dev]
+debug = "line-tables-only"
+
 [workspace.dependencies]
 
 # Internal crates, versioned together with the rest of the workspace.
