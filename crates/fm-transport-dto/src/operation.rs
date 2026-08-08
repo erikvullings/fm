@@ -28,6 +28,12 @@ pub struct StartOperationRequestDto {
     /// New child name for `createDirectory`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
+    /// Archive format requested by a `createArchive` or `moveToArchive` operation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub archive_format: Option<ArchiveFormatDto>,
+    /// ZIP compression level (0 through 9) requested for archive creation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub archive_compression_level: Option<i64>,
     /// Whether a multi-component create-directory name may create missing parents.
     #[serde(default)]
     pub create_intermediate_directories: bool,
@@ -59,6 +65,8 @@ pub enum SymlinkPolicyDto {
 pub enum OperationKindDto {
     /// Package selected local entries into a new archive.
     CreateArchive,
+    /// Package selected local entries into a new archive and remove the originals on success.
+    MoveToArchive,
     CreateDirectory,
     Rename,
     Copy,
@@ -68,6 +76,15 @@ pub enum OperationKindDto {
     Delete,
     /// Search files.
     Search,
+}
+
+/// Supported formats for archive creation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[allow(missing_docs)]
+pub enum ArchiveFormatDto {
+    Zip,
+    SevenZip,
 }
 
 /// Conflict policy carried by an operation request and snapshot.

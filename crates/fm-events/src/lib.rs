@@ -375,6 +375,8 @@ pub enum WorkspaceLayoutPayload {
 pub enum OperationKindPayload {
     /// Package selected entries into an archive.
     CreateArchive,
+    /// Package selected entries into an archive and remove the originals on success.
+    MoveToArchive,
     /// Create a directory.
     CreateDirectory,
     /// Rename one entry.

@@ -1,6 +1,6 @@
 # 0076 Archive provider: browse, mutate and passwords
 
-Status: in_progress
+Status: done
 Priority: medium
 Owner: unassigned
 Agent: codex
@@ -166,3 +166,14 @@ not implement archive codecs or cryptography.
   `fm-archive` unit/integration tests pass and its all-target clippy check is warning-free. Full
   workspace verification remains blocked by pre-existing missing `DirectorySnapshot` fields in
   `fm-domain`/`fm-transport-dto`; `pnpm test` also attempted a sandbox-blocked Swagger UI download.
+- 2026-08-07 codex: Added selection-based archive creation for ZIP and 7z with a format-aware
+  dialog, ZIP compression levels, `Alt+F5` pack, `Alt+Shift+F5` move-to-archive, and `Alt+F6`
+  extraction through the ordinary operation path. Creation validates destination/format agreement,
+  refuses an existing destination, publishes transactionally, and only removes move sources after
+  a readable archive has been created. The generated transport contract now carries archive format
+  and compression options; documentation reflects the actual ZIP/7z/RAR capabilities.
+- 2026-08-08 codex: Resumed and reviewed the completed implementation. Focused TDD coverage
+  includes ZIP/7z creation, request validation, non-overwrite safety, move-after-readable-archive,
+  dialog naming, and the `Alt+F5` / `Alt+Shift+F5` dispatches. `git diff --check` passes. Re-running
+  the focused Rust/frontend suites was blocked by another concurrent build/test process holding
+  the shared build directory and pnpm database; no feature defect was observed.

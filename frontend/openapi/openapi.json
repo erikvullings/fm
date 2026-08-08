@@ -282,6 +282,14 @@
         ],
         "type": "object"
       },
+      "ArchiveFormatDto": {
+        "description": "Supported formats for archive creation.",
+        "enum": [
+          "zip",
+          "sevenZip"
+        ],
+        "type": "string"
+      },
       "ArchiveInfoDto": {
         "description": "Archive-specific metadata for an entry (for example a `.zip` file).",
         "properties": {
@@ -1399,6 +1407,8 @@
       "OperationKindDto": {
         "description": "Initial semantic operation kinds.",
         "enum": [
+          "createArchive",
+          "moveToArchive",
           "createDirectory",
           "rename",
           "copy",
@@ -2416,6 +2426,25 @@
       "StartOperationRequestDto": {
         "description": "A request to start one backend-owned semantic operation.",
         "properties": {
+          "archiveCompressionLevel": {
+            "description": "ZIP compression level (0 through 9) requested for archive creation.",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "archiveFormat": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ArchiveFormatDto",
+                "description": "Archive format requested by a `createArchive` or `moveToArchive` operation."
+              }
+            ]
+          },
           "conflictPolicy": {
             "$ref": "#/components/schemas/OperationConflictPolicyDto",
             "description": "Conflict behavior selected before execution."

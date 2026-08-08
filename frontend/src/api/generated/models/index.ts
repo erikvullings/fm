@@ -13,6 +13,7 @@ export * from './applicationErrorCode';
 export * from './applicationErrorDto';
 export * from './applicationErrorDtoDetails';
 export * from './archiveCredentialRequestDto';
+export * from './archiveFormatDto';
 export * from './archiveInfoDto';
 export * from './columnConfigurationDto';
 export * from './conflictPolicyDto';

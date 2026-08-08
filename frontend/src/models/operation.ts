@@ -4,6 +4,7 @@ import type { EntryRef, Location } from './location';
 /** Initial operation kinds (spec §17). */
 export type OperationKind =
   | 'createArchive'
+  | 'moveToArchive'
   | 'createDirectory'
   | 'rename'
   | 'copy'

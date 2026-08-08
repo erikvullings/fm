@@ -170,7 +170,7 @@ export class HttpFileManagerClient implements FileManagerClient {
     if (response.status !== 200) {
       throw new Error(`Unexpected getWorkspace response status: ${response.status}`);
     }
-    return workspaceProjectionFromDto(response.data);
+    return workspaceProjectionFromDto(response.data, { redirectSessionOnlyTabs: true });
   }
 
   renameWorkspace(
@@ -208,7 +208,7 @@ export class HttpFileManagerClient implements FileManagerClient {
     if (response.status !== 200) {
       throw new Error(`Unexpected openWorkspace response status: ${response.status}`);
     }
-    return workspaceProjectionFromDto(response.data);
+    return workspaceProjectionFromDto(response.data, { redirectSessionOnlyTabs: true });
   }
 
   async dispatchWorkspaceCommand(
@@ -556,11 +556,11 @@ function settingsFromDto(settings: SettingsDto): Settings {
         workspaceId,
         Array.isArray(locations)
           ? locations.map(
-              (location): FileLocation => ({
-                providerId: String((location as { providerId?: unknown }).providerId),
-                uri: String((location as { uri?: unknown }).uri),
-              }),
-            )
+            (location): FileLocation => ({
+              providerId: String((location as { providerId?: unknown }).providerId),
+              uri: String((location as { uri?: unknown }).uri),
+            }),
+          )
           : [],
       ]),
     ),

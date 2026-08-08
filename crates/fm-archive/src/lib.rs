@@ -118,6 +118,11 @@ pub fn create_zip_archive(
     compression_level: Option<i64>,
     cancellation: &CancellationToken,
 ) -> Result<(), VfsError> {
+    if destination.exists() {
+        return Err(VfsError::AlreadyExists {
+            location: destination.display().to_string(),
+        });
+    }
     let parent = destination
         .parent()
         .ok_or_else(|| VfsError::InvalidLocation {
@@ -160,6 +165,11 @@ pub fn create_7z_archive(
     sources: &[PathBuf],
     cancellation: &CancellationToken,
 ) -> Result<(), VfsError> {
+    if destination.exists() {
+        return Err(VfsError::AlreadyExists {
+            location: destination.display().to_string(),
+        });
+    }
     let parent = destination
         .parent()
         .ok_or_else(|| VfsError::InvalidLocation {

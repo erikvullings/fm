@@ -34,11 +34,11 @@ use fm_settings::{
     ConflictPolicy, DateFormat, DefaultPaneLayout, Settings, SettingsStore, SizeFormat, Theme,
 };
 use fm_transport_dto::{
-    ActionDescriptorDto, ActionResultDto, ConflictPolicyDto, ConflictResolutionDto, DateFormatDto,
-    DefaultPaneLayoutDto, EntryMetadataRequest, InvokeActionRequestDto, ListDirectoryRequest,
-    NavigateRequest, OperationConflictPolicyDto, OperationDto, OperationKindDto,
-    OperationProgressDto, OperationStateDto, PlatformKindDto, PluginLogEntryDto,
-    PluginPermissionsDto, ReadFileRangeRequestDto, ReadFileRangeResponseDto,
+    ActionDescriptorDto, ActionResultDto, ArchiveFormatDto, ConflictPolicyDto,
+    ConflictResolutionDto, DateFormatDto, DefaultPaneLayoutDto, EntryMetadataRequest,
+    InvokeActionRequestDto, ListDirectoryRequest, NavigateRequest, OperationConflictPolicyDto,
+    OperationDto, OperationKindDto, OperationProgressDto, OperationStateDto, PlatformKindDto,
+    PluginLogEntryDto, PluginPermissionsDto, ReadFileRangeRequestDto, ReadFileRangeResponseDto,
     ResolveOperationConflictRequestDto, RuntimeCapabilitiesDto, RuntimeKindDto,
     SearchInFileMatchDto, SearchInFileRequestDto, SearchInFileResponseDto, SettingsDto,
     SizeFormatDto, StartOperationRequestDto, StartSearchRequestDto, StartSearchResponseDto,
@@ -397,7 +397,7 @@ impl FileManagerService {
         }
         let destination = request.destination.clone().map(Into::into);
         let executor: Arc<dyn OperationExecutor> = match request.operation_type {
-            OperationKindDto::CreateArchive => {
+            OperationKindDto::CreateArchive | OperationKindDto::MoveToArchive => {
                 if request.sources.is_empty() {
                     return Err(ApplicationError::InvalidRequest(
                         "createArchive requires at least one source".into(),
@@ -411,7 +411,29 @@ impl FileManagerService {
                 let destination_path = destination
                     .to_native_path()
                     .map_err(|error| ApplicationError::InvalidRequest(error.to_string()))?;
-                let format = ArchiveCreationFormat::from_destination(&destination_path)?;
+                let format =
+                    ArchiveCreationFormat::from_request(&destination_path, request.archive_format)?;
+                let compression_level = match format {
+                    ArchiveCreationFormat::Zip => {
+                        let level = request.archive_compression_level.unwrap_or(6);
+                        if !(0..=9).contains(&level) {
+                            return Err(ApplicationError::InvalidRequest(
+                                "archive compression level must be between 0 and 9".into(),
+                            ));
+                        }
+                        level
+                    }
+                    // The 7z writer currently exposes no stable compression-level
+                    // control; reject it rather than silently ignoring a request.
+                    ArchiveCreationFormat::SevenZip
+                        if request.archive_compression_level.is_some() =>
+                    {
+                        return Err(ApplicationError::InvalidRequest(
+                            "7z compression level is not supported by this backend".into(),
+                        ));
+                    }
+                    ArchiveCreationFormat::SevenZip => 6,
+                };
                 let sources = request
                     .sources
                     .iter()
@@ -426,6 +448,8 @@ impl FileManagerService {
                     destination: destination_path,
                     sources,
                     format,
+                    compression_level,
+                    remove_sources: request.operation_type == OperationKindDto::MoveToArchive,
                 })
             }
             OperationKindDto::CreateDirectory => {
@@ -1764,6 +1788,8 @@ struct CreateArchiveExecutor {
     destination: PathBuf,
     sources: Vec<PathBuf>,
     format: ArchiveCreationFormat,
+    compression_level: i64,
+    remove_sources: bool,
 }
 
 #[async_trait]
@@ -1793,18 +1819,40 @@ impl OperationExecutor for CreateArchiveExecutor {
     ) -> Result<ExecutionOutcome, ExecutionError> {
         let destination = self.destination.clone();
         let sources = self.sources.clone();
+        let sources_for_archive = sources.clone();
         let format = self.format;
+        let compression_level = self.compression_level;
+        let remove_sources = self.remove_sources;
         let cancellation = cancellation.clone();
+        let archive_cancellation = cancellation.clone();
         tokio::task::spawn_blocking(move || match format {
-            ArchiveCreationFormat::Zip => {
-                create_zip_archive(&destination, &sources, Some(6), &cancellation)
-            }
+            ArchiveCreationFormat::Zip => create_zip_archive(
+                &destination,
+                &sources_for_archive,
+                Some(compression_level),
+                &archive_cancellation,
+            ),
             ArchiveCreationFormat::SevenZip => {
-                create_7z_archive(&destination, &sources, &cancellation)
+                create_7z_archive(&destination, &sources_for_archive, &archive_cancellation)
             }
         })
         .await
         .map_err(|error| ExecutionError::Failed(error.to_string()))??;
+        if remove_sources {
+            for source in sources {
+                if cancellation.is_cancelled() {
+                    return Err(fm_vfs::VfsError::Cancelled.into());
+                }
+                let metadata = std::fs::symlink_metadata(&source)
+                    .map_err(|error| ExecutionError::Failed(error.to_string()))?;
+                if metadata.is_dir() {
+                    std::fs::remove_dir_all(&source)
+                } else {
+                    std::fs::remove_file(&source)
+                }
+                .map_err(|error| ExecutionError::Failed(error.to_string()))?;
+            }
+        }
         Ok(ExecutionOutcome::Completed)
     }
 
@@ -1813,21 +1861,35 @@ impl OperationExecutor for CreateArchiveExecutor {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 enum ArchiveCreationFormat {
     Zip,
     SevenZip,
 }
 
 impl ArchiveCreationFormat {
-    fn from_destination(path: &Path) -> Result<Self, ApplicationError> {
-        match path.extension().and_then(|extension| extension.to_str()) {
+    fn from_request(
+        path: &Path,
+        requested: Option<ArchiveFormatDto>,
+    ) -> Result<Self, ApplicationError> {
+        let inferred = match path.extension().and_then(|extension| extension.to_str()) {
             Some(extension) if extension.eq_ignore_ascii_case("zip") => Ok(Self::Zip),
             Some(extension) if extension.eq_ignore_ascii_case("7z") => Ok(Self::SevenZip),
             _ => Err(ApplicationError::InvalidRequest(
                 "archive destination must end in .zip or .7z".into(),
             )),
+        }?;
+        let requested = match requested {
+            Some(ArchiveFormatDto::Zip) => Self::Zip,
+            Some(ArchiveFormatDto::SevenZip) => Self::SevenZip,
+            None => inferred,
+        };
+        if requested != inferred {
+            return Err(ApplicationError::InvalidRequest(
+                "archive format must match the destination extension".into(),
+            ));
         }
+        Ok(requested)
     }
 }
 
@@ -3187,6 +3249,7 @@ fn map_scheduler_error(error: SchedulerError) -> ApplicationError {
 fn operation_kind(kind: OperationKindDto) -> fm_operations::OperationKind {
     match kind {
         OperationKindDto::CreateArchive => fm_operations::OperationKind::CreateArchive,
+        OperationKindDto::MoveToArchive => fm_operations::OperationKind::MoveToArchive,
         OperationKindDto::CreateDirectory => fm_operations::OperationKind::CreateDirectory,
         OperationKindDto::Rename => fm_operations::OperationKind::Rename,
         OperationKindDto::Copy => fm_operations::OperationKind::Copy,
@@ -3225,6 +3288,7 @@ const fn conflict_policy(
 fn mutating_operation_kind(id: &ActionId) -> Option<OperationKindDto> {
     match id.as_str() {
         "core.pack" => Some(OperationKindDto::CreateArchive),
+        "core.moveToArchive" => Some(OperationKindDto::MoveToArchive),
         "core.copy" => Some(OperationKindDto::Copy),
         "core.move" => Some(OperationKindDto::Move),
         "core.rename" => Some(OperationKindDto::Rename),
@@ -3375,6 +3439,7 @@ fn operation_dto(operation: Operation, queue_position: Option<u64>) -> Operation
         id: operation.id.into(),
         operation_type: match operation.kind {
             fm_operations::OperationKind::CreateArchive => OperationKindDto::CreateArchive,
+            fm_operations::OperationKind::MoveToArchive => OperationKindDto::MoveToArchive,
             fm_operations::OperationKind::CreateDirectory => OperationKindDto::CreateDirectory,
             fm_operations::OperationKind::Rename => OperationKindDto::Rename,
             fm_operations::OperationKind::Copy => OperationKindDto::Copy,
@@ -4627,6 +4692,8 @@ mod tests {
             destinations: vec![],
             conflict_policy: OperationConflictPolicyDto::Ask,
             name: None,
+            archive_format: None,
+            archive_compression_level: None,
             create_intermediate_directories: false,
             symlink_policy: Default::default(),
             permanent_delete_confirmed: false,
@@ -4943,6 +5010,8 @@ mod tests {
             destinations: vec![],
             conflict_policy: OperationConflictPolicyDto::Ask,
             name: Some("child".to_owned()),
+            archive_format: None,
+            archive_compression_level: None,
             create_intermediate_directories: false,
             symlink_policy: fm_transport_dto::SymlinkPolicyDto::default(),
             permanent_delete_confirmed: false,

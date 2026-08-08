@@ -72,6 +72,8 @@ export interface StartOperationRequest {
   destinations?: readonly Location[];
   conflictPolicy: ConflictPolicy;
   name?: string;
+  archiveFormat?: 'zip' | 'sevenZip';
+  archiveCompressionLevel?: number;
   createIntermediateDirectories?: boolean;
   symlinkPolicy?: 'copyLink' | 'copyTarget';
   permanentDeleteConfirmed?: boolean;

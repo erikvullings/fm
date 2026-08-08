@@ -165,5 +165,5 @@ the workspace-service tasks; see Step 2b above).
 ## Milestone 5 backlog (§16.5, §37)
 
 - [ ] 0075 Directory comparison and synchronization
-- [ ] 0076 Archive provider: browse, mutate and passwords
+- [x] 0076 Archive provider: browse, mutate and passwords
 - [ ] 0077 Checksums and duplicate-file detection

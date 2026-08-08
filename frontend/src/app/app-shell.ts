@@ -48,6 +48,7 @@ import {
   parentLocation,
 } from '../features/navigation/navigation';
 import { ConflictDialog } from '../features/operations/conflict-dialog';
+import { ArchiveCreateDialog, type ArchiveFormat } from '../features/operations/archive-create-dialog';
 import { CreateDirectoryDialog } from '../features/operations/create-directory-dialog';
 import { MultiRenameDialog } from '../features/operations/multi-rename-dialog';
 import { OperationCentre } from '../features/operations/operation-centre';
@@ -251,6 +252,9 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
   let flushPendingLayoutUpdate: (() => void) | undefined;
   let createDirectoryOpen = false;
   let createDirectoryLocation: Location | undefined;
+  let archiveCreateRequest:
+    | { readonly sources: readonly Location[]; readonly destinationDirectory: Location; readonly moveSources: boolean }
+    | undefined;
   let multiRenameOpen = false;
   let multiRenameEntries: readonly EntrySummary[] = [];
   let multiRenameLocation: Location | undefined;
@@ -1415,10 +1419,10 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
           active === undefined || directory === undefined
             ? undefined
             : {
-                location: active.location,
-                writable: directory.writable === true,
-                loaded: directory.state.type === 'loaded',
-              };
+              location: active.location,
+              writable: directory.writable === true,
+              loaded: directory.state.type === 'loaded',
+            };
         const validation = validatePasteTarget(currentClipboard, target);
         if (!validation.ok) {
           clipboardMessage = validation.message;
@@ -1482,31 +1486,59 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     }
     if (dispatchedAction === 'core.pack') {
       const active = activeDirectory();
+      const selection =
+        active === undefined ? undefined : selections.get(activeTabKey(active.paneId));
+      const directory =
+        active === undefined ? undefined : directories.get(activeTabKey(active.paneId));
+      const selected = directory?.entries.filter(
+        (entry) => selection?.selectedEntryIds.includes(entry.id) === true,
+      );
+      if (selected !== undefined && selected.length > 0 && directory?.location !== undefined) {
+        event.preventDefault();
+        archiveCreateRequest = {
+          sources: selected.map((entry) => entry.location),
+          destinationDirectory: directory.location,
+          moveSources: false,
+        };
+      }
+      return;
+    }
+    if (dispatchedAction === 'core.moveToArchive') {
+      const active = activeDirectory();
       const selection = active === undefined ? undefined : selections.get(activeTabKey(active.paneId));
       const directory = active === undefined ? undefined : directories.get(activeTabKey(active.paneId));
       const selected = directory?.entries.filter((entry) => selection?.selectedEntryIds.includes(entry.id) === true);
       if (selected !== undefined && selected.length > 0 && directory?.location !== undefined) {
         event.preventDefault();
-        void attrsClient.startOperation({
-          type: 'createArchive',
+        archiveCreateRequest = {
           sources: selected.map((entry) => entry.location),
-          destination: { ...directory.location, uri: `${directory.location.uri.replace(/\/$/u, '')}/archive.zip` },
-          conflictPolicy: 'ask',
-        });
+          destinationDirectory: directory.location,
+          moveSources: true,
+        };
       }
       return;
     }
     if (dispatchedAction === 'core.extract') {
       const active = activeDirectory();
-      const selection = active === undefined ? undefined : selections.get(activeTabKey(active.paneId));
-      const directory = active === undefined ? undefined : directories.get(activeTabKey(active.paneId));
+      const selection =
+        active === undefined ? undefined : selections.get(activeTabKey(active.paneId));
+      const directory =
+        active === undefined ? undefined : directories.get(activeTabKey(active.paneId));
       const cursor = selection?.cursorEntryId;
       const selected = directory?.entries.filter((entry) => entry.id === cursor);
       const otherPaneId = workspace?.paneOrder.find((paneId) => paneId !== active?.paneId);
-      const destination = otherPaneId === undefined ? undefined : directories.get(activeTabKey(otherPaneId))?.location;
+      const destination =
+        otherPaneId === undefined
+          ? undefined
+          : directories.get(activeTabKey(otherPaneId))?.location;
       if (selected !== undefined && selected.length === 1 && destination !== undefined) {
         event.preventDefault();
-        void attrsClient.startOperation({ type: 'copy', sources: [selected[0].location], destination, conflictPolicy: 'ask' });
+        void attrsClient.startOperation({
+          type: 'copy',
+          sources: [selected[0].location],
+          destination,
+          conflictPolicy: 'ask',
+        });
       }
       return;
     }
@@ -2068,11 +2100,11 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       tab === undefined || key === undefined
         ? directory.entries
         : entriesSortedFor(
-            key,
-            directory.entries,
-            effectiveSort(tab.view.sort),
-            tab.view.foldersFirst,
-          );
+          key,
+          directory.entries,
+          effectiveSort(tab.view.sort),
+          tab.view.foldersFirst,
+        );
     const quickFilterQuery = key === undefined ? '' : quickFilterQueryFor(key, tab);
     const filtered = key === undefined ? sorted : entriesFilteredFor(key, sorted, quickFilterQuery);
     const entries =
@@ -2835,6 +2867,29 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
                 .catch(() => {
                   pendingCreatedLocation = undefined;
                 });
+            },
+          }),
+          m(ArchiveCreateDialog, {
+            open: archiveCreateRequest !== undefined,
+            moveSources: archiveCreateRequest?.moveSources ?? false,
+            onCancel: () => {
+              archiveCreateRequest = undefined;
+            },
+            onConfirm: (name: string, format: ArchiveFormat, compressionLevel?: number) => {
+              const request = archiveCreateRequest;
+              if (request === undefined) return;
+              archiveCreateRequest = undefined;
+              void attrs.client.startOperation({
+                type: request.moveSources ? 'moveToArchive' : 'createArchive',
+                sources: request.sources,
+                destination: {
+                  ...request.destinationDirectory,
+                  uri: `${request.destinationDirectory.uri.replace(/\/$/u, '')}/${encodeURIComponent(name)}`,
+                },
+                conflictPolicy: 'ask',
+                archiveFormat: format,
+                archiveCompressionLevel: compressionLevel,
+              });
             },
           }),
           m(MultiRenameDialog, {

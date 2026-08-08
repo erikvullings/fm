@@ -16,21 +16,21 @@ Use format-specific, permissively licensed Rust libraries behind `fm-archive`:
   legacy ZipCrypto interoperability;
 - `sevenz-rust2` (MIT) for 7z browsing, creation and AES support;
 - `tar` (MIT OR Apache-2.0), with Rust compression stream crates, for tar and compressed tar;
-- no UnRAR-derived backend. RAR remains unsupported unless a maintained permissive implementation
-  becomes suitable.
+- `rars` (MIT OR Apache-2.0) for read-only RAR 4/5 browsing and reads. It does not expose safe
+  archive rewriting, so mutation remains unavailable.
 
 The implemented capability matrix is:
 
 | Format | Detection | Browse/read | Passwords | Create/mutate |
 | --- | --- | --- | --- | --- |
 | ZIP | content signature | yes | AES and ZipCrypto read | yes, transactional rewrite |
-| 7z | content signature | yes | AES read | no; typed read-only result |
+| 7z | content signature | yes | AES read | create; existing archives are typed read-only |
 | tar | `ustar` header | yes | not applicable | no; typed read-only result |
 | tar.gz | gzip signature | yes | not applicable | no; typed read-only result |
 | standalone gzip | gzip signature plus decompressed-header check | single member | not applicable | no; typed read-only result |
 | tar.bz2 | bzip2 signature | yes | not applicable | no; typed read-only result |
 | tar.xz | xz signature | yes | not applicable | no; typed read-only result |
-| RAR 4/5 | content signature | no | no | no capabilities advertised |
+| RAR 4/5 | content signature | yes | dependency-supported read | no; typed read-only result |
 
 `fm-archive` exposes a truthful per-format capability matrix. Mutation always creates a complete
 temporary replacement beside the source archive and publishes it atomically; archive-library
@@ -52,8 +52,9 @@ lockfile. Default features not required by the supported matrix are disabled.
 
 ## Consequences
 
-- ZIP and 7z are required; tar-family support is implemented without encryption.
-- RAR files receive a typed unsupported-capability result and no capabilities.
+- ZIP and 7z are creation targets; ZIP is the only mutable archive format. Tar-family support is
+  implemented without encryption.
+- RAR files are browse/read-only; mutations return a typed unsupported-capability result.
 - Feature coverage may differ by format, and UI actions follow advertised capabilities.
 - Synchronous archive codecs run on blocking workers so application async executors remain
   responsive and cancellable at provider-defined safe points.

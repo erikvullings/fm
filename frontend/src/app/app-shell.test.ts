@@ -323,6 +323,10 @@ describe('AppShell', () => {
     input.dispatchEvent(new InputEvent('input', { bubbles: true }));
     input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
 
+    await vi.waitFor(() => expect(root.textContent).toContain('Create archive'));
+    [...root.querySelectorAll<HTMLButtonElement>('button')]
+      .find((button) => button.textContent?.trim() === 'Create')
+      ?.click();
     await vi.waitFor(() => expect(startOperation).toHaveBeenCalledOnce());
     const request = startOperation.mock.calls[0]?.[0];
     expect(request).toMatchObject({
@@ -405,9 +409,39 @@ describe('AppShell', () => {
       new KeyboardEvent('keydown', { key: 'F5', altKey: true, bubbles: true }),
     );
 
+    await vi.waitFor(() => expect(root.textContent).toContain('Create archive'));
+    document
+      .querySelector<HTMLInputElement>('#archive-create-name')
+      ?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
     await vi.waitFor(() => expect(startOperation).toHaveBeenCalledOnce());
     expect(startOperation.mock.calls[0]?.[0]).toMatchObject({
       type: 'createArchive',
+      sources: [{ uri: 'mock:///.env' }],
+      destination: { uri: 'mock:///archive.zip' },
+    });
+  });
+
+  it('moves the selected entries into a ZIP with Alt+Shift+F5', async () => {
+    const client = new MockFileManagerClient();
+    const startOperation = vi.spyOn(client, 'startOperation');
+    m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
+    await vi.waitFor(() => expect(root.textContent).toContain('.env'));
+    const activePane = root.querySelector<HTMLElement>('[data-active="true"] > .fm-pane');
+    const file = [...(activePane?.querySelectorAll<HTMLElement>('.fm-directory-row') ?? [])].find(
+      (row) => row.textContent?.includes('.env'),
+    );
+    file?.click();
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'F5', altKey: true, shiftKey: true, bubbles: true }),
+    );
+
+    await vi.waitFor(() => expect(root.textContent).toContain('Move to archive'));
+    document
+      .querySelector<HTMLInputElement>('#archive-create-name')
+      ?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    await vi.waitFor(() => expect(startOperation).toHaveBeenCalledOnce());
+    expect(startOperation.mock.calls[0]?.[0]).toMatchObject({
+      type: 'moveToArchive',
       sources: [{ uri: 'mock:///.env' }],
       destination: { uri: 'mock:///archive.zip' },
     });

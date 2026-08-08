@@ -10,6 +10,8 @@ export type OperationKindDto = typeof OperationKindDto[keyof typeof OperationKin
 
 
 export const OperationKindDto = {
+  createArchive: 'createArchive',
+  moveToArchive: 'moveToArchive',
   createDirectory: 'createDirectory',
   rename: 'rename',
   copy: 'copy',

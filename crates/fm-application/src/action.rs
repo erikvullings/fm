@@ -311,6 +311,18 @@ fn core_actions(capabilities: PlatformCapabilities) -> Vec<ActionDescriptor> {
             ActionContextRequirements::selection(),
         ),
         core_action(
+            "core.moveToArchive",
+            "Move to Archive",
+            "fileOperations",
+            vec![KeyChord {
+                key: "F5".to_owned(),
+                alt: true,
+                shift: true,
+                ..KeyChord::default()
+            }],
+            ActionContextRequirements::selection(),
+        ),
+        core_action(
             "core.extract",
             "Extract Archive",
             "fileOperations",
@@ -591,6 +603,7 @@ mod tests {
             "core.revealInSystemFileManager",
             "core.copy",
             "core.pack",
+            "core.moveToArchive",
             "core.extract",
             "core.move",
             "core.rename",

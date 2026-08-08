@@ -762,6 +762,7 @@ fn operation_payload(operation: &Operation) -> OperationPayload {
         id: operation.id,
         kind: match operation.kind {
             crate::OperationKind::CreateArchive => OperationKindPayload::CreateArchive,
+            crate::OperationKind::MoveToArchive => OperationKindPayload::MoveToArchive,
             crate::OperationKind::CreateDirectory => OperationKindPayload::CreateDirectory,
             crate::OperationKind::Rename => OperationKindPayload::Rename,
             crate::OperationKind::Copy => OperationKindPayload::Copy,

@@ -94,7 +94,12 @@ export class TauriFileManagerClient implements FileManagerClient {
     workspaceId: WorkspaceId,
     _signal?: AbortSignal,
   ): Promise<WorkspaceProjection> {
-    return workspaceProjectionFromDto(await invoke<WorkspaceDto>('get_workspace', { workspaceId }));
+    return workspaceProjectionFromDto(
+      await invoke<WorkspaceDto>('get_workspace', { workspaceId }),
+      {
+        redirectSessionOnlyTabs: true,
+      },
+    );
   }
 
   renameWorkspace(
@@ -123,6 +128,9 @@ export class TauriFileManagerClient implements FileManagerClient {
   ): Promise<WorkspaceProjection> {
     return workspaceProjectionFromDto(
       await invoke<WorkspaceDto>('open_workspace', { workspaceId }),
+      {
+        redirectSessionOnlyTabs: true,
+      },
     );
   }
 

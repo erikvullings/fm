@@ -37,6 +37,8 @@ async fn create(
                 destinations: vec![],
                 conflict_policy: OperationConflictPolicyDto::Ask,
                 name: Some(name.to_owned()),
+                archive_format: None,
+                archive_compression_level: None,
                 create_intermediate_directories: create_intermediates,
                 symlink_policy: Default::default(),
                 permanent_delete_confirmed: false,

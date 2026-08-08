@@ -22,6 +22,8 @@ fn request(
         destinations: vec![],
         conflict_policy: OperationConflictPolicyDto::Ask,
         name: None,
+        archive_format: None,
+        archive_compression_level: None,
         create_intermediate_directories: false,
         symlink_policy: Default::default(),
         permanent_delete_confirmed: confirmed,

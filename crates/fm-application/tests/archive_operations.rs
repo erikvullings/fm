@@ -40,6 +40,8 @@ async fn run(
                 destinations: vec![],
                 conflict_policy: OperationConflictPolicyDto::Ask,
                 name: None,
+                archive_format: None,
+                archive_compression_level: None,
                 create_intermediate_directories: false,
                 symlink_policy: Default::default(),
                 permanent_delete_confirmed: true,
@@ -204,4 +206,130 @@ async fn selected_files_can_be_packaged_as_zip_or_7z_operations() {
             .expect("created archive is readable");
         assert_eq!(entries.entries[0].name, "report.txt");
     }
+}
+
+#[tokio::test]
+async fn archive_creation_validates_format_and_compression_options() {
+    let root = tempfile::tempdir().expect("temporary root");
+    let source = root.path().join("report.txt");
+    fs::write(&source, b"packed content").expect("write source");
+    let service = service(&root);
+
+    let invalid = service.start_operation(
+        StartOperationRequestDto {
+            operation_type: OperationKindDto::CreateArchive,
+            sources: vec![
+                Location::from_native_path(&source)
+                    .expect("source location")
+                    .into(),
+            ],
+            destination: Some(
+                Location::from_native_path(&root.path().join("reports.7z"))
+                    .expect("destination")
+                    .into(),
+            ),
+            destinations: vec![],
+            conflict_policy: OperationConflictPolicyDto::Ask,
+            name: None,
+            archive_format: Some(fm_transport_dto::ArchiveFormatDto::Zip),
+            archive_compression_level: Some(9),
+            create_intermediate_directories: false,
+            symlink_policy: Default::default(),
+            permanent_delete_confirmed: false,
+            override_read_only: false,
+        },
+        None,
+    );
+    assert!(invalid.is_err(), "mismatched format must be rejected");
+
+    let invalid_level = service.start_operation(
+        StartOperationRequestDto {
+            operation_type: OperationKindDto::CreateArchive,
+            sources: vec![
+                Location::from_native_path(&source)
+                    .expect("source location")
+                    .into(),
+            ],
+            destination: Some(
+                Location::from_native_path(&root.path().join("reports.zip"))
+                    .expect("destination")
+                    .into(),
+            ),
+            destinations: vec![],
+            conflict_policy: OperationConflictPolicyDto::Ask,
+            name: None,
+            archive_format: Some(fm_transport_dto::ArchiveFormatDto::Zip),
+            archive_compression_level: Some(10),
+            create_intermediate_directories: false,
+            symlink_policy: Default::default(),
+            permanent_delete_confirmed: false,
+            override_read_only: false,
+        },
+        None,
+    );
+    assert!(
+        invalid_level.is_err(),
+        "invalid ZIP compression must be rejected"
+    );
+}
+
+#[tokio::test]
+async fn move_to_archive_removes_sources_only_after_a_readable_archive_is_created() {
+    let root = tempfile::tempdir().expect("temporary root");
+    let source = root.path().join("report.txt");
+    fs::write(&source, b"packed content").expect("write source");
+    let archive = root.path().join("reports.zip");
+    let service = service(&root);
+
+    let operation = run(
+        &service,
+        OperationKindDto::MoveToArchive,
+        vec![Location::from_native_path(&source).expect("source location")],
+        Some(Location::from_native_path(&archive).expect("archive location")),
+    )
+    .await;
+
+    assert_eq!(
+        operation.state,
+        OperationStateDto::Completed,
+        "{operation:?}"
+    );
+    assert!(
+        !source.exists(),
+        "source is removed after the archive succeeds"
+    );
+    let provider = fm_archive::ArchiveFileSystemProvider::new();
+    let entries = provider
+        .list(
+            &archive_root(&archive),
+            Default::default(),
+            tokio_util::sync::CancellationToken::new(),
+        )
+        .await
+        .expect("created archive is readable");
+    assert_eq!(entries.entries[0].name, "report.txt");
+}
+
+#[tokio::test]
+async fn archive_creation_never_overwrites_an_existing_archive() {
+    let root = tempfile::tempdir().expect("temporary root");
+    let source = root.path().join("report.txt");
+    let archive = root.path().join("reports.zip");
+    fs::write(&source, b"new content").expect("write source");
+    fs::write(&archive, b"existing archive bytes").expect("write destination");
+    let service = service(&root);
+
+    let operation = run(
+        &service,
+        OperationKindDto::CreateArchive,
+        vec![Location::from_native_path(&source).expect("source location")],
+        Some(Location::from_native_path(&archive).expect("archive location")),
+    )
+    .await;
+
+    assert_eq!(operation.state, OperationStateDto::Failed, "{operation:?}");
+    assert_eq!(
+        fs::read(&archive).expect("read existing archive"),
+        b"existing archive bytes"
+    );
 }
