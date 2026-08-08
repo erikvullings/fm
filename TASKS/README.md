@@ -167,3 +167,33 @@ the workspace-service tasks; see Step 2b above).
 - [ ] 0075 Directory comparison and synchronization
 - [x] 0076 Archive provider: browse, mutate and passwords
 - [ ] 0077 Checksums and duplicate-file detection
+
+## Milestone 6 — OS-integrated locations
+
+These are the quickest wins and deliberately do **not** depend on the remote connection framework.
+
+- [ ] 0101 OS cloud-backed locations
+- [ ] 0102 Mounted network volumes
+
+## Milestone 7 — Remote connection foundation
+
+- [ ] 0103 Remote connection framework
+
+## Milestone 8 — Remote protocols and actions
+
+- [ ] 0104 SFTP provider
+- [ ] 0105 SSH terminal actions *(needs 0103, 0104)*
+- [ ] 0106 FTP and FTPS provider
+- [ ] 0107 External remote desktop launch
+
+## Milestone 9 — Remote transfer/runtime hardening
+
+- [ ] 0108 Cross-provider transfer planning *(needs 0104, 0106)*
+- [ ] 0109 Remote change tracking *(needs 0104, 0106)*
+
+## Milestone 10 — Optional native providers
+
+OneDrive is already useful through 0101 when exposed by the OS, and SMB through 0102 when mounted by the OS.
+
+- [ ] 0010 Native OneDrive provider *(optional; needs 0103, 0108, 0109)*
+- [ ] 0011 Native SMB provider *(optional; needs 0103, 0108, 0109)*
