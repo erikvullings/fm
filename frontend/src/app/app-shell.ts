@@ -372,9 +372,12 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
   /** Pending confirmation for closing a pane's only remaining tab (spec §37). */
   let closeTabConfirmation: { readonly paneId: PaneId; readonly tabId: TabId } | undefined;
   let platform: SelectionPlatform = 'unknown';
+  let nativeDragOutSupported = false;
+  let nativeDropInProgress = false;
   let draggedLocations: readonly Location[] = [];
   let workspaceRequest: AbortController | undefined;
   let unsubscribeEvents: (() => void) | undefined;
+  let unsubscribeNativeFileDrops: (() => void) | undefined;
   let unsubscribeConnection: (() => void) | undefined;
   let unsubscribeResynchronise: (() => void) | undefined;
   let appState: AppState | undefined;
@@ -877,6 +880,28 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     try {
       const capabilities = await client.getRuntimeCapabilities(workspaceRequest.signal);
       platform = capabilities.platform;
+      nativeDragOutSupported = capabilities.nativeDragOut;
+      if (nativeDragOutSupported && unsubscribeNativeFileDrops === undefined) {
+        unsubscribeNativeFileDrops = await client.subscribeNativeFileDrops((drop) => {
+          draggedLocations = drop.locations;
+          const scale = window.devicePixelRatio || 1;
+          const hit = document.elementFromPoint(drop.position.x / scale, drop.position.y / scale);
+          const target = hit?.closest<HTMLElement>(
+            '.fm-directory-row, .fm-directory-viewport, .fm-pane-tab',
+          );
+          if (target === undefined || target === null) {
+            clipboardMessage = 'Drop files onto a directory pane or tab';
+            m.redraw();
+            return;
+          }
+          nativeDropInProgress = true;
+          try {
+            target.dispatchEvent(new Event('drop', { bubbles: true, cancelable: true }));
+          } finally {
+            nativeDropInProgress = false;
+          }
+        });
+      }
       openTerminalSupported = capabilities.openTerminal;
       nativeIconLoader = capabilities.nativeFileIcons ? new NativeIconLoader(client) : undefined;
       const { loaded, summaries } = await openOrCreateDefaultWorkspace(
@@ -2458,6 +2483,14 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       onContextMenu: (entries, x, y) => openContextMenu(paneId, entries, x, y),
       onDragStart: (draggedEntries, event) => {
         draggedLocations = draggedEntries.map((entry) => entry.location);
+        if (nativeDragOutSupported) {
+          event.preventDefault();
+          void client.startNativeDrag(draggedLocations).catch((error: unknown) => {
+            clipboardMessage = workspaceErrorMessage(error, 'Unable to start native drag');
+            m.redraw();
+          });
+          return;
+        }
         event.dataTransfer?.setData('application/x-fm-locations', 'internal');
         if (event.dataTransfer != null) event.dataTransfer.effectAllowed = 'copyMove';
       },
@@ -2489,7 +2522,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
         const sources = draggedLocations;
         draggedLocations = [];
         void client.startOperation({
-          type: operationForDrop(platform, event),
+          type: nativeDropInProgress ? 'copy' : operationForDrop(platform, event),
           sources,
           destination: target,
           conflictPolicy: 'ask',
@@ -2523,7 +2556,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
         const sources = draggedLocations;
         draggedLocations = [];
         void client.startOperation({
-          type: operationForDrop(platform, event),
+          type: nativeDropInProgress ? 'copy' : operationForDrop(platform, event),
           sources,
           destination: targetTab.location,
           conflictPolicy: 'ask',
@@ -2702,6 +2735,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       autoDismissTimers.clear();
       workspaceRequest?.abort();
       unsubscribeEvents?.();
+      unsubscribeNativeFileDrops?.();
       unsubscribeConnection?.();
       unsubscribeResynchronise?.();
       attrsClient.disconnect();

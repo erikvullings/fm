@@ -42,7 +42,7 @@ import type {
   WorkspaceSummary,
 } from '../../models';
 import { EventStreamSignalRegistry, MutableEventStreamStatus } from '../events/event-stream';
-import type { FileManagerClient } from './file-manager-client';
+import type { FileManagerClient, NativeFileDrop } from './file-manager-client';
 import {
   createGeneratedDirectory,
   GENERATED_DIRECTORY_SIZES,
@@ -63,6 +63,7 @@ const plugins = pluginFixtures as PluginDescriptor[];
 
 export type MockClientMethod =
   | 'getRuntimeCapabilities'
+  | 'startNativeDrag'
   | 'getSettings'
   | 'updateSettings'
   | 'getWorkspace'
@@ -375,6 +376,14 @@ export class MockFileManagerClient implements FileManagerClient {
       serverAdministration: false,
       systemTrash: false,
     }));
+  }
+
+  startNativeDrag(_locations: readonly Location[], signal?: AbortSignal): Promise<void> {
+    return this.perform('startNativeDrag', signal, () => undefined);
+  }
+
+  subscribeNativeFileDrops(_listener: (drop: NativeFileDrop) => void): Promise<Unsubscribe> {
+    return Promise.resolve(() => undefined);
   }
 
   getSettings(signal?: AbortSignal): Promise<Settings> {

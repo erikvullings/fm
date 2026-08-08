@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const invoke = vi.fn();
+const onDragDropEvent = vi.fn();
 
 class MockChannel<T> {
   constructor(public onmessage: (message: T) => void) {}
@@ -9,6 +10,9 @@ class MockChannel<T> {
 vi.mock('@tauri-apps/api/core', () => ({
   Channel: MockChannel,
   invoke: (...args: unknown[]) => invoke(...args),
+}));
+vi.mock('@tauri-apps/api/window', () => ({
+  getCurrentWindow: () => ({ onDragDropEvent }),
 }));
 
 const { TauriFileManagerClient } = await import('./tauri-file-manager-client');
@@ -32,9 +36,55 @@ function fixtureCapabilities() {
 
 afterEach(() => {
   invoke.mockReset();
+  onDragDropEvent.mockReset();
 });
 
 describe('TauriFileManagerClient', () => {
+  describe('startNativeDrag', () => {
+    it('starts a native file drag with the selected locations', async () => {
+      invoke.mockResolvedValue(undefined);
+      const client = new TauriFileManagerClient();
+      const locations = [
+        { providerId: 'local', uri: 'file:///Users/example/report.pdf' },
+        { providerId: 'local', uri: 'file:///Users/example/photos' },
+      ] as const;
+
+      await client.startNativeDrag(locations);
+
+      expect(invoke).toHaveBeenCalledWith('start_native_drag', { locations });
+    });
+  });
+
+  describe('subscribeNativeFileDrops', () => {
+    it('converts dropped OS paths to locations before notifying the app', async () => {
+      const unlisten = vi.fn();
+      let handler: ((event: { payload: object }) => Promise<void>) | undefined;
+      onDragDropEvent.mockImplementation((candidate) => {
+        handler = candidate;
+        return Promise.resolve(unlisten);
+      });
+      invoke.mockResolvedValue([{ providerId: 'local', uri: 'file:///Users/example/report.pdf' }]);
+      const listener = vi.fn();
+
+      await new TauriFileManagerClient().subscribeNativeFileDrops(listener);
+      await handler?.({
+        payload: {
+          type: 'drop',
+          paths: ['/Users/example/report.pdf'],
+          position: { x: 240, y: 120 },
+        },
+      });
+
+      expect(invoke).toHaveBeenCalledWith('native_drag_locations', {
+        paths: ['/Users/example/report.pdf'],
+      });
+      expect(listener).toHaveBeenCalledWith({
+        locations: [{ providerId: 'local', uri: 'file:///Users/example/report.pdf' }],
+        position: { x: 240, y: 120 },
+      });
+    });
+  });
+
   describe('getFileIcon', () => {
     it('converts the Tauri byte array and silently falls back on errors', async () => {
       invoke.mockResolvedValueOnce([0x89, 0x50, 0x4e, 0x47]);

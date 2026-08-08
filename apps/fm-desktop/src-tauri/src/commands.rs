@@ -2,14 +2,14 @@
 //! semantic REST API rather than reproducing HTTP concepts (spec §11).
 //!
 use tauri::ipc::Channel;
-use tauri::{Runtime, State, Window};
+use tauri::{AppHandle, Runtime, State, Window};
 use uuid::Uuid;
 
 use fm_domain::OperationId;
 use fm_transport_dto::{
     ActionDescriptorDto, ActionResultDto, ApplicationErrorDto, ArchiveCredentialRequestDto,
     CreateWorkspaceRequestDto, DirectorySnapshotDto, EntryMetadataDto, EntryMetadataRequest,
-    InvokeActionRequestDto, ListDirectoryRequest, NavigateRequest, OperationDto,
+    InvokeActionRequestDto, ListDirectoryRequest, LocationDto, NavigateRequest, OperationDto,
     PluginDescriptorDto, PluginLogEntryDto, ReadFileRangeRequestDto, ReadFileRangeResponseDto,
     ResolveOperationConflictRequestDto, RuntimeCapabilitiesDto, SearchInFileRequestDto,
     SearchInFileResponseDto, SettingsDto, StartOperationRequestDto, StartSearchRequestDto,
@@ -17,6 +17,109 @@ use fm_transport_dto::{
 };
 
 use crate::{AppState, event_stream::EventSubscriptionRegistry};
+
+#[derive(Debug, thiserror::Error)]
+pub(crate) enum NativeDragError {
+    #[error("native file dragging is unavailable on this platform")]
+    Unsupported,
+    #[error("at least one file is required to start a native drag")]
+    EmptySelection,
+    #[error("cannot drag `{uri}` as a native file: {reason}")]
+    InvalidLocation { uri: String, reason: String },
+    #[error("failed to schedule native drag: {0}")]
+    Schedule(String),
+    #[error("failed to start native drag: {0}")]
+    Start(String),
+}
+
+impl serde::Serialize for NativeDragError {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(&self.to_string())
+    }
+}
+
+fn native_drag_paths(
+    locations: Vec<LocationDto>,
+) -> Result<Vec<std::path::PathBuf>, NativeDragError> {
+    if locations.is_empty() {
+        return Err(NativeDragError::EmptySelection);
+    }
+    locations
+        .into_iter()
+        .map(|dto| {
+            let uri = dto.uri.clone();
+            fm_domain::Location::from(dto)
+                .to_native_path()
+                .map_err(|error| NativeDragError::InvalidLocation {
+                    uri,
+                    reason: error.to_string(),
+                })
+        })
+        .collect()
+}
+
+/// Converts native paths supplied by Finder/Explorer into validated local locations.
+#[tauri::command]
+pub(crate) fn native_drag_locations(
+    paths: Vec<std::path::PathBuf>,
+) -> Result<Vec<LocationDto>, NativeDragError> {
+    if paths.is_empty() {
+        return Err(NativeDragError::EmptySelection);
+    }
+    paths
+        .into_iter()
+        .map(|path| {
+            fm_domain::Location::from_native_path(&path)
+                .map(Into::into)
+                .map_err(|error| NativeDragError::InvalidLocation {
+                    uri: path.display().to_string(),
+                    reason: error.to_string(),
+                })
+        })
+        .collect()
+}
+
+/// Starts a Finder/Explorer file-reference drag from the current desktop window.
+#[tauri::command]
+pub(crate) async fn start_native_drag<R: Runtime>(
+    state: State<'_, AppState>,
+    app: AppHandle<R>,
+    window: Window<R>,
+    locations: Vec<LocationDto>,
+) -> Result<(), NativeDragError> {
+    if !state.service.runtime_capabilities().native_drag_out {
+        return Err(NativeDragError::Unsupported);
+    }
+    let paths = native_drag_paths(locations)?;
+
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    {
+        let (sender, receiver) = tokio::sync::oneshot::channel();
+        app.run_on_main_thread(move || {
+            let result = drag::start_drag(
+                &window,
+                drag::DragItem::Files(paths),
+                drag::Image::Raw(include_bytes!("../icons/32x32.png").to_vec()),
+                |_, _| {},
+                drag::Options::default(),
+            )
+            .map_err(|error| NativeDragError::Start(error.to_string()));
+            let _ = sender.send(result);
+        })
+        .map_err(|error| NativeDragError::Schedule(error.to_string()))?;
+        receiver
+            .await
+            .map_err(|error| NativeDragError::Schedule(error.to_string()))?
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        let _ = (app, window, paths);
+        Err(NativeDragError::Unsupported)
+    }
+}
 
 /// Caches an archive password for the lifetime of this desktop backend session.
 #[tauri::command]
@@ -455,4 +558,58 @@ pub(crate) fn cancel_search(
         .service
         .cancel_search(search_id)
         .map_err(|error| error.into_dto(Uuid::new_v4()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn native_drag_paths_require_a_non_empty_selection() {
+        assert!(matches!(
+            native_drag_paths(Vec::new()),
+            Err(NativeDragError::EmptySelection)
+        ));
+    }
+
+    #[test]
+    fn native_drag_paths_reject_non_local_locations() {
+        let error = native_drag_paths(vec![LocationDto {
+            provider_id: "archive".to_owned(),
+            uri: "archive://local/example.zip!/report.txt".to_owned(),
+        }])
+        .expect_err("archive entries are not native OS files");
+
+        assert!(matches!(error, NativeDragError::InvalidLocation { .. }));
+    }
+
+    #[test]
+    fn native_drag_paths_preserve_awkward_native_paths() {
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let path = directory.path().join("quotes ' and café.txt");
+        let location = fm_domain::Location::from_native_path(&path).expect("local location");
+
+        assert_eq!(
+            native_drag_paths(vec![location.into()]).expect("native path"),
+            vec![path]
+        );
+    }
+
+    #[test]
+    fn native_drag_locations_preserve_awkward_native_paths() {
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let path = directory.path().join("quotes ' and café.txt");
+
+        let locations = native_drag_locations(vec![path.clone()]).expect("local location");
+        let round_trip = fm_domain::Location::from(
+            locations
+                .into_iter()
+                .next()
+                .expect("one converted location"),
+        )
+        .to_native_path()
+        .expect("native path");
+
+        assert_eq!(round_trip, path);
+    }
 }

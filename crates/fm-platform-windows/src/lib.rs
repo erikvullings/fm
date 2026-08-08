@@ -14,9 +14,8 @@ use fm_platform::{
 
 /// Windows implementation of [`PlatformAdapter`].
 ///
-/// Task 0058 only defines the trait and wires this crate in: every method
-/// still delegates to [`FallbackPlatformAdapter`]. Real Explorer/Recycle
-/// Bin/menu integration is task 0060's job.
+/// Native drag-to-Explorer is provided by the Tauri window host. The
+/// remaining methods currently delegate to [`FallbackPlatformAdapter`].
 #[derive(Debug, Clone, Copy, Default)]
 pub struct WindowsPlatformAdapter {
     fallback: FallbackPlatformAdapter,
@@ -32,7 +31,7 @@ impl WindowsPlatformAdapter {
 
 impl PlatformAdapter for WindowsPlatformAdapter {
     fn capabilities(&self) -> PlatformCapabilities {
-        self.fallback.capabilities()
+        self.fallback.capabilities() | PlatformCapabilities::NATIVE_DRAG_OUT
     }
 
     fn file_icon(&self, path: &Path) -> Result<Vec<u8>, PlatformError> {
@@ -99,10 +98,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn capabilities_delegate_to_the_fallback_adapter() {
+    fn capabilities_include_native_drag_out() {
         assert_eq!(
             WindowsPlatformAdapter::new().capabilities(),
-            FallbackPlatformAdapter.capabilities()
+            PlatformCapabilities::NATIVE_DRAG_OUT
         );
     }
 

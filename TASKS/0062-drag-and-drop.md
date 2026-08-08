@@ -1,6 +1,6 @@
 # 0062 Drag and drop within the app and with the OS
 
-Status: done
+Status: in_progress
 Priority: low
 Owner: unassigned
 Agent: unassigned
@@ -51,3 +51,18 @@ from Finder/Explorer) and §33 step 10.
   Typecheck has no new errors; three pre-existing errors remain in archive optional-property test
   data/configuration. `git diff --check` is clean. No CLAUDE.md exists; AGENTS.md needed no change
   because no development contract changed. README documents the new user-facing behavior.
+- 2026-08-08 Codex follow-up: Enabled native file-reference drag-in/out in macOS and Windows Tauri
+  builds. Both platform adapters now advertise `nativeDragOut`; Linux, browser, and mock adapters
+  remain capability-disabled. Drag-out validates provider-neutral locations as local native paths
+  before handing them to `drag-rs` on Tauri's main thread. Tauri window drop events are converted
+  back into validated `Location` values and dispatched through the existing drop validation and
+  operation engine as conflict-safe copies. Added typed desktop errors, teardown-safe frontend
+  subscription handling, and tests for empty/non-local selections, awkward path round trips,
+  Tauri invocation/path conversion, selection handoff, and incoming operation dispatch.
+  `cargo test -p fm-desktop` passes (8 tests), focused native frontend tests pass, relevant Biome
+  checks pass, and Clippy passes for `fm-desktop` and `fm-platform-macos`. Full frontend typecheck
+  still has the same three unrelated pre-existing errors recorded above. A Windows cross-check
+  reaches target-specific compilation but cannot complete on this Mac because the MSVC C headers
+  and toolchain are absent (`lzma-sys`/`mlua-sys`). Interactive Finder and Explorer drag tests have
+  not been performed in this non-interactive environment, so this task is returned to
+  `in_progress` until both manual platform checks are recorded.

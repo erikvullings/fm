@@ -7,9 +7,10 @@
 //! Deliberately unimplemented (capability bits stay unset, per specification
 //! §23/§35): thumbnails, macOS alias resolution (no capability flag exists
 //! for this in [`fm_platform::PlatformCapabilities`]; aliases are simply not
-//! resolved), Quick Look previews, Finder tags, extended attributes and
-//! drag-to-Finder (drag is task 0062). Clipboard file references stay
-//! delegated to the fallback adapter. `open_with_default_application` (task
+//! resolved), Quick Look previews, Finder tags, and extended attributes.
+//! Native drag-to-Finder is provided by the Tauri window host (task 0062),
+//! while clipboard file references stay delegated to the fallback adapter.
+//! `open_with_default_application` (task
 //! 0061) shells out to `open <path>`. `open_with_chooser` (task 0061
 //! follow-up) queries Launch Services (`NSWorkspace
 //! -URLsForApplicationsToOpenURL:`) for the applications capable of opening
@@ -282,6 +283,7 @@ impl PlatformAdapter for MacosPlatformAdapter {
             | PlatformCapabilities::OPEN_TERMINAL
             | PlatformCapabilities::MOUNTED_VOLUMES
             | PlatformCapabilities::NATIVE_MENUS
+            | PlatformCapabilities::NATIVE_DRAG_OUT
             | PlatformCapabilities::OPEN_WITH_DEFAULT_APPLICATION
     }
 
@@ -502,13 +504,13 @@ mod tests {
             PlatformCapabilities::OPEN_TERMINAL,
             PlatformCapabilities::MOUNTED_VOLUMES,
             PlatformCapabilities::NATIVE_MENUS,
+            PlatformCapabilities::NATIVE_DRAG_OUT,
         ] {
             assert!(capabilities.contains(expected), "{expected:?}");
         }
         for unimplemented in [
             PlatformCapabilities::THUMBNAILS,
             PlatformCapabilities::CLIPBOARD_FILE_REFERENCES,
-            PlatformCapabilities::NATIVE_DRAG_OUT,
         ] {
             assert!(!capabilities.contains(unimplemented), "{unimplemented:?}");
         }

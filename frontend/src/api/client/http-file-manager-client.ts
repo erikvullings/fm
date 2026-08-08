@@ -81,7 +81,7 @@ import type { InvokeActionRequestDtoParameters } from '../generated/models/invok
 import type { OperationDto } from '../generated/models/operationDto';
 import type { PluginIconThemeDto } from '../generated/models/pluginIconThemeDto';
 import type { SettingsDto } from '../generated/models/settingsDto';
-import type { FileManagerClient } from './file-manager-client';
+import type { FileManagerClient, NativeFileDrop } from './file-manager-client';
 
 /**
  * HTTP transport adapter, wrapping the Orval-generated client behind
@@ -96,6 +96,14 @@ import type { FileManagerClient } from './file-manager-client';
 export class HttpFileManagerClient implements FileManagerClient {
   private readonly eventStream = new SseEventStream();
   readonly connection = this.eventStream.status;
+
+  startNativeDrag(_locations: readonly FileLocation[], _signal?: AbortSignal): Promise<void> {
+    return Promise.reject(new Error('Native drag is available only in the desktop application'));
+  }
+
+  subscribeNativeFileDrops(_listener: (drop: NativeFileDrop) => void): Promise<Unsubscribe> {
+    return Promise.resolve(() => undefined);
+  }
 
   async cacheArchivePassword(
     request: ArchiveCredentialRequest,

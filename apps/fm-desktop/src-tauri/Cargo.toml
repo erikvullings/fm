@@ -41,11 +41,14 @@ serde_json.workspace = true
 tauri.workspace = true
 tokio.workspace = true
 uuid.workspace = true
+thiserror.workspace = true
 
 [target.'cfg(target_os = "macos")'.dependencies]
+drag.workspace = true
 fm-platform-macos.workspace = true
 
 [target.'cfg(target_os = "windows")'.dependencies]
+drag.workspace = true
 fm-platform-windows.workspace = true
 
 [dev-dependencies]

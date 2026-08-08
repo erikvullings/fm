@@ -13,6 +13,7 @@ import type {
   InvokeActionRequest,
   ListDirectoryRequest,
   LoadEditableFileRequest,
+  Location,
   NavigateRequest,
   Operation,
   OperationId,
@@ -50,6 +51,12 @@ export class NotImplementedError extends Error {
   }
 }
 
+/** A native file-reference drop reported by the desktop window. */
+export interface NativeFileDrop {
+  readonly locations: readonly Location[];
+  readonly position: { readonly x: number; readonly y: number };
+}
+
 /**
  * Transport-neutral file manager API (spec §12). Components must depend only
  * on this interface, never on `fetch`, `EventSource` or Tauri's `invoke`
@@ -58,6 +65,12 @@ export class NotImplementedError extends Error {
 export interface FileManagerClient {
   readonly connection: EventStreamStatusObservable;
   getRuntimeCapabilities(signal?: AbortSignal): Promise<RuntimeCapabilities>;
+
+  /** Starts an OS file-reference drag from the desktop host. */
+  startNativeDrag(locations: readonly Location[], signal?: AbortSignal): Promise<void>;
+
+  /** Subscribes to Finder/Explorer file drops over the desktop window. */
+  subscribeNativeFileDrops(listener: (drop: NativeFileDrop) => void): Promise<Unsubscribe>;
 
   getSettings(signal?: AbortSignal): Promise<Settings>;
 

@@ -129,7 +129,10 @@ separated plain text using the host clipboard.
 Selected rows can also be dragged between panes or onto loaded tabs. Directory rows resolve as the
 destination themselves, invalid/read-only/subtree targets are rejected before drop, and accepted
 drops queue the same conflict-safe copy/move operations as paste (move by default; Option on macOS
-or Control elsewhere copies). Native OS drag-in/out remains hidden while `nativeDragOut` is false.
+or Control elsewhere copies). macOS and Windows desktop builds also exchange file-reference drags
+with Finder and Explorer; incoming native drops copy through the same conflict-safe operation
+engine. Browser and unsupported desktop builds keep this behavior disabled through
+`nativeDragOut`.
 The shared application service now exposes semantic operation start/list/get/cancel/pause/resume
 and conflict-resolution methods through matching Axum REST endpoints and Tauri commands. REST
 starts accept `Idempotency-Key` so retries return the original job rather than queueing duplicates;

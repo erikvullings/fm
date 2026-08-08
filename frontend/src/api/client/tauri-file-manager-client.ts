@@ -1,4 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 
 import type {
   ActionDescriptor,
@@ -15,6 +16,7 @@ import type {
   InvokeActionRequest,
   ListDirectoryRequest,
   LoadEditableFileRequest,
+  Location,
   NavigateRequest,
   Operation,
   OperationId,
@@ -44,7 +46,7 @@ import { TauriEventStream } from '../events/tauri-event-stream';
 import type { DirectorySnapshotDto } from '../generated/models/directorySnapshotDto';
 import type { EntryMetadataDto } from '../generated/models/entryMetadataDto';
 import type { WorkspaceDto } from '../generated/models/workspaceDto';
-import type { FileManagerClient } from './file-manager-client';
+import type { FileManagerClient, NativeFileDrop } from './file-manager-client';
 
 /**
  * Tauri transport adapter, calling `FileManagerService` through `invoke`
@@ -62,6 +64,20 @@ export class TauriFileManagerClient implements FileManagerClient {
 
   async getRuntimeCapabilities(_signal?: AbortSignal): Promise<RuntimeCapabilities> {
     return invoke<RuntimeCapabilities>('get_runtime_capabilities');
+  }
+
+  startNativeDrag(locations: readonly Location[], _signal?: AbortSignal): Promise<void> {
+    return invoke<void>('start_native_drag', { locations });
+  }
+
+  subscribeNativeFileDrops(listener: (drop: NativeFileDrop) => void): Promise<Unsubscribe> {
+    return getCurrentWindow().onDragDropEvent(async ({ payload }) => {
+      if (payload.type !== 'drop') return;
+      const locations = await invoke<Location[]>('native_drag_locations', {
+        paths: payload.paths,
+      });
+      listener({ locations, position: payload.position });
+    });
   }
 
   async getFileIcon(
