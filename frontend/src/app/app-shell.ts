@@ -2722,6 +2722,20 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
               commandIcon(),
             ),
             m(
+              IconButton,
+              {
+                className: 'fm-workspace-switcher-button',
+                'aria-label': `Workspace switcher, current workspace: ${workspace?.name ?? 'none'}`,
+                tooltip: `Switch workspace — current: ${workspace?.name ?? 'none'}`,
+                onclick: () => {
+                  if (workspaceDisclosureElement !== undefined) {
+                    workspaceDisclosureElement.open = !workspaceDisclosureElement.open;
+                  }
+                },
+              },
+              layoutGridIcon(),
+            ),
+            m(
               'details.fm-workspace-disclosure',
               {
                 oncreate: ({ dom }) => {
@@ -2732,20 +2746,6 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
                 },
               },
               [
-                m(
-                  IconButton,
-                  {
-                    className: 'fm-workspace-switcher-button',
-                    'aria-label': `Workspace switcher, current workspace: ${workspace?.name ?? 'none'}`,
-                    tooltip: workspace?.name ?? 'Workspace',
-                    onclick: () => {
-                      if (workspaceDisclosureElement !== undefined) {
-                        workspaceDisclosureElement.open = !workspaceDisclosureElement.open;
-                      }
-                    },
-                  },
-                  layoutGridIcon(),
-                ),
                 m('summary.fm-disclosure-summary-hidden'),
                 m('.fm-workspace-switcher-backdrop', {
                   onclick: (event: MouseEvent) => {
@@ -2787,6 +2787,24 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
               ],
             ),
             m(
+              IconButton,
+              {
+                className: 'fm-settings-button',
+                'aria-label': 'Settings',
+                tooltip: 'Open settings',
+                onclick: () => {
+                  if (settingsDisclosureElement === undefined) return;
+                  settingsDisclosureElement.open = !settingsDisclosureElement.open;
+                  settingsDialogOpen = settingsDisclosureElement.open;
+                  if (!settingsDialogOpen && currentSettings !== undefined) {
+                    applyAppearance(currentSettings);
+                  }
+                  m.redraw();
+                },
+              },
+              settingsIcon(),
+            ),
+            m(
               'details.fm-settings-disclosure',
               {
                 oncreate: ({ dom }) => {
@@ -2797,24 +2815,6 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
                 },
               },
               [
-                m(
-                  IconButton,
-                  {
-                    className: 'fm-settings-button',
-                    'aria-label': 'Settings',
-                    tooltip: 'Settings',
-                    onclick: () => {
-                      if (settingsDisclosureElement === undefined) return;
-                      settingsDisclosureElement.open = !settingsDisclosureElement.open;
-                      settingsDialogOpen = settingsDisclosureElement.open;
-                      if (!settingsDialogOpen && currentSettings !== undefined) {
-                        applyAppearance(currentSettings);
-                      }
-                      m.redraw();
-                    },
-                  },
-                  settingsIcon(),
-                ),
                 m('summary.fm-disclosure-summary-hidden'),
                 m(
                   '.fm-settings-editor',
@@ -3147,7 +3147,18 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
                 runtime: attrs.runtime === 'http' ? 'browser' : 'desktop',
               },
               (action) =>
-                evaluateActionAvailability(action, commandAvailabilityContext()).available,
+                evaluateActionAvailability(
+                  action.id === 'core.edit' || action.id === 'core.view'
+                    ? {
+                        ...action,
+                        contextRequirements: {
+                          ...action.contextRequirements,
+                          featureAvailable: true,
+                        },
+                      }
+                    : action,
+                  commandAvailabilityContext(),
+                ).available,
             ).map((binding) =>
               m(
                 'span.fm-function-key',

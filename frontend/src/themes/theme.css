@@ -15,7 +15,7 @@
   --fm-warning: #8a4b08;
   --fm-success: #18723c;
   --fm-row-height: 20px;
-  --fm-header-height: 26px;
+  --fm-header-height: 20px;
   --fm-font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --fm-font-size: 13px;
   --fm-radius: 4px;
@@ -97,6 +97,7 @@
 }
 
 @media (prefers-color-scheme: dark) {
+
   /*
    * mm's components.css also defines `:root:not([data-theme])` inside this
    * same media query -- that selector has HIGHER specificity than a plain
@@ -246,7 +247,7 @@ main.fm-workspace {
 
 .fm-workspace-toolbar {
   position: relative;
-  gap: 0.35rem;
+  gap: 0rem;
   font-size: 0.92em;
 }
 
@@ -274,7 +275,7 @@ main.fm-workspace {
   font-weight: 700;
 }
 
-.fm-workspace-toolbar > span {
+.fm-workspace-toolbar>span {
   margin-left: auto;
   color: var(--fm-text-muted);
 }
@@ -313,7 +314,7 @@ main.fm-workspace {
 }
 
 .fm-navigation-controls button,
-.fm-workspace-toolbar > button,
+.fm-workspace-toolbar>button,
 .fm-settings-button,
 .fm-settings-editor button {
   display: inline-flex;
@@ -329,7 +330,7 @@ main.fm-workspace {
 }
 
 .fm-navigation-controls button:hover:not(:disabled),
-.fm-workspace-toolbar > button:hover:not(:disabled),
+.fm-workspace-toolbar>button:hover:not(:disabled),
 .fm-settings-button:hover,
 .fm-settings-editor button:hover:not(:disabled) {
   background: var(--fm-hover);
@@ -368,14 +369,14 @@ main.fm-workspace {
 }
 
 .fm-settings-disclosure {
-  position: relative;
+  display: contents;
 }
 
 .fm-settings-button {
   display: flex;
   min-height: var(--fm-row-height);
   align-items: center;
-  cursor: default;
+  cursor: pointer;
   list-style: none;
 }
 
@@ -400,7 +401,7 @@ main.fm-workspace {
 }
 
 .fm-workspace-disclosure {
-  position: relative;
+  display: contents;
 }
 
 .fm-workspace-switcher-button {
@@ -408,15 +409,9 @@ main.fm-workspace {
   min-height: var(--fm-row-height);
   align-items: center;
   gap: 0.3rem;
-  cursor: default;
+  cursor: pointer;
   list-style: none;
   max-width: 12rem;
-}
-
-.fm-workspace-switcher-button::after {
-  content: "▾";
-  color: var(--fm-text-muted);
-  font-size: 0.7rem;
 }
 
 .fm-workspace-switcher-button::-webkit-details-marker {
@@ -597,7 +592,7 @@ input[type="text"].fm-command-palette-input {
   padding: 0.55rem 1rem;
 }
 
-.fm-command-palette-results li > span {
+.fm-command-palette-results li>span {
   display: grid;
   gap: 0.15rem;
 }
@@ -864,6 +859,7 @@ input[type="text"].fm-command-palette-input {
   font-size: 1.1rem;
   font-weight: 600;
 }
+
 /* biome-ignore-end lint/complexity/noImportantStyles: overrides ModalPanel's inline title margin */
 
 /*
@@ -887,6 +883,7 @@ input[type="text"].fm-command-palette-input {
 .modal.fm-dense-modal .modal-footer {
   padding: 0.4rem 0.6rem !important;
 }
+
 /* biome-ignore-end lint/complexity/noImportantStyles: overrides ModalPanel's inline styles */
 
 .fm-create-directory-field {
@@ -931,6 +928,7 @@ input[type="text"].fm-command-palette-input {
 .modal.fm-find-files-modal {
   max-width: min(42rem, calc(100vw - 2rem)) !important;
 }
+
 /* biome-ignore-end lint/complexity/noImportantStyles: overrides ModalPanel's inline styles */
 
 .fm-find-files-body {
@@ -968,7 +966,7 @@ input[type="text"].fm-command-palette-input {
   background: var(--fm-selection);
 }
 
-.fm-find-files-results li > span {
+.fm-find-files-results li>span {
   display: grid;
   gap: 0.1rem;
   overflow: hidden;
@@ -1028,13 +1026,14 @@ input[type="text"].fm-command-palette-input {
    this lets the whole rules+preview area scroll together as one unit instead of letting the
    preview list's floor render past this wrapper's edge and overlap the (always flex-fixed)
    footer below.  */
-.modal.fm-multi-rename-modal .modal-content > div {
+.modal.fm-multi-rename-modal .modal-content>div {
   display: flex;
   flex-direction: column;
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
 }
+
 /* biome-ignore-end lint/complexity/noImportantStyles: overrides ModalPanel's inline styles */
 
 .fm-multi-rename-body {
@@ -1110,6 +1109,7 @@ input[type="text"].fm-command-palette-input {
 .modal.fm-conflict-dialog {
   max-width: min(30rem, calc(100vw - 2rem)) !important;
 }
+
 /* biome-ignore-end lint/complexity/noImportantStyles: overrides ModalPanel's inline styles */
 
 .fm-conflict-dialog-entries {
@@ -1138,23 +1138,20 @@ input[type="text"].fm-command-palette-input {
 }
 
 /* Match the row-height inputs; box uses border-box so its 18px footprint fits inside. */
-.fm-app-shell .fm-conflict-dialog-checkbox input[type="checkbox"] + span:not(.lever) {
+.fm-app-shell .fm-conflict-dialog-checkbox input[type="checkbox"]+span:not(.lever) {
   height: 20px;
   line-height: 20px;
   padding-left: 24px;
 }
 
 /* Recolors mm's checkbox to theme tokens; see the multi-rename checkbox rules above. */
-.fm-app-shell .fm-conflict-dialog-checkbox input[type="checkbox"] + span:not(.lever)::before {
+.fm-app-shell .fm-conflict-dialog-checkbox input[type="checkbox"]+span:not(.lever)::before {
   box-sizing: border-box;
   margin-top: 1px;
   border-color: var(--fm-border);
 }
 
-.fm-app-shell
-  .fm-conflict-dialog-checkbox
-  input[type="checkbox"]:checked
-  + span:not(.lever)::before {
+.fm-app-shell .fm-conflict-dialog-checkbox input[type="checkbox"]:checked+span:not(.lever)::before {
   top: 0;
   left: 0;
   width: 18px;
@@ -1166,10 +1163,7 @@ input[type="text"].fm-command-palette-input {
   transform: none;
 }
 
-.fm-app-shell
-  .fm-conflict-dialog-checkbox
-  input[type="checkbox"]:checked
-  + span:not(.lever)::after {
+.fm-app-shell .fm-conflict-dialog-checkbox input[type="checkbox"]:checked+span:not(.lever)::after {
   content: "";
   position: absolute;
   top: 1px;

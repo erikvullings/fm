@@ -771,6 +771,31 @@ describe('AppShell', () => {
     expect(footerKey).not.toBeUndefined();
   });
 
+  it('keeps F4 Edit in the footer when only the OS-edit fallback is unavailable in the browser', async () => {
+    const client = new MockFileManagerClient();
+    vi.spyOn(client, 'listActions').mockResolvedValue([
+      {
+        id: 'core.edit',
+        title: 'Edit',
+        category: 'fileOperations',
+        defaultShortcuts: [{ key: 'F4' }],
+        contextRequirements: {
+          requiresSelection: true,
+          requiresSingleSelection: true,
+          featureAvailable: false,
+        },
+        source: { kind: 'core' },
+      },
+    ]);
+    m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
+    await vi.waitFor(() => expect(root.textContent).toContain('.env'));
+
+    const footerKey = [...root.querySelectorAll<HTMLElement>('.fm-function-key')].find((span) =>
+      span.textContent?.includes('F4 Edit'),
+    );
+    expect(footerKey).not.toBeUndefined();
+  });
+
   it('shows a friendly toast instead of an error for the Alt+F3 OS-open fallback when it is unavailable in the browser', async () => {
     const client = new MockFileManagerClient();
     vi.spyOn(client, 'listActions').mockResolvedValue([
@@ -2257,7 +2282,7 @@ describe('workspace management (task 0084)', () => {
     await vi.waitFor(() =>
       expect(
         root.querySelector('.fm-workspace-switcher-button')?.getAttribute('data-tooltip'),
-      ).toBe('Bravo'),
+      ).toBe('Switch workspace — current: Bravo'),
     );
     await vi.waitFor(() => expect(row(root, second.id)?.getAttribute('data-active')).toBe('true'));
   });
@@ -2291,7 +2316,7 @@ describe('workspace management (task 0084)', () => {
     await vi.waitFor(() =>
       expect(
         root.querySelector('.fm-workspace-switcher-button')?.getAttribute('data-tooltip'),
-      ).toBe('Default'),
+      ).toBe('Switch workspace — current: Default'),
     );
   });
 
@@ -2318,7 +2343,7 @@ describe('workspace management (task 0084)', () => {
     await vi.waitFor(() =>
       expect(
         root.querySelector('.fm-workspace-switcher-button')?.getAttribute('data-tooltip'),
-      ).toBe('Renamed workspace'),
+      ).toBe('Switch workspace — current: Renamed workspace'),
     );
   });
 
@@ -2367,7 +2392,7 @@ describe('workspace management (task 0084)', () => {
     await vi.waitFor(() =>
       expect(
         root.querySelector('.fm-workspace-switcher-button')?.getAttribute('data-tooltip'),
-      ).toBe('Bravo'),
+      ).toBe('Switch workspace — current: Bravo'),
     );
     expect(root.textContent).toContain('copy · running');
     expect(cancelOperation).not.toHaveBeenCalled();
