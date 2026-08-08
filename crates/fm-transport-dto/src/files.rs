@@ -60,6 +60,56 @@ pub struct ReadFileRangeResponseDto {
     pub probably_binary: Option<bool>,
 }
 
+/// Loads one complete, bounded text file for editing (task 0099).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct LoadEditableFileRequestDto {
+    /// File to load.
+    pub location: LocationDto,
+}
+
+/// Complete UTF-8 content plus its optimistic revision token.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct LoadEditableFileResponseDto {
+    /// Editable UTF-8 text.
+    pub content: String,
+    /// Opaque token representing the exact bytes loaded.
+    pub revision: String,
+    /// Exact byte length at load time.
+    pub size: u64,
+}
+
+/// Atomically replaces a text file after an optimistic revision check.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SaveEditableFileRequestDto {
+    /// File to replace.
+    pub location: LocationDto,
+    /// Optional new destination used by explicit Save As conflict resolution.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub destination: Option<LocationDto>,
+    /// New UTF-8 content.
+    pub content: String,
+    /// Revision returned by the last load/save.
+    pub expected_revision: String,
+    /// Explicitly permits replacing content that changed since load.
+    #[serde(default)]
+    pub overwrite_conflict: bool,
+}
+
+/// Result of an atomic editable-file save.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SaveEditableFileResponseDto {
+    /// Revision of the saved bytes.
+    pub revision: String,
+    /// Saved UTF-8 byte length.
+    pub size: u64,
+    /// Whether an explicit stale-content overwrite occurred.
+    pub overwrote_conflict: bool,
+}
+
 /// Searches for a substring or regex within a single file's content
 /// (`POST /api/v1/files/search`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]

@@ -2,6 +2,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::fs;
+use std::hash::{Hash, Hasher};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicU64;
@@ -36,16 +37,19 @@ use fm_settings::{
 use fm_transport_dto::{
     ActionDescriptorDto, ActionResultDto, ArchiveFormatDto, ConflictPolicyDto,
     ConflictResolutionDto, DateFormatDto, DefaultPaneLayoutDto, EntryMetadataRequest,
-    InvokeActionRequestDto, ListDirectoryRequest, NavigateRequest, OperationConflictPolicyDto,
-    OperationDto, OperationKindDto, OperationProgressDto, OperationStateDto, PlatformKindDto,
-    PluginLogEntryDto, PluginPermissionsDto, ReadFileRangeRequestDto, ReadFileRangeResponseDto,
+    InvokeActionRequestDto, ListDirectoryRequest, LoadEditableFileRequestDto,
+    LoadEditableFileResponseDto, NavigateRequest, OperationConflictPolicyDto, OperationDto,
+    OperationKindDto, OperationProgressDto, OperationStateDto, PlatformKindDto, PluginLogEntryDto,
+    PluginPermissionsDto, ReadFileRangeRequestDto, ReadFileRangeResponseDto,
     ResolveOperationConflictRequestDto, RuntimeCapabilitiesDto, RuntimeKindDto,
-    SearchInFileMatchDto, SearchInFileRequestDto, SearchInFileResponseDto, SettingsDto,
-    SizeFormatDto, StartOperationRequestDto, StartSearchRequestDto, StartSearchResponseDto,
-    ThemeDto, WorkspaceCommandDto, WorkspaceDto, WorkspaceSummaryDto,
+    SaveEditableFileRequestDto, SaveEditableFileResponseDto, SearchInFileMatchDto,
+    SearchInFileRequestDto, SearchInFileResponseDto, SettingsDto, SizeFormatDto,
+    StartOperationRequestDto, StartSearchRequestDto, StartSearchResponseDto, ThemeDto,
+    WorkspaceCommandDto, WorkspaceDto, WorkspaceSummaryDto,
 };
 use fm_vfs::{
-    EntryRef, FileSystemProvider, ProviderCapabilities, ProviderReadStream, ProviderRegistry,
+    CopyCommitOptions, EntryRef, FileSystemProvider, ProviderCapabilities, ProviderReadStream,
+    ProviderRegistry, WriteOptions,
 };
 use fm_vfs_local::LocalFileSystemProvider;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -92,6 +96,14 @@ pub struct FileManagerService {
 const OPERATION_HISTORY_FILE_NAME: &str = "operation-history.json";
 const OPERATION_HISTORY_MAX_ENTRIES: usize = 100;
 const OPERATION_HISTORY_MAX_AGE_DAYS: i64 = 30;
+/// Whole-file editor ceiling. Large files remain on task 0088's ranged viewer path.
+pub(crate) const MAX_EDITABLE_FILE_BYTES: u64 = 3 * 1024 * 1024;
+
+fn content_revision(bytes: &[u8]) -> String {
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    bytes.hash(&mut hasher);
+    format!("{:016x}", hasher.finish())
+}
 
 /// Crash-safe operation snapshots stored beside settings.
 struct OperationHistory {
@@ -1483,6 +1495,203 @@ impl FileManagerService {
             data,
             eof,
             probably_binary,
+        })
+    }
+
+    /// Loads a complete text file only when it fits the bounded editor budget.
+    pub async fn load_editable_file(
+        &self,
+        request: LoadEditableFileRequestDto,
+    ) -> Result<LoadEditableFileResponseDto, ApplicationError> {
+        let location: Location = request.location.into();
+        let provider = self
+            .providers
+            .resolve(&location)
+            .map_err(ApplicationError::from)?;
+        let capabilities = provider
+            .capabilities_for(&location)
+            .map_err(ApplicationError::from)?;
+        capabilities
+            .require(ProviderCapabilities::READ)
+            .map_err(ApplicationError::from)?;
+        let entry = EntryRef {
+            id: EntryId::new(),
+            location,
+        };
+        let cancellation = CancellationToken::new();
+        let summary = provider
+            .inspect(&entry, cancellation.clone())
+            .await
+            .map_err(ApplicationError::from)?;
+        if summary.kind != EntryKind::File {
+            return Err(ApplicationError::InvalidRequest(
+                "only regular files can be edited".to_owned(),
+            ));
+        }
+        let size = provider
+            .file_size(&entry, cancellation.clone())
+            .await
+            .map_err(ApplicationError::from)?;
+        if size > MAX_EDITABLE_FILE_BYTES {
+            return Err(ApplicationError::InvalidRequest(format!(
+                "file is too large for the editor ({size} bytes; limit is {MAX_EDITABLE_FILE_BYTES}); use the large-file viewer or external editor"
+            )));
+        }
+        let mut reader = provider
+            .open_read(&entry, cancellation)
+            .await
+            .map_err(ApplicationError::from)?;
+        let mut bytes = Vec::with_capacity(size as usize);
+        reader
+            .read_to_end(&mut bytes)
+            .await
+            .map_err(read_stream_error)?;
+        if fm_vfs::looks_like_binary(&bytes) {
+            return Err(ApplicationError::InvalidRequest(
+                "binary files cannot be edited in-app; use the external editor".to_owned(),
+            ));
+        }
+        let content = String::from_utf8(bytes.clone()).map_err(|_| {
+            ApplicationError::InvalidRequest(
+                "the file is not valid UTF-8; use the external editor".to_owned(),
+            )
+        })?;
+        Ok(LoadEditableFileResponseDto {
+            content,
+            revision: content_revision(&bytes),
+            size,
+        })
+    }
+
+    /// Safely replaces editable content through a sibling temporary file and optimistic revision.
+    pub async fn save_editable_file(
+        &self,
+        request: SaveEditableFileRequestDto,
+    ) -> Result<SaveEditableFileResponseDto, ApplicationError> {
+        let location: Location = request.location.into();
+        let destination: Option<Location> = request.destination.map(Into::into);
+        let provider = self
+            .providers
+            .resolve(&location)
+            .map_err(ApplicationError::from)?;
+        let capabilities = provider
+            .capabilities_for(&location)
+            .map_err(ApplicationError::from)?;
+        capabilities
+            .require(ProviderCapabilities::READ | ProviderCapabilities::WRITE)
+            .map_err(ApplicationError::from)?;
+        let entry = EntryRef {
+            id: EntryId::new(),
+            location: location.clone(),
+        };
+        let cancellation = CancellationToken::new();
+        let summary = provider
+            .inspect(&entry, cancellation.clone())
+            .await
+            .map_err(ApplicationError::from)?;
+        if summary.kind != EntryKind::File {
+            return Err(ApplicationError::InvalidRequest(
+                "symlinks and non-files cannot be replaced by the editor".to_owned(),
+            ));
+        }
+        let existing_size = provider
+            .file_size(&entry, cancellation.clone())
+            .await
+            .map_err(ApplicationError::from)?;
+        if existing_size > MAX_EDITABLE_FILE_BYTES {
+            return Err(ApplicationError::InvalidRequest(format!(
+                "file is too large for the editor ({existing_size} bytes; limit is {MAX_EDITABLE_FILE_BYTES})"
+            )));
+        }
+        let mut reader = provider
+            .open_read(&entry, cancellation.clone())
+            .await
+            .map_err(ApplicationError::from)?;
+        let mut existing = Vec::new();
+        reader
+            .read_to_end(&mut existing)
+            .await
+            .map_err(read_stream_error)?;
+        let actual_revision = content_revision(&existing);
+        let conflicted = actual_revision != request.expected_revision;
+        if conflicted && !request.overwrite_conflict {
+            return Err(ApplicationError::FileRevisionConflict {
+                expected_revision: request.expected_revision,
+                actual_revision,
+            });
+        }
+        let bytes = request.content.into_bytes();
+        if bytes.len() as u64 > MAX_EDITABLE_FILE_BYTES {
+            return Err(ApplicationError::InvalidRequest(format!(
+                "edited content exceeds the {MAX_EDITABLE_FILE_BYTES}-byte limit"
+            )));
+        }
+        let save_location = destination.as_ref().unwrap_or(&location);
+        let parent = save_location
+            .parent()
+            .map_err(|error| ApplicationError::InvalidRequest(error.to_string()))?
+            .ok_or_else(|| {
+                ApplicationError::InvalidRequest("cannot edit a filesystem root".to_owned())
+            })?;
+        let temporary = parent
+            .join(&format!(".fm-edit-{}.tmp", Uuid::new_v4()))
+            .map_err(|error| ApplicationError::InvalidRequest(error.to_string()))?;
+        let mut writer = provider
+            .open_write(
+                &temporary,
+                WriteOptions { overwrite: false },
+                cancellation.clone(),
+            )
+            .await
+            .map_err(ApplicationError::from)?;
+        if let Err(error) = writer.write_all(&bytes).await {
+            drop(writer);
+            let _ = provider
+                .discard_copy(&temporary, cancellation.clone())
+                .await;
+            return Err(read_stream_error(error));
+        }
+        if let Err(error) = writer.shutdown().await {
+            drop(writer);
+            let _ = provider
+                .discard_copy(&temporary, cancellation.clone())
+                .await;
+            return Err(read_stream_error(error));
+        }
+        drop(writer);
+        provider
+            .commit_copy(
+                &entry,
+                &temporary,
+                save_location,
+                CopyCommitOptions {
+                    overwrite: destination.is_none(),
+                    preserve_metadata: true,
+                },
+                cancellation,
+            )
+            .await
+            .map_err(ApplicationError::from)?;
+        if conflicted {
+            if let Some(parent) = self.audit_log_path.parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            let _ = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&self.audit_log_path)
+                .and_then(|mut file| {
+                    writeln!(
+                        file,
+                        "explicit editable-file overwrite uri={}",
+                        save_location.uri
+                    )
+                });
+        }
+        Ok(SaveEditableFileResponseDto {
+            revision: content_revision(&bytes),
+            size: bytes.len() as u64,
+            overwrote_conflict: conflicted,
         })
     }
 
@@ -4226,6 +4435,131 @@ mod tests {
                 .await,
             Err(ApplicationError::InvalidRequest(_))
         ));
+    }
+
+    #[tokio::test]
+    async fn editable_file_save_uses_revision_and_preserves_external_changes() {
+        let (dir, service) = service();
+        let target = dir.path().join("note.json");
+        std::fs::write(&target, b"{\"value\":1}").expect("write fixture file");
+        let location = location_dto_for(&target);
+        let loaded = service
+            .load_editable_file(LoadEditableFileRequestDto {
+                location: location.clone(),
+            })
+            .await
+            .expect("editable load must succeed");
+        assert_eq!(loaded.content, "{\"value\":1}");
+
+        std::fs::write(&target, b"external").expect("simulate external edit");
+        let result = service
+            .save_editable_file(SaveEditableFileRequestDto {
+                location,
+                destination: None,
+                content: "editor".to_owned(),
+                expected_revision: loaded.revision,
+                overwrite_conflict: false,
+            })
+            .await;
+        assert!(matches!(
+            result,
+            Err(ApplicationError::FileRevisionConflict { .. })
+        ));
+        assert_eq!(
+            std::fs::read_to_string(&target).expect("read target"),
+            "external"
+        );
+    }
+
+    #[tokio::test]
+    async fn editable_file_explicit_overwrite_is_reported_and_audited() {
+        let (dir, service) = service();
+        let target = dir.path().join("note.txt");
+        std::fs::write(&target, b"one").expect("write fixture file");
+        let location = location_dto_for(&target);
+        let loaded = service
+            .load_editable_file(LoadEditableFileRequestDto {
+                location: location.clone(),
+            })
+            .await
+            .expect("load");
+        std::fs::write(&target, b"two").expect("external edit");
+        let saved = service
+            .save_editable_file(SaveEditableFileRequestDto {
+                location,
+                destination: None,
+                content: "three".to_owned(),
+                expected_revision: loaded.revision,
+                overwrite_conflict: true,
+            })
+            .await
+            .expect("explicit overwrite");
+        assert!(saved.overwrote_conflict);
+        assert_eq!(
+            std::fs::read_to_string(&target).expect("read target"),
+            "three"
+        );
+        let audit =
+            std::fs::read_to_string(dir.path().join("settings/audit.jsonl")).expect("audit log");
+        assert!(audit.contains("note.txt"));
+    }
+
+    #[tokio::test]
+    async fn editable_file_load_rejects_binary_and_oversized_files() {
+        let (dir, service) = service();
+        let binary = dir.path().join("binary.txt");
+        std::fs::write(&binary, [1, 0, 2]).expect("write binary fixture");
+        assert!(
+            service
+                .load_editable_file(LoadEditableFileRequestDto {
+                    location: location_dto_for(&binary)
+                })
+                .await
+                .is_err()
+        );
+        let large = dir.path().join("large.txt");
+        std::fs::File::create(&large)
+            .expect("create large fixture")
+            .set_len(MAX_EDITABLE_FILE_BYTES + 1)
+            .expect("size fixture");
+        assert!(matches!(
+            service
+                .load_editable_file(LoadEditableFileRequestDto {
+                    location: location_dto_for(&large)
+                })
+                .await,
+            Err(ApplicationError::InvalidRequest(_))
+        ));
+    }
+
+    #[tokio::test]
+    async fn editable_file_save_as_creates_a_sibling_without_changing_the_source() {
+        let (dir, service) = service();
+        let source = dir.path().join("source.txt");
+        let destination = dir.path().join("copy.txt");
+        std::fs::write(&source, b"source").expect("write fixture");
+        let location = location_dto_for(&source);
+        let loaded = service
+            .load_editable_file(LoadEditableFileRequestDto {
+                location: location.clone(),
+            })
+            .await
+            .expect("load");
+        service
+            .save_editable_file(SaveEditableFileRequestDto {
+                location,
+                destination: Some(location_dto_for(&destination)),
+                content: "copy".to_owned(),
+                expected_revision: loaded.revision,
+                overwrite_conflict: false,
+            })
+            .await
+            .expect("save as");
+        assert_eq!(std::fs::read_to_string(source).expect("source"), "source");
+        assert_eq!(
+            std::fs::read_to_string(destination).expect("destination"),
+            "copy"
+        );
     }
 
     #[tokio::test]

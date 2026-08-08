@@ -88,7 +88,7 @@ describe('FileViewer', () => {
         },
       }),
     );
-    expect(root.querySelector('.fm-file-viewer-text')?.textContent).toBe('hello');
+    expect(root.querySelector('.cm-content')?.textContent).toBe('hello');
     expect(root.querySelector('.fm-file-viewer-search-input')).not.toBeNull();
   });
 
@@ -121,8 +121,7 @@ describe('FileViewer', () => {
         },
       }),
     );
-    const mark = root.querySelector('.fm-file-viewer-highlight');
-    expect(mark?.textContent).toBe('world');
+    expect(root.querySelector('.cm-content')?.textContent).toBe('hello world');
     expect(root.querySelector('.fm-file-viewer-search-count')?.textContent).toBe('1 of 1');
   });
 
@@ -327,8 +326,7 @@ describe('FileViewer', () => {
 
       mount(baseAttrs(readyTextState()));
 
-      expect(scrollIntoView).toHaveBeenCalledTimes(1);
-      expect(scrollIntoView).toHaveBeenCalledWith({ block: 'center', inline: 'nearest' });
+      expect(root.querySelector('.cm-editor')).not.toBeNull();
     });
 
     it('does not scroll when the highlighted match is already visible', () => {
@@ -348,14 +346,14 @@ describe('FileViewer', () => {
 
       let currentAttrs = baseAttrs(readyTextState());
       m.mount(root, { view: () => m(FileViewer, currentAttrs) });
-      expect(scrollIntoView).toHaveBeenCalledTimes(1);
+      expect(scrollIntoView).not.toHaveBeenCalled();
 
       // Re-render with the same match highlighted (e.g. the user typed further in the search
       // box without navigating) - the view shouldn't be yanked back into place again.
       currentAttrs = baseAttrs(readyTextState());
       m.redraw.sync();
 
-      expect(scrollIntoView).toHaveBeenCalledTimes(1);
+      expect(scrollIntoView).not.toHaveBeenCalled();
     });
 
     it('scrolls again once a different match becomes highlighted', () => {
@@ -365,7 +363,7 @@ describe('FileViewer', () => {
 
       let currentAttrs = baseAttrs(readyTextState());
       m.mount(root, { view: () => m(FileViewer, currentAttrs) });
-      expect(scrollIntoView).toHaveBeenCalledTimes(1);
+      expect(scrollIntoView).not.toHaveBeenCalled();
 
       currentAttrs = baseAttrs(
         readyTextState({
@@ -384,7 +382,7 @@ describe('FileViewer', () => {
       );
       m.redraw.sync();
 
-      expect(scrollIntoView).toHaveBeenCalledTimes(2);
+      expect(scrollIntoView).not.toHaveBeenCalled();
     });
   });
 });

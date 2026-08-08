@@ -60,6 +60,7 @@ fn status_for(error: &ApplicationError) -> StatusCode {
             StatusCode::BAD_REQUEST
         }
         ApplicationError::WorkspaceRevisionConflict { .. } => StatusCode::CONFLICT,
+        ApplicationError::FileRevisionConflict { .. } => StatusCode::CONFLICT,
         ApplicationError::ActionNotFound(_) => StatusCode::NOT_FOUND,
         ApplicationError::ActionUnavailable(_) => StatusCode::CONFLICT,
         ApplicationError::PlatformOperationFailed(_) => StatusCode::BAD_GATEWAY,

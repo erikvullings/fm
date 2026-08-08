@@ -30,6 +30,8 @@ pub enum ApplicationErrorCode {
     /// A workspace mutation's `expected_revision` no longer matches the
     /// stored revision (spec §5.3.10).
     WorkspaceRevisionConflict,
+    /// A file changed after its editable content was loaded.
+    FileRevisionConflict,
     /// No action is registered with the requested id (spec §18).
     ActionNotFound,
     /// The action is registered but not currently invokable (spec §18).
@@ -119,6 +121,7 @@ mod tests {
             ApplicationErrorCode::ProviderUnavailable,
             ApplicationErrorCode::OperationCancelled,
             ApplicationErrorCode::WorkspaceRevisionConflict,
+            ApplicationErrorCode::FileRevisionConflict,
             ApplicationErrorCode::ActionNotFound,
             ApplicationErrorCode::ActionUnavailable,
             ApplicationErrorCode::PlatformOperationFailed,

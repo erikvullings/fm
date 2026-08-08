@@ -4,8 +4,10 @@
 use axum::extract::{Extension, State};
 use axum::{Json, http::StatusCode};
 use fm_transport_dto::{
-    ApplicationErrorDto, ArchiveCredentialRequestDto, ReadFileRangeRequestDto,
-    ReadFileRangeResponseDto, SearchInFileRequestDto, SearchInFileResponseDto,
+    ApplicationErrorDto, ArchiveCredentialRequestDto, LoadEditableFileRequestDto,
+    LoadEditableFileResponseDto, ReadFileRangeRequestDto, ReadFileRangeResponseDto,
+    SaveEditableFileRequestDto, SaveEditableFileResponseDto, SearchInFileRequestDto,
+    SearchInFileResponseDto,
 };
 use tower_http::request_id::RequestId;
 
@@ -58,6 +60,40 @@ pub(crate) async fn read_file_range(
     state
         .service
         .read_file_range(request)
+        .await
+        .map(Json)
+        .map_err(|error| ApiError::new(error, request_id))
+}
+
+#[utoipa::path(post, path = "/api/v1/files/editable/load", operation_id = "loadEditableFile",
+    request_body = LoadEditableFileRequestDto,
+    responses((status = 200, body = LoadEditableFileResponseDto), (status = 400, body = ApplicationErrorDto), (status = 404, body = ApplicationErrorDto)))]
+pub(crate) async fn load_editable_file(
+    State(state): State<AppState>,
+    Extension(request_id): Extension<RequestId>,
+    Json(request): Json<LoadEditableFileRequestDto>,
+) -> Result<Json<LoadEditableFileResponseDto>, ApiError> {
+    let request_id = extract_request_id(&request_id);
+    state
+        .service
+        .load_editable_file(request)
+        .await
+        .map(Json)
+        .map_err(|error| ApiError::new(error, request_id))
+}
+
+#[utoipa::path(post, path = "/api/v1/files/editable/save", operation_id = "saveEditableFile",
+    request_body = SaveEditableFileRequestDto,
+    responses((status = 200, body = SaveEditableFileResponseDto), (status = 400, body = ApplicationErrorDto), (status = 409, body = ApplicationErrorDto)))]
+pub(crate) async fn save_editable_file(
+    State(state): State<AppState>,
+    Extension(request_id): Extension<RequestId>,
+    Json(request): Json<SaveEditableFileRequestDto>,
+) -> Result<Json<SaveEditableFileResponseDto>, ApiError> {
+    let request_id = extract_request_id(&request_id);
+    state
+        .service
+        .save_editable_file(request)
         .await
         .map(Json)
         .map_err(|error| ApiError::new(error, request_id))

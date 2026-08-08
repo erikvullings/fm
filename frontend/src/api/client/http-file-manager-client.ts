@@ -5,12 +5,15 @@ import type {
   BackendEvent,
   CreateWorkspaceRequest,
   DirectorySnapshot,
+  EditableFile,
+  EditableFileSave,
   EntryMetadata,
   EntryMetadataRequest,
   Location as FileLocation,
   FileRangeChunk,
   InvokeActionRequest,
   ListDirectoryRequest,
+  LoadEditableFileRequest,
   NavigateRequest,
   Operation,
   OperationId,
@@ -21,6 +24,7 @@ import type {
   ReadFileRangeRequest,
   ResolveConflictRequest,
   RuntimeCapabilities,
+  SaveEditableFileRequest,
   SearchInFileRequest,
   SearchInFileResult,
   Settings,
@@ -45,6 +49,7 @@ import {
   listDirectory as requestDirectory,
   getEntryMetadata as requestEntryMetadata,
   getFileIcon as requestFileIcon,
+  loadEditableFile as requestLoadEditableFile,
   navigatePane as requestNavigation,
   cancelOperation as requestOperationCancel,
   pauseOperation as requestOperationPause,
@@ -58,6 +63,7 @@ import {
   listPlugins as requestPlugins,
   readFileRange as requestReadFileRange,
   getRuntimeCapabilities as requestRuntimeCapabilities,
+  saveEditableFile as requestSaveEditableFile,
   cancelSearch as requestSearchCancel,
   searchInFile as requestSearchInFile,
   startSearch as requestSearchStart,
@@ -273,6 +279,32 @@ export class HttpFileManagerClient implements FileManagerClient {
     if (response.status !== 200) {
       throw new Error(`Unexpected readFileRange response status: ${response.status}`);
     }
+    return response.data;
+  }
+
+  async loadEditableFile(
+    request: LoadEditableFileRequest,
+    signal?: AbortSignal,
+  ): Promise<EditableFile> {
+    const response = await requestLoadEditableFile(
+      request,
+      signal !== undefined ? { signal } : undefined,
+    );
+    if (response.status !== 200)
+      throw new Error(`Unexpected loadEditableFile response status: ${response.status}`);
+    return response.data;
+  }
+
+  async saveEditableFile(
+    request: SaveEditableFileRequest,
+    signal?: AbortSignal,
+  ): Promise<EditableFileSave> {
+    const response = await requestSaveEditableFile(
+      request,
+      signal !== undefined ? { signal } : undefined,
+    );
+    if (response.status !== 200)
+      throw new Error(`Unexpected saveEditableFile response status: ${response.status}`);
     return response.data;
   }
 
@@ -556,11 +588,11 @@ function settingsFromDto(settings: SettingsDto): Settings {
         workspaceId,
         Array.isArray(locations)
           ? locations.map(
-            (location): FileLocation => ({
-              providerId: String((location as { providerId?: unknown }).providerId),
-              uri: String((location as { uri?: unknown }).uri),
-            }),
-          )
+              (location): FileLocation => ({
+                providerId: String((location as { providerId?: unknown }).providerId),
+                uri: String((location as { uri?: unknown }).uri),
+              }),
+            )
           : [],
       ]),
     ),

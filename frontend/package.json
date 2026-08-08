@@ -14,11 +14,21 @@
     "benchmark:directory-table": "vitest run src/features/directory-table/directory-table.benchmark.test.ts"
   },
   "dependencies": {
+    "@codemirror/commands": "6.10.4",
+    "@codemirror/lang-json": "6.0.2",
+    "@codemirror/lang-markdown": "6.5.2",
+    "@codemirror/lang-xml": "6.1.0",
+    "@codemirror/language": "6.12.4",
+    "@codemirror/lint": "6.9.7",
+    "@codemirror/legacy-modes": "6.5.3",
+    "@codemirror/state": "6.7.1",
+    "@codemirror/view": "6.43.8",
     "@tauri-apps/api": "^2.11.1",
-    "highlight.js": "^11.11.1",
+    "dompurify": "3.4.13",
     "meiosis-setup": "^6.2.3",
     "mithril": "^2.3.8",
-    "mithril-materialized": "^3.17.9"
+    "mithril-materialized": "^3.17.9",
+    "slimdown-js": "1.4.1"
   },
   "devDependencies": {
     "@mithril-inspector/vite": "0.3.2",

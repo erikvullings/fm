@@ -1,4 +1,6 @@
+import type { LoadEditableFileResponseDto } from '../api/generated/models/loadEditableFileResponseDto';
 import type { ReadFileRangeResponseDto } from '../api/generated/models/readFileRangeResponseDto';
+import type { SaveEditableFileResponseDto } from '../api/generated/models/saveEditableFileResponseDto';
 import type { SearchInFileMatchDto } from '../api/generated/models/searchInFileMatchDto';
 import type { SearchInFileResponseDto } from '../api/generated/models/searchInFileResponseDto';
 import type { SortDescriptorDto } from '../api/generated/models/sortDescriptorDto';
@@ -137,6 +139,19 @@ export interface ReadFileRangeRequest {
  * DTO exactly, so no separate mapper is needed.
  */
 export type FileRangeChunk = ReadFileRangeResponseDto;
+
+export interface LoadEditableFileRequest {
+  location: Location;
+}
+export type EditableFile = LoadEditableFileResponseDto;
+export interface SaveEditableFileRequest {
+  location: Location;
+  destination?: Location;
+  content: string;
+  expectedRevision: string;
+  overwriteConflict: boolean;
+}
+export type EditableFileSave = SaveEditableFileResponseDto;
 
 /**
  * Searches a single file's content for a substring or regex

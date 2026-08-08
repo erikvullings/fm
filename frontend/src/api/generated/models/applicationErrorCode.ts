@@ -22,6 +22,7 @@ export const ApplicationErrorCode = {
   credentialRequired: 'credentialRequired',
   invalidCredential: 'invalidCredential',
   workspaceRevisionConflict: 'workspaceRevisionConflict',
+  fileRevisionConflict: 'fileRevisionConflict',
   actionNotFound: 'actionNotFound',
   actionUnavailable: 'actionUnavailable',
   platformOperationFailed: 'platformOperationFailed',

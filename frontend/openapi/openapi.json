@@ -217,6 +217,7 @@
           "credentialRequired",
           "invalidCredential",
           "workspaceRevisionConflict",
+          "fileRevisionConflict",
           "actionNotFound",
           "actionUnavailable",
           "platformOperationFailed",
@@ -1034,6 +1035,44 @@
           "paneId",
           "requestId",
           "location"
+        ],
+        "type": "object"
+      },
+      "LoadEditableFileRequestDto": {
+        "description": "Loads one complete, bounded text file for editing (task 0099).",
+        "properties": {
+          "location": {
+            "$ref": "#/components/schemas/LocationDto",
+            "description": "File to load."
+          }
+        },
+        "required": [
+          "location"
+        ],
+        "type": "object"
+      },
+      "LoadEditableFileResponseDto": {
+        "description": "Complete UTF-8 content plus its optimistic revision token.",
+        "properties": {
+          "content": {
+            "description": "Editable UTF-8 text.",
+            "type": "string"
+          },
+          "revision": {
+            "description": "Opaque token representing the exact bytes loaded.",
+            "type": "string"
+          },
+          "size": {
+            "description": "Exact byte length at load time.",
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "content",
+          "revision",
+          "size"
         ],
         "type": "object"
       },
@@ -2126,6 +2165,69 @@
           "mock"
         ],
         "type": "string"
+      },
+      "SaveEditableFileRequestDto": {
+        "description": "Atomically replaces a text file after an optimistic revision check.",
+        "properties": {
+          "content": {
+            "description": "New UTF-8 content.",
+            "type": "string"
+          },
+          "destination": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/LocationDto",
+                "description": "Optional new destination used by explicit Save As conflict resolution."
+              }
+            ]
+          },
+          "expectedRevision": {
+            "description": "Revision returned by the last load/save.",
+            "type": "string"
+          },
+          "location": {
+            "$ref": "#/components/schemas/LocationDto",
+            "description": "File to replace."
+          },
+          "overwriteConflict": {
+            "description": "Explicitly permits replacing content that changed since load.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "location",
+          "content",
+          "expectedRevision"
+        ],
+        "type": "object"
+      },
+      "SaveEditableFileResponseDto": {
+        "description": "Result of an atomic editable-file save.",
+        "properties": {
+          "overwroteConflict": {
+            "description": "Whether an explicit stale-content overwrite occurred.",
+            "type": "boolean"
+          },
+          "revision": {
+            "description": "Revision of the saved bytes.",
+            "type": "string"
+          },
+          "size": {
+            "description": "Saved UTF-8 byte length.",
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "revision",
+          "size",
+          "overwroteConflict"
+        ],
+        "type": "object"
       },
       "SearchInFileMatchDto": {
         "description": "One match found by a [`SearchInFileRequestDto`].",
@@ -3485,6 +3587,100 @@
           }
         },
         "summary": "Streams every event visible to the explicit local development session."
+      }
+    },
+    "/api/v1/files/editable/load": {
+      "post": {
+        "operationId": "loadEditableFile",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoadEditableFileRequestDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoadEditableFileResponseDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationErrorDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationErrorDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/v1/files/editable/save": {
+      "post": {
+        "operationId": "saveEditableFile",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveEditableFileRequestDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SaveEditableFileResponseDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationErrorDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationErrorDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        }
       }
     },
     "/api/v1/files/range": {

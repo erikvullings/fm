@@ -1,16 +1,8 @@
 import m, { type FactoryComponent } from 'mithril';
 import { closeIcon } from '../../components/tabler-icons';
-import type { EntrySummary } from '../../models';
-import type {
-  FileViewerSearchState,
-  FileViewerState,
-  FileViewerTextContent,
-} from './file-viewer-controller';
-import {
-  highlightToHtml,
-  languageForExtension,
-  wrapRangeInHighlightMark,
-} from './syntax-highlighting';
+import { CodeMirrorEditor } from '../editor/code-mirror-editor';
+import { editableLanguageForExtension, languageExtension } from '../editor/editor-language';
+import type { FileViewerSearchState, FileViewerState } from './file-viewer-controller';
 import './file-viewer.css';
 
 /** Presentational Lister-style large-file viewer (task 0088); all state/async work lives in
@@ -33,30 +25,6 @@ export interface FileViewerAttrs {
 }
 
 const LOAD_MORE_THRESHOLD_PX = 200;
-
-/** Tracks the last search match scrolled into view, per viewer instance, so a match already on
- * screen (or an unrelated re-render, e.g. typing in the search box) doesn't re-trigger a scroll. */
-interface HighlightScrollState {
-  lastKey: string | undefined;
-}
-
-function scrollHighlightIntoViewIfNeeded(
-  element: HTMLElement,
-  highlightKey: string | undefined,
-  scrollState: HighlightScrollState,
-): void {
-  if (highlightKey === undefined || highlightKey === scrollState.lastKey) return;
-  scrollState.lastKey = highlightKey;
-  const container = element.closest('.fm-file-viewer-body-text');
-  if (!(container instanceof HTMLElement)) return;
-  const elementRect = element.getBoundingClientRect();
-  const containerRect = container.getBoundingClientRect();
-  const alreadyVisible =
-    elementRect.top >= containerRect.top && elementRect.bottom <= containerRect.bottom;
-  if (!alreadyVisible) {
-    element.scrollIntoView({ block: 'center', inline: 'nearest' });
-  }
-}
 
 function renderSearchBar(
   attrs: FileViewerAttrs,
@@ -148,46 +116,13 @@ function renderSearchBar(
   ]);
 }
 
-/** Re-renders the `pre.fm-file-viewer-text` element imperatively (syntax highlighting and the
- * search-match `<mark>` are both DOM-tree operations, not plain vdom children - see
- * `syntax-highlighting.ts`), then re-runs the scroll-into-view check for the active match. */
-function updateHighlightedTextBody(
-  element: HTMLElement,
-  content: FileViewerTextContent,
-  entry: EntrySummary,
-  scrollState: HighlightScrollState,
-): void {
-  const language = languageForExtension(entry.extension);
-  element.innerHTML = highlightToHtml(content.text, language);
-  element.classList.toggle('hljs', language !== undefined);
-
-  const start = content.highlightOffset;
-  const end =
-    start === undefined || content.highlightLength === undefined
-      ? undefined
-      : start + content.highlightLength;
-  if (start !== undefined && end !== undefined && start >= 0 && end <= content.text.length) {
-    wrapRangeInHighlightMark(element, start, end);
-  }
-  const mark = element.querySelector('.fm-file-viewer-highlight');
-  if (mark instanceof HTMLElement) {
-    scrollHighlightIntoViewIfNeeded(
-      mark,
-      `${content.highlightOffset}:${content.highlightLength}`,
-      scrollState,
-    );
-  }
-}
-
 function renderTextBody(
   attrs: FileViewerAttrs,
   state: Extract<FileViewerState, { status: 'ready' }>,
-  highlightScrollState: HighlightScrollState,
 ): m.Children {
   const content = state.content;
   if (content.kind !== 'text') return undefined;
-  const update = (element: HTMLElement) =>
-    updateHighlightedTextBody(element, content, state.entry, highlightScrollState);
+  const editableLanguage = editableLanguageForExtension(state.entry.extension);
   return m(
     '.fm-file-viewer-body.fm-file-viewer-body-text',
     {
@@ -203,9 +138,20 @@ function renderTextBody(
       },
     },
     [
-      m('pre.fm-file-viewer-text', {
-        oncreate: (vnode: m.VnodeDOM) => update(vnode.dom as HTMLElement),
-        onupdate: (vnode: m.VnodeDOM) => update(vnode.dom as HTMLElement),
+      m(CodeMirrorEditor, {
+        content: content.text,
+        readOnly: true,
+        ...(editableLanguage === undefined
+          ? {}
+          : { language: languageExtension(editableLanguage) }),
+        ...(content.highlightOffset === undefined || content.highlightLength === undefined
+          ? {}
+          : {
+              selection: {
+                from: content.highlightOffset,
+                to: content.highlightOffset + content.highlightLength,
+              },
+            }),
       }),
       content.loadingMore ? m('.fm-file-viewer-loading-more', 'Loading more…') : undefined,
     ],
@@ -251,7 +197,6 @@ function renderAudioBody(state: Extract<FileViewerState, { status: 'ready' }>): 
 }
 
 export const FileViewer: FactoryComponent<FileViewerAttrs> = () => {
-  const highlightScrollState: HighlightScrollState = { lastKey: undefined };
   return {
     view: ({ attrs }) => {
       const state = attrs.state;
@@ -291,7 +236,7 @@ export const FileViewer: FactoryComponent<FileViewerAttrs> = () => {
             : state.status === 'error'
               ? m('.fm-file-viewer-body', m('span', state.message))
               : state.content.kind === 'text'
-                ? renderTextBody(attrs, state, highlightScrollState)
+                ? renderTextBody(attrs, state)
                 : state.content.kind === 'audio'
                   ? renderAudioBody(state)
                   : renderImageBody(attrs, state),

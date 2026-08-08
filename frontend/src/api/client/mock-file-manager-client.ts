@@ -8,12 +8,15 @@ import type {
   BackendEvent,
   CreateWorkspaceRequest,
   DirectorySnapshot,
+  EditableFile,
+  EditableFileSave,
   EntryMetadata,
   EntryMetadataRequest,
   EntrySummary,
   FileRangeChunk,
   InvokeActionRequest,
   ListDirectoryRequest,
+  LoadEditableFileRequest,
   Location,
   NavigateRequest,
   Operation,
@@ -24,6 +27,7 @@ import type {
   ReadFileRangeRequest,
   ResolveConflictRequest,
   RuntimeCapabilities,
+  SaveEditableFileRequest,
   SearchInFileMatch,
   SearchInFileRequest,
   SearchInFileResult,
@@ -584,32 +588,32 @@ export class MockFileManagerClient implements FileManagerClient {
           const nextTab =
             command.type === 'navigateTab'
               ? {
-                ...tab,
-                location: navigatedLocation,
-                canNavigateBack: history.back.length > 0,
-                canNavigateForward: history.forward.length > 0,
-              }
+                  ...tab,
+                  location: navigatedLocation,
+                  canNavigateBack: history.back.length > 0,
+                  canNavigateForward: history.forward.length > 0,
+                }
               : command.type === 'updateView'
                 ? {
-                  ...tab,
-                  view: {
-                    ...tab.view,
-                    ...Object.fromEntries(
-                      Object.entries(command.patch).filter(
-                        ([key, value]) => key !== 'quickFilter' && value !== null,
+                    ...tab,
+                    view: {
+                      ...tab.view,
+                      ...Object.fromEntries(
+                        Object.entries(command.patch).filter(
+                          ([key, value]) => key !== 'quickFilter' && value !== null,
+                        ),
                       ),
-                    ),
-                    ...(command.patch.quickFilter === undefined
-                      ? {}
-                      : {
-                        quickFilter:
-                          command.patch.quickFilter === null ||
-                            command.patch.quickFilter.type === 'clear'
-                            ? null
-                            : command.patch.quickFilter.filter,
-                      }),
-                  },
-                }
+                      ...(command.patch.quickFilter === undefined
+                        ? {}
+                        : {
+                            quickFilter:
+                              command.patch.quickFilter === null ||
+                              command.patch.quickFilter.type === 'clear'
+                                ? null
+                                : command.patch.quickFilter.filter,
+                          }),
+                    },
+                  }
                 : tab;
           changed = {
             ...current,
@@ -673,6 +677,36 @@ export class MockFileManagerClient implements FileManagerClient {
         length: slice.length,
         eof: end >= bytes.length,
         ...(request.offset === 0 ? { probablyBinary: false } : {}),
+      };
+    });
+  }
+
+  loadEditableFile(request: LoadEditableFileRequest, signal?: AbortSignal): Promise<EditableFile> {
+    return this.perform('readFileRange', signal, () => {
+      const bytes = this.fileContentFor(request.location.uri);
+      return {
+        content: new TextDecoder().decode(bytes),
+        revision: String(bytes.length),
+        size: bytes.length,
+      };
+    });
+  }
+
+  saveEditableFile(
+    request: SaveEditableFileRequest,
+    signal?: AbortSignal,
+  ): Promise<EditableFileSave> {
+    return this.perform('readFileRange', signal, () => {
+      const existing = this.fileContentFor(request.location.uri);
+      if (!request.overwriteConflict && request.expectedRevision !== String(existing.length)) {
+        throw new MockClientError('fileRevisionConflict', 'The file changed after it was loaded.');
+      }
+      const bytes = new TextEncoder().encode(request.content);
+      this.fileContents.set(request.destination?.uri ?? request.location.uri, bytes);
+      return {
+        revision: String(bytes.length),
+        size: bytes.length,
+        overwroteConflict: request.overwriteConflict,
       };
     });
   }

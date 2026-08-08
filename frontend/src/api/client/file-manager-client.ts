@@ -5,11 +5,14 @@ import type {
   BackendEvent,
   CreateWorkspaceRequest,
   DirectorySnapshot,
+  EditableFile,
+  EditableFileSave,
   EntryMetadata,
   EntryMetadataRequest,
   FileRangeChunk,
   InvokeActionRequest,
   ListDirectoryRequest,
+  LoadEditableFileRequest,
   NavigateRequest,
   Operation,
   OperationId,
@@ -19,6 +22,7 @@ import type {
   ReadFileRangeRequest,
   ResolveConflictRequest,
   RuntimeCapabilities,
+  SaveEditableFileRequest,
   SearchInFileRequest,
   SearchInFileResult,
   Settings,
@@ -101,6 +105,11 @@ export interface FileManagerClient {
 
   /** Reads one bounded byte range from a file, for the in-app large file viewer (task 0088). */
   readFileRange(request: ReadFileRangeRequest, signal?: AbortSignal): Promise<FileRangeChunk>;
+  loadEditableFile(request: LoadEditableFileRequest, signal?: AbortSignal): Promise<EditableFile>;
+  saveEditableFile(
+    request: SaveEditableFileRequest,
+    signal?: AbortSignal,
+  ): Promise<EditableFileSave>;
 
   /** Searches a single file's content, for the in-app large file viewer (task 0088). */
   searchInFile(request: SearchInFileRequest, signal?: AbortSignal): Promise<SearchInFileResult>;

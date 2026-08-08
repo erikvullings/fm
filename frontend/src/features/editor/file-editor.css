@@ -1,0 +1,62 @@
+.fm-file-editor {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  background: var(--fm-background);
+  color: var(--fm-text);
+}
+.fm-file-editor-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 2.5rem;
+  padding: 0.25rem 0.6rem;
+  border-bottom: 1px solid color-mix(in srgb, currentColor 18%, transparent);
+}
+.fm-file-editor-spacer {
+  flex: 1;
+}
+.fm-file-editor-dirty,
+.fm-file-editor-error {
+  color: var(--fm-warning);
+}
+.fm-file-editor-content {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+.fm-code-mirror,
+.fm-code-mirror .cm-editor {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+}
+.fm-code-mirror .cm-scroller {
+  overflow: auto;
+}
+.fm-file-editor-preview {
+  flex: 1;
+  overflow: auto;
+  padding: 1rem;
+  border-left: 1px solid color-mix(in srgb, currentColor 18%, transparent);
+}
+.fm-file-editor-conflict,
+.fm-file-editor-close-dialog,
+.fm-file-editor-message,
+.fm-file-editor-error {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem;
+}
+.fm-file-editor-close-dialog {
+  position: absolute;
+  z-index: 5;
+  align-self: center;
+  top: 40%;
+  background: var(--fm-background);
+  box-shadow: var(--fm-shadow);
+}

@@ -7,11 +7,14 @@ import type {
   BackendEvent,
   CreateWorkspaceRequest,
   DirectorySnapshot,
+  EditableFile,
+  EditableFileSave,
   EntryMetadata,
   EntryMetadataRequest,
   FileRangeChunk,
   InvokeActionRequest,
   ListDirectoryRequest,
+  LoadEditableFileRequest,
   NavigateRequest,
   Operation,
   OperationId,
@@ -21,6 +24,7 @@ import type {
   ReadFileRangeRequest,
   ResolveConflictRequest,
   RuntimeCapabilities,
+  SaveEditableFileRequest,
   SearchInFileRequest,
   SearchInFileResult,
   Settings,
@@ -167,6 +171,17 @@ export class TauriFileManagerClient implements FileManagerClient {
 
   readFileRange(request: ReadFileRangeRequest, _signal?: AbortSignal): Promise<FileRangeChunk> {
     return invoke<FileRangeChunk>('read_file_range', { request });
+  }
+
+  loadEditableFile(request: LoadEditableFileRequest, _signal?: AbortSignal): Promise<EditableFile> {
+    return invoke<EditableFile>('load_editable_file', { request });
+  }
+
+  saveEditableFile(
+    request: SaveEditableFileRequest,
+    _signal?: AbortSignal,
+  ): Promise<EditableFileSave> {
+    return invoke<EditableFileSave>('save_editable_file', { request });
   }
 
   searchInFile(request: SearchInFileRequest, _signal?: AbortSignal): Promise<SearchInFileResult> {

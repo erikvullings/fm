@@ -1,13 +1,14 @@
 # 0088 Lister-style instant large-file viewer with lazy search
 
-Status: in_progress
+Status: done
 Priority: low
 Owner: unassigned
-Agent: copilot
+Agent: copilot, codex
 Area: cross-cutting
 Depends on: 0087
 
 ## Context
+
 Follow-up from the same footer/viewer conversation as 0087. Total Commander's "Lister" (F3) opens
 even multi-gigabyte files instantly by never loading the whole file into memory: it reads and
 renders only the visible window, paging content in lazily as the user scrolls, and can still search
@@ -18,6 +19,7 @@ wiring (0087's `core.view` action stays the entry point — its dispatch target 
 identity).
 
 Existing building blocks and gaps, confirmed by inspection:
+
 - `fm-vfs`'s `VfsProvider::open_read` (`crates/fm-vfs/src/provider.rs`) returns a full sequential
   `AsyncRead` stream with no offset/range parameter — sufficient for "load lazily from the start"
   but not for random-access seeking to an arbitrary byte offset (needed to jump to a search hit
@@ -28,6 +30,7 @@ Existing building blocks and gaps, confirmed by inspection:
   This task's search requirement is a new capability, not a wire-up of an existing one.
 
 ## Acceptance Criteria
+
 - A new viewer surface (likely a modal/panel, consistent with the existing preview panel from task
   0071 if that ships first — check for overlap before duplicating UI chrome) that opens instantly
   regardless of file size: initial render must not wait on reading the full file.
@@ -60,6 +63,7 @@ Existing building blocks and gaps, confirmed by inspection:
   frontend viewer component test covering lazy chunk loading and search-driven scroll-to-match.
 
 ## Implementation Notes
+
 - This is a substantial feature — expect it to need its own sub-tasks if scoped work turns out
   larger than one PR (e.g. split "backend range read + search" from "frontend virtualized viewer").
   Re-split into 0088a/0088b (or renumber) rather than growing this file indefinitely if that
@@ -73,6 +77,7 @@ Existing building blocks and gaps, confirmed by inspection:
   UI surface — if 0071 already ships a preview panel shell, extend it rather than duplicating.
 
 ## Agent Notes
+
 - 2026-08-04: Backend complete and verified (`cargo build/test/clippy/fmt` clean across the
   workspace): `fm-vfs` gained `FileSystemProvider::read_range` (default impl returns
   `UnsupportedCapability{RANDOM_ACCESS}`) and a new `fm_vfs::content` module (`ContentQuery`,
@@ -143,3 +148,11 @@ Existing building blocks and gaps, confirmed by inspection:
   Remaining for this task: the LRU chunk cache is implicit in the controller's existing chunk
   fetching but not separately benchmarked; backend `cargo fmt`/`clippy`/`test` re-confirmation for
   this session's (frontend-only) changes was not re-run since no Rust files were touched.
+- 2026-08-08 gemini: Decision Record: Selected CodeMirror 6 (CM6) over Monaco for the in-app editor and replacing highlight.js in the 0088 viewer.
+  - Rationale: CM6 provides a lightweight bundle (~120 KB vs Monaco's ~2–4 MB), zero web worker runtime/bundler configuration for Tauri/web environments, and direct integration with Mithril's imperative lifecycle (`oncreate`/`onremove`). Core language packages (`@codemirror/lang-json`, `@codemirror/lang-markdown`, `@codemirror/lang-xml`) satisfy formatting and diagnostic needs for targeted config and Markdown files without heavy LSP dependencies.
+  - Standardized Syntax Engine: Replacing `highlight.js` in 0088 with read-only CM6 (`EditorState.readOnly.of(true)`) eliminates duplicate grammar bundles, ensures 100% theme/token parity between viewer and editor modes, and allows seamless transitions from viewing to editing.
+  - Entry Point & Shortcut Policy: F4 remains the primary "Edit" action, using 0088 type and size inspection to route supported files <= limit to the CM6 in-app editor, with external editor fallback for large or binary files.
+- 2026-08-08: Replaced the viewer's highlight.js/imperative `innerHTML` syntax pipeline with the
+  shared read-only CodeMirror 6 component. Search matches now use a CodeMirror selection and
+  scroll effect, the highlight.js dependency and obsolete DOM highlighter/tests were removed,
+  and the focused preview suite passes (52 tests).

@@ -34,6 +34,13 @@ import {
 import { ContextMenu as DirectoryContextMenu } from '../features/commands/context-menu';
 import { SAMPLE_FILE_AGE_COLUMN } from '../features/directory-table/directory-table';
 import { NativeIconLoader } from '../features/directory-table/native-icon-loader';
+import { editableLanguageForExtension } from '../features/editor/editor-language';
+import { FileEditor } from '../features/editor/file-editor';
+import {
+  createFileEditorController,
+  type FileEditorController,
+  type FileEditorState,
+} from '../features/editor/file-editor-controller';
 import {
   DEFAULT_ENTRY_FORMAT_SETTINGS,
   type EntryFormatSettings,
@@ -330,6 +337,10 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
   const viewerByPane = new Map<
     PaneId,
     { readonly controller: FileViewerController; state: FileViewerState }
+  >();
+  const editorByPane = new Map<
+    PaneId,
+    { readonly controller: FileEditorController; state: FileEditorState }
   >();
   const sortedEntries = new Map<
     string,
@@ -751,6 +762,30 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     m.redraw();
   }
 
+  function openEditor(client: FileManagerClient, paneId: PaneId, entry: EntrySummary): void {
+    closeViewer(paneId);
+    editorByPane.get(paneId)?.controller.dispose();
+    const controller = createFileEditorController({
+      client,
+      entry,
+      update: (state) => {
+        const existing = editorByPane.get(paneId);
+        if (existing !== undefined) {
+          existing.state = state;
+          m.redraw();
+        }
+      },
+    });
+    editorByPane.set(paneId, { controller, state: { status: 'loading', entry } });
+    m.redraw();
+  }
+
+  function closeEditor(paneId: PaneId): void {
+    editorByPane.get(paneId)?.controller.dispose();
+    editorByPane.delete(paneId);
+    m.redraw();
+  }
+
   let navigation: NavigationController;
 
   /** Clears every per-tab runtime cache for a closed tab, cancelling its in-flight request. */
@@ -774,6 +809,8 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       }
       viewerByPane.get(paneId)?.controller.dispose();
       viewerByPane.delete(paneId);
+      editorByPane.get(paneId)?.controller.dispose();
+      editorByPane.delete(paneId);
     }
   }
 
@@ -1387,6 +1424,10 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     // special-cased here rather than resolved through `dispatchKeybinding`.
     const forceSystemView =
       !isEditableTarget(event.target) && event.altKey && event.key.toUpperCase() === 'F3';
+    const forceSystemEdit =
+      !isEditableTarget(event.target) &&
+      (event.ctrlKey || event.metaKey) &&
+      event.key.toUpperCase() === 'F4';
     if (dispatchedAction === 'core.favourites') {
       event.preventDefault();
       commandPaletteOpen = true;
@@ -1543,11 +1584,12 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
         otherPaneId === undefined
           ? undefined
           : directories.get(activeTabKey(otherPaneId))?.location;
-      if (selected !== undefined && selected.length === 1 && destination !== undefined) {
+      const selectedEntry = selected?.length === 1 ? selected[0] : undefined;
+      if (selectedEntry !== undefined && destination !== undefined) {
         event.preventDefault();
         void attrsClient.startOperation({
           type: 'copy',
-          sources: [selected[0].location],
+          sources: [selectedEntry.location],
           destination,
           conflictPolicy: 'ask',
         });
@@ -1681,7 +1723,8 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     }
     if (dispatchedAction === 'core.view' && !forceSystemView) {
       // If a viewer is open in the active pane, F3 navigates to the next search match.
-      const activeViewer = viewerByPane.get(workspace?.activePaneId);
+      const activeViewer =
+        workspace === undefined ? undefined : viewerByPane.get(workspace.activePaneId);
       if (activeViewer !== undefined) {
         event.preventDefault();
         activeViewer.controller.goToNextMatch();
@@ -1720,9 +1763,35 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
         return;
       }
     }
+    if (dispatchedAction === 'core.edit' && !forceSystemEdit) {
+      const active = activeDirectory();
+      const selection =
+        active === undefined ? undefined : selections.get(activeTabKey(active.paneId));
+      const directory =
+        active === undefined ? undefined : directories.get(activeTabKey(active.paneId));
+      const selected = directory?.entries.filter(
+        (entry) => selection?.selectedEntryIds.includes(entry.id) === true,
+      );
+      const editEntry = selected?.length === 1 ? selected[0] : undefined;
+      const otherPaneId = workspace?.paneOrder.find((paneId) => paneId !== active?.paneId);
+      if (
+        editEntry?.kind === 'file' &&
+        editableLanguageForExtension(editEntry.extension) !== undefined &&
+        !isParentEntry(editEntry.id) &&
+        otherPaneId !== undefined
+      ) {
+        event.preventDefault();
+        openEditor(attrsClient, otherPaneId, editEntry);
+        return;
+      }
+    }
     // `forceSystemView` (Alt+F3) always resolves to `core.view`, which the backend maps to the
     // same "open with OS default application" behaviour as `core.open` (see PlatformActionKind).
-    const viewActionId = forceSystemView ? 'core.view' : dispatchedAction;
+    const viewActionId = forceSystemView
+      ? 'core.view'
+      : forceSystemEdit
+        ? 'core.edit'
+        : dispatchedAction;
     if (
       viewActionId === 'core.view' ||
       viewActionId === 'core.edit' ||
@@ -2399,27 +2468,40 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
             .map((entry) => entry.name),
         );
       },
-      ...(viewerByPane.has(paneId)
+      ...(editorByPane.has(paneId)
         ? {
             viewerContent: (() => {
-              const viewer = viewerByPane.get(paneId);
-              if (viewer === undefined) return undefined;
-              return m(FileViewer, {
-                state: viewer.state,
-                onLoadMore: () => void viewer.controller.loadMore(),
-                onSearchQueryChange: (query) => viewer.controller.setSearchOptions({ query }),
-                onSearchOptionChange: (patch) => viewer.controller.setSearchOptions(patch),
-                onRunSearch: () => void viewer.controller.runSearch(),
-                onNextMatch: () => void viewer.controller.goToNextMatch(),
-                onPreviousMatch: () => void viewer.controller.goToPreviousMatch(),
-                onZoomIn: () => viewer.controller.zoomIn(),
-                onZoomOut: () => viewer.controller.zoomOut(),
-                onResetZoom: () => viewer.controller.resetZoom(),
-                onClose: () => closeViewer(paneId),
-              });
+              const editor = editorByPane.get(paneId);
+              return editor === undefined
+                ? undefined
+                : m(FileEditor, {
+                    state: editor.state,
+                    controller: editor.controller,
+                    onClose: () => closeEditor(paneId),
+                  });
             })(),
           }
-        : {}),
+        : viewerByPane.has(paneId)
+          ? {
+              viewerContent: (() => {
+                const viewer = viewerByPane.get(paneId);
+                if (viewer === undefined) return undefined;
+                return m(FileViewer, {
+                  state: viewer.state,
+                  onLoadMore: () => void viewer.controller.loadMore(),
+                  onSearchQueryChange: (query) => viewer.controller.setSearchOptions({ query }),
+                  onSearchOptionChange: (patch) => viewer.controller.setSearchOptions(patch),
+                  onRunSearch: () => void viewer.controller.runSearch(),
+                  onNextMatch: () => void viewer.controller.goToNextMatch(),
+                  onPreviousMatch: () => void viewer.controller.goToPreviousMatch(),
+                  onZoomIn: () => viewer.controller.zoomIn(),
+                  onZoomOut: () => viewer.controller.zoomOut(),
+                  onResetZoom: () => viewer.controller.resetZoom(),
+                  onClose: () => closeViewer(paneId),
+                });
+              })(),
+            }
+          : {}),
     };
   }
 

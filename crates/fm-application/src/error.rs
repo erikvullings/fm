@@ -49,6 +49,14 @@ pub enum ApplicationError {
         /// The revision actually stored.
         actual_revision: u64,
     },
+    /// Editable file content changed after it was loaded.
+    #[error("The file changed after it was loaded.")]
+    FileRevisionConflict {
+        /// Revision supplied by the editor session.
+        expected_revision: String,
+        /// Revision computed from the current file bytes.
+        actual_revision: String,
+    },
     /// No action is registered with this id (spec §18).
     #[error("unknown action {0:?}")]
     ActionNotFound(ActionId),
@@ -84,6 +92,7 @@ impl ApplicationError {
             Self::WorkspaceRevisionConflict { .. } => {
                 ApplicationErrorCode::WorkspaceRevisionConflict
             }
+            Self::FileRevisionConflict { .. } => ApplicationErrorCode::FileRevisionConflict,
             Self::ActionNotFound(_) => ApplicationErrorCode::ActionNotFound,
             Self::ActionUnavailable(_) => ApplicationErrorCode::ActionUnavailable,
             Self::PlatformOperationFailed(_) => ApplicationErrorCode::PlatformOperationFailed,
@@ -101,6 +110,13 @@ impl ApplicationError {
                 actual_revision,
             } => Some(serde_json::json!({
                 "workspaceId": workspace_id,
+                "expectedRevision": expected_revision,
+                "actualRevision": actual_revision,
+            })),
+            Self::FileRevisionConflict {
+                expected_revision,
+                actual_revision,
+            } => Some(serde_json::json!({
                 "expectedRevision": expected_revision,
                 "actualRevision": actual_revision,
             })),

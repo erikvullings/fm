@@ -163,6 +163,30 @@ pub(crate) async fn read_file_range(
         .map_err(|error| error.into_dto(Uuid::new_v4()))
 }
 
+#[tauri::command]
+pub(crate) async fn load_editable_file(
+    state: State<'_, AppState>,
+    request: fm_transport_dto::LoadEditableFileRequestDto,
+) -> Result<fm_transport_dto::LoadEditableFileResponseDto, ApplicationErrorDto> {
+    state
+        .service
+        .load_editable_file(request)
+        .await
+        .map_err(|error| error.into_dto(Uuid::new_v4()))
+}
+
+#[tauri::command]
+pub(crate) async fn save_editable_file(
+    state: State<'_, AppState>,
+    request: fm_transport_dto::SaveEditableFileRequestDto,
+) -> Result<fm_transport_dto::SaveEditableFileResponseDto, ApplicationErrorDto> {
+    state
+        .service
+        .save_editable_file(request)
+        .await
+        .map_err(|error| error.into_dto(Uuid::new_v4()))
+}
+
 /// Searches a file's content through the same application service as Axum,
 /// for the in-app large file viewer (task 0088).
 #[tauri::command]

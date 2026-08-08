@@ -554,6 +554,21 @@ describe('AppShell', () => {
     });
   });
 
+  it('opens supported text files in the opposite pane with F4', async () => {
+    const client = new MockFileManagerClient();
+    const invokeAction = vi.spyOn(client, 'invokeAction');
+    m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
+    await vi.waitFor(() => expect(root.textContent).toContain('日本語.txt'));
+    const activePane = root.querySelector<HTMLElement>('[data-active="true"] > .fm-pane');
+    const file = [...(activePane?.querySelectorAll<HTMLElement>('.fm-directory-row') ?? [])].find(
+      (row) => row.textContent?.includes('日本語.txt'),
+    );
+    file?.click();
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'F4', bubbles: true }));
+    await vi.waitFor(() => expect(root.querySelector('.fm-file-editor')).not.toBeNull());
+    expect(invokeAction).not.toHaveBeenCalled();
+  });
+
   it('opens the Lister viewer in the opposite pane with F3 (task 0088)', async () => {
     const client = new MockFileManagerClient();
     const invokeAction = vi.spyOn(client, 'invokeAction');
@@ -614,7 +629,7 @@ describe('AppShell', () => {
 
     await vi.waitFor(() => expect(root.querySelector('.fm-file-viewer')).not.toBeNull());
     await vi.waitFor(() =>
-      expect(root.querySelector('.fm-file-viewer-highlight')?.textContent).toBe('ERROR'),
+      expect(root.querySelector('.cm-content')?.textContent).toContain('ERROR'),
     );
   });
 

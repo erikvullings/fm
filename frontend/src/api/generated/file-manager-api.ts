@@ -18,6 +18,8 @@ import type {
   InvokeActionRequestDto,
   ListDirectoryRequest,
   ListOperationsParams,
+  LoadEditableFileRequestDto,
+  LoadEditableFileResponseDto,
   NavigateRequest,
   OperationDto,
   OperationPageDto,
@@ -27,6 +29,8 @@ import type {
   ReadFileRangeResponseDto,
   ResolveOperationConflictRequestDto,
   RuntimeCapabilitiesDto,
+  SaveEditableFileRequestDto,
+  SaveEditableFileResponseDto,
   SearchInFileRequestDto,
   SearchInFileResponseDto,
   SettingsDto,
@@ -357,6 +361,96 @@ export const subscribeEvents = async ( options?: Parameters<typeof fetchMutator>
     method: 'GET'
 
 
+  }
+);}
+
+
+
+export type loadEditableFileResponse200 = {
+  data: LoadEditableFileResponseDto
+  status: 200
+}
+
+export type loadEditableFileResponse400 = {
+  data: ApplicationErrorDto
+  status: 400
+}
+
+export type loadEditableFileResponse404 = {
+  data: ApplicationErrorDto
+  status: 404
+}
+
+export type loadEditableFileResponseSuccess = (loadEditableFileResponse200) & {
+  headers: Headers;
+};
+export type loadEditableFileResponseError = (loadEditableFileResponse400 | loadEditableFileResponse404) & {
+  headers: Headers;
+};
+
+export type loadEditableFileResponse = (loadEditableFileResponseSuccess | loadEditableFileResponseError)
+
+export const getLoadEditableFileUrl = () => {
+
+
+
+
+  return `/api/v1/files/editable/load`
+}
+
+export const loadEditableFile = async (loadEditableFileRequestDto: LoadEditableFileRequestDto, options?: Parameters<typeof fetchMutator>[1]): Promise<loadEditableFileResponse> => {
+
+  return fetchMutator<loadEditableFileResponse>(getLoadEditableFileUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(loadEditableFileRequestDto)
+  }
+);}
+
+
+
+export type saveEditableFileResponse200 = {
+  data: SaveEditableFileResponseDto
+  status: 200
+}
+
+export type saveEditableFileResponse400 = {
+  data: ApplicationErrorDto
+  status: 400
+}
+
+export type saveEditableFileResponse409 = {
+  data: ApplicationErrorDto
+  status: 409
+}
+
+export type saveEditableFileResponseSuccess = (saveEditableFileResponse200) & {
+  headers: Headers;
+};
+export type saveEditableFileResponseError = (saveEditableFileResponse400 | saveEditableFileResponse409) & {
+  headers: Headers;
+};
+
+export type saveEditableFileResponse = (saveEditableFileResponseSuccess | saveEditableFileResponseError)
+
+export const getSaveEditableFileUrl = () => {
+
+
+
+
+  return `/api/v1/files/editable/save`
+}
+
+export const saveEditableFile = async (saveEditableFileRequestDto: SaveEditableFileRequestDto, options?: Parameters<typeof fetchMutator>[1]): Promise<saveEditableFileResponse> => {
+
+  return fetchMutator<saveEditableFileResponse>(getSaveEditableFileUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(saveEditableFileRequestDto)
   }
 );}
 
