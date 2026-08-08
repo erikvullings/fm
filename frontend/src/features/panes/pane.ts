@@ -727,16 +727,16 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
                   draggable: true,
                   title: tab.path,
                   'aria-selected': tab.id === attrs.activeTabId ? 'true' : 'false',
-onclick: (event: MouseEvent) => {
-                      // Clicks in the rightmost ~28 px hit the pseudo-element close button.
-                      const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
-                      if (event.clientX - rect.right > -28) {
-                        event.stopPropagation();
-                        attrs.onCloseTab(tab.id);
-                      } else {
-                        attrs.onSelectTab(tab.id);
-                      }
-                    },
+                  onclick: (event: MouseEvent) => {
+                    // Clicks in the rightmost ~28 px hit the pseudo-element close button.
+                    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+                    if (event.clientX - rect.right > -28) {
+                      event.stopPropagation();
+                      attrs.onCloseTab(tab.id);
+                    } else {
+                      attrs.onSelectTab(tab.id);
+                    }
+                  },
                   onkeydown: (event: KeyboardEvent) => {
                     if (event.key === 'Enter' || event.key === ' ') {
                       event.preventDefault();
@@ -780,14 +780,15 @@ onclick: (event: MouseEvent) => {
               ),
             ),
             m(
-              'button.fm-pane-tab-new',
+              IconButton,
               {
                 key: '__new-tab__',
-                type: 'button',
+                className: 'fm-pane-tab-new',
                 'aria-label': 'New tab',
+                tooltip: 'New tab',
                 onclick: () => attrs.onNewTab(),
               },
-              '+',
+              plusIcon(),
             ),
             m(
               IconButton,
@@ -863,67 +864,72 @@ onclick: (event: MouseEvent) => {
                           ],
                         )
                       : undefined,
-                    ...(attrs.favouriteLocations ?? []).map((favourite, index) =>
-                      m('.fm-favourites-item', [
-                        m(
-                          'button',
-                          {
-                            type: 'button',
-                            role: 'menuitem',
-                            onclick: () => void navigateFavourite(favourite.location, attrs),
-                            disabled: attrs.unavailableLocations?.has(
-                              locationKey(favourite.location),
-                            ),
-                          },
-                          attrs.unavailableLocations?.has(locationKey(favourite.location))
-                            ? `${favourite.label} (unavailable)`
-                            : favourite.label,
-                        ),
-                        attrs.onReorderFavourites === undefined
-                          ? undefined
-                          : m(
-                              'button',
-                              {
-                                type: 'button',
-                                disabled: index === 0,
-                                'aria-label': `Move ${favourite.label} up`,
-                                onclick: () => void attrs.onReorderFavourites?.(index, index - 1),
-                              },
-                              '↑',
-                            ),
-                        attrs.onDeleteFavourite === undefined
-                          ? undefined
-                          : m(
-                              'button',
-                              {
-                                type: 'button',
-                                'aria-label': `Remove ${favourite.label}`,
-                                onclick: () => void attrs.onDeleteFavourite?.(favourite.location),
-                              },
-                              '×',
-                            ),
-                      ]),
-                    ),
-                    (attrs.recentLocations?.length ?? 0) > 0
-                      ? m('.fm-favourites-recents', [
-                          m('strong', 'Recent locations'),
-                          ...(attrs.recentLocations ?? []).map((location) =>
+                    (attrs.favouriteLocations?.length ?? 0) > 0 &&
+                      m('.fm-favourites-recents', [
+                        m('strong', 'Favorites'),
+                        ...(attrs.favouriteLocations ?? []).map((favourite, index) =>
+                          m('.fm-favourites-item', [
                             m(
                               'button',
                               {
                                 type: 'button',
                                 role: 'menuitem',
-                                title: location.uri,
-                                onclick: () => void navigateFavourite(location, attrs),
-                                disabled: attrs.unavailableLocations?.has(locationKey(location)),
+                                onclick: () => void navigateFavourite(favourite.location, attrs),
+                                disabled: attrs.unavailableLocations?.has(
+                                  locationKey(favourite.location),
+                                ),
                               },
-                              attrs.unavailableLocations?.has(locationKey(location))
-                                ? `${truncateLocationForDisplay(location.uri)} (unavailable)`
-                                : truncateLocationForDisplay(location.uri),
+                              attrs.unavailableLocations?.has(locationKey(favourite.location))
+                                ? `${favourite.label} (unavailable)`
+                                : favourite.label,
                             ),
+                            attrs.onReorderFavourites === undefined
+                              ? undefined
+                              : m(
+                                  'button',
+                                  {
+                                    type: 'button',
+                                    disabled: index === 0,
+                                    'aria-label': `Move ${favourite.label} up`,
+                                    onclick: () =>
+                                      void attrs.onReorderFavourites?.(index, index - 1),
+                                  },
+                                  '↑',
+                                ),
+                            attrs.onDeleteFavourite === undefined
+                              ? undefined
+                              : m(
+                                  'button',
+                                  {
+                                    type: 'button',
+                                    'aria-label': `Remove ${favourite.label}`,
+                                    onclick: () =>
+                                      void attrs.onDeleteFavourite?.(favourite.location),
+                                  },
+                                  '×',
+                                ),
+                          ]),
+                        ),
+                      ]),
+                    (attrs.recentLocations?.length ?? 0) > 0 &&
+                      m('.fm-favourites-recents', [
+                        m('strong', 'Recent locations'),
+                        ...(attrs.recentLocations ?? []).map((location) =>
+                          m(
+                            'button',
+                            {
+                              type: 'button',
+                              role: 'menuitem',
+                              title: location.uri,
+                              onclick: () => void navigateFavourite(location, attrs),
+                              disabled: attrs.unavailableLocations?.has(locationKey(location)),
+                            },
+                            attrs.unavailableLocations?.has(locationKey(location))
+                              ? `${truncateLocationForDisplay(location.uri)} (unavailable)`
+                              : truncateLocationForDisplay(location.uri),
                           ),
-                        ])
-                      : undefined,
+                        ),
+                      ]),
                     favouriteError === undefined
                       ? undefined
                       : m('.fm-path-error', { role: 'alert' }, favouriteError),

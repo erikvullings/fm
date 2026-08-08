@@ -63,7 +63,14 @@ export interface NavigationControllerOptions {
 
 /** Public navigation operations consumed by pane and workspace input handlers. */
 export interface NavigationController {
-  load(paneId: PaneId): Promise<void>;
+  /**
+   * Reloads the pane's active tab. `background: true` marks the call as an opportunistic
+   * refresh (e.g. triggered by a filesystem-watch delta) rather than a user-requested reload:
+   * it's skipped entirely while an explicit `navigate()`/`parent()`/`back()`/`forward()` is
+   * still in flight for the same tab, so it can never silently discard that navigation's own
+   * snapshot fetch (see fm-search results not appearing after navigating to `search://`).
+   */
+  load(paneId: PaneId, options?: { readonly background?: boolean }): Promise<void>;
   navigate(paneId: PaneId, location: Location, preferredCursorName?: string): Promise<void>;
   parent(paneId: PaneId): Promise<void>;
   back(paneId: PaneId): Promise<void>;
@@ -77,9 +84,13 @@ export interface NavigationController {
   dispose(): void;
 }
 
+/** Distinguishes an explicit navigation (push/back/forward/parent) from a plain reload/refresh. */
+type RequestKind = 'navigate' | 'load';
+
 interface ActiveRequest {
   readonly id: string;
   readonly controller: AbortController;
+  readonly kind: RequestKind;
 }
 
 function errorMessage(error: unknown): string {
@@ -191,12 +202,13 @@ export function createNavigationController(
     }
   }
 
-  function begin(paneId: PaneId, tabId: TabId): ActiveRequest {
+  function begin(paneId: PaneId, tabId: TabId, kind: RequestKind): ActiveRequest {
     const key = tabKey(paneId, tabId);
     activeRequests.get(key)?.controller.abort();
     const request = {
       id: crypto.randomUUID(),
       controller: new AbortController(),
+      kind,
     };
     activeRequests.set(key, request);
     return request;
@@ -293,13 +305,30 @@ export function createNavigationController(
     };
   }
 
-  async function load(paneId: PaneId): Promise<void> {
+  async function load(
+    paneId: PaneId,
+    loadOptions?: { readonly background?: boolean },
+  ): Promise<void> {
     const workspace = options.getWorkspace();
     const tab = workspace === undefined ? undefined : activeTab(workspace, paneId);
     if (workspace === undefined || tab === undefined) {
       return;
     }
-    const request = begin(paneId, tab.id);
+    if (loadOptions?.background) {
+      const inFlight = activeRequests.get(tabKey(paneId, tab.id));
+      // A background refresh (filesystem-watch delta) must never preempt an explicit navigation
+      // that's already in flight for this tab: `begin()` aborts unconditionally, and doing so here
+      // would silently discard the navigation's own snapshot fetch with no error and no retry -
+      // e.g. a `directory.delta` for the pane's old location racing a search-results `navigate()`.
+      if (
+        inFlight !== undefined &&
+        inFlight.kind === 'navigate' &&
+        !inFlight.controller.signal.aborted
+      ) {
+        return;
+      }
+    }
+    const request = begin(paneId, tab.id, 'load');
     publish(paneId, tab.id, loadingView(paneId, tab.id, request, tab.location));
     try {
       const snapshot = await withArchiveCredential(tab.location, () =>
@@ -342,7 +371,7 @@ export function createNavigationController(
     ) {
       return;
     }
-    const request = begin(paneId, tab.id);
+    const request = begin(paneId, tab.id, 'navigate');
     publish(paneId, tab.id, loadingView(paneId, tab.id, request, location ?? tab.location));
     const command: WorkspaceCommand = {
       type: 'navigateTab',
@@ -449,7 +478,7 @@ export function createNavigationController(
     ) {
       return;
     }
-    const request = begin(paneId, tabId);
+    const request = begin(paneId, tabId, 'load');
     try {
       const snapshot = await options.client.listDirectory(
         requestFor(workspace, paneId, request.id, current.location, tab, current.continuationToken),

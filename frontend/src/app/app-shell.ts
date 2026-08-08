@@ -47,8 +47,11 @@ import {
   type PaneDirectoryView,
   parentLocation,
 } from '../features/navigation/navigation';
+import {
+  ArchiveCreateDialog,
+  type ArchiveFormat,
+} from '../features/operations/archive-create-dialog';
 import { ConflictDialog } from '../features/operations/conflict-dialog';
-import { ArchiveCreateDialog, type ArchiveFormat } from '../features/operations/archive-create-dialog';
 import { CreateDirectoryDialog } from '../features/operations/create-directory-dialog';
 import { MultiRenameDialog } from '../features/operations/multi-rename-dialog';
 import { OperationCentre } from '../features/operations/operation-centre';
@@ -210,6 +213,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
   let currentSettings: Settings | undefined;
   let settingsDisclosureElement: HTMLDetailsElement | undefined;
   let settingsDialogOpen = false;
+  let workspaceDisclosureElement: HTMLDetailsElement | undefined;
   let registeredActions: readonly ActionDescriptor[] = [];
   const unavailableLocations = new Set<string>();
   let plugins: readonly PluginDescriptor[] = [];
@@ -253,7 +257,11 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
   let createDirectoryOpen = false;
   let createDirectoryLocation: Location | undefined;
   let archiveCreateRequest:
-    | { readonly sources: readonly Location[]; readonly destinationDirectory: Location; readonly moveSources: boolean }
+    | {
+        readonly sources: readonly Location[];
+        readonly destinationDirectory: Location;
+        readonly moveSources: boolean;
+      }
     | undefined;
   let multiRenameOpen = false;
   let multiRenameEntries: readonly EntrySummary[] = [];
@@ -1419,10 +1427,10 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
           active === undefined || directory === undefined
             ? undefined
             : {
-              location: active.location,
-              writable: directory.writable === true,
-              loaded: directory.state.type === 'loaded',
-            };
+                location: active.location,
+                writable: directory.writable === true,
+                loaded: directory.state.type === 'loaded',
+              };
         const validation = validatePasteTarget(currentClipboard, target);
         if (!validation.ok) {
           clipboardMessage = validation.message;
@@ -1505,9 +1513,13 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     }
     if (dispatchedAction === 'core.moveToArchive') {
       const active = activeDirectory();
-      const selection = active === undefined ? undefined : selections.get(activeTabKey(active.paneId));
-      const directory = active === undefined ? undefined : directories.get(activeTabKey(active.paneId));
-      const selected = directory?.entries.filter((entry) => selection?.selectedEntryIds.includes(entry.id) === true);
+      const selection =
+        active === undefined ? undefined : selections.get(activeTabKey(active.paneId));
+      const directory =
+        active === undefined ? undefined : directories.get(activeTabKey(active.paneId));
+      const selected = directory?.entries.filter(
+        (entry) => selection?.selectedEntryIds.includes(entry.id) === true,
+      );
       if (selected !== undefined && selected.length > 0 && directory?.location !== undefined) {
         event.preventDefault();
         archiveCreateRequest = {
@@ -2100,11 +2112,11 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       tab === undefined || key === undefined
         ? directory.entries
         : entriesSortedFor(
-          key,
-          directory.entries,
-          effectiveSort(tab.view.sort),
-          tab.view.foldersFirst,
-        );
+            key,
+            directory.entries,
+            effectiveSort(tab.view.sort),
+            tab.view.foldersFirst,
+          );
     const quickFilterQuery = key === undefined ? '' : quickFilterQueryFor(key, tab);
     const filtered = key === undefined ? sorted : entriesFilteredFor(key, sorted, quickFilterQuery);
     const entries =
@@ -2627,51 +2639,71 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
               },
               commandIcon(),
             ),
-            m('details.fm-workspace-disclosure', [
-              m(
-                'summary.fm-workspace-switcher-button',
-                {
-                  'data-tooltip': workspace?.name ?? 'Workspace',
-                  'aria-label': `Workspace switcher, current workspace: ${workspace?.name ?? 'none'}`,
+            m(
+              'details.fm-workspace-disclosure',
+              {
+                oncreate: ({ dom }) => {
+                  workspaceDisclosureElement = dom as HTMLDetailsElement;
                 },
-                layoutGridIcon(),
-              ),
-              m('.fm-workspace-switcher-backdrop', {
-                onclick: (event: MouseEvent) => {
-                  const disclosure = (event.currentTarget as HTMLElement).closest('details');
-                  if (disclosure instanceof HTMLDetailsElement) disclosure.open = false;
+                onremove: () => {
+                  workspaceDisclosureElement = undefined;
                 },
-              }),
-              m('.fm-workspace-switcher-panel', { role: 'dialog', 'aria-label': 'Workspaces' }, [
-                m('.fm-workspace-switcher-heading', [
-                  m('strong', 'Workspaces'),
-                  m(
-                    'button',
-                    {
-                      type: 'button',
-                      'aria-label': 'Close workspaces',
-                      onclick: (event: MouseEvent) => {
-                        const disclosure = (event.currentTarget as HTMLElement).closest('details');
-                        if (disclosure instanceof HTMLDetailsElement) disclosure.open = false;
-                      },
+              },
+              [
+                m(
+                  IconButton,
+                  {
+                    className: 'fm-workspace-switcher-button',
+                    'aria-label': `Workspace switcher, current workspace: ${workspace?.name ?? 'none'}`,
+                    tooltip: workspace?.name ?? 'Workspace',
+                    onclick: () => {
+                      if (workspaceDisclosureElement !== undefined) {
+                        workspaceDisclosureElement.open = !workspaceDisclosureElement.open;
+                      }
                     },
-                    closeIcon(),
-                  ),
-                ]),
-                m(WorkspaceSwitcher, {
-                  summaries: sortWorkspaceSummaries(workspaceSummaries),
-                  activeWorkspaceId: workspace?.id,
-                  error: workspaceActionError,
-                  onSwitch: (workspaceId) => {
-                    void switchWorkspace(attrs.client, workspaceId);
                   },
-                  onCreate: () => createWorkspaceAction(attrs.client),
-                  onRename: (workspaceId, name) =>
-                    renameWorkspaceAction(attrs.client, workspaceId, name),
-                  onDelete: (workspaceId) => deleteWorkspaceAction(attrs.client, workspaceId),
+                  layoutGridIcon(),
+                ),
+                m('summary.fm-disclosure-summary-hidden'),
+                m('.fm-workspace-switcher-backdrop', {
+                  onclick: (event: MouseEvent) => {
+                    const disclosure = (event.currentTarget as HTMLElement).closest('details');
+                    if (disclosure instanceof HTMLDetailsElement) disclosure.open = false;
+                  },
                 }),
-              ]),
-            ]),
+                m('.fm-workspace-switcher-panel', { role: 'dialog', 'aria-label': 'Workspaces' }, [
+                  m('.fm-workspace-switcher-heading', [
+                    m('strong', 'Workspaces'),
+                    m(
+                      'button',
+                      {
+                        type: 'button',
+                        'aria-label': 'Close workspaces',
+                        onclick: (event: MouseEvent) => {
+                          const disclosure = (event.currentTarget as HTMLElement).closest(
+                            'details',
+                          );
+                          if (disclosure instanceof HTMLDetailsElement) disclosure.open = false;
+                        },
+                      },
+                      closeIcon(),
+                    ),
+                  ]),
+                  m(WorkspaceSwitcher, {
+                    summaries: sortWorkspaceSummaries(workspaceSummaries),
+                    activeWorkspaceId: workspace?.id,
+                    error: workspaceActionError,
+                    onSwitch: (workspaceId) => {
+                      void switchWorkspace(attrs.client, workspaceId);
+                    },
+                    onCreate: () => createWorkspaceAction(attrs.client),
+                    onRename: (workspaceId, name) =>
+                      renameWorkspaceAction(attrs.client, workspaceId, name),
+                    onDelete: (workspaceId) => deleteWorkspaceAction(attrs.client, workspaceId),
+                  }),
+                ]),
+              ],
+            ),
             m(
               'details.fm-settings-disclosure',
               {
@@ -2681,23 +2713,27 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
                 onremove: () => {
                   settingsDisclosureElement = undefined;
                 },
-                ontoggle: (event: Event) => {
-                  // Catches the native user-driven summary click (both opening the dialog, and
-                  // re-closing it by clicking the summary again while open); scripted closes go
-                  // through `closeSettingsDialog` above instead.
-                  settingsDialogOpen = (event.currentTarget as HTMLDetailsElement).open;
-                  if (!settingsDialogOpen && currentSettings !== undefined) {
-                    applyAppearance(currentSettings);
-                  }
-                  m.redraw();
-                },
               },
               [
                 m(
-                  'summary.fm-settings-button',
-                  { 'aria-label': 'Settings', 'data-tooltip': 'Settings' },
+                  IconButton,
+                  {
+                    className: 'fm-settings-button',
+                    'aria-label': 'Settings',
+                    tooltip: 'Settings',
+                    onclick: () => {
+                      if (settingsDisclosureElement === undefined) return;
+                      settingsDisclosureElement.open = !settingsDisclosureElement.open;
+                      settingsDialogOpen = settingsDisclosureElement.open;
+                      if (!settingsDialogOpen && currentSettings !== undefined) {
+                        applyAppearance(currentSettings);
+                      }
+                      m.redraw();
+                    },
+                  },
                   settingsIcon(),
                 ),
+                m('summary.fm-disclosure-summary-hidden'),
                 m(
                   '.fm-settings-editor',
                   {

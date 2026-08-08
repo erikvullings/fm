@@ -277,6 +277,57 @@ describe('navigation controller', () => {
     await navigation;
   });
 
+  it('does not let a background refresh abort or preempt an in-flight explicit navigation', async () => {
+    // Regression test: a `directory.delta` filesystem-watch event for the pane's OLD location
+    // arriving while `navigate()` (e.g. to a fresh search:// location) is still fetching its own
+    // snapshot used to abort that in-flight request via `begin()`, silently discarding the
+    // navigation's results with no error and no results ever appearing in the pane.
+    const context = setup();
+    const pendingNavigate = deferred<DirectorySnapshot>();
+    vi.mocked(context.client.navigatePane).mockReturnValue(pendingNavigate.promise);
+    vi.mocked(context.client.dispatchWorkspaceCommand).mockResolvedValue(
+      workspace('file:///home/erik/Documents'),
+    );
+    const controller = createNavigationController({
+      client: context.client,
+      getWorkspace: context.getWorkspace,
+      replaceWorkspace: context.replaceWorkspace,
+      updatePane: (_paneId, _tabId, view) => context.views.push(view),
+    });
+
+    const navigation = controller.navigate('left', {
+      providerId: 'local',
+      uri: 'file:///home/erik/Documents',
+    });
+    await vi.waitFor(() => expect(context.client.navigatePane).toHaveBeenCalledOnce());
+
+    await controller.load('left', { background: true });
+    expect(context.client.listDirectory).not.toHaveBeenCalled();
+    expect(context.client.navigatePane).toHaveBeenCalledOnce();
+
+    const requestId = vi.mocked(context.client.navigatePane).mock.calls[0]?.[0].requestId;
+    pendingNavigate.resolve(snapshot(requestId ?? '', 'file:///home/erik/Documents', ['Projects']));
+    await navigation;
+
+    expect(context.views.at(-1)?.entries[0]?.name).toBe('Projects');
+  });
+
+  it('lets a background refresh proceed normally when no explicit navigation is in flight', async () => {
+    const context = setup();
+    echoingSnapshot(context.client, 'file:///home/erik', ['Documents']);
+    const controller = createNavigationController({
+      client: context.client,
+      getWorkspace: context.getWorkspace,
+      replaceWorkspace: context.replaceWorkspace,
+      updatePane: (_paneId, _tabId, view) => context.views.push(view),
+    });
+
+    await controller.load('left', { background: true });
+
+    expect(context.client.listDirectory).toHaveBeenCalledOnce();
+    expect(context.views.at(-1)?.entries[0]?.name).toBe('Documents');
+  });
+
   it('uses UUID request identifiers accepted by the transport DTO', async () => {
     const context = setup();
     echoingSnapshot(context.client, 'file:///home/erik', []);

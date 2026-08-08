@@ -140,8 +140,16 @@ function displayedLocation(tab: {
   return tab.location;
 }
 
-/** Converts the persisted DTO into the normalized, directory-free frontend projection. */
-export function workspaceProjectionFromDto(workspace: WorkspaceDto): WorkspaceProjection {
+/** Converts the persisted DTO into the normalized, directory-free frontend projection.
+ *
+ * `redirectSessionOnlyTabs` must only be `true` when hydrating a workspace freshly loaded from
+ * storage (`getWorkspace`/`openWorkspace`) — every other call site (`dispatchWorkspaceCommand`,
+ * `createWorkspace`) reflects a live, in-session state where a `search://`/`archive://` tab is
+ * still valid and must keep displaying its own search-icon/breadcrumb header, not be redirected. */
+export function workspaceProjectionFromDto(
+  workspace: WorkspaceDto,
+  { redirectSessionOnlyTabs = false }: { redirectSessionOnlyTabs?: boolean } = {},
+): WorkspaceProjection {
   const paneOrder: PaneId[] = [];
   const panesById: Record<PaneId, PaneProjection> = {};
 
@@ -151,7 +159,7 @@ export function workspaceProjectionFromDto(workspace: WorkspaceDto): WorkspacePr
     const tabsById: Record<TabId, TabProjection> = {};
     for (const tab of pane.tabs) {
       tabOrder.push(tab.id);
-      const location = displayedLocation(tab);
+      const location = redirectSessionOnlyTabs ? displayedLocation(tab) : tab.location;
       const redirected = location !== tab.location;
       tabsById[tab.id] = {
         id: tab.id,

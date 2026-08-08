@@ -188,13 +188,31 @@ describe('workspaceProjectionFromDto', () => {
       pinned: false,
     });
 
-    const projection = workspaceProjectionFromDto(withSearchTab);
+    const projection = workspaceProjectionFromDto(withSearchTab, { redirectSessionOnlyTabs: true });
     const tab = projection.panesById['pane-left']?.tabsById['tab-search'];
 
     expect(tab?.location).toEqual({ providerId: 'local', uri: 'file:///Users/erik/dev/src' });
     expect(tab?.title).toBe('src');
     expect(tab?.canNavigateBack).toBe(false);
     expect(tab?.canNavigateForward).toBe(false);
+  });
+
+  it('leaves a search:// tab unchanged when not hydrating (live command response)', () => {
+    const withSearchTab = workspaceWithSingleTab({
+      id: 'tab-search',
+      titleOverride: null,
+      location: { providerId: 'search', uri: 'search://local/some-search-id' },
+      history: {
+        back: [{ providerId: 'local', uri: 'file:///Users/erik/dev' }],
+        forward: [],
+      },
+      pinned: false,
+    });
+
+    const projection = workspaceProjectionFromDto(withSearchTab);
+    const tab = projection.panesById['pane-left']?.tabsById['tab-search'];
+
+    expect(tab?.location).toEqual({ providerId: 'search', uri: 'search://local/some-search-id' });
   });
 
   it('leaves a search:// tab unchanged when its history has no usable folder', () => {
@@ -206,7 +224,7 @@ describe('workspaceProjectionFromDto', () => {
       pinned: false,
     });
 
-    const projection = workspaceProjectionFromDto(withSearchTab);
+    const projection = workspaceProjectionFromDto(withSearchTab, { redirectSessionOnlyTabs: true });
     const tab = projection.panesById['pane-left']?.tabsById['tab-search'];
 
     expect(tab?.location).toEqual({ providerId: 'search', uri: 'search://local/some-search-id' });
@@ -224,7 +242,9 @@ describe('workspaceProjectionFromDto', () => {
       pinned: false,
     });
 
-    const projection = workspaceProjectionFromDto(withArchiveTab);
+    const projection = workspaceProjectionFromDto(withArchiveTab, {
+      redirectSessionOnlyTabs: true,
+    });
     const tab = projection.panesById['pane-left']?.tabsById['tab-archive'];
 
     expect(tab?.location).toEqual({ providerId: 'local', uri: 'file:///Users/erik/Downloads' });
