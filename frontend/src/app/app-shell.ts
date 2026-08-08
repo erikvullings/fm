@@ -34,6 +34,11 @@ import {
 import { ContextMenu as DirectoryContextMenu } from '../features/commands/context-menu';
 import { SAMPLE_FILE_AGE_COLUMN } from '../features/directory-table/directory-table';
 import { NativeIconLoader } from '../features/directory-table/native-icon-loader';
+import {
+  operationForDrop,
+  resolveDropTarget,
+  validateDropTarget,
+} from '../features/drag-drop/drag-drop';
 import { FileEditor } from '../features/editor/file-editor';
 import {
   createFileEditorController,
@@ -367,6 +372,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
   /** Pending confirmation for closing a pane's only remaining tab (spec §37). */
   let closeTabConfirmation: { readonly paneId: PaneId; readonly tabId: TabId } | undefined;
   let platform: SelectionPlatform = 'unknown';
+  let draggedLocations: readonly Location[] = [];
   let workspaceRequest: AbortController | undefined;
   let unsubscribeEvents: (() => void) | undefined;
   let unsubscribeConnection: (() => void) | undefined;
@@ -1773,11 +1779,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       );
       const editEntry = selected?.length === 1 ? selected[0] : undefined;
       const otherPaneId = workspace?.paneOrder.find((paneId) => paneId !== active?.paneId);
-      if (
-        editEntry?.kind === 'file' &&
-        !isParentEntry(editEntry.id) &&
-        otherPaneId !== undefined
-      ) {
+      if (editEntry?.kind === 'file' && !isParentEntry(editEntry.id) && otherPaneId !== undefined) {
         event.preventDefault();
         openEditor(attrsClient, otherPaneId, editEntry);
         return;
@@ -2454,6 +2456,79 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
         });
       },
       onContextMenu: (entries, x, y) => openContextMenu(paneId, entries, x, y),
+      onDragStart: (draggedEntries, event) => {
+        draggedLocations = draggedEntries.map((entry) => entry.location);
+        event.dataTransfer?.setData('application/x-fm-locations', 'internal');
+        if (event.dataTransfer != null) event.dataTransfer.effectAllowed = 'copyMove';
+      },
+      onDragOver: (entry, event) => {
+        const target = tab === undefined ? undefined : resolveDropTarget(tab.location, entry);
+        const validation = validateDropTarget(
+          draggedLocations,
+          target,
+          directory.writable === true,
+        );
+        if (!validation.ok) return false;
+        if (event.dataTransfer != null) {
+          event.dataTransfer.dropEffect = operationForDrop(platform, event);
+        }
+        return true;
+      },
+      onDrop: (entry, event) => {
+        if (tab === undefined) return;
+        const target = resolveDropTarget(tab.location, entry);
+        const validation = validateDropTarget(
+          draggedLocations,
+          target,
+          directory.writable === true,
+        );
+        if (!validation.ok) {
+          clipboardMessage = validation.message;
+          return;
+        }
+        const sources = draggedLocations;
+        draggedLocations = [];
+        void client.startOperation({
+          type: operationForDrop(platform, event),
+          sources,
+          destination: target,
+          conflictPolicy: 'ask',
+        });
+      },
+      onTabDragOver: (targetTabId, event) => {
+        const targetTab = pane?.tabsById[targetTabId];
+        const targetDirectory = directories.get(tabKey(paneId, targetTabId));
+        const validation = validateDropTarget(
+          draggedLocations,
+          targetTab?.location,
+          targetDirectory?.writable === true,
+        );
+        if (!validation.ok) return false;
+        if (event.dataTransfer != null)
+          event.dataTransfer.dropEffect = operationForDrop(platform, event);
+        return true;
+      },
+      onTabDrop: (targetTabId, event) => {
+        const targetTab = pane?.tabsById[targetTabId];
+        const targetDirectory = directories.get(tabKey(paneId, targetTabId));
+        const validation = validateDropTarget(
+          draggedLocations,
+          targetTab?.location,
+          targetDirectory?.writable === true,
+        );
+        if (!validation.ok || targetTab === undefined) {
+          if (!validation.ok) clipboardMessage = validation.message;
+          return;
+        }
+        const sources = draggedLocations;
+        draggedLocations = [];
+        void client.startOperation({
+          type: operationForDrop(platform, event),
+          sources,
+          destination: targetTab.location,
+          conflictPolicy: 'ask',
+        });
+      },
       onMultiRename: (selected) => {
         if (tab === undefined) return;
         multiRenameOpen = true;

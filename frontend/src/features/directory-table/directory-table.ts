@@ -74,6 +74,9 @@ export interface DirectoryTableAttrs {
   readonly onRenameCancel?: () => void;
   readonly onRenameCommit?: () => void;
   readonly onContextMenu?: (index: number | undefined, x: number, y: number) => void;
+  readonly onDragStart?: (index: number, event: DragEvent) => void;
+  readonly onDragOver?: (index: number | undefined, event: DragEvent) => boolean;
+  readonly onDrop?: (index: number | undefined, event: DragEvent) => void;
 }
 
 function readRowHeight(element: HTMLElement): number {
@@ -376,6 +379,7 @@ export const DirectoryTable: FactoryComponent<DirectoryTableAttrs> = () => {
   // `pendingCursorIndex` tracks that a post-patch recheck is still owed.
   let pendingCursorIndex: number | undefined;
   let resizeObserver: ResizeObserver | undefined;
+  let dragTargetIndex: number | undefined;
 
   function applyScrollForCursor(attrs: DirectoryTableAttrs, cursorIndex: number): void {
     if (element === undefined || attrs.source === undefined) return;
@@ -470,6 +474,21 @@ export const DirectoryTable: FactoryComponent<DirectoryTableAttrs> = () => {
                 'aria-rowindex': index + 2,
                 'aria-selected': selected ? 'true' : 'false',
                 'data-row-stripe': index % 2 === 1 ? 'alternate' : undefined,
+                draggable: attrs.onDragStart === undefined ? undefined : true,
+                ondragstart: (event: DragEvent) => attrs.onDragStart?.(index, event),
+                ondragover: (event: DragEvent) => {
+                  if (attrs.onDragOver?.(index, event) !== true) return;
+                  event.preventDefault();
+                  dragTargetIndex = index;
+                },
+                ondragleave: () => {
+                  if (dragTargetIndex === index) dragTargetIndex = undefined;
+                },
+                ondrop: (event: DragEvent) => {
+                  event.preventDefault();
+                  dragTargetIndex = undefined;
+                  attrs.onDrop?.(index, event);
+                },
                 onclick: (event: MouseEvent) =>
                   attrs.onCursorChange?.(index, {
                     shiftKey: event.shiftKey,
@@ -485,6 +504,7 @@ export const DirectoryTable: FactoryComponent<DirectoryTableAttrs> = () => {
                   cursor ? 'fm-cursor-row' : '',
                   selected ? 'fm-selected-row' : '',
                   attrs.cutEntryIds?.has(entry.id) === true ? 'fm-cut-entry' : '',
+                  dragTargetIndex === index ? 'fm-drop-target' : '',
                 ].join(' '),
                 style: {
                   transform: `translateY(${window.offsetTop + (index - window.start) * rowHeight}px)`,
@@ -622,6 +642,23 @@ export const DirectoryTable: FactoryComponent<DirectoryTableAttrs> = () => {
                 if (target.scrollTop + target.clientHeight >= target.scrollHeight - rowHeight) {
                   attrs.onEndReached?.();
                 }
+              },
+              ondragover: (event: DragEvent) => {
+                if (
+                  event.target instanceof Element &&
+                  event.target.closest('.fm-directory-row') !== null
+                )
+                  return;
+                if (attrs.onDragOver?.(undefined, event) === true) event.preventDefault();
+              },
+              ondrop: (event: DragEvent) => {
+                if (
+                  event.target instanceof Element &&
+                  event.target.closest('.fm-directory-row') !== null
+                )
+                  return;
+                event.preventDefault();
+                attrs.onDrop?.(undefined, event);
               },
               oncontextmenu: (event: MouseEvent) => {
                 if (

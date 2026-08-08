@@ -73,6 +73,11 @@ export interface WorkspacePaneContent {
    * the single-entry inline rename input. */
   readonly onMultiRename?: (entries: readonly EntrySummary[]) => void;
   readonly onContextMenu?: (entries: readonly EntrySummary[], x: number, y: number) => void;
+  readonly onDragStart?: (entries: readonly EntrySummary[], event: DragEvent) => void;
+  readonly onDragOver?: (entry: EntrySummary | undefined, event: DragEvent) => boolean;
+  readonly onDrop?: (entry: EntrySummary | undefined, event: DragEvent) => void;
+  readonly onTabDragOver?: (tabId: TabId, event: DragEvent) => boolean;
+  readonly onTabDrop?: (tabId: TabId, event: DragEvent) => void;
   /** When set, replaces the pane's directory-listing surface with this content (task 0088). */
   readonly viewerContent?: m.Children;
 }
@@ -445,6 +450,11 @@ export const WorkspaceLayoutView: FactoryComponent<WorkspaceLayoutViewAttrs> = (
         onRename: content.onRename,
         ...(content.onMultiRename === undefined ? {} : { onMultiRename: content.onMultiRename }),
         onContextMenu: content.onContextMenu ?? (() => undefined),
+        ...(content.onDragStart === undefined ? {} : { onDragStart: content.onDragStart }),
+        ...(content.onDragOver === undefined ? {} : { onDragOver: content.onDragOver }),
+        ...(content.onDrop === undefined ? {} : { onDrop: content.onDrop }),
+        ...(content.onTabDragOver === undefined ? {} : { onTabDragOver: content.onTabDragOver }),
+        ...(content.onTabDrop === undefined ? {} : { onTabDrop: content.onTabDrop }),
       }),
     );
   }

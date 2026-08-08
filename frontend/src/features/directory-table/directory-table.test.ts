@@ -114,6 +114,31 @@ describe('DirectoryTable states', () => {
 });
 
 describe('DirectoryTable rows', () => {
+  it('exposes selected rows as drag sources and resolves row drop events', () => {
+    const onDragStart = vi.fn();
+    const onDragOver = vi.fn(() => true);
+    const onDrop = vi.fn();
+    mount({
+      state: { type: 'loaded' },
+      source: entryArraySource([entry({ kind: 'directory' })]),
+      selectedEntryIds: new Set(['entry-1']),
+      onDragStart,
+      onDragOver,
+      onDrop,
+    });
+
+    const row = root.querySelector<HTMLElement>('.fm-directory-row');
+    row?.dispatchEvent(new Event('dragstart', { bubbles: true }));
+    const over = new Event('dragover', { bubbles: true, cancelable: true });
+    row?.dispatchEvent(over);
+    row?.dispatchEvent(new Event('drop', { bubbles: true }));
+
+    expect(row?.draggable).toBe(true);
+    expect(onDragStart).toHaveBeenCalledWith(0, expect.any(Event));
+    expect(over.defaultPrevented).toBe(true);
+    expect(onDrop).toHaveBeenCalledWith(0, expect.any(Event));
+  });
+
   it('clips the final filler stripe to the unused viewport height', () => {
     mount({
       state: { type: 'loaded' },

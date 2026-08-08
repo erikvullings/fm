@@ -876,6 +876,34 @@ describe('AppShell', () => {
     await vi.waitFor(() => expect(file?.classList.contains('fm-cut-entry')).toBe(false));
   });
 
+  it('drags a selection between panes through the operation engine', async () => {
+    const client = new MockFileManagerClient();
+    const startOperation = vi.spyOn(client, 'startOperation');
+    m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
+    await vi.waitFor(() => expect(root.textContent).toContain('.env'));
+
+    const left = root.querySelector<HTMLElement>('[data-pane-id="left"]');
+    const right = root.querySelector<HTMLElement>('[data-pane-id="right"]');
+    const source = [...(left?.querySelectorAll<HTMLElement>('.fm-directory-row') ?? [])].find(
+      (candidate) => candidate.textContent?.includes('.env'),
+    );
+    const target = [...(right?.querySelectorAll<HTMLElement>('.fm-directory-row') ?? [])].find(
+      (candidate) => candidate.textContent?.includes('report.pdf'),
+    );
+    source?.click();
+    source?.dispatchEvent(new Event('dragstart', { bubbles: true }));
+    target?.dispatchEvent(new Event('dragover', { bubbles: true, cancelable: true }));
+    target?.dispatchEvent(new Event('drop', { bubbles: true, cancelable: true }));
+
+    await vi.waitFor(() => expect(startOperation).toHaveBeenCalledOnce());
+    expect(startOperation.mock.calls[0]?.[0]).toMatchObject({
+      type: 'move',
+      sources: [{ uri: 'mock:///.env' }],
+      destination: { uri: 'mock:///Documents' },
+      conflictPolicy: 'ask',
+    });
+  });
+
   it('keeps runtime diagnostics out of the workspace chrome', () => {
     mountShell('mock');
 

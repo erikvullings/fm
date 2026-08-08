@@ -126,6 +126,10 @@ move operation; cut rows remain dimmed until that move is accepted. System clipb
 kept behind the platform-adapter capability boundary. The command palette and selection context menu
 also copy selected filenames, full paths, or paths relative to the active directory as newline-
 separated plain text using the host clipboard.
+Selected rows can also be dragged between panes or onto loaded tabs. Directory rows resolve as the
+destination themselves, invalid/read-only/subtree targets are rejected before drop, and accepted
+drops queue the same conflict-safe copy/move operations as paste (move by default; Option on macOS
+or Control elsewhere copies). Native OS drag-in/out remains hidden while `nativeDragOut` is false.
 The shared application service now exposes semantic operation start/list/get/cancel/pause/resume
 and conflict-resolution methods through matching Axum REST endpoints and Tauri commands. REST
 starts accept `Idempotency-Key` so retries return the original job rather than queueing duplicates;

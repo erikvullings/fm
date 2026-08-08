@@ -27,10 +27,17 @@
 .fm-directory-header,
 .fm-directory-row {
   display: grid;
-  grid-template-columns: minmax(12rem, 1fr) minmax(6rem, 0.25fr) minmax(6rem, 0.2fr) minmax(10rem,
-      0.35fr);
+  grid-template-columns: minmax(12rem, 1fr) minmax(6rem, 0.25fr) minmax(6rem, 0.2fr) minmax(
+      10rem,
+      0.35fr
+    );
   align-items: center;
   box-sizing: border-box;
+}
+
+.fm-directory-row.fm-drop-target {
+  outline: 2px solid var(--fm-selection);
+  outline-offset: -2px;
 }
 
 .fm-directory-header {
@@ -44,7 +51,7 @@
   font-size: 0.92em;
 }
 
-.fm-directory-header>button {
+.fm-directory-header > button {
   position: relative;
   display: flex;
   align-self: stretch;
@@ -58,7 +65,7 @@
   text-align: start;
 }
 
-.fm-directory-header>button::after {
+.fm-directory-header > button::after {
   position: absolute;
   top: 20%;
   right: -3px;
@@ -68,16 +75,16 @@
   content: "";
 }
 
-.fm-directory-header>button:last-child {
+.fm-directory-header > button:last-child {
   border-inline-end: 0;
 }
 
-.fm-directory-header>button:last-child::after {
+.fm-directory-header > button:last-child::after {
   display: none;
 }
 
-.fm-directory-header>button:hover,
-.fm-directory-header>button:focus-visible {
+.fm-directory-header > button:hover,
+.fm-directory-header > button:focus-visible {
   background: var(--fm-hover);
   color: var(--fm-text);
 }
@@ -117,8 +124,10 @@
 
 .fm-directory-row[data-row-stripe="alternate"],
 .fm-directory-row-filler[data-row-stripe="alternate"] {
-  background: var(--fm-directory-row-highlight,
-      color-mix(in srgb, var(--fm-text) 2.5%, transparent));
+  background: var(
+    --fm-directory-row-highlight,
+    color-mix(in srgb, var(--fm-text) 2.5%, transparent)
+  );
 }
 
 .fm-directory-cell {
@@ -166,7 +175,7 @@ img.fm-native-entry-icon {
   object-fit: contain;
 }
 
-.fm-directory-cell>input[type="text"]:not(.browser-default).fm-inline-rename-input {
+.fm-directory-cell > input[type="text"]:not(.browser-default).fm-inline-rename-input {
   box-sizing: border-box;
   width: 100%;
   min-width: 0;
