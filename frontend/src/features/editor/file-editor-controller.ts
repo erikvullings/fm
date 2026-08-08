@@ -38,7 +38,7 @@ export function createFileEditorController(options: {
   entry: EntrySummary;
   update: (state: FileEditorState) => void;
 }): FileEditorController {
-  const language = editableLanguageForExtension(options.entry.extension);
+  const language = editableLanguageForExtension(options.entry.extension, options.entry.name);
   let state: FileEditorState = { status: 'loading', entry: options.entry };
   let disposed = false;
   let request: AbortController | undefined;
@@ -60,7 +60,6 @@ export function createFileEditorController(options: {
     request = new AbortController();
     publish({ status: 'loading', entry: options.entry });
     try {
-      if (language === undefined) throw new Error('This file type uses the external editor.');
       const loaded = await options.client.loadEditableFile(
         { location: options.entry.location },
         request.signal,
@@ -74,7 +73,7 @@ export function createFileEditorController(options: {
         revision: loaded.revision,
         dirty: false,
         saving: false,
-        previewVisible: language === 'markdown',
+        previewVisible: false,
         ...(language === 'markdown' ? { previewHtml: safeMarkdownHtml(loaded.content) } : {}),
         conflict: false,
         closePending: false,

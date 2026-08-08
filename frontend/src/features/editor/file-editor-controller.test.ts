@@ -14,6 +14,22 @@ const entry: EntrySummary = {
 };
 
 describe('file editor controller', () => {
+  it('opens Markdown in source-editing mode before preview is toggled', async () => {
+    const states: FileEditorState[] = [];
+    const controller = createFileEditorController({
+      client: {
+        loadEditableFile: vi.fn().mockResolvedValue({ content: '# Title', revision: 'r1', size: 7 }),
+        saveEditableFile: vi.fn(),
+      },
+      entry: { ...entry, name: 'README.md', extension: 'md' },
+      update: (state) => states.push(state),
+    });
+
+    await vi.waitFor(() => expect(states.at(-1)?.status).toBe('ready'));
+    expect(states.at(-1)).toMatchObject({ language: 'markdown', previewVisible: false });
+    controller.dispose();
+  });
+
   it('tracks dirtiness, formats JSON, and saves with the loaded revision', async () => {
     const states: FileEditorState[] = [];
     const client = {

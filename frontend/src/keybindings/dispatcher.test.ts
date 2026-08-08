@@ -168,7 +168,7 @@ describe('keybinding dispatcher', () => {
     ]);
   });
 
-  it('omits footer entries for actions that are permanently unavailable in this runtime', () => {
+  it('keeps in-app View and Edit visible but omits other permanently unavailable actions', () => {
     const withGatedAction: readonly ActionDescriptor[] = [
       ...actions,
       {
@@ -179,10 +179,28 @@ describe('keybinding dispatcher', () => {
         contextRequirements: { featureAvailable: false },
         source: { kind: 'core' },
       },
+      {
+        id: 'core.edit',
+        title: 'Edit',
+        category: 'fileOperations',
+        defaultShortcuts: [{ key: 'F4' }],
+        contextRequirements: { featureAvailable: false },
+        source: { kind: 'core' },
+      },
+      {
+        id: 'plugin.unavailable',
+        title: 'Unavailable',
+        category: 'fileOperations',
+        defaultShortcuts: [{ key: 'F6' }],
+        contextRequirements: { featureAvailable: false },
+        source: { kind: 'plugin', pluginId: 'test' },
+      },
     ];
 
     const bindings = footerFunctionKeyBindings(withGatedAction, {}, table, () => true);
 
-    expect(bindings.find((binding) => binding.actionId === 'core.view')).toBeUndefined();
+    expect(bindings.find((binding) => binding.actionId === 'core.view')).toBeDefined();
+    expect(bindings.find((binding) => binding.actionId === 'core.edit')).toBeDefined();
+    expect(bindings.find((binding) => binding.actionId === 'plugin.unavailable')).toBeUndefined();
   });
 });

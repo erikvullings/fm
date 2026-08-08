@@ -1,5 +1,5 @@
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
-import { defaultHighlightStyle, syntaxHighlighting } from '@codemirror/language';
+import { HighlightStyle, syntaxHighlighting } from '@codemirror/language';
 import { EditorSelection, EditorState, type Extension, StateEffect } from '@codemirror/state';
 import {
   EditorView,
@@ -9,6 +9,19 @@ import {
   lineNumbers,
 } from '@codemirror/view';
 import m, { type FactoryComponent } from 'mithril';
+import { tags } from '@lezer/highlight';
+
+const fmHighlightStyle = HighlightStyle.define([
+  { tag: [tags.keyword, tags.operatorKeyword, tags.bool, tags.null], color: 'var(--fm-accent)' },
+  { tag: [tags.string, tags.regexp], color: 'var(--fm-success)' },
+  { tag: [tags.number, tags.integer, tags.float], color: 'var(--fm-warning)' },
+  { tag: [tags.comment, tags.lineComment, tags.blockComment], color: 'var(--fm-text-muted)' },
+  { tag: [tags.heading, tags.typeName, tags.className], color: 'var(--fm-accent)' },
+  { tag: [tags.link, tags.url], color: 'var(--fm-accent)', textDecoration: 'underline' },
+  { tag: tags.emphasis, fontStyle: 'italic' },
+  { tag: tags.strong, fontWeight: 'bold' },
+  { tag: tags.invalid, color: 'var(--fm-error)' },
+]);
 
 export interface CodeMirrorEditorAttrs {
   readonly content: string;
@@ -23,18 +36,38 @@ export const CodeMirrorEditor: FactoryComponent<CodeMirrorEditorAttrs> = () => {
   let view: EditorView | undefined;
   let currentContent = '';
   const extensions = (attrs: CodeMirrorEditorAttrs): Extension[] => [
+    EditorView.theme({
+      '&': {
+        backgroundColor: 'var(--fm-surface)',
+        color: 'var(--fm-text)',
+        fontFamily: 'var(--fm-font-family)',
+        fontSize: '0.8em',
+      },
+      '.cm-content': { caretColor: 'var(--fm-accent)' },
+      '.cm-cursor, .cm-dropCursor': { borderLeftColor: 'var(--fm-accent)' },
+      '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection': {
+        backgroundColor: 'var(--fm-selection)',
+      },
+      '.cm-gutters': {
+        backgroundColor: 'var(--fm-surface)',
+        color: 'var(--fm-text-muted)',
+        borderRightColor: 'var(--fm-border)',
+      },
+      '.cm-activeLine, .cm-activeLineGutter': { backgroundColor: 'var(--fm-hover)' },
+      '.cm-activeLineGutter': { color: 'var(--fm-text)' },
+    }),
     lineNumbers(),
-    syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+    syntaxHighlighting(fmHighlightStyle, { fallback: true }),
     EditorState.readOnly.of(attrs.readOnly === true),
     EditorView.editable.of(attrs.readOnly !== true),
     ...(attrs.readOnly === true
       ? []
       : [
-          history(),
-          highlightActiveLine(),
-          highlightActiveLineGutter(),
-          keymap.of([...defaultKeymap, ...historyKeymap]),
-        ]),
+        history(),
+        highlightActiveLine(),
+        highlightActiveLineGutter(),
+        keymap.of([...defaultKeymap, ...historyKeymap]),
+      ]),
     ...(attrs.language === undefined ? [] : [attrs.language]),
     ...(attrs.extensions ?? []),
     EditorView.domEventHandlers({

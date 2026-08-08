@@ -129,9 +129,10 @@ export interface FunctionKeyBinding {
  * order; `actionAvailable` says whether the bound action can run right
  * now (see `evaluateActionAvailability`). Actions that are permanently
  * unavailable in this runtime (`contextRequirements.featureAvailable ===
- * false`, e.g. platform-gated actions like `core.edit`/`core.view` in
- * browser/server mode) are omitted entirely rather than shown disabled,
- * since they can never become available without a full session restart.
+ * false`) are omitted entirely rather than shown disabled, since they can
+ * never become available without a full session restart. `core.view` and
+ * `core.edit` are exceptions because their in-app implementations work in
+ * browser/server mode even when the platform fallback does not.
  */
 export function footerFunctionKeyBindings(
   actions: readonly ActionDescriptor[],
@@ -143,7 +144,15 @@ export function footerFunctionKeyBindings(
     .filter((binding) => FOOTER_SHORTCUT_PATTERN.test(binding.shortcut))
     .flatMap((binding) => {
       const action = actions.find((candidate) => candidate.id === binding.actionId);
-      if (action === undefined || action.contextRequirements.featureAvailable === false) return [];
+      // View and Edit have browser-capable in-app implementations. Their backend descriptors
+      // only describe whether the OS fallback is available, so keep their footer hints visible.
+      if (
+        action === undefined ||
+        (action.contextRequirements.featureAvailable === false &&
+          action.id !== 'core.view' &&
+          action.id !== 'core.edit')
+      )
+        return [];
       return [
         {
           actionId: action.id,

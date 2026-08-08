@@ -81,7 +81,7 @@
   font-size: 0.92em;
 }
 
-.fm-file-viewer-search > input[type="text"]:not(.browser-default).fm-file-viewer-search-input {
+.fm-file-viewer-search>input[type="text"]:not(.browser-default).fm-file-viewer-search-input {
   box-sizing: border-box;
   flex: 1;
   min-width: 0;
@@ -135,68 +135,14 @@
   grid-row: 3;
   overflow: auto;
   min-height: 0;
-  padding: 0.5rem;
+  /* padding: 0.5rem; */
 }
 
-.fm-file-viewer-text {
-  overflow-wrap: anywhere;
-  margin: 0;
-  white-space: pre-wrap;
-  font-family: var(--fm-mono-font-family, monospace);
-  font-size: 0.9em;
-}
-
-.fm-file-viewer-highlight {
-  background: var(--fm-accent);
-  color: var(--fm-surface);
-}
-
-/* Syntax highlighting (highlight.js token classes), mapped to the file-manager's own theme
- * tokens rather than a bundled hljs stylesheet so it follows the active light/dark/custom theme. */
-.fm-file-viewer-text.hljs {
-  background: transparent;
+.fm-file-viewer-markdown {
+  padding: 1rem;
   color: var(--fm-text);
-}
-
-.fm-file-viewer-text .hljs-comment,
-.fm-file-viewer-text .hljs-quote {
-  color: var(--fm-text-muted);
-  font-style: italic;
-}
-
-.fm-file-viewer-text .hljs-keyword,
-.fm-file-viewer-text .hljs-selector-tag,
-.fm-file-viewer-text .hljs-literal,
-.fm-file-viewer-text .hljs-section,
-.fm-file-viewer-text .hljs-link {
-  color: var(--fm-accent);
-  font-weight: 600;
-}
-
-.fm-file-viewer-text .hljs-string,
-.fm-file-viewer-text .hljs-attr,
-.fm-file-viewer-text .hljs-regexp,
-.fm-file-viewer-text .hljs-addition {
-  color: var(--fm-success);
-}
-
-.fm-file-viewer-text .hljs-number,
-.fm-file-viewer-text .hljs-symbol,
-.fm-file-viewer-text .hljs-bullet {
-  color: var(--fm-warning);
-}
-
-.fm-file-viewer-text .hljs-title,
-.fm-file-viewer-text .hljs-name,
-.fm-file-viewer-text .hljs-built_in,
-.fm-file-viewer-text .hljs-type {
-  color: var(--fm-accent);
-}
-
-.fm-file-viewer-text .hljs-deletion,
-.fm-file-viewer-text .hljs-variable,
-.fm-file-viewer-text .hljs-template-variable {
-  color: var(--fm-error);
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 .fm-file-viewer-loading-more {

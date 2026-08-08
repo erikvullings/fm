@@ -2,6 +2,7 @@ import m, { type FactoryComponent } from 'mithril';
 import { closeIcon } from '../../components/tabler-icons';
 import { CodeMirrorEditor } from '../editor/code-mirror-editor';
 import { editableLanguageForExtension, languageExtension } from '../editor/editor-language';
+import { safeMarkdownHtml } from '../editor/markdown-preview';
 import type { FileViewerSearchState, FileViewerState } from './file-viewer-controller';
 import './file-viewer.css';
 
@@ -122,7 +123,7 @@ function renderTextBody(
 ): m.Children {
   const content = state.content;
   if (content.kind !== 'text') return undefined;
-  const editableLanguage = editableLanguageForExtension(state.entry.extension);
+  const editableLanguage = editableLanguageForExtension(state.entry.extension, state.entry.name);
   return m(
     '.fm-file-viewer-body.fm-file-viewer-body-text',
     {
@@ -138,21 +139,21 @@ function renderTextBody(
       },
     },
     [
-      m(CodeMirrorEditor, {
-        content: content.text,
-        readOnly: true,
-        ...(editableLanguage === undefined
-          ? {}
-          : { language: languageExtension(editableLanguage) }),
-        ...(content.highlightOffset === undefined || content.highlightLength === undefined
-          ? {}
-          : {
-              selection: {
-                from: content.highlightOffset,
-                to: content.highlightOffset + content.highlightLength,
-              },
-            }),
-      }),
+      editableLanguage === 'markdown'
+        ? m('.fm-file-viewer-markdown', { innerHTML: safeMarkdownHtml(content.text) })
+        : m(CodeMirrorEditor, {
+            content: content.text,
+            readOnly: true,
+            language: languageExtension(editableLanguage),
+            ...(content.highlightOffset === undefined || content.highlightLength === undefined
+              ? {}
+              : {
+                  selection: {
+                    from: content.highlightOffset,
+                    to: content.highlightOffset + content.highlightLength,
+                  },
+                }),
+          }),
       content.loadingMore ? m('.fm-file-viewer-loading-more', 'Loading more…') : undefined,
     ],
   );

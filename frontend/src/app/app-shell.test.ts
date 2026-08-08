@@ -535,7 +535,7 @@ describe('AppShell', () => {
     });
   });
 
-  it('invokes core.edit on the selected file with F4', async () => {
+  it('invokes the external core.edit action on the selected file with Ctrl+F4', async () => {
     const client = new MockFileManagerClient();
     const invokeAction = vi.spyOn(client, 'invokeAction');
     m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
@@ -545,7 +545,9 @@ describe('AppShell', () => {
       (row) => row.textContent?.includes('.env'),
     );
     file?.click();
-    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'F4', bubbles: true }));
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'F4', ctrlKey: true, bubbles: true }),
+    );
 
     await vi.waitFor(() => expect(invokeAction).toHaveBeenCalledOnce());
     expect(invokeAction.mock.calls[0]?.[0]).toMatchObject({
@@ -554,14 +556,14 @@ describe('AppShell', () => {
     });
   });
 
-  it('opens supported text files in the opposite pane with F4', async () => {
+  it('opens extensionless text files in the opposite pane with F4', async () => {
     const client = new MockFileManagerClient();
     const invokeAction = vi.spyOn(client, 'invokeAction');
     m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
-    await vi.waitFor(() => expect(root.textContent).toContain('日本語.txt'));
+    await vi.waitFor(() => expect(root.textContent).toContain('.env'));
     const activePane = root.querySelector<HTMLElement>('[data-active="true"] > .fm-pane');
     const file = [...(activePane?.querySelectorAll<HTMLElement>('.fm-directory-row') ?? [])].find(
-      (row) => row.textContent?.includes('日本語.txt'),
+      (row) => row.textContent?.includes('.env'),
     );
     file?.click();
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'F4', bubbles: true }));

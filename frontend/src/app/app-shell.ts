@@ -34,7 +34,6 @@ import {
 import { ContextMenu as DirectoryContextMenu } from '../features/commands/context-menu';
 import { SAMPLE_FILE_AGE_COLUMN } from '../features/directory-table/directory-table';
 import { NativeIconLoader } from '../features/directory-table/native-icon-loader';
-import { editableLanguageForExtension } from '../features/editor/editor-language';
 import { FileEditor } from '../features/editor/file-editor';
 import {
   createFileEditorController,
@@ -1776,7 +1775,6 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       const otherPaneId = workspace?.paneOrder.find((paneId) => paneId !== active?.paneId);
       if (
         editEntry?.kind === 'file' &&
-        editableLanguageForExtension(editEntry.extension) !== undefined &&
         !isParentEntry(editEntry.id) &&
         otherPaneId !== undefined
       ) {

@@ -92,6 +92,27 @@ describe('FileViewer', () => {
     expect(root.querySelector('.fm-file-viewer-search-input')).not.toBeNull();
   });
 
+  it('renders Markdown for F3 instead of showing its source', () => {
+    mount(
+      baseAttrs({
+        status: 'ready',
+        entry: entry({ name: 'README.md', extension: 'md' }),
+        content: {
+          kind: 'text',
+          windowOffset: 0,
+          windowEnd: 7,
+          text: '# Title',
+          atStart: true,
+          atEnd: true,
+          loadingMore: false,
+        },
+      }),
+    );
+
+    expect(root.querySelector('.fm-file-viewer-markdown h1')?.textContent).toBe('Title');
+    expect(root.querySelector('.cm-editor')).toBeNull();
+  });
+
   it('highlights the active search match within the loaded window', () => {
     mount(
       baseAttrs({
