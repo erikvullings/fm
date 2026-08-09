@@ -49,3 +49,6 @@ Add first-class discovery and presentation of cloud-backed filesystem locations 
 - 2026-08-10: Axum browser mode now selects the platform adapter for the server host instead of the
   empty fallback adapter. Because browser clients browse the server filesystem, cloud locations
   (including macOS iCloud Drive) are now discoverable and navigable there as well as in Tauri.
+- 2026-08-10: Discovered cloud roots are no longer offered as user-addable favourites because they
+  already have a permanent Cloud menu entry. The tab-strip button uses `heartPlusIcon` only when
+  the current folder can be added, and `heartIcon` otherwise.

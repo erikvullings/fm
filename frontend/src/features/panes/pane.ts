@@ -1,6 +1,6 @@
 import m, { type FactoryComponent, type VnodeDOM } from 'mithril';
 import { IconButton } from 'mithril-materialized';
-import { heartIcon, plusIcon, searchIcon } from '../../components/tabler-icons';
+import { heartIcon, heartPlusIcon, plusIcon, searchIcon } from '../../components/tabler-icons';
 import {
   dispatchKeybinding,
   hasPrimaryModifier,
@@ -349,7 +349,7 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
   }
 
   function addCurrentFavourite(attrs: PaneAttrs): void {
-    if (attrs.location === undefined || attrs.onAddFavourite === undefined) return;
+    if (!canAddCurrentFavourite(attrs) || attrs.location === undefined) return;
     const label = favouriteLabel.trim() || defaultFavouriteLabel(attrs.path);
     void attrs.onAddFavourite(label, attrs.location);
     favouriteLabel = '';
@@ -379,6 +379,18 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
 
   function locationKey(location: Location): string {
     return `${location.providerId}:${location.uri}`;
+  }
+
+  function canAddCurrentFavourite(attrs: PaneAttrs): boolean {
+    if (attrs.location === undefined || attrs.onAddFavourite === undefined) return false;
+    const currentKey = locationKey(attrs.location);
+    const alreadyFavourite = attrs.favouriteLocations?.some(
+      ({ location }) => locationKey(location) === currentKey,
+    );
+    const permanentCloudLocation = attrs.systemLocations?.some(
+      ({ kind, location }) => kind === 'cloud' && locationKey(location) === currentKey,
+    );
+    return alreadyFavourite !== true && permanentCloudLocation !== true;
   }
 
   function beginRename(attrs: PaneAttrs): void {
@@ -844,7 +856,7 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
                   else openFavourites(attrs);
                 },
               },
-              heartIcon(),
+              canAddCurrentFavourite(attrs) ? heartPlusIcon() : heartIcon(),
             ),
           ]),
           favouritesOpen
@@ -978,7 +990,7 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
                             'Retry',
                           ),
                         ]),
-                    attrs.location !== undefined && attrs.onAddFavourite !== undefined
+                    canAddCurrentFavourite(attrs)
                       ? m(
                           'form.fm-favourites-add',
                           {

@@ -363,6 +363,53 @@ describe('Pane breadcrumb editing', () => {
     expect(root.querySelector('.fm-icon-heart')).not.toBeNull();
   });
 
+  it('shows heart-plus when the current folder can be added', () => {
+    mount(
+      attrs({
+        location: { providerId: 'local', uri: 'file:///home/erik/Projects' },
+        onAddFavourite: vi.fn(),
+      }),
+    );
+
+    expect(root.querySelector('.fm-icon-heart-plus')).not.toBeNull();
+    expect(root.querySelector('.fm-icon-heart')).toBeNull();
+  });
+
+  it('does not offer to add a discovered cloud location', () => {
+    const location = { providerId: 'local' as const, uri: 'file:///home/erik/OneDrive' };
+    const onAddFavourite = vi.fn();
+    mount(
+      attrs({
+        location,
+        onAddFavourite,
+        systemLocations: [{ name: 'OneDrive', kind: 'cloud', location }],
+      }),
+    );
+
+    expect(root.querySelector('.fm-icon-heart')).not.toBeNull();
+    expect(root.querySelector('.fm-icon-heart-plus')).toBeNull();
+    root.querySelector<HTMLButtonElement>('.fm-pane-tab-favourites')?.click();
+    m.redraw.sync();
+    expect(root.querySelector('.fm-favourites-add')).toBeNull();
+    expect(onAddFavourite).not.toHaveBeenCalled();
+  });
+
+  it('does not offer to add an existing favourite again', () => {
+    const location = { providerId: 'local' as const, uri: 'file:///home/erik/Projects' };
+    mount(
+      attrs({
+        location,
+        onAddFavourite: vi.fn(),
+        favouriteLocations: [{ label: 'Projects', location }],
+      }),
+    );
+
+    expect(root.querySelector('.fm-icon-heart')).not.toBeNull();
+    root.querySelector<HTMLButtonElement>('.fm-pane-tab-favourites')?.click();
+    m.redraw.sync();
+    expect(root.querySelector('.fm-favourites-add')).toBeNull();
+  });
+
   it('opens the favourites menu and navigates to a selected favourite', async () => {
     const location = { providerId: 'local' as const, uri: 'file:///home/erik/Projects' };
     const onNavigateLocation = vi.fn();
