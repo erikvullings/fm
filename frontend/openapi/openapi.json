@@ -1,6 +1,19 @@
 {
   "components": {
     "schemas": {
+      "AcceptSshHostKeyRequestDto": {
+        "description": "Request body for `POST /api/v1/connections/{connectionId}/hostKey/accept`.",
+        "properties": {
+          "fingerprint": {
+            "description": "The exact fingerprint being accepted; the server re-probes the host\nand rejects the request if this no longer matches what is currently\npresented (defense against confirming a stale or attacker-supplied\nfingerprint).",
+            "type": "string"
+          }
+        },
+        "required": [
+          "fingerprint"
+        ],
+        "type": "object"
+      },
       "ActionContextRequirementsDto": {
         "description": "Predicates the backend re-validates before invoking an action (spec §18).",
         "properties": {
@@ -221,6 +234,8 @@
           "actionNotFound",
           "actionUnavailable",
           "platformOperationFailed",
+          "hostKeyUnverified",
+          "hostKeyMismatch",
           "internal"
         ],
         "type": "string"
@@ -678,6 +693,8 @@
           "connected",
           "reconnecting",
           "authenticationRequired",
+          "hostKeyUnverified",
+          "hostKeyMismatch",
           "failed"
         ],
         "type": "string"
@@ -1286,6 +1303,76 @@
           "requireKnownHost"
         ],
         "type": "string"
+      },
+      "HostKeyProbeDto": {
+        "description": "Result of probing an SSH connection's currently presented host key\nwithout authenticating (task 0104, spec §6.4).",
+        "oneOf": [
+          {
+            "description": "The presented fingerprint matches the one already accepted; nothing\nto confirm.",
+            "properties": {
+              "fingerprint": {
+                "description": "`SHA256:<base64>` fingerprint the host presented.",
+                "type": "string"
+              },
+              "status": {
+                "enum": [
+                  "trusted"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "fingerprint",
+              "status"
+            ],
+            "type": "object"
+          },
+          {
+            "description": "No fingerprint is stored for this connection yet; the caller may\nexplicitly accept it via `POST .../hostKey/accept`.",
+            "properties": {
+              "fingerprint": {
+                "description": "`SHA256:<base64>` fingerprint the host presented.",
+                "type": "string"
+              },
+              "status": {
+                "enum": [
+                  "unverified"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "fingerprint",
+              "status"
+            ],
+            "type": "object"
+          },
+          {
+            "description": "A fingerprint is stored, but it does not match what the host just\npresented; never silently accepted.",
+            "properties": {
+              "expectedFingerprint": {
+                "description": "`SHA256:<base64>` fingerprint previously accepted and stored.",
+                "type": "string"
+              },
+              "fingerprint": {
+                "description": "`SHA256:<base64>` fingerprint the host presented this time.",
+                "type": "string"
+              },
+              "status": {
+                "enum": [
+                  "mismatch"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "fingerprint",
+              "expectedFingerprint",
+              "status"
+            ],
+            "type": "object"
+          }
+        ]
       },
       "ImageDimensionsDto": {
         "description": "Pixel dimensions of an image entry.",
@@ -4280,6 +4367,109 @@
           }
         },
         "summary": "Marks a connection as disconnected."
+      }
+    },
+    "/api/v1/connections/{connectionId}/hostKey/accept": {
+      "post": {
+        "operationId": "acceptSshHostKey",
+        "parameters": [
+          {
+            "description": "The SSH connection whose host key is being accepted",
+            "in": "path",
+            "name": "connectionId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AcceptSshHostKeyRequestDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "The host key was accepted and persisted"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationErrorDto"
+                }
+              }
+            },
+            "description": "The fingerprint no longer matches what the host presents, the connection requires a pre-established known host, or it is not an SSH connection"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationErrorDto"
+                }
+              }
+            },
+            "description": "No connection exists with this id"
+          }
+        },
+        "summary": "Accepts (persists) a host-key fingerprint for an SSH connection (task\n0104, spec §6.4) - the only endpoint that ever writes to the known-hosts\nstore, and only after the server re-probes to confirm the host is still\npresenting exactly the fingerprint being accepted."
+      }
+    },
+    "/api/v1/connections/{connectionId}/hostKey/probe": {
+      "post": {
+        "operationId": "probeSshHostKey",
+        "parameters": [
+          {
+            "description": "The SSH connection to probe",
+            "in": "path",
+            "name": "connectionId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HostKeyProbeDto"
+                }
+              }
+            },
+            "description": "The host key currently presented, and whether it is trusted"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationErrorDto"
+                }
+              }
+            },
+            "description": "The connection is not an SSH connection"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationErrorDto"
+                }
+              }
+            },
+            "description": "No connection exists with this id"
+          }
+        },
+        "summary": "Probes an SSH connection's currently presented host key without\nauthenticating (task 0104, spec §6.4's mandatory explicit confirmation\nflow) - lets a caller decide whether to accept a never-seen or changed\nkey before a `connect` attempt reports\n[`fm_transport_dto::ApplicationErrorCode::HostKeyUnverified`]/\n[`fm_transport_dto::ApplicationErrorCode::HostKeyMismatch`] via its\n`status` field."
       }
     },
     "/api/v1/connections/{connectionId}/test": {

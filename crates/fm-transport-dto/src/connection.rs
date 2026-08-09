@@ -49,8 +49,14 @@ pub enum ConnectionStatusDto {
     Reconnecting,
     /// The connection could not authenticate; a valid credential is needed.
     AuthenticationRequired,
+    /// The remote host presented a key that has never been verified before
+    /// (task 0104, spec §6.4); an explicit accept action is required.
+    HostKeyUnverified,
+    /// The remote host's key changed since it was last accepted (task 0104,
+    /// spec §6.4); never silently accepted.
+    HostKeyMismatch,
     /// The last connection attempt failed for a reason other than
-    /// authentication.
+    /// authentication or a host-key state.
     Failed,
 }
 
@@ -277,6 +283,47 @@ pub struct UpdateConnectionRequestDto {
     pub secret: Option<ConnectionSecretInputDto>,
 }
 
+/// Result of probing an SSH connection's currently presented host key
+/// without authenticating (task 0104, spec §6.4).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
+#[serde(tag = "status", rename_all = "camelCase")]
+pub enum HostKeyProbeDto {
+    /// The presented fingerprint matches the one already accepted; nothing
+    /// to confirm.
+    #[serde(rename_all = "camelCase")]
+    Trusted {
+        /// `SHA256:<base64>` fingerprint the host presented.
+        fingerprint: String,
+    },
+    /// No fingerprint is stored for this connection yet; the caller may
+    /// explicitly accept it via `POST .../hostKey/accept`.
+    #[serde(rename_all = "camelCase")]
+    Unverified {
+        /// `SHA256:<base64>` fingerprint the host presented.
+        fingerprint: String,
+    },
+    /// A fingerprint is stored, but it does not match what the host just
+    /// presented; never silently accepted.
+    #[serde(rename_all = "camelCase")]
+    Mismatch {
+        /// `SHA256:<base64>` fingerprint the host presented this time.
+        fingerprint: String,
+        /// `SHA256:<base64>` fingerprint previously accepted and stored.
+        expected_fingerprint: String,
+    },
+}
+
+/// Request body for `POST /api/v1/connections/{connectionId}/hostKey/accept`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AcceptSshHostKeyRequestDto {
+    /// The exact fingerprint being accepted; the server re-probes the host
+    /// and rejects the request if this no longer matches what is currently
+    /// presented (defense against confirming a stale or attacker-supplied
+    /// fingerprint).
+    pub fingerprint: String,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -442,6 +489,8 @@ mod tests {
             ConnectionStatusDto::Connected,
             ConnectionStatusDto::Reconnecting,
             ConnectionStatusDto::AuthenticationRequired,
+            ConnectionStatusDto::HostKeyUnverified,
+            ConnectionStatusDto::HostKeyMismatch,
             ConnectionStatusDto::Failed,
         ] {
             let json = serde_json::to_string(&status).expect("serialization must succeed");
@@ -449,5 +498,56 @@ mod tests {
                 serde_json::from_str(&json).expect("deserialization must succeed");
             assert_eq!(parsed, status);
         }
+    }
+
+    #[test]
+    fn host_key_probe_dto_serializes_with_a_status_tag_and_camel_case_fields() {
+        let trusted = HostKeyProbeDto::Trusted {
+            fingerprint: "SHA256:abc".to_owned(),
+        };
+        let value = serde_json::to_value(&trusted).expect("serialization must succeed");
+        assert_eq!(value["status"], "trusted");
+        assert_eq!(value["fingerprint"], "SHA256:abc");
+
+        let mismatch = HostKeyProbeDto::Mismatch {
+            fingerprint: "SHA256:new".to_owned(),
+            expected_fingerprint: "SHA256:old".to_owned(),
+        };
+        let value = serde_json::to_value(&mismatch).expect("serialization must succeed");
+        assert_eq!(value["status"], "mismatch");
+        assert_eq!(value["fingerprint"], "SHA256:new");
+        assert_eq!(value["expectedFingerprint"], "SHA256:old");
+    }
+
+    #[test]
+    fn host_key_probe_dto_round_trips_through_serde_json_for_every_variant() {
+        for probe in [
+            HostKeyProbeDto::Trusted {
+                fingerprint: "SHA256:abc".to_owned(),
+            },
+            HostKeyProbeDto::Unverified {
+                fingerprint: "SHA256:def".to_owned(),
+            },
+            HostKeyProbeDto::Mismatch {
+                fingerprint: "SHA256:new".to_owned(),
+                expected_fingerprint: "SHA256:old".to_owned(),
+            },
+        ] {
+            let json = serde_json::to_string(&probe).expect("serialization must succeed");
+            let parsed: HostKeyProbeDto =
+                serde_json::from_str(&json).expect("deserialization must succeed");
+            assert_eq!(parsed, probe);
+        }
+    }
+
+    #[test]
+    fn accept_ssh_host_key_request_dto_round_trips_through_serde_json() {
+        let request = AcceptSshHostKeyRequestDto {
+            fingerprint: "SHA256:abc".to_owned(),
+        };
+        let json = serde_json::to_string(&request).expect("serialization must succeed");
+        let parsed: AcceptSshHostKeyRequestDto =
+            serde_json::from_str(&json).expect("deserialization must succeed");
+        assert_eq!(parsed, request);
     }
 }

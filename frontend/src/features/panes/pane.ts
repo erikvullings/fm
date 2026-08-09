@@ -18,7 +18,12 @@ import type {
   SystemLocation,
   TabId,
 } from '../../models';
-import { connectionStatusGlyph, connectionStatusLabel } from '../connections/connections-model';
+import {
+  connectionStatusGlyph,
+  connectionStatusLabel,
+  isBrowsable,
+  sftpRootLocation,
+} from '../connections/connections-model';
 import {
   type DirectoryColumnDescriptor,
   DirectoryTable,
@@ -924,11 +929,19 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
                         m('strong', 'SERVERS'),
                         ...(attrs.connections ?? []).map((connection) =>
                           m(
-                            '.fm-server-item',
+                            'button.fm-server-item',
                             {
                               key: connection.id,
+                              type: 'button',
                               role: 'menuitem',
-                              title: connectionStatusLabel(connection.status),
+                              title: isBrowsable(connection)
+                                ? `${connectionStatusLabel(connection.status)} — open ${connection.name}`
+                                : connectionStatusLabel(connection.status),
+                              disabled: !isBrowsable(connection),
+                              onclick: isBrowsable(connection)
+                                ? () =>
+                                    void navigateFavourite(sftpRootLocation(connection.id), attrs)
+                                : undefined,
                             },
                             [
                               m('span.fm-server-status', connectionStatusGlyph(connection.status)),

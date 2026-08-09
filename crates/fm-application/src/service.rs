@@ -83,6 +83,7 @@ pub struct FileManagerService {
     platform: Arc<dyn PlatformAdapter>,
     workspaces: WorkspaceService<JsonFileWorkspaceRepository>,
     connections: ConnectionService<JsonFileConnectionRepository>,
+    ssh_connections: Arc<fm_ssh::SshConnectionManager>,
     directories: DirectoryService,
     providers: ProviderRegistry,
     archive_provider: Arc<ArchiveFileSystemProvider>,
@@ -404,6 +405,23 @@ impl FileManagerService {
         providers.register(Arc::new(SearchFileSystemProvider::new(Arc::clone(
             &search_store,
         ))));
+        // SSH/SFTP (task 0104, spec §6). `known_hosts` is a sibling of
+        // `connections` under the same settings directory, following that
+        // repository's own convention; `ssh_connections` is shared between
+        // the dialer (connect/test from the Connections UI) and the SFTP
+        // provider (browsing), so a successful connect/test and a later
+        // browse reuse the same pooled session instead of dialing twice.
+        let ssh_known_hosts = Arc::new(fm_ssh::JsonFileKnownHostsStore::new(
+            settings_directory.join("ssh-known-hosts.json"),
+        ));
+        let ssh_connections = Arc::new(fm_ssh::SshConnectionManager::new(ssh_known_hosts));
+        providers.register(Arc::new(fm_vfs_sftp::SftpFileSystemProvider::new(
+            ssh_connections.clone(),
+            Arc::new(crate::ssh::SshResolver::new(
+                JsonFileConnectionRepository::new(settings_directory.join("connections")),
+                credential_store.clone(),
+            )),
+        )));
         let settings_store = SettingsStore::new(&settings_directory);
         let loaded = settings_store
             .load()
@@ -444,7 +462,12 @@ impl FileManagerService {
                 JsonFileConnectionRepository::new(settings_directory.join("connections")),
                 credential_store,
                 events.clone(),
+            )
+            .with_dialer(
+                fm_connections::ConnectionKind::Ssh,
+                Arc::new(crate::ssh::SshDialer::new(ssh_connections.clone())),
             ),
+            ssh_connections,
             directories,
             providers,
             archive_provider,
@@ -2108,6 +2131,130 @@ impl FileManagerService {
         let status = self.connections.test(connection_id).await?;
         let profile = self.connections.get(connection_id).await?;
         Ok(connection_dto::connection_dto(profile, status))
+    }
+
+    /// Probes an SSH connection's currently presented host key without
+    /// authenticating (task 0104, spec §6.4's mandatory explicit
+    /// confirmation flow) - lets a caller decide whether to accept a
+    /// never-seen or changed key before a real `connect` attempt, which
+    /// would otherwise simply fail with [`ApplicationError::HostKeyUnverified`]/
+    /// [`ApplicationError::HostKeyMismatch`].
+    pub async fn probe_ssh_host_key(
+        &self,
+        id: Uuid,
+    ) -> Result<fm_transport_dto::HostKeyProbeDto, ApplicationError> {
+        let connection_id: ConnectionId = id.into();
+        let profile = self.connections.get(connection_id).await?;
+        let target = ssh_target_of(&profile)?;
+        let verification = self
+            .ssh_connections
+            .probe_host_key(&connection_id.to_string(), &target)
+            .await
+            .map_err(|error| ApplicationError::PlatformOperationFailed(error.to_string()))?;
+        Ok(host_key_probe_dto(verification))
+    }
+
+    /// Accepts (persists) a host-key fingerprint for an SSH connection (task
+    /// 0104, spec §6.4) - the only path that ever writes to the known-hosts
+    /// store, and only after re-probing to confirm the host is still
+    /// presenting exactly the fingerprint being accepted (defense against
+    /// confirming a stale or attacker-supplied value passed by a caller).
+    ///
+    /// A connection configured with
+    /// [`fm_connections::HostKeyPolicy::RequireKnownHost`] refuses to
+    /// establish first-time trust through this call (it only ever succeeds
+    /// once a fingerprint is already known by some other means); it may
+    /// still be used to re-confirm a changed key that was previously known.
+    pub async fn accept_ssh_host_key(
+        &self,
+        id: Uuid,
+        fingerprint: String,
+    ) -> Result<(), ApplicationError> {
+        let connection_id: ConnectionId = id.into();
+        let profile = self.connections.get(connection_id).await?;
+        let target = ssh_target_of(&profile)?;
+        let key = connection_id.to_string();
+        let verification = self
+            .ssh_connections
+            .probe_host_key(&key, &target)
+            .await
+            .map_err(|error| ApplicationError::PlatformOperationFailed(error.to_string()))?;
+        let presented = host_key_verification_fingerprint(&verification);
+        if presented != fingerprint {
+            return Err(ApplicationError::InvalidRequest(
+                "the host key changed again since it was probed; re-probe before accepting"
+                    .to_owned(),
+            ));
+        }
+        let configuration = ssh_configuration_of(&profile)?;
+        if matches!(verification, fm_ssh::HostKeyVerification::Unverified { .. })
+            && matches!(
+                configuration.host_key_policy,
+                fm_connections::HostKeyPolicy::RequireKnownHost
+            )
+        {
+            return Err(ApplicationError::InvalidRequest(
+                "this connection requires a pre-established known host key and does not accept \
+                 first-time trust"
+                    .to_owned(),
+            ));
+        }
+        self.ssh_connections
+            .known_hosts()
+            .accept(&key, fingerprint)
+            .await
+            .map_err(|error| ApplicationError::PlatformOperationFailed(error.to_string()))?;
+        Ok(())
+    }
+}
+
+fn ssh_configuration_of(
+    profile: &fm_connections::ConnectionProfile,
+) -> Result<&fm_connections::SshConnectionConfiguration, ApplicationError> {
+    match &profile.configuration {
+        fm_connections::ConnectionConfiguration::Ssh(configuration) => Ok(configuration),
+        _ => Err(ApplicationError::InvalidRequest(
+            "connection is not an SSH connection".to_owned(),
+        )),
+    }
+}
+
+fn ssh_target_of(
+    profile: &fm_connections::ConnectionProfile,
+) -> Result<fm_ssh::SshConnectTarget, ApplicationError> {
+    let configuration = ssh_configuration_of(profile)?;
+    Ok(fm_ssh::SshConnectTarget {
+        host: configuration.host.clone(),
+        port: configuration.port,
+        username: configuration.username.clone(),
+    })
+}
+
+fn host_key_verification_fingerprint(verification: &fm_ssh::HostKeyVerification) -> String {
+    match verification {
+        fm_ssh::HostKeyVerification::Trusted { fingerprint }
+        | fm_ssh::HostKeyVerification::Unverified { fingerprint }
+        | fm_ssh::HostKeyVerification::Mismatch { fingerprint, .. } => fingerprint.clone(),
+    }
+}
+
+fn host_key_probe_dto(
+    verification: fm_ssh::HostKeyVerification,
+) -> fm_transport_dto::HostKeyProbeDto {
+    match verification {
+        fm_ssh::HostKeyVerification::Trusted { fingerprint } => {
+            fm_transport_dto::HostKeyProbeDto::Trusted { fingerprint }
+        }
+        fm_ssh::HostKeyVerification::Unverified { fingerprint } => {
+            fm_transport_dto::HostKeyProbeDto::Unverified { fingerprint }
+        }
+        fm_ssh::HostKeyVerification::Mismatch {
+            fingerprint,
+            expected_fingerprint,
+        } => fm_transport_dto::HostKeyProbeDto::Mismatch {
+            fingerprint,
+            expected_fingerprint,
+        },
     }
 }
 

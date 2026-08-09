@@ -3,6 +3,7 @@
  * Run `pnpm api:generate` (or `pnpm api:check`) to regenerate.
  */
 import type {
+  AcceptSshHostKeyRequestDto,
   ActionDescriptorDto,
   ActionResultDto,
   ApplicationErrorDto,
@@ -17,6 +18,7 @@ import type {
   GetFileIconParams,
   GetPluginIconThemeAssetParams,
   HealthDto,
+  HostKeyProbeDto,
   InvokeActionRequestDto,
   ListDirectoryRequest,
   ListOperationsParams,
@@ -467,6 +469,112 @@ export const getDisconnectConnectionUrl = (connectionId: string,) => {
 export const disconnectConnection = async (connectionId: string, options?: Parameters<typeof fetchMutator>[1]): Promise<disconnectConnectionResponse> => {
 
   return fetchMutator<disconnectConnectionResponse>(getDisconnectConnectionUrl(connectionId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+export type acceptSshHostKeyResponse204 = {
+  data: void
+  status: 204
+}
+
+export type acceptSshHostKeyResponse400 = {
+  data: ApplicationErrorDto
+  status: 400
+}
+
+export type acceptSshHostKeyResponse404 = {
+  data: ApplicationErrorDto
+  status: 404
+}
+
+export type acceptSshHostKeyResponseSuccess = (acceptSshHostKeyResponse204) & {
+  headers: Headers;
+};
+export type acceptSshHostKeyResponseError = (acceptSshHostKeyResponse400 | acceptSshHostKeyResponse404) & {
+  headers: Headers;
+};
+
+export type acceptSshHostKeyResponse = (acceptSshHostKeyResponseSuccess | acceptSshHostKeyResponseError)
+
+export const getAcceptSshHostKeyUrl = (connectionId: string,) => {
+
+
+
+
+  return `/api/v1/connections/${connectionId}/hostKey/accept`
+}
+
+/**
+ * @summary Accepts (persists) a host-key fingerprint for an SSH connection (task
+0104, spec §6.4) - the only endpoint that ever writes to the known-hosts
+store, and only after the server re-probes to confirm the host is still
+presenting exactly the fingerprint being accepted.
+ */
+export const acceptSshHostKey = async (connectionId: string,
+    acceptSshHostKeyRequestDto: AcceptSshHostKeyRequestDto, options?: Parameters<typeof fetchMutator>[1]): Promise<acceptSshHostKeyResponse> => {
+
+  return fetchMutator<acceptSshHostKeyResponse>(getAcceptSshHostKeyUrl(connectionId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(acceptSshHostKeyRequestDto)
+  }
+);}
+
+
+
+export type probeSshHostKeyResponse200 = {
+  data: HostKeyProbeDto
+  status: 200
+}
+
+export type probeSshHostKeyResponse400 = {
+  data: ApplicationErrorDto
+  status: 400
+}
+
+export type probeSshHostKeyResponse404 = {
+  data: ApplicationErrorDto
+  status: 404
+}
+
+export type probeSshHostKeyResponseSuccess = (probeSshHostKeyResponse200) & {
+  headers: Headers;
+};
+export type probeSshHostKeyResponseError = (probeSshHostKeyResponse400 | probeSshHostKeyResponse404) & {
+  headers: Headers;
+};
+
+export type probeSshHostKeyResponse = (probeSshHostKeyResponseSuccess | probeSshHostKeyResponseError)
+
+export const getProbeSshHostKeyUrl = (connectionId: string,) => {
+
+
+
+
+  return `/api/v1/connections/${connectionId}/hostKey/probe`
+}
+
+/**
+ * @summary Probes an SSH connection's currently presented host key without
+authenticating (task 0104, spec §6.4's mandatory explicit confirmation
+flow) - lets a caller decide whether to accept a never-seen or changed
+key before a `connect` attempt reports
+[`fm_transport_dto::ApplicationErrorCode::HostKeyUnverified`]/
+[`fm_transport_dto::ApplicationErrorCode::HostKeyMismatch`] via its
+`status` field.
+ */
+export const probeSshHostKey = async (connectionId: string, options?: Parameters<typeof fetchMutator>[1]): Promise<probeSshHostKeyResponse> => {
+
+  return fetchMutator<probeSshHostKeyResponse>(getProbeSshHostKeyUrl(connectionId),
   {
     ...options,
     method: 'POST'

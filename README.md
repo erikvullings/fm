@@ -105,9 +105,22 @@ are kept separate from both, in `fm-connections` and `fm-credentials`, and appea
 menu under `SERVERS` with a `●`/`○` status dot. A connection profile never stores a password,
 passphrase or token directly - only an opaque reference into a `CredentialStore`, backed by the
 macOS Keychain or Windows Credential Manager (an in-memory store is used on other hosts and in
-tests only). No SSH/FTP protocol crate exists yet, so `connect`/`test` validate the saved
-configuration and resolve its credential without performing a live network handshake; a later task
-registers a real dialer per connection kind behind the same service methods.
+tests only).
+
+SSH/SFTP is implemented by `fm-ssh` (session/authentication/host-key verification, reusable later
+by an SSH terminal) and `fm-vfs-sftp` (the `FileSystemProvider`, registered under the `sftp`
+scheme). A saved connection's `connect`/`test` now perform a real SSH handshake through a
+registered dialer; browsing an `sftp://<connection-id>/path` location pools and transparently
+reconnects sessions per connection. SSH host keys are never auto-accepted, first use or on change:
+an unverified or changed key surfaces as a distinct connection status
+(`hostKeyUnverified`/`hostKeyMismatch`), and `POST /api/v1/connections/{id}/hostKey/probe`/`accept`
+(and the equivalent Tauri commands) let a caller inspect the presented fingerprint and explicitly
+persist it before a later connect can succeed - accepted fingerprints are stored in a JSON
+known-hosts file beside the connection profiles. Clicking a connected server under `SERVERS` opens
+its root in the active pane; `local ↔ SFTP` and same-connection `SFTP ↔ SFTP` copies/moves stream
+through the same operation engine as local files, including server-native rename when source and
+destination share a connection. FTP/FTPS and native cloud/SMB providers remain unimplemented; their
+`connect`/`test` still validate configuration and credential only, without a live handshake.
 
 Mutating filesystem work is represented by typed jobs in `fm-operations`. Its bounded scheduler
 runs a planning phase before execution, publishes lifecycle and coalesced progress events through

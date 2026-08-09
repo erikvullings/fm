@@ -34,6 +34,7 @@ const CRATE_LAYERS: &[(&str, u8)] = &[
     ("fm-events", 1),
     ("fm-platform", 1),
     ("fm-plugin-api", 1),
+    ("fm-ssh", 1),
     ("fm-transport-dto", 1),
     ("fm-vfs", 1),
     // Layer 2 - implementations of those contracts.
@@ -49,6 +50,7 @@ const CRATE_LAYERS: &[(&str, u8)] = &[
     ("fm-search", 2),
     ("fm-settings", 2),
     ("fm-vfs-local", 2),
+    ("fm-vfs-sftp", 2),
     // Layer 3 - application services, plus the test-support crate which may
     // build fixtures out of anything below it.
     ("fm-application", 3),

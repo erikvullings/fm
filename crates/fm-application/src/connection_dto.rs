@@ -55,6 +55,8 @@ pub(crate) fn connection_status_to_dto(status: ConnectionStatus) -> ConnectionSt
         ConnectionStatus::Connected => ConnectionStatusDto::Connected,
         ConnectionStatus::Reconnecting => ConnectionStatusDto::Reconnecting,
         ConnectionStatus::AuthenticationRequired => ConnectionStatusDto::AuthenticationRequired,
+        ConnectionStatus::HostKeyUnverified => ConnectionStatusDto::HostKeyUnverified,
+        ConnectionStatus::HostKeyMismatch => ConnectionStatusDto::HostKeyMismatch,
         ConnectionStatus::Failed => ConnectionStatusDto::Failed,
     }
 }

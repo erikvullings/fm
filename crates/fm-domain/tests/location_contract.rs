@@ -19,12 +19,89 @@ fn parses_local_archive_and_search_uris_and_rejects_unknown_providers() {
         Err(LocationError::InvalidUri)
     );
     assert_eq!(
-        Location::parse("sftp://example.test/home"),
-        Err(LocationError::UnsupportedProvider("sftp".to_owned()))
-    );
-    assert_eq!(
         Location::parse("https://example.test"),
         Err(LocationError::UnknownProvider("https".to_owned()))
+    );
+}
+
+#[test]
+fn sftp_locations_reference_a_connection_id_rather_than_a_host() {
+    let connection_id = "11111111-1111-4111-8111-111111111111";
+    let location = Location::parse(&format!("sftp://{connection_id}/home/erik")).unwrap();
+    assert_eq!(location.provider_id, ProviderId::new("sftp"));
+
+    // A non-UUID authority is not a valid connection id.
+    assert_eq!(
+        Location::parse("sftp://example.test/home"),
+        Err(LocationError::InvalidUri)
+    );
+    // No path at all (missing the mandatory leading `/`) is invalid.
+    assert_eq!(
+        Location::parse(&format!("sftp://{connection_id}")),
+        Err(LocationError::InvalidUri)
+    );
+    // The bare root is valid.
+    assert!(Location::parse(&format!("sftp://{connection_id}/")).is_ok());
+}
+
+#[test]
+fn sftp_locations_support_safe_path_navigation() {
+    let connection_id = "11111111-1111-4111-8111-111111111111";
+    let root = Location::parse(&format!("sftp://{connection_id}/")).unwrap();
+    let home = root.join("home").unwrap();
+    let user = home.join("erik").unwrap();
+
+    assert_eq!(user.uri, format!("sftp://{connection_id}/home/erik"));
+    assert_eq!(user.name().unwrap(), "erik");
+    assert_eq!(user.parent().unwrap(), Some(home.clone()));
+    assert_eq!(root.parent().unwrap(), None);
+    assert_eq!(
+        root.join("../escape"),
+        Err(LocationError::InvalidName("../escape".to_owned()))
+    );
+
+    let with_space = home.join("My Documents").unwrap();
+    assert_eq!(
+        with_space.uri,
+        format!("sftp://{connection_id}/home/My%20Documents")
+    );
+    assert_eq!(with_space.name().unwrap(), "My Documents");
+
+    assert!(user.to_native_path().is_err());
+}
+
+#[test]
+fn sftp_locations_reject_traversal_and_reserved_names() {
+    let connection_id = "11111111-1111-4111-8111-111111111111";
+    assert_eq!(
+        Location::parse(&format!("sftp://{connection_id}//double-slash")),
+        Err(LocationError::EmptySegment)
+    );
+    assert_eq!(
+        Location::parse(&format!("sftp://{connection_id}/CON.txt")),
+        Err(LocationError::ReservedWindowsName("CON.txt".to_owned()))
+    );
+}
+
+#[test]
+fn try_new_validates_the_sftp_provider_matches_the_scheme() {
+    let connection_id = "11111111-1111-4111-8111-111111111111";
+    assert_eq!(
+        Location::try_new(
+            ProviderId::new("local"),
+            format!("sftp://{connection_id}/home")
+        ),
+        Err(LocationError::MismatchedProvider {
+            provider_id: "local".to_owned(),
+            scheme: "sftp".to_owned(),
+        })
+    );
+    assert!(
+        Location::try_new(
+            ProviderId::new("sftp"),
+            format!("sftp://{connection_id}/home")
+        )
+        .is_ok()
     );
 }
 

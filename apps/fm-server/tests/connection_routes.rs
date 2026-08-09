@@ -191,6 +191,14 @@ async fn connect_then_disconnect_transitions_the_status() {
     .await;
     let id = created["id"].as_str().unwrap();
 
+    // Task 0104 registered a real SSH dialer for `ConnectionKind::Ssh`, so
+    // `connect` now genuinely attempts a handshake rather than reporting the
+    // pre-0104 "no dialer registered" stand-in success (see
+    // `fm_connections::ConnectionService`'s module doc). `example.test` is
+    // not a reachable host, so the honest, correct outcome here is `failed`
+    // - proving the REST layer really reaches the real dialer end to end.
+    // Real connect/host-key/auth behaviour against a live SSH server is
+    // covered by `fm-ssh`'s and `fm-application`'s own fixture-backed tests.
     let response = reqwest::Client::new()
         .post(format!(
             "{}/api/v1/connections/{id}/connect",
@@ -201,7 +209,7 @@ async fn connect_then_disconnect_transitions_the_status() {
         .expect("request must succeed");
     assert_eq!(response.status(), reqwest::StatusCode::OK);
     let body: Value = response.json().await.expect("body must be JSON");
-    assert_eq!(body["status"], "connected");
+    assert_eq!(body["status"], "failed");
 
     let response = reqwest::Client::new()
         .post(format!(

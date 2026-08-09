@@ -15,5 +15,7 @@ export const ConnectionStatusDto = {
   connected: 'connected',
   reconnecting: 'reconnecting',
   authenticationRequired: 'authenticationRequired',
+  hostKeyUnverified: 'hostKeyUnverified',
+  hostKeyMismatch: 'hostKeyMismatch',
   failed: 'failed',
 } as const;

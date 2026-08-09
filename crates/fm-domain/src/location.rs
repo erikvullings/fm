@@ -24,9 +24,14 @@ const SEARCH_PROVIDER: &str = "search";
 const SEARCH_SCHEME: &str = "search";
 const ARCHIVE_PROVIDER: &str = "archive";
 const ARCHIVE_SCHEME: &str = "archive";
+const SFTP_PROVIDER: &str = "sftp";
+const SFTP_SCHEME: &str = "sftp";
 const SEARCH_AUTHORITY: &str = "local";
-/// Schemes named by the specification but not yet backed by a provider.
-const RESERVED_SCHEMES: &[&str] = &["sftp"];
+/// Schemes named by the specification but not yet backed by a provider
+/// (task 0104 removed `"sftp"` from this list once it gained a real
+/// provider; kept as the seam a later task, e.g. FTP/FTPS, reserves its own
+/// scheme ahead of implementing it).
+const RESERVED_SCHEMES: &[&str] = &[];
 
 /// A provider-neutral pointer to a location.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -113,6 +118,11 @@ impl Location {
             ParsedArchiveUri::parse(uri)?;
             return Ok(Self::new(ProviderId::new(ARCHIVE_PROVIDER), uri));
         }
+        if scheme == SFTP_SCHEME {
+            let parsed = ParsedSftpUri::parse(uri)?;
+            parsed.validate_segments()?;
+            return Ok(Self::new(ProviderId::new(SFTP_PROVIDER), uri));
+        }
         if RESERVED_SCHEMES.contains(&scheme) {
             return Err(LocationError::UnsupportedProvider(scheme.to_owned()));
         }
@@ -179,6 +189,9 @@ impl Location {
         if self.provider_id.as_str() == ARCHIVE_PROVIDER {
             return ParsedArchiveUri::parse(&self.uri)?.parent();
         }
+        if self.provider_id.as_str() == SFTP_PROVIDER {
+            return ParsedSftpUri::parse(&self.uri)?.parent();
+        }
         self.ensure_local()?;
         let mut parsed = ParsedFileUri::parse(&self.uri)?;
         parsed.validate_segments()?;
@@ -194,6 +207,10 @@ impl Location {
             validate_name(name)?;
             return ParsedArchiveUri::parse(&self.uri)?.join(name);
         }
+        if self.provider_id.as_str() == SFTP_PROVIDER {
+            validate_name(name)?;
+            return ParsedSftpUri::parse(&self.uri)?.join(name);
+        }
         self.ensure_local()?;
         validate_name(name)?;
         let mut parsed = ParsedFileUri::parse(&self.uri)?;
@@ -206,6 +223,9 @@ impl Location {
     pub fn name(&self) -> Result<String, LocationError> {
         if self.provider_id.as_str() == ARCHIVE_PROVIDER {
             return ParsedArchiveUri::parse(&self.uri)?.name();
+        }
+        if self.provider_id.as_str() == SFTP_PROVIDER {
+            return ParsedSftpUri::parse(&self.uri)?.name();
         }
         self.ensure_local()?;
         let parsed = ParsedFileUri::parse(&self.uri)?;
@@ -238,6 +258,104 @@ struct ParsedFileUri {
 struct ParsedArchiveUri {
     outer: String,
     inner_segments: Vec<Vec<u8>>,
+}
+
+/// `sftp://<connection-id>/<remote-path>` (spec §6.5).
+///
+/// `connection_id` is a plain, opaque string path segment here - the same
+/// text form as `fm_connections::ConnectionId::to_string()` produces - not a
+/// structured cross-crate type: `fm-domain` must not depend on
+/// `fm-connections` (see `crates/fm-connections/src/ids.rs`'s own doc
+/// comment, which anticipates exactly this). It is validated as UUID text
+/// using the `uuid` crate directly (already a dependency of this crate for
+/// [`crate::ids::EntryId`]/[`crate::ids::WorkspaceId`]), which catches
+/// malformed ids without coupling to `ConnectionId` itself.
+#[derive(Debug)]
+struct ParsedSftpUri {
+    connection_id: String,
+    segments: Vec<Vec<u8>>,
+}
+
+impl ParsedSftpUri {
+    fn parse(uri: &str) -> Result<Self, LocationError> {
+        let remainder = uri
+            .strip_prefix("sftp://")
+            .ok_or(LocationError::InvalidUri)?;
+        if remainder.contains(['?', '#']) {
+            return Err(LocationError::InvalidUri);
+        }
+        let (connection_id, path) = remainder.split_once('/').ok_or(LocationError::InvalidUri)?;
+        if connection_id.is_empty() || uuid::Uuid::parse_str(connection_id).is_err() {
+            return Err(LocationError::InvalidUri);
+        }
+        let segments = if path.is_empty() {
+            Vec::new()
+        } else {
+            let raw_segments: Vec<&str> = path.split('/').collect();
+            if raw_segments.iter().any(|segment| segment.is_empty()) {
+                return Err(LocationError::EmptySegment);
+            }
+            raw_segments
+                .into_iter()
+                .map(percent_decode)
+                .collect::<Result<Vec<_>, _>>()?
+        };
+        Ok(Self {
+            connection_id: connection_id.to_owned(),
+            segments,
+        })
+    }
+
+    fn validate_segments(&self) -> Result<(), LocationError> {
+        for segment in &self.segments {
+            if segment.contains(&0) {
+                return Err(LocationError::NullByte);
+            }
+            if segment.contains(&b'/') || segment.contains(&b'\\') {
+                return Err(LocationError::InvalidName(
+                    String::from_utf8_lossy(segment).into_owned(),
+                ));
+            }
+            if let Ok(name) = std::str::from_utf8(segment) {
+                reject_windows_device_name(name)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn into_location(self) -> Result<Location, LocationError> {
+        self.validate_segments()?;
+        let mut uri = format!("sftp://{}/", self.connection_id);
+        uri.push_str(
+            &self
+                .segments
+                .iter()
+                .map(|segment| percent_encode(segment))
+                .collect::<Vec<_>>()
+                .join("/"),
+        );
+        Location::parse(&uri)
+    }
+
+    fn join(mut self, name: &str) -> Result<Location, LocationError> {
+        self.segments.push(name.as_bytes().to_vec());
+        self.into_location()
+    }
+
+    fn parent(mut self) -> Result<Option<Location>, LocationError> {
+        if self.segments.pop().is_none() {
+            return Ok(None);
+        }
+        self.into_location().map(Some)
+    }
+
+    fn name(&self) -> Result<String, LocationError> {
+        let bytes = self
+            .segments
+            .last()
+            .ok_or_else(|| LocationError::InvalidName("sftp root has no name".to_owned()))?;
+        String::from_utf8(bytes.clone()).map_err(|_| LocationError::InvalidUnicode)
+    }
 }
 
 impl ParsedArchiveUri {
@@ -407,6 +525,7 @@ fn provider_for_scheme(scheme: &str) -> Result<&'static str, LocationError> {
         LOCAL_SCHEME => Ok(LOCAL_PROVIDER),
         SEARCH_SCHEME => Ok(SEARCH_PROVIDER),
         ARCHIVE_SCHEME => Ok(ARCHIVE_PROVIDER),
+        SFTP_SCHEME => Ok(SFTP_PROVIDER),
         scheme if RESERVED_SCHEMES.contains(&scheme) => {
             Err(LocationError::UnsupportedProvider(scheme.to_owned()))
         }

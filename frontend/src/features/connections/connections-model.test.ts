@@ -4,6 +4,8 @@ import type { Connection, ConnectionConfiguration } from '../../models';
 import {
   connectionStatusGlyph,
   connectionStatusLabel,
+  isBrowsable,
+  sftpRootLocation,
   upsertConnection,
   validateConnectionDraft,
   withoutConnection,
@@ -57,11 +59,39 @@ describe('connectionStatusLabel', () => {
       'connected',
       'reconnecting',
       'authenticationRequired',
+      'hostKeyUnverified',
+      'hostKeyMismatch',
       'failed',
     ];
     const labels = statuses.map(connectionStatusLabel);
     expect(new Set(labels).size).toBe(statuses.length);
     for (const label of labels) expect(label.length).toBeGreaterThan(0);
+  });
+
+  it('distinguishes an unverified host key from a changed one', () => {
+    expect(connectionStatusLabel('hostKeyUnverified')).not.toBe(
+      connectionStatusLabel('hostKeyMismatch'),
+    );
+  });
+});
+
+describe('isBrowsable', () => {
+  it('is true for an ssh connection', () => {
+    expect(isBrowsable(sampleConnection({ kind: 'ssh' }))).toBe(true);
+  });
+
+  it('is false for every other kind (task 0104: only SSH has a real provider)', () => {
+    for (const kind of ['ftp', 'ftps', 'oneDrive', 'webDav', 's3', 'smb'] as const) {
+      expect(isBrowsable(sampleConnection({ kind }))).toBe(false);
+    }
+  });
+});
+
+describe('sftpRootLocation', () => {
+  it('builds an sftp:// root location for the connection id', () => {
+    const location = sftpRootLocation('11111111-1111-4111-8111-111111111111');
+    expect(location.providerId).toBe('sftp');
+    expect(location.uri).toBe('sftp://11111111-1111-4111-8111-111111111111/');
   });
 });
 

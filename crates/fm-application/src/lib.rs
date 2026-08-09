@@ -10,6 +10,7 @@ mod connection_dto;
 mod directory;
 mod error;
 mod service;
+mod ssh;
 pub mod workspace;
 
 pub use action::{ActionRegistry, DuplicateActionId};

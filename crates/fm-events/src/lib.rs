@@ -609,8 +609,14 @@ pub enum ConnectionStatusPayload {
     Reconnecting,
     /// The connection could not authenticate; a valid credential is needed.
     AuthenticationRequired,
+    /// The remote host presented a key that has never been verified before
+    /// (task 0104, spec §6.4); an explicit accept action is required.
+    HostKeyUnverified,
+    /// The remote host's key changed since it was last accepted (task 0104,
+    /// spec §6.4); never silently accepted.
+    HostKeyMismatch,
     /// The last connection attempt failed for a reason other than
-    /// authentication.
+    /// authentication or a host-key state.
     Failed,
 }
 

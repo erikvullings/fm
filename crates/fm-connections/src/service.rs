@@ -308,6 +308,17 @@ where
         if let Some(dialer) = self.dialers.get(&profile.kind) {
             return match dialer.dial(profile, resolved.as_ref()).await {
                 Ok(()) => Ok(ConnectionStatus::Connected),
+                // Host-key states are distinguished from a generic dial
+                // failure (task 0104, spec §6.4) so a caller can offer an
+                // explicit "accept this host key" action rather than a bare
+                // "failed" status indistinguishable from a wrong password or
+                // network outage.
+                Err(ConnectionError::HostKeyUnverified { .. }) => {
+                    Ok(ConnectionStatus::HostKeyUnverified)
+                }
+                Err(ConnectionError::HostKeyMismatch { .. }) => {
+                    Ok(ConnectionStatus::HostKeyMismatch)
+                }
                 Err(_) => Ok(ConnectionStatus::Failed),
             };
         }
@@ -851,5 +862,64 @@ mod tests {
             service.connect(created.id).await.unwrap(),
             ConnectionStatus::Failed
         );
+    }
+
+    struct FixedErrorDialer {
+        error: ConnectionError,
+    }
+
+    #[async_trait]
+    impl ConnectionDialer for FixedErrorDialer {
+        async fn dial(
+            &self,
+            _profile: &ConnectionProfile,
+            _credential: Option<&ResolvedCredential>,
+        ) -> Result<(), ConnectionError> {
+            Err(self.error.clone())
+        }
+    }
+
+    #[tokio::test]
+    async fn a_dialer_reporting_an_unverified_host_key_becomes_that_distinct_status() {
+        let service = service().with_dialer(
+            ConnectionKind::Ssh,
+            Arc::new(FixedErrorDialer {
+                error: ConnectionError::HostKeyUnverified {
+                    fingerprint: "SHA256:abc".to_owned(),
+                },
+            }),
+        );
+        let created = service
+            .create(draft(SshAuthenticationMethod::Agent, None))
+            .await
+            .unwrap();
+
+        assert_eq!(
+            service.connect(created.id).await.unwrap(),
+            ConnectionStatus::HostKeyUnverified
+        );
+    }
+
+    #[tokio::test]
+    async fn a_dialer_reporting_a_host_key_mismatch_becomes_that_distinct_status() {
+        let service = service().with_dialer(
+            ConnectionKind::Ssh,
+            Arc::new(FixedErrorDialer {
+                error: ConnectionError::HostKeyMismatch {
+                    fingerprint: "SHA256:new".to_owned(),
+                    expected_fingerprint: "SHA256:old".to_owned(),
+                },
+            }),
+        );
+        let created = service
+            .create(draft(SshAuthenticationMethod::Agent, None))
+            .await
+            .unwrap();
+
+        let status = service.connect(created.id).await.unwrap();
+        assert_eq!(status, ConnectionStatus::HostKeyMismatch);
+        // Distinct from both "unverified" and the generic "failed" bucket.
+        assert_ne!(status, ConnectionStatus::HostKeyUnverified);
+        assert_ne!(status, ConnectionStatus::Failed);
     }
 }

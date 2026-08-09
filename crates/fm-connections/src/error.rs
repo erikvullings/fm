@@ -92,6 +92,28 @@ pub enum ConnectionError {
     /// resolving, storing or deleting this connection's credential.
     #[error("connection credential error: {0}")]
     Credential(#[from] CredentialError),
+    /// A [`crate::ConnectionDialer`] reported that the remote host presented
+    /// a host key that has never been verified before (task 0104, spec
+    /// §6.4). Distinct from a generic dial failure so a caller can offer an
+    /// explicit "accept this host key" action instead of reporting a bare
+    /// connection failure; never returned as a side effect of any other
+    /// operation.
+    #[error("host key {fingerprint} has not been verified yet")]
+    HostKeyUnverified {
+        /// `SHA256:<base64>` fingerprint of the presented host key.
+        fingerprint: String,
+    },
+    /// A [`crate::ConnectionDialer`] reported that the remote host's key
+    /// changed since it was last accepted (task 0104, spec §6.4). Never
+    /// silently accepted, and always distinguishable from
+    /// [`ConnectionError::HostKeyUnverified`].
+    #[error("host key {fingerprint} does not match the previously accepted {expected_fingerprint}")]
+    HostKeyMismatch {
+        /// `SHA256:<base64>` fingerprint the host presented this time.
+        fingerprint: String,
+        /// `SHA256:<base64>` fingerprint previously accepted and stored.
+        expected_fingerprint: String,
+    },
 }
 
 #[cfg(test)]

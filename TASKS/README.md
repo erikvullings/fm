@@ -181,7 +181,7 @@ These are the quickest wins and deliberately do **not** depend on the remote con
 
 ## Milestone 8 — Remote protocols and actions
 
-- [ ] 0104 SFTP provider
+- [x] 0104 SFTP provider
 - [ ] 0105 SSH terminal actions *(needs 0103, 0104)*
 - [ ] 0106 FTP and FTPS provider
 - [ ] 0107 External remote desktop launch

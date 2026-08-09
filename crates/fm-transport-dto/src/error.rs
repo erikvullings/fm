@@ -40,6 +40,12 @@ pub enum ApplicationErrorCode {
     /// reason safe to show the user, e.g. no default application or the
     /// configured terminal was not found (spec §21, task 0061).
     PlatformOperationFailed,
+    /// An SSH host key has never been verified before (task 0104, spec
+    /// §6.4); the caller must explicitly accept it.
+    HostKeyUnverified,
+    /// An SSH host key changed since it was last accepted (task 0104, spec
+    /// §6.4); never silently accepted.
+    HostKeyMismatch,
     /// An unexpected, unclassified failure occurred.
     Internal,
 }
@@ -125,6 +131,8 @@ mod tests {
             ApplicationErrorCode::ActionNotFound,
             ApplicationErrorCode::ActionUnavailable,
             ApplicationErrorCode::PlatformOperationFailed,
+            ApplicationErrorCode::HostKeyUnverified,
+            ApplicationErrorCode::HostKeyMismatch,
             ApplicationErrorCode::Internal,
         ] {
             let json = serde_json::to_string(&code).expect("serialization must succeed");

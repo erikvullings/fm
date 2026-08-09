@@ -3,6 +3,7 @@
  * Run `pnpm api:generate` (or `pnpm api:check`) to regenerate.
  */
 
+export * from './acceptSshHostKeyRequestDto';
 export * from './actionContextRequirementsDto';
 export * from './actionDescriptorDto';
 export * from './actionDescriptorDtoParameterSchema';
@@ -46,6 +47,7 @@ export * from './getPluginIconThemeAssetParams';
 export * from './healthDto';
 export * from './healthStatusDto';
 export * from './hostKeyPolicyDto';
+export * from './hostKeyProbeDto';
 export * from './imageDimensionsDto';
 export * from './invokeActionRequestDto';
 export * from './invokeActionRequestDtoParameters';

@@ -28,9 +28,10 @@ pub use action::{
     ActionSourceDto, InvokeActionRequestDto, KeyChordDto,
 };
 pub use connection::{
-    ConnectionConfigurationDto, ConnectionDto, ConnectionKindDto, ConnectionSecretInputDto,
-    ConnectionStatusDto, CreateConnectionRequestDto, FtpConnectionConfigurationDto,
-    HostKeyPolicyDto, OneDriveConnectionConfigurationDto, S3ConnectionConfigurationDto,
+    AcceptSshHostKeyRequestDto, ConnectionConfigurationDto, ConnectionDto, ConnectionKindDto,
+    ConnectionSecretInputDto, ConnectionStatusDto, CreateConnectionRequestDto,
+    FtpConnectionConfigurationDto, HostKeyPolicyDto, HostKeyProbeDto,
+    OneDriveConnectionConfigurationDto, S3ConnectionConfigurationDto,
     SmbConnectionConfigurationDto, SshAuthenticationMethodDto, SshConnectionConfigurationDto,
     UpdateConnectionRequestDto, WebDavConnectionConfigurationDto,
 };

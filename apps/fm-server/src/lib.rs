@@ -95,6 +95,10 @@ fn api_router() -> OpenApiRouter<AppState> {
             routes::connection::disconnect_connection
         ))
         .routes(utoipa_axum::routes!(routes::connection::test_connection))
+        .routes(utoipa_axum::routes!(routes::connection::probe_ssh_host_key))
+        .routes(utoipa_axum::routes!(
+            routes::connection::accept_ssh_host_key
+        ))
 }
 
 /// Builds the OpenAPI document without constructing application state or

@@ -111,6 +111,8 @@ pub fn run() {
             commands::connect_connection,
             commands::disconnect_connection,
             commands::test_connection,
+            commands::probe_ssh_host_key,
+            commands::accept_ssh_host_key,
         ])
         .run(build_context())
         .expect("error while running the Tauri application");
@@ -193,6 +195,8 @@ mod tests {
                 commands::connect_connection,
                 commands::disconnect_connection,
                 commands::test_connection,
+                commands::probe_ssh_host_key,
+                commands::accept_ssh_host_key,
             ])
             // Uses the app's real `tauri.conf.json` config (same as `run()`)
             // rather than `mock_context(noop_assets())`'s empty default config,

@@ -38,9 +38,11 @@ fm-plugin-api = { path = "crates/fm-plugin-api" }
 fm-plugin-runtime = { path = "crates/fm-plugin-runtime" }
 fm-search = { path = "crates/fm-search" }
 fm-settings = { path = "crates/fm-settings" }
+fm-ssh = { path = "crates/fm-ssh" }
 fm-transport-dto = { path = "crates/fm-transport-dto" }
 fm-vfs = { path = "crates/fm-vfs" }
 fm-vfs-local = { path = "crates/fm-vfs-local" }
+fm-vfs-sftp = { path = "crates/fm-vfs-sftp" }
 
 # External dependencies. Versions are coordinated here; member crates opt in
 # with `dependency.workspace = true`.
@@ -64,11 +66,14 @@ notify = "8.2.0"
 objc2 = "0.6.4"
 objc2-app-kit = "0.3.2"
 objc2-foundation = "0.3.2"
+rand = "0.10"
 regex = "1.11.3"
 reqwest = { version = "0.13.4", default-features = false, features = [
   "json",
   "rustls",
 ] }
+russh = "0.62"
+russh-sftp = "2.4"
 security-framework = "3.7.0"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"

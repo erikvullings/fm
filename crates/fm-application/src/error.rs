@@ -74,6 +74,24 @@ pub enum ApplicationError {
     /// [`fm_platform::PlatformError`].
     #[error("{0}")]
     PlatformOperationFailed(String),
+    /// An SSH host key has never been verified before (task 0104, spec
+    /// §6.4); the caller must explicitly accept it (see
+    /// `FileManagerService::accept_ssh_host_key`) before a connect attempt
+    /// can succeed.
+    #[error("host key {fingerprint} has not been verified yet")]
+    HostKeyUnverified {
+        /// `SHA256:<base64>` fingerprint of the presented host key.
+        fingerprint: String,
+    },
+    /// An SSH host key changed since it was last accepted (task 0104, spec
+    /// §6.4); never silently accepted.
+    #[error("host key {fingerprint} does not match the previously accepted {expected_fingerprint}")]
+    HostKeyMismatch {
+        /// `SHA256:<base64>` fingerprint the host presented this time.
+        fingerprint: String,
+        /// `SHA256:<base64>` fingerprint previously accepted and stored.
+        expected_fingerprint: String,
+    },
     /// An unexpected, unclassified failure occurred.
     #[error("internal error")]
     Internal,
@@ -98,6 +116,8 @@ impl ApplicationError {
             Self::ActionNotFound(_) => ApplicationErrorCode::ActionNotFound,
             Self::ActionUnavailable(_) => ApplicationErrorCode::ActionUnavailable,
             Self::PlatformOperationFailed(_) => ApplicationErrorCode::PlatformOperationFailed,
+            Self::HostKeyUnverified { .. } => ApplicationErrorCode::HostKeyUnverified,
+            Self::HostKeyMismatch { .. } => ApplicationErrorCode::HostKeyMismatch,
             Self::Internal => ApplicationErrorCode::Internal,
         }
     }
@@ -125,6 +145,16 @@ impl ApplicationError {
             Self::ActionNotFound(action_id) | Self::ActionUnavailable(action_id) => {
                 Some(serde_json::json!({ "actionId": action_id.as_str() }))
             }
+            Self::HostKeyUnverified { fingerprint } => Some(serde_json::json!({
+                "fingerprint": fingerprint,
+            })),
+            Self::HostKeyMismatch {
+                fingerprint,
+                expected_fingerprint,
+            } => Some(serde_json::json!({
+                "fingerprint": fingerprint,
+                "expectedFingerprint": expected_fingerprint,
+            })),
             _ => None,
         };
         ApplicationErrorDto {
@@ -182,6 +212,16 @@ impl From<ConnectionError> for ApplicationError {
                 CredentialError::Unavailable(message) | CredentialError::Backend(message) => {
                     Self::PlatformOperationFailed(message)
                 }
+            },
+            ConnectionError::HostKeyUnverified { fingerprint } => {
+                Self::HostKeyUnverified { fingerprint }
+            }
+            ConnectionError::HostKeyMismatch {
+                fingerprint,
+                expected_fingerprint,
+            } => Self::HostKeyMismatch {
+                fingerprint,
+                expected_fingerprint,
             },
         }
     }
@@ -270,6 +310,19 @@ mod tests {
                 ApplicationError::PlatformOperationFailed("no default application".to_owned()),
                 ApplicationErrorCode::PlatformOperationFailed,
             ),
+            (
+                ApplicationError::HostKeyUnverified {
+                    fingerprint: "SHA256:abc".to_owned(),
+                },
+                ApplicationErrorCode::HostKeyUnverified,
+            ),
+            (
+                ApplicationError::HostKeyMismatch {
+                    fingerprint: "SHA256:new".to_owned(),
+                    expected_fingerprint: "SHA256:old".to_owned(),
+                },
+                ApplicationErrorCode::HostKeyMismatch,
+            ),
             (ApplicationError::Internal, ApplicationErrorCode::Internal),
         ];
 
@@ -334,6 +387,54 @@ mod tests {
         assert_eq!(dto.code, ApplicationErrorCode::ActionNotFound);
         let details = dto.details.expect("details must be present");
         assert_eq!(details["actionId"], "core.missing");
+    }
+
+    #[test]
+    fn host_key_unverified_into_dto_carries_the_fingerprint_in_details() {
+        let dto = ApplicationError::HostKeyUnverified {
+            fingerprint: "SHA256:abc".to_owned(),
+        }
+        .into_dto(Uuid::new_v4());
+
+        assert_eq!(dto.code, ApplicationErrorCode::HostKeyUnverified);
+        let details = dto.details.expect("details must be present");
+        assert_eq!(details["fingerprint"], "SHA256:abc");
+    }
+
+    #[test]
+    fn host_key_mismatch_into_dto_carries_both_fingerprints_in_details() {
+        let dto = ApplicationError::HostKeyMismatch {
+            fingerprint: "SHA256:new".to_owned(),
+            expected_fingerprint: "SHA256:old".to_owned(),
+        }
+        .into_dto(Uuid::new_v4());
+
+        assert_eq!(dto.code, ApplicationErrorCode::HostKeyMismatch);
+        let details = dto.details.expect("details must be present");
+        assert_eq!(details["fingerprint"], "SHA256:new");
+        assert_eq!(details["expectedFingerprint"], "SHA256:old");
+    }
+
+    #[test]
+    fn from_connection_error_maps_host_key_states_distinctly() {
+        assert_eq!(
+            ApplicationError::from(ConnectionError::HostKeyUnverified {
+                fingerprint: "SHA256:abc".to_owned()
+            }),
+            ApplicationError::HostKeyUnverified {
+                fingerprint: "SHA256:abc".to_owned()
+            }
+        );
+        assert_eq!(
+            ApplicationError::from(ConnectionError::HostKeyMismatch {
+                fingerprint: "SHA256:new".to_owned(),
+                expected_fingerprint: "SHA256:old".to_owned(),
+            }),
+            ApplicationError::HostKeyMismatch {
+                fingerprint: "SHA256:new".to_owned(),
+                expected_fingerprint: "SHA256:old".to_owned(),
+            }
+        );
     }
 
     #[test]

@@ -13,6 +13,8 @@ fn status_payload(status: ConnectionStatus) -> ConnectionStatusPayload {
         ConnectionStatus::Connected => ConnectionStatusPayload::Connected,
         ConnectionStatus::Reconnecting => ConnectionStatusPayload::Reconnecting,
         ConnectionStatus::AuthenticationRequired => ConnectionStatusPayload::AuthenticationRequired,
+        ConnectionStatus::HostKeyUnverified => ConnectionStatusPayload::HostKeyUnverified,
+        ConnectionStatus::HostKeyMismatch => ConnectionStatusPayload::HostKeyMismatch,
         ConnectionStatus::Failed => ConnectionStatusPayload::Failed,
     }
 }

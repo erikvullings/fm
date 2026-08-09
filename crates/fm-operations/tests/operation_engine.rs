@@ -121,6 +121,48 @@ fn safety_rejects_case_only_difference_on_insensitive_filesystem() {
 }
 
 #[test]
+fn safety_compares_sftp_locations_by_connection_and_path_not_native_path() {
+    // task 0104: `sftp://` locations have no native path, so this must not
+    // fall through to `Location::to_native_path` (which would always report
+    // `IncomparableLocations` for them, wrongly failing every same-connection
+    // SFTP copy/move's planning safety check - see this task's Agent Notes).
+    let connection = "11111111-1111-4111-8111-111111111111";
+    let source = sftp_location(connection, "/home/erik/report.txt");
+    assert_eq!(
+        validate_paths(&source, &source, true),
+        Err(SafetyError::SameEntry)
+    );
+    assert_eq!(
+        validate_paths(
+            &sftp_location(connection, "/home/erik"),
+            &sftp_location(connection, "/home/erik/nested"),
+            true,
+        ),
+        Err(SafetyError::DestinationInsideSource)
+    );
+    // Two different connections must never be treated as the same or nested
+    // entry, even when their remote paths are textually identical.
+    let other_connection = "22222222-2222-4222-8222-222222222222";
+    assert!(
+        validate_paths(
+            &sftp_location(connection, "/home/erik/report.txt"),
+            &sftp_location(other_connection, "/home/erik/report.txt"),
+            true,
+        )
+        .is_ok()
+    );
+    // A genuinely unrelated destination on the same connection is fine.
+    assert!(
+        validate_paths(
+            &sftp_location(connection, "/home/erik/report.txt"),
+            &sftp_location(connection, "/home/erik/archive/report.txt"),
+            true,
+        )
+        .is_ok()
+    );
+}
+
+#[test]
 fn safety_rejects_symlink_cycles() {
     let mut detector = CycleDetector::default();
     detector.observe(8, 42).unwrap();
@@ -264,6 +306,13 @@ fn entry(uri: &str) -> EntryRef {
 
 fn location(uri: &str) -> Location {
     Location::new(ProviderId::new("local"), uri)
+}
+
+fn sftp_location(connection_id: &str, remote_path: &str) -> Location {
+    Location::new(
+        ProviderId::new("sftp"),
+        format!("sftp://{connection_id}{remote_path}"),
+    )
 }
 
 #[derive(Default)]

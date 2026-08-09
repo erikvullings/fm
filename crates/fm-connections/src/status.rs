@@ -22,8 +22,18 @@ pub enum ConnectionStatus {
     Reconnecting,
     /// The connection could not authenticate; a valid credential is needed.
     AuthenticationRequired,
+    /// The remote host presented a key that has never been verified before
+    /// (task 0104, spec §6.4); the caller must explicitly accept it (a
+    /// protocol-specific confirmation flow, for SSH exposed through
+    /// `fm-application`'s host-key facade methods) before a later connect
+    /// attempt can succeed.
+    HostKeyUnverified,
+    /// The remote host's key changed since it was last accepted (task 0104,
+    /// spec §6.4); never silently accepted, and always distinguishable from
+    /// [`ConnectionStatus::HostKeyUnverified`].
+    HostKeyMismatch,
     /// The last connection attempt failed for a reason other than
-    /// authentication.
+    /// authentication or a host-key state.
     Failed,
 }
 
@@ -44,6 +54,8 @@ mod tests {
             ConnectionStatus::Connected,
             ConnectionStatus::Reconnecting,
             ConnectionStatus::AuthenticationRequired,
+            ConnectionStatus::HostKeyUnverified,
+            ConnectionStatus::HostKeyMismatch,
             ConnectionStatus::Failed,
         ] {
             let json = serde_json::to_string(&status).expect("serialization must succeed");

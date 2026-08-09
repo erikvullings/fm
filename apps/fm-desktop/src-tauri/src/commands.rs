@@ -7,14 +7,15 @@ use uuid::Uuid;
 
 use fm_domain::OperationId;
 use fm_transport_dto::{
-    ActionDescriptorDto, ActionResultDto, ApplicationErrorDto, ArchiveCredentialRequestDto,
-    ConnectionDto, CreateConnectionRequestDto, CreateWorkspaceRequestDto, DirectorySnapshotDto,
-    EntryMetadataDto, EntryMetadataRequest, InvokeActionRequestDto, ListDirectoryRequest,
-    LocationDto, NavigateRequest, OperationDto, PluginDescriptorDto, PluginLogEntryDto,
-    ReadFileRangeRequestDto, ReadFileRangeResponseDto, ResolveOperationConflictRequestDto,
-    RuntimeCapabilitiesDto, SearchInFileRequestDto, SearchInFileResponseDto, SettingsDto,
-    StartOperationRequestDto, StartSearchRequestDto, StartSearchResponseDto,
-    UpdateConnectionRequestDto, WorkspaceCommandDto, WorkspaceDto, WorkspaceSummaryDto,
+    AcceptSshHostKeyRequestDto, ActionDescriptorDto, ActionResultDto, ApplicationErrorDto,
+    ArchiveCredentialRequestDto, ConnectionDto, CreateConnectionRequestDto,
+    CreateWorkspaceRequestDto, DirectorySnapshotDto, EntryMetadataDto, EntryMetadataRequest,
+    HostKeyProbeDto, InvokeActionRequestDto, ListDirectoryRequest, LocationDto, NavigateRequest,
+    OperationDto, PluginDescriptorDto, PluginLogEntryDto, ReadFileRangeRequestDto,
+    ReadFileRangeResponseDto, ResolveOperationConflictRequestDto, RuntimeCapabilitiesDto,
+    SearchInFileRequestDto, SearchInFileResponseDto, SettingsDto, StartOperationRequestDto,
+    StartSearchRequestDto, StartSearchResponseDto, UpdateConnectionRequestDto, WorkspaceCommandDto,
+    WorkspaceDto, WorkspaceSummaryDto,
 };
 
 use crate::{AppState, event_stream::EventSubscriptionRegistry};
@@ -684,6 +685,39 @@ pub(crate) async fn test_connection(
     state
         .service
         .test_connection(connection_id)
+        .await
+        .map_err(|error| error.into_dto(Uuid::new_v4()))
+}
+
+/// Probes an SSH connection's currently presented host key without
+/// authenticating, identical in shape to
+/// `POST /api/v1/connections/{connectionId}/hostKey/probe` (task 0104, spec
+/// §6.4).
+#[tauri::command]
+pub(crate) async fn probe_ssh_host_key(
+    state: State<'_, AppState>,
+    connection_id: Uuid,
+) -> Result<HostKeyProbeDto, ApplicationErrorDto> {
+    state
+        .service
+        .probe_ssh_host_key(connection_id)
+        .await
+        .map_err(|error| error.into_dto(Uuid::new_v4()))
+}
+
+/// Accepts (persists) a host-key fingerprint for an SSH connection,
+/// identical in shape to
+/// `POST /api/v1/connections/{connectionId}/hostKey/accept` (task 0104,
+/// spec §6.4).
+#[tauri::command]
+pub(crate) async fn accept_ssh_host_key(
+    state: State<'_, AppState>,
+    connection_id: Uuid,
+    request: AcceptSshHostKeyRequestDto,
+) -> Result<(), ApplicationErrorDto> {
+    state
+        .service
+        .accept_ssh_host_key(connection_id, request.fingerprint)
         .await
         .map_err(|error| error.into_dto(Uuid::new_v4()))
 }

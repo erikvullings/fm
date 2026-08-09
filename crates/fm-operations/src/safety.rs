@@ -104,6 +104,19 @@ fn normalized_path(location: &Location) -> Result<PathBuf, SafetyError> {
                 .strip_prefix("archive://")
                 .ok_or(SafetyError::IncomparableLocations)?,
         )
+    } else if location.provider_id.as_str() == "sftp" {
+        // `sftp://<connection-id>/<remote-path>` has no native path (spec
+        // §6.5): compare the scheme-stripped text instead, exactly like the
+        // `archive` branch above. Keeping the connection id as the path's
+        // first component means two different connections can never be
+        // mistaken for the same or a nested entry even if their remote
+        // paths happen to be textually identical.
+        PathBuf::from(
+            location
+                .uri
+                .strip_prefix("sftp://")
+                .ok_or(SafetyError::IncomparableLocations)?,
+        )
     } else {
         location
             .to_native_path()

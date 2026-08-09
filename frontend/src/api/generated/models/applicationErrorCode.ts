@@ -26,5 +26,7 @@ export const ApplicationErrorCode = {
   actionNotFound: 'actionNotFound',
   actionUnavailable: 'actionUnavailable',
   platformOperationFailed: 'platformOperationFailed',
+  hostKeyUnverified: 'hostKeyUnverified',
+  hostKeyMismatch: 'hostKeyMismatch',
   internal: 'internal',
 } as const;

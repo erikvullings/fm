@@ -5,8 +5,35 @@ import type {
   ConnectionId,
   ConnectionStatus,
   CreateConnectionRequest,
+  Location,
   UpdateConnectionRequest,
 } from '../../models';
+
+/** The `fm-domain` provider id every `sftp://` location carries (spec §6.5). */
+const SFTP_PROVIDER_ID = 'sftp';
+
+/**
+ * Whether a connection can currently be browsed as a filesystem in a pane
+ * (task 0104). SSH is the only kind with a real `FileSystemProvider`
+ * (`fm-vfs-sftp`) so far - the other six kinds are honestly excluded rather
+ * than offered as a dead click (spec §6, task 0103's Agent Notes).
+ */
+export function isBrowsable(connection: Connection): boolean {
+  return connection.kind === 'ssh';
+}
+
+/**
+ * Builds the `sftp://<connection-id>/` location for a connection's root
+ * (spec §6.5). The initial path is always `/` - the connection's SSH
+ * configuration does not carry a "home directory" the client can know ahead
+ * of listing, so `/` is the one path guaranteed to exist and be listable for
+ * any reachable server; a user can navigate deeper (or the server's own
+ * default directory, if `/` is not their home) from there like any other
+ * pane location.
+ */
+export function sftpRootLocation(connectionId: ConnectionId): Location {
+  return { providerId: SFTP_PROVIDER_ID, uri: `sftp://${connectionId}/` };
+}
 
 /**
  * Status glyph shown next to a connection's name in the `SERVERS` sidebar
@@ -31,6 +58,10 @@ export function connectionStatusLabel(status: ConnectionStatus): string {
       return 'Reconnecting…';
     case 'authenticationRequired':
       return 'Authentication required';
+    case 'hostKeyUnverified':
+      return 'Host key not verified';
+    case 'hostKeyMismatch':
+      return 'Host key changed';
     case 'failed':
       return 'Failed';
     default: {

@@ -6,7 +6,8 @@ use axum::Json;
 use axum::extract::{Extension, Path, State};
 use axum::http::StatusCode;
 use fm_transport_dto::{
-    ApplicationErrorDto, ConnectionDto, CreateConnectionRequestDto, UpdateConnectionRequestDto,
+    AcceptSshHostKeyRequestDto, ApplicationErrorDto, ConnectionDto, CreateConnectionRequestDto,
+    HostKeyProbeDto, UpdateConnectionRequestDto,
 };
 use tower_http::request_id::RequestId;
 use uuid::Uuid;
@@ -215,4 +216,67 @@ pub(crate) async fn test_connection(
         .await
         .map_err(|error| ApiError::new(error, request_id))?;
     Ok(Json(connection))
+}
+
+/// Probes an SSH connection's currently presented host key without
+/// authenticating (task 0104, spec §6.4's mandatory explicit confirmation
+/// flow) - lets a caller decide whether to accept a never-seen or changed
+/// key before a `connect` attempt reports
+/// [`fm_transport_dto::ApplicationErrorCode::HostKeyUnverified`]/
+/// [`fm_transport_dto::ApplicationErrorCode::HostKeyMismatch`] via its
+/// `status` field.
+#[utoipa::path(
+    post,
+    path = "/api/v1/connections/{connectionId}/hostKey/probe",
+    operation_id = "probeSshHostKey",
+    params(("connectionId" = Uuid, Path, description = "The SSH connection to probe")),
+    responses(
+        (status = 200, description = "The host key currently presented, and whether it is trusted", body = HostKeyProbeDto),
+        (status = 400, description = "The connection is not an SSH connection", body = ApplicationErrorDto),
+        (status = 404, description = "No connection exists with this id", body = ApplicationErrorDto),
+    )
+)]
+pub(crate) async fn probe_ssh_host_key(
+    State(state): State<AppState>,
+    Extension(request_id): Extension<RequestId>,
+    Path(connection_id): Path<Uuid>,
+) -> Result<Json<HostKeyProbeDto>, ApiError> {
+    let request_id = extract_request_id(&request_id);
+    let probe = state
+        .service
+        .probe_ssh_host_key(connection_id)
+        .await
+        .map_err(|error| ApiError::new(error, request_id))?;
+    Ok(Json(probe))
+}
+
+/// Accepts (persists) a host-key fingerprint for an SSH connection (task
+/// 0104, spec §6.4) - the only endpoint that ever writes to the known-hosts
+/// store, and only after the server re-probes to confirm the host is still
+/// presenting exactly the fingerprint being accepted.
+#[utoipa::path(
+    post,
+    path = "/api/v1/connections/{connectionId}/hostKey/accept",
+    operation_id = "acceptSshHostKey",
+    params(("connectionId" = Uuid, Path, description = "The SSH connection whose host key is being accepted")),
+    request_body = AcceptSshHostKeyRequestDto,
+    responses(
+        (status = 204, description = "The host key was accepted and persisted"),
+        (status = 400, description = "The fingerprint no longer matches what the host presents, the connection requires a pre-established known host, or it is not an SSH connection", body = ApplicationErrorDto),
+        (status = 404, description = "No connection exists with this id", body = ApplicationErrorDto),
+    )
+)]
+pub(crate) async fn accept_ssh_host_key(
+    State(state): State<AppState>,
+    Extension(request_id): Extension<RequestId>,
+    Path(connection_id): Path<Uuid>,
+    Json(request): Json<AcceptSshHostKeyRequestDto>,
+) -> Result<StatusCode, ApiError> {
+    let request_id = extract_request_id(&request_id);
+    state
+        .service
+        .accept_ssh_host_key(connection_id, request.fingerprint)
+        .await
+        .map_err(|error| ApiError::new(error, request_id))?;
+    Ok(StatusCode::NO_CONTENT)
 }
