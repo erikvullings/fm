@@ -2711,6 +2711,43 @@
         ],
         "type": "string"
       },
+      "SystemLocationDto": {
+        "description": "A navigable location discovered by the host operating system.",
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/SystemLocationKindDto",
+            "description": "Classification used to group locations in the frontend."
+          },
+          "location": {
+            "$ref": "#/components/schemas/LocationDto",
+            "description": "Existing provider-neutral local location."
+          },
+          "name": {
+            "description": "Display label supplied by the OS folder.",
+            "type": "string"
+          },
+          "providerHint": {
+            "description": "Optional advisory provider name; navigation never depends on it.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "name",
+          "kind",
+          "location"
+        ],
+        "type": "object"
+      },
+      "SystemLocationKindDto": {
+        "description": "Presentation category for a system location.",
+        "enum": [
+          "cloud"
+        ],
+        "type": "string"
+      },
       "TabStateDto": {
         "description": "A single tab: a location, its navigation history and its view configuration.",
         "properties": {
@@ -4522,6 +4559,37 @@
           }
         },
         "summary": "Atomically replaces the complete application-wide settings document."
+      }
+    },
+    "/api/v1/system-locations": {
+      "get": {
+        "operationId": "getSystemLocations",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SystemLocationDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Discovered system locations"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationErrorDto"
+                }
+              }
+            },
+            "description": "Platform discovery failed"
+          }
+        },
+        "summary": "Lists currently reachable OS-managed filesystem locations."
       }
     },
     "/api/v1/workspaces": {

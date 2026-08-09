@@ -37,6 +37,7 @@ import type {
   StartOperationRequestDto,
   StartSearchRequestDto,
   StartSearchResponseDto,
+  SystemLocationDto,
   WorkspaceCommandDto,
   WorkspaceDto,
   WorkspaceSummaryDto
@@ -1412,6 +1413,49 @@ export const updateSettings = async (settingsDto: SettingsDto, options?: Paramet
     method: 'PUT',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
     body: JSON.stringify(settingsDto)
+  }
+);}
+
+
+
+export type getSystemLocationsResponse200 = {
+  data: SystemLocationDto[]
+  status: 200
+}
+
+export type getSystemLocationsResponse502 = {
+  data: ApplicationErrorDto
+  status: 502
+}
+
+export type getSystemLocationsResponseSuccess = (getSystemLocationsResponse200) & {
+  headers: Headers;
+};
+export type getSystemLocationsResponseError = (getSystemLocationsResponse502) & {
+  headers: Headers;
+};
+
+export type getSystemLocationsResponse = (getSystemLocationsResponseSuccess | getSystemLocationsResponseError)
+
+export const getGetSystemLocationsUrl = () => {
+
+
+
+
+  return `/api/v1/system-locations`
+}
+
+/**
+ * @summary Lists currently reachable OS-managed filesystem locations.
+ */
+export const getSystemLocations = async ( options?: Parameters<typeof fetchMutator>[1]): Promise<getSystemLocationsResponse> => {
+
+  return fetchMutator<getSystemLocationsResponse>(getGetSystemLocationsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
   }
 );}
 

@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use crate::{MountedVolume, PlatformCapabilities, PlatformError};
+use crate::{MountedVolume, PlatformCapabilities, PlatformError, SystemLocation};
 
 /// Native OS integrations the application calls into: file icons,
 /// thumbnails, revealing entries in the system file manager, trash, opening
@@ -19,6 +19,10 @@ use crate::{MountedVolume, PlatformCapabilities, PlatformError};
 /// than awaiting them directly, so a native call never blocks the Tauri UI
 /// thread (specification §28).
 pub trait PlatformAdapter: Send + Sync {
+    /// Discovers currently reachable OS-managed locations.
+    fn system_locations(&self) -> Result<Vec<SystemLocation>, PlatformError> {
+        Ok(Vec::new())
+    }
     /// Reports which capabilities this adapter actually implements.
     fn capabilities(&self) -> PlatformCapabilities;
 

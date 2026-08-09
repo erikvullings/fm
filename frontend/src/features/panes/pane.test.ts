@@ -989,4 +989,34 @@ describe('Pane tab strip', () => {
 
     expect(onReorderTabs).toHaveBeenCalledWith(['tab-2', 'tab-1']);
   });
+
+  it('shows discovered cloud locations and opens them as normal local locations', async () => {
+    const onNavigateLocation = vi.fn();
+    const location = { providerId: 'local', uri: 'file:///Users/example/Cloud' };
+    mount(
+      attrs({
+        systemLocations: [
+          { name: 'Example Drive', kind: 'cloud', location, providerHint: 'example' },
+        ],
+        onNavigateLocation,
+      }),
+    );
+
+    root.querySelector<HTMLButtonElement>('.fm-pane-tab-favourites')?.click();
+    m.redraw.sync();
+    expect(root.querySelector('.fm-cloud-locations strong')?.textContent).toBe('CLOUD');
+    root.querySelector<HTMLButtonElement>('.fm-cloud-locations [role="menuitem"]')?.click();
+    await Promise.resolve();
+
+    expect(onNavigateLocation).toHaveBeenCalledWith(location);
+  });
+
+  it('shows a recoverable cloud discovery state', () => {
+    const onRetrySystemLocations = vi.fn();
+    mount(attrs({ systemLocationsError: 'offline', onRetrySystemLocations }));
+    root.querySelector<HTMLButtonElement>('.fm-pane-tab-favourites')?.click();
+    m.redraw.sync();
+    root.querySelector<HTMLButtonElement>('.fm-cloud-locations-error button')?.click();
+    expect(onRetrySystemLocations).toHaveBeenCalledOnce();
+  });
 });

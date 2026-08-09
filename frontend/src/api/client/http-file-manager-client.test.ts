@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '../fetch-mutator';
 
 const getRuntimeCapabilities = vi.fn();
+const getSystemLocations = vi.fn();
 const listDirectory = vi.fn();
 const navigatePane = vi.fn();
 const getEntryMetadata = vi.fn();
@@ -30,6 +31,7 @@ const requestGetFileIcon = vi.fn();
 
 vi.mock('../generated/file-manager-api', () => ({
   getRuntimeCapabilities: (...args: unknown[]) => getRuntimeCapabilities(...args),
+  getSystemLocations: (...args: unknown[]) => getSystemLocations(...args),
   listDirectory: (...args: unknown[]) => listDirectory(...args),
   navigatePane: (...args: unknown[]) => navigatePane(...args),
   getEntryMetadata: (...args: unknown[]) => getEntryMetadata(...args),
@@ -59,7 +61,7 @@ vi.mock('../generated/file-manager-api', () => ({
 const { HttpFileManagerClient } = await import('./http-file-manager-client');
 
 class TestEventSource extends EventTarget {
-  close(): void { }
+  close(): void {}
 }
 
 beforeEach(() => {
@@ -190,11 +192,43 @@ describe('HttpFileManagerClient', () => {
     });
   });
 
+  describe('getSystemLocations', () => {
+    it('maps discovered locations and forwards cancellation', async () => {
+      getSystemLocations.mockResolvedValue({
+        status: 200,
+        data: [
+          {
+            name: 'Example Drive',
+            kind: 'cloud',
+            location: { providerId: 'local', uri: 'file:///Example' },
+            providerHint: 'example',
+          },
+        ],
+        headers: new Headers(),
+      });
+      const controller = new AbortController();
+
+      await expect(
+        new HttpFileManagerClient().getSystemLocations(controller.signal),
+      ).resolves.toEqual([
+        {
+          name: 'Example Drive',
+          kind: 'cloud',
+          location: { providerId: 'local', uri: 'file:///Example' },
+          providerHint: 'example',
+        },
+      ]);
+      expect(getSystemLocations).toHaveBeenCalledWith(
+        expect.objectContaining({ signal: controller.signal }),
+      );
+    });
+  });
+
   describe('subscribe', () => {
     it('connects the shared SSE stream and returns its listener unsubscribe', async () => {
       const client = new HttpFileManagerClient();
 
-      const unsubscribe = await client.subscribe(() => { });
+      const unsubscribe = await client.subscribe(() => {});
 
       expect(() => unsubscribe()).not.toThrow();
       expect(client.connection.get()).toBe('connecting');

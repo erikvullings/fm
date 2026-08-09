@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 
 use fm_platform::{
     FallbackPlatformAdapter, MountedVolume, PlatformAdapter, PlatformCapabilities, PlatformError,
+    SystemLocation, SystemLocationKind,
 };
 
 /// Windows implementation of [`PlatformAdapter`].
@@ -30,6 +31,38 @@ impl WindowsPlatformAdapter {
 }
 
 impl PlatformAdapter for WindowsPlatformAdapter {
+    fn system_locations(&self) -> Result<Vec<SystemLocation>, PlatformError> {
+        let candidates = [
+            ("OneDrive", "onedrive"),
+            ("OneDriveConsumer", "onedrive"),
+            ("OneDriveCommercial", "onedrive"),
+        ];
+        let mut locations = Vec::new();
+        for (variable, hint) in candidates {
+            let Some(path) = std::env::var_os(variable).map(PathBuf::from) else {
+                continue;
+            };
+            if !path.is_dir()
+                || locations
+                    .iter()
+                    .any(|location: &SystemLocation| location.path == path)
+            {
+                continue;
+            }
+            let name = path
+                .file_name()
+                .map(|value| value.to_string_lossy().into_owned())
+                .unwrap_or_else(|| "OneDrive".to_owned());
+            locations.push(SystemLocation {
+                name,
+                path,
+                kind: SystemLocationKind::Cloud,
+                provider_hint: Some(hint.to_owned()),
+            });
+        }
+        Ok(locations)
+    }
+
     fn capabilities(&self) -> PlatformCapabilities {
         self.fallback.capabilities() | PlatformCapabilities::NATIVE_DRAG_OUT
     }

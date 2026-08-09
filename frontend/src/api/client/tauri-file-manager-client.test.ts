@@ -121,6 +121,22 @@ describe('TauriFileManagerClient', () => {
     });
   });
 
+  describe('getSystemLocations', () => {
+    it('invokes the matching Tauri command', async () => {
+      const locations = [
+        {
+          name: 'Example Drive',
+          kind: 'cloud',
+          location: { providerId: 'local', uri: 'file:///Example' },
+        },
+      ] as const;
+      invoke.mockResolvedValue(locations);
+
+      await expect(new TauriFileManagerClient().getSystemLocations()).resolves.toEqual(locations);
+      expect(invoke).toHaveBeenCalledWith('get_system_locations');
+    });
+  });
+
   describe('directory methods', () => {
     it('invokes navigate_pane with the request wrapper expected by Tauri', async () => {
       const snapshot = {

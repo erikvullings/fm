@@ -10,6 +10,7 @@ import type {
   PaneId,
   PaneProjection,
   SortDescriptor,
+  SystemLocation,
   TabId,
   WorkspaceLayout,
   WorkspaceProjection,
@@ -51,6 +52,9 @@ export interface WorkspacePaneContent {
   readonly location?: Location;
   readonly favouriteLocations?: readonly FavouriteLocation[];
   readonly recentLocations?: readonly Location[];
+  readonly systemLocations?: readonly SystemLocation[];
+  readonly systemLocationsError?: string;
+  readonly onRetrySystemLocations?: () => void | Promise<void>;
   readonly unavailableLocations?: ReadonlySet<string>;
   readonly onNavigateLocation?: (location: Location) => void | Promise<void>;
   readonly onAddFavourite?: (label: string, location: Location) => void | Promise<void>;
@@ -386,6 +390,15 @@ export const WorkspaceLayoutView: FactoryComponent<WorkspaceLayoutViewAttrs> = (
         ...(content.recentLocations === undefined
           ? {}
           : { recentLocations: content.recentLocations }),
+        ...(content.systemLocations === undefined
+          ? {}
+          : { systemLocations: content.systemLocations }),
+        ...(content.systemLocationsError === undefined
+          ? {}
+          : { systemLocationsError: content.systemLocationsError }),
+        ...(content.onRetrySystemLocations === undefined
+          ? {}
+          : { onRetrySystemLocations: content.onRetrySystemLocations }),
         ...(content.unavailableLocations === undefined
           ? {}
           : { unavailableLocations: content.unavailableLocations }),

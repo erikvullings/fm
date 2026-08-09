@@ -35,6 +35,7 @@ import type {
   StartOperationRequest,
   StartSearchRequest,
   StartSearchResult,
+  SystemLocation,
   Unsubscribe,
   WorkspaceCommand,
   WorkspaceId,
@@ -63,6 +64,7 @@ const plugins = pluginFixtures as PluginDescriptor[];
 
 export type MockClientMethod =
   | 'getRuntimeCapabilities'
+  | 'getSystemLocations'
   | 'startNativeDrag'
   | 'getSettings'
   | 'updateSettings'
@@ -376,6 +378,10 @@ export class MockFileManagerClient implements FileManagerClient {
       serverAdministration: false,
       systemTrash: false,
     }));
+  }
+
+  getSystemLocations(signal?: AbortSignal): Promise<SystemLocation[]> {
+    return this.perform('getSystemLocations', signal, () => []);
   }
 
   startNativeDrag(_locations: readonly Location[], signal?: AbortSignal): Promise<void> {

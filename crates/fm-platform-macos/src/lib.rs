@@ -40,6 +40,7 @@ use std::sync::Mutex;
 
 use fm_platform::{
     FallbackPlatformAdapter, MountedVolume, PlatformAdapter, PlatformCapabilities, PlatformError,
+    SystemLocation, SystemLocationKind, cloud_provider_hint,
 };
 use objc2::MainThreadMarker;
 use objc2_app_kit::{NSApplication, NSBitmapImageFileType, NSBitmapImageRep, NSMenu, NSWorkspace};
@@ -275,7 +276,46 @@ fn fetch_icon_png(path: &Path) -> Result<Vec<u8>, PlatformError> {
     Ok(png.to_vec())
 }
 
+fn discover_system_locations(home: &Path) -> Vec<SystemLocation> {
+    let mut locations = Vec::new();
+    let cloud_storage = home.join("Library/CloudStorage");
+    if let Ok(entries) = std::fs::read_dir(cloud_storage) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !path.is_dir() {
+                continue;
+            }
+            let name = entry.file_name().to_string_lossy().into_owned();
+            locations.push(SystemLocation {
+                provider_hint: cloud_provider_hint(&name).map(str::to_owned),
+                name,
+                path,
+                kind: SystemLocationKind::Cloud,
+            });
+        }
+    }
+    let icloud = home.join("Library/Mobile Documents/com~apple~CloudDocs");
+    if icloud.is_dir() {
+        locations.push(SystemLocation {
+            name: "iCloud Drive".to_owned(),
+            path: icloud,
+            kind: SystemLocationKind::Cloud,
+            provider_hint: Some("icloud".to_owned()),
+        });
+    }
+    locations.sort_by(|left, right| left.name.cmp(&right.name));
+    locations.dedup_by(|left, right| left.path == right.path);
+    locations
+}
+
 impl PlatformAdapter for MacosPlatformAdapter {
+    fn system_locations(&self) -> Result<Vec<SystemLocation>, PlatformError> {
+        let home = dirs::home_dir().ok_or_else(|| PlatformError::Io {
+            message: "home directory is unavailable".to_owned(),
+        })?;
+        Ok(discover_system_locations(&home))
+    }
+
     fn capabilities(&self) -> PlatformCapabilities {
         PlatformCapabilities::FILE_ICONS
             | PlatformCapabilities::REVEAL_IN_FILE_MANAGER
@@ -493,6 +533,35 @@ mod tests {
     use tempfile::tempdir;
 
     use super::*;
+
+    #[test]
+    fn cloud_location_discovery_classifies_known_providers_and_keeps_unknown_folders() {
+        let home = tempdir().expect("temp home");
+        for relative in [
+            "Library/CloudStorage/OneDrive-Example",
+            "Library/CloudStorage/Custom Sync",
+            "Library/Mobile Documents/com~apple~CloudDocs",
+        ] {
+            std::fs::create_dir_all(home.path().join(relative)).expect("create cloud fixture");
+        }
+
+        let locations = discover_system_locations(home.path());
+
+        assert_eq!(
+            locations
+                .iter()
+                .map(|location| (location.name.as_str(), location.provider_hint.as_deref()))
+                .collect::<Vec<_>>(),
+            vec![
+                ("Custom Sync", None),
+                ("OneDrive-Example", Some("onedrive")),
+                ("iCloud Drive", Some("icloud")),
+            ]
+        );
+        assert!(locations.iter().all(|location| {
+            location.kind == SystemLocationKind::Cloud && location.path.starts_with(home.path())
+        }));
+    }
 
     #[test]
     fn capabilities_report_exactly_the_implemented_operations() {

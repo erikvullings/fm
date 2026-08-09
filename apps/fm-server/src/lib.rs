@@ -40,6 +40,9 @@ fn api_router() -> OpenApiRouter<AppState> {
             routes::runtime::get_runtime_capabilities
         ))
         .routes(utoipa_axum::routes!(routes::settings::get_settings))
+        .routes(utoipa_axum::routes!(
+            routes::system_location::get_system_locations
+        ))
         .routes(utoipa_axum::routes!(routes::settings::update_settings))
         .routes(utoipa_axum::routes!(routes::directory::list_directory))
         .routes(utoipa_axum::routes!(routes::directory::refresh_directory))

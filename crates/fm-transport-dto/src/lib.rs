@@ -18,6 +18,7 @@ pub mod runtime;
 pub mod search;
 pub mod settings;
 pub mod snapshot;
+pub mod system_location;
 pub mod workspace;
 pub mod workspace_command;
 
@@ -56,6 +57,7 @@ pub use settings::{
     SizeFormatDto, ThemeDto,
 };
 pub use snapshot::{DirectorySnapshotDto, LoadingStateDto};
+pub use system_location::{SystemLocationDto, SystemLocationKindDto};
 pub use workspace::{
     ColumnConfigurationDto, CreateWorkspaceRequestDto, DirectoryViewConfigurationDto,
     NavigationHistoryDto, OperationCentrePreferencesDto, PaneStateDto, PersistedFilterDto,

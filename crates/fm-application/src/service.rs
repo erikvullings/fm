@@ -269,6 +269,34 @@ impl OperationSnapshotObserver for ApplicationOperationObserver {
 }
 
 impl FileManagerService {
+    /// Discovers OS-managed locations and maps their native paths to the existing local provider.
+    pub async fn system_locations(
+        &self,
+    ) -> Result<Vec<fm_transport_dto::SystemLocationDto>, ApplicationError> {
+        let platform = Arc::clone(&self.platform);
+        let discovered = tokio::task::spawn_blocking(move || platform.system_locations())
+            .await
+            .map_err(|_| ApplicationError::Internal)?
+            .map_err(|error| ApplicationError::PlatformOperationFailed(error.to_string()))?;
+        discovered
+            .into_iter()
+            .map(|location| {
+                let local = Location::from_native_path(&location.path)
+                    .map_err(|_| ApplicationError::Internal)?;
+                Ok(fm_transport_dto::SystemLocationDto {
+                    name: location.name,
+                    kind: match location.kind {
+                        fm_platform::SystemLocationKind::Cloud => {
+                            fm_transport_dto::SystemLocationKindDto::Cloud
+                        }
+                    },
+                    location: local.into(),
+                    provider_hint: location.provider_hint,
+                })
+            })
+            .collect()
+    }
+
     /// Builds a service for the given host runtime, persisting workspaces
     /// under `workspace_directory`.
     pub fn new(

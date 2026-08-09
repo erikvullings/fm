@@ -31,6 +31,7 @@ import type {
   StartOperationRequest,
   StartSearchRequest,
   StartSearchResult,
+  SystemLocation,
   Unsubscribe,
   WorkspaceCommand,
   WorkspaceId,
@@ -69,6 +70,7 @@ import {
   startSearch as requestSearchStart,
   getSettings as requestSettings,
   updateSettings as requestSettingsUpdate,
+  getSystemLocations as requestSystemLocations,
   getWorkspace as requestWorkspace,
   applyWorkspaceCommand as requestWorkspaceCommand,
   createWorkspace as requestWorkspaceCreation,
@@ -122,6 +124,19 @@ export class HttpFileManagerClient implements FileManagerClient {
       signal !== undefined ? { signal } : undefined,
     );
     return response.data;
+  }
+
+  async getSystemLocations(signal?: AbortSignal): Promise<SystemLocation[]> {
+    const response = await requestSystemLocations(signal === undefined ? undefined : { signal });
+    if (response.status !== 200) {
+      throw new Error(`Unexpected getSystemLocations response status: ${response.status}`);
+    }
+    return response.data.map((item) => ({
+      name: item.name,
+      kind: item.kind,
+      location: { ...item.location },
+      ...(item.providerHint == null ? {} : { providerHint: item.providerHint }),
+    }));
   }
 
   async getFileIcon(

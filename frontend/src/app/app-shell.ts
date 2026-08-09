@@ -138,6 +138,7 @@ import type {
   PluginLogEntry,
   Settings,
   SortDescriptor,
+  SystemLocation,
   TabId,
   TabProjection,
   WorkspaceId,
@@ -226,6 +227,8 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
   let settingsDialogOpen = false;
   let workspaceDisclosureElement: HTMLDetailsElement | undefined;
   let registeredActions: readonly ActionDescriptor[] = [];
+  let systemLocations: readonly SystemLocation[] = [];
+  let systemLocationsError: string | undefined;
   const unavailableLocations = new Set<string>();
   let plugins: readonly PluginDescriptor[] = [];
 
@@ -879,6 +882,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     workspaceRequest = new AbortController();
     try {
       const capabilities = await client.getRuntimeCapabilities(workspaceRequest.signal);
+      await loadSystemLocations(client, workspaceRequest.signal);
       platform = capabilities.platform;
       nativeDragOutSupported = capabilities.nativeDragOut;
       if (nativeDragOutSupported && unsubscribeNativeFileDrops === undefined) {
@@ -915,6 +919,20 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
         return;
       }
       workspaceError = workspaceErrorMessage(error, 'Unable to load workspace');
+    }
+    m.redraw();
+  }
+
+  async function loadSystemLocations(
+    client: FileManagerClient,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    try {
+      systemLocations = await client.getSystemLocations(signal);
+      systemLocationsError = undefined;
+    } catch {
+      systemLocations = [];
+      systemLocationsError = 'Unable to discover cloud locations';
     }
     m.redraw();
   }
@@ -2235,6 +2253,9 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
         workspace === undefined || currentSettings === undefined
           ? []
           : (currentSettings.recentLocationsByWorkspace[workspace.id] ?? []),
+      systemLocations,
+      ...(systemLocationsError === undefined ? {} : { systemLocationsError }),
+      onRetrySystemLocations: () => loadSystemLocations(client),
       unavailableLocations,
       entries,
       selectedEntryIds,

@@ -93,6 +93,9 @@ production authentication mechanism.
 Filesystem access is isolated behind the `fm-vfs` provider contract. Providers advertise explicit
 capabilities, expose cancellable asynchronous operations and streaming reads/writes, and are
 resolved from provider-neutral locations through a typed registry.
+Cloud-synchronized folders discovered from macOS conventions and Windows OneDrive environment
+variables appear in the favourites menu under `CLOUD`; they remain ordinary `local` provider
+locations and require no vendor credentials.
 
 Mutating filesystem work is represented by typed jobs in `fm-operations`. Its bounded scheduler
 runs a planning phase before execution, publishes lifecycle and coalesced progress events through

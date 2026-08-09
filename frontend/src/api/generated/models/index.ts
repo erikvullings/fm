@@ -97,6 +97,8 @@ export * from './startOperationRequestDto';
 export * from './startSearchRequestDto';
 export * from './startSearchResponseDto';
 export * from './symlinkPolicyDto';
+export * from './systemLocationDto';
+export * from './systemLocationKindDto';
 export * from './tabStateDto';
 export * from './themeDto';
 export * from './workspaceCommandDto';

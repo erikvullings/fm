@@ -166,6 +166,18 @@ pub(crate) fn get_runtime_capabilities(state: State<'_, AppState>) -> RuntimeCap
     state.service.runtime_capabilities()
 }
 
+/// Lists OS-managed filesystem locations through the shared application service.
+#[tauri::command]
+pub(crate) async fn get_system_locations(
+    state: State<'_, AppState>,
+) -> Result<Vec<fm_transport_dto::SystemLocationDto>, ApplicationErrorDto> {
+    state
+        .service
+        .system_locations()
+        .await
+        .map_err(|error| error.into_dto(uuid::Uuid::new_v4()))
+}
+
 /// Returns the same native PNG bytes as `GET /api/v1/icons`.
 #[tauri::command]
 pub(crate) fn get_file_icon(

@@ -14,6 +14,7 @@ import type {
   LoadingState,
   Location,
   SortDescriptor,
+  SystemLocation,
   TabId,
 } from '../../models';
 import {
@@ -70,6 +71,9 @@ export interface PaneAttrs {
   readonly location?: Location;
   readonly favouriteLocations?: readonly FavouriteLocation[];
   readonly recentLocations?: readonly Location[];
+  readonly systemLocations?: readonly SystemLocation[];
+  readonly systemLocationsError?: string;
+  readonly onRetrySystemLocations?: () => void | Promise<void>;
   readonly unavailableLocations?: ReadonlySet<string>;
   readonly onNavigateLocation?: (location: Location) => void | Promise<void>;
   readonly onAddFavourite?: (label: string, location: Location) => void | Promise<void>;
@@ -859,6 +863,35 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
                     },
                   },
                   [
+                    (attrs.systemLocations?.length ?? 0) > 0 &&
+                      m('.fm-favourites-recents.fm-cloud-locations', [
+                        m('strong', 'CLOUD'),
+                        ...(attrs.systemLocations ?? []).map((systemLocation) =>
+                          m(
+                            'button',
+                            {
+                              type: 'button',
+                              role: 'menuitem',
+                              title: systemLocation.location.uri,
+                              onclick: () => void navigateFavourite(systemLocation.location, attrs),
+                            },
+                            systemLocation.name,
+                          ),
+                        ),
+                      ]),
+                    attrs.systemLocationsError === undefined
+                      ? undefined
+                      : m('.fm-path-error.fm-cloud-locations-error', { role: 'status' }, [
+                          'Cloud locations unavailable. ',
+                          m(
+                            'button',
+                            {
+                              type: 'button',
+                              onclick: () => void attrs.onRetrySystemLocations?.(),
+                            },
+                            'Retry',
+                          ),
+                        ]),
                     attrs.location !== undefined && attrs.onAddFavourite !== undefined
                       ? m(
                           'form.fm-favourites-add',

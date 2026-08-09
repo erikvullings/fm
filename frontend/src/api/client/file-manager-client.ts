@@ -30,6 +30,7 @@ import type {
   StartOperationRequest,
   StartSearchRequest,
   StartSearchResult,
+  SystemLocation,
   Unsubscribe,
   WorkspaceCommand,
   WorkspaceId,
@@ -65,6 +66,7 @@ export interface NativeFileDrop {
 export interface FileManagerClient {
   readonly connection: EventStreamStatusObservable;
   getRuntimeCapabilities(signal?: AbortSignal): Promise<RuntimeCapabilities>;
+  getSystemLocations(signal?: AbortSignal): Promise<SystemLocation[]>;
 
   /** Starts an OS file-reference drag from the desktop host. */
   startNativeDrag(locations: readonly Location[], signal?: AbortSignal): Promise<void>;

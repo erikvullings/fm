@@ -1,6 +1,6 @@
 # 0001 OS cloud-backed locations
 
-Status: open
+Status: done
 Priority: high
 Subsystem: backend
 Depends on: none
@@ -27,3 +27,15 @@ Add first-class discovery and presentation of cloud-backed filesystem locations 
 
 ## Agent Notes
 - Inspect current platform adapters, local-provider URI handling, and sidebar/navigation components first.
+- 2026-08-09: Added typed platform discovery, local-provider DTO projection, REST and Tauri paths,
+  generated frontend bindings, and a recoverable `CLOUD` favourites-menu section. macOS enumerates
+  `~/Library/CloudStorage` and the standard iCloud Drive container without embedding a username.
+  Windows uses the documented OneDrive/Consumer/Commercial environment-variable fallback and
+  omits missing or duplicate directories; this fallback was compile-checked on macOS but was not
+  exercised on a Windows host.
+- 2026-08-09: Task-specific Rust integration/unit tests and 91 focused frontend tests pass. Full
+  macOS adapter tests retain three pre-existing sandbox-sensitive failures (Trash permission,
+  mounted-volume enumeration, and Launch Services recommendations). Repository frontend typecheck
+  also retains three pre-existing errors in archive request optionality, a conflict-dialog fixture,
+  and the Vite config's `.ts` import setting. Rust formatting/clippy pass; repository Biome lint is
+  still blocked by pre-existing formatting/lint findings outside this task's files.

@@ -33,6 +33,7 @@ import type {
   StartOperationRequest,
   StartSearchRequest,
   StartSearchResult,
+  SystemLocation,
   Unsubscribe,
   WorkspaceCommand,
   WorkspaceId,
@@ -64,6 +65,10 @@ export class TauriFileManagerClient implements FileManagerClient {
 
   async getRuntimeCapabilities(_signal?: AbortSignal): Promise<RuntimeCapabilities> {
     return invoke<RuntimeCapabilities>('get_runtime_capabilities');
+  }
+
+  async getSystemLocations(_signal?: AbortSignal): Promise<SystemLocation[]> {
+    return invoke<SystemLocation[]>('get_system_locations');
   }
 
   startNativeDrag(locations: readonly Location[], _signal?: AbortSignal): Promise<void> {
