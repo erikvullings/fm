@@ -450,6 +450,34 @@ describe('navigation controller', () => {
     });
   });
 
+  it('keeps a tab recoverable when a mounted network share disappears', async () => {
+    const context = setup();
+    const original = context.getWorkspace();
+    const share = {
+      providerId: 'local',
+      uri: 'file:///Volumes/Team%20Files',
+    } as const;
+    vi.mocked(context.client.navigatePane).mockRejectedValue(new Error('Share unavailable'));
+    const onLocationUnavailable = vi.fn();
+    const controller = createNavigationController({
+      client: context.client,
+      getWorkspace: context.getWorkspace,
+      replaceWorkspace: context.replaceWorkspace,
+      updatePane: (_paneId, _tabId, view) => context.views.push(view),
+      onLocationUnavailable,
+    });
+
+    await controller.navigate('left', share);
+
+    expect(onLocationUnavailable).toHaveBeenCalledWith('workspace', share);
+    expect(context.client.dispatchWorkspaceCommand).not.toHaveBeenCalled();
+    expect(context.getWorkspace()).toBe(original);
+    expect(context.views.at(-1)).toMatchObject({
+      state: { type: 'error', message: 'Share unavailable' },
+      location: original.panesById.left?.tabsById.tab?.location,
+    });
+  });
+
   it('resyncs the local workspace revision on a conflict instead of leaving it stale forever', async () => {
     const context = setup();
     const staleWorkspace = context.getWorkspace();

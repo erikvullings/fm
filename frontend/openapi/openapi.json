@@ -2726,8 +2726,36 @@
             "description": "Display label supplied by the OS folder.",
             "type": "string"
           },
+          "protocol": {
+            "description": "Optional lower-case mount protocol, for example `smb`.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "providerHint": {
             "description": "Optional advisory provider name; navigation never depends on it.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "readOnly": {
+            "description": "Whether the filesystem is mounted read-only, when detectable.",
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "server": {
+            "description": "Optional remote server name.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "share": {
+            "description": "Optional remote share name.",
             "type": [
               "string",
               "null"
@@ -2744,7 +2772,8 @@
       "SystemLocationKindDto": {
         "description": "Presentation category for a system location.",
         "enum": [
-          "cloud"
+          "cloud",
+          "network"
         ],
         "type": "string"
       },

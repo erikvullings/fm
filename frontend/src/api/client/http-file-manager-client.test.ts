@@ -198,10 +198,13 @@ describe('HttpFileManagerClient', () => {
         status: 200,
         data: [
           {
-            name: 'Example Drive',
-            kind: 'cloud',
+            name: 'Team Files',
+            kind: 'network',
             location: { providerId: 'local', uri: 'file:///Example' },
-            providerHint: 'example',
+            protocol: 'smb',
+            server: 'files.example.test',
+            share: 'team',
+            readOnly: true,
           },
         ],
         headers: new Headers(),
@@ -212,10 +215,13 @@ describe('HttpFileManagerClient', () => {
         new HttpFileManagerClient().getSystemLocations(controller.signal),
       ).resolves.toEqual([
         {
-          name: 'Example Drive',
-          kind: 'cloud',
+          name: 'Team Files',
+          kind: 'network',
           location: { providerId: 'local', uri: 'file:///Example' },
-          providerHint: 'example',
+          protocol: 'smb',
+          server: 'files.example.test',
+          share: 'team',
+          readOnly: true,
         },
       ]);
       expect(getSystemLocations).toHaveBeenCalledWith(

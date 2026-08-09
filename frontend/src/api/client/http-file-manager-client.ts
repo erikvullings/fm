@@ -136,6 +136,10 @@ export class HttpFileManagerClient implements FileManagerClient {
       kind: item.kind,
       location: { ...item.location },
       ...(item.providerHint == null ? {} : { providerHint: item.providerHint }),
+      ...(item.protocol == null ? {} : { protocol: item.protocol }),
+      ...(item.server == null ? {} : { server: item.server }),
+      ...(item.share == null ? {} : { share: item.share }),
+      ...(item.readOnly == null ? {} : { readOnly: item.readOnly }),
     }));
   }
 

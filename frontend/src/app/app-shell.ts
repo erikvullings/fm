@@ -176,6 +176,28 @@ const DEFAULT_THEME: Theme = 'auto';
  */
 const FAST_OPERATION_DISMISS_THRESHOLD_MS = 500;
 
+/** Applies host-detected mount access metadata to a directory view. */
+export function respectSystemLocationReadOnly(
+  view: PaneDirectoryView,
+  locations: readonly SystemLocation[],
+): PaneDirectoryView {
+  if (
+    view.location === undefined ||
+    !locations.some(
+      ({ location, readOnly }) =>
+        readOnly === true &&
+        location.providerId === view.location?.providerId &&
+        (location.uri === view.location.uri ||
+          view.location.uri.startsWith(
+            location.uri.endsWith('/') ? location.uri : `${location.uri}/`,
+          )),
+    )
+  ) {
+    return view;
+  }
+  return { ...view, writable: false };
+}
+
 /**
  * Delay before a terminal, non-`failed` operation (completed, cancelled or
  * interrupted) auto-dismisses itself. Only failures require the user to
@@ -1065,18 +1087,24 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       return;
     }
     if (delta.type === 'reset') {
-      directories.set(key, {
-        state: delta.snapshot.loadingState,
-        entries: delta.snapshot.entries,
-        location: delta.snapshot.location,
-        writable: delta.snapshot.writable,
-        requestId: delta.snapshot.requestId,
-        revision,
-        hasMore: delta.snapshot.hasMore,
-        ...(delta.snapshot.continuationToken === undefined
-          ? {}
-          : { continuationToken: delta.snapshot.continuationToken }),
-      });
+      directories.set(
+        key,
+        respectSystemLocationReadOnly(
+          {
+            state: delta.snapshot.loadingState,
+            entries: delta.snapshot.entries,
+            location: delta.snapshot.location,
+            writable: delta.snapshot.writable,
+            requestId: delta.snapshot.requestId,
+            revision,
+            hasMore: delta.snapshot.hasMore,
+            ...(delta.snapshot.continuationToken === undefined
+              ? {}
+              : { continuationToken: delta.snapshot.continuationToken }),
+          },
+          systemLocations,
+        ),
+      );
       m.redraw();
       return;
     }
@@ -2675,7 +2703,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
         updatePane: (paneId, tabId, view, preferredCursorName) => {
           const key = tabKey(paneId, tabId);
           const previous = directories.get(key);
-          directories.set(key, view);
+          directories.set(key, respectSystemLocationReadOnly(view, systemLocations));
           if (view.entries.length === 0) {
             selections.set(key, emptySelection);
           } else if (

@@ -6,7 +6,28 @@ import { createFileManagerClient } from '../api/client/create-client';
 import { MockFileManagerClient } from '../api/client/mock-file-manager-client';
 import { ApiError } from '../api/fetch-mutator';
 import type { Location } from '../models';
-import { AppShell, locationForPath } from './app-shell';
+import { AppShell, locationForPath, respectSystemLocationReadOnly } from './app-shell';
+
+describe('respectSystemLocationReadOnly', () => {
+  it('makes a detected read-only network mount non-writable', () => {
+    const mount = { providerId: 'local', uri: 'file:///Volumes/Reference' } as const;
+    const location = { providerId: 'local', uri: 'file:///Volumes/Reference/Manuals' } as const;
+    expect(
+      respectSystemLocationReadOnly(
+        { state: { type: 'loaded' }, entries: [], location, writable: true, hasMore: false },
+        [
+          {
+            name: 'Reference',
+            kind: 'network',
+            location: mount,
+            protocol: 'smb',
+            readOnly: true,
+          },
+        ],
+      ).writable,
+    ).toBe(false);
+  });
+});
 
 describe('locationForPath', () => {
   const archive = {

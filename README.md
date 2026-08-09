@@ -95,7 +95,10 @@ capabilities, expose cancellable asynchronous operations and streaming reads/wri
 resolved from provider-neutral locations through a typed registry.
 Cloud-synchronized folders discovered from macOS conventions and Windows OneDrive environment
 variables appear in the favourites menu under `CLOUD`; they remain ordinary `local` provider
-locations and require no vendor credentials.
+locations and require no vendor credentials. Mounted network volumes discovered from macOS volume
+metadata or Windows mapped drives appear separately under `NETWORK`. They also use the existing
+`local` provider, preserve optional protocol/server/share and read-only metadata, and require no
+embedded SMB client or vendor credentials.
 
 Mutating filesystem work is represented by typed jobs in `fm-operations`. Its bounded scheduler
 runs a planning phase before execution, publishes lifecycle and coalesced progress events through

@@ -863,26 +863,60 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
                     },
                   },
                   [
-                    (attrs.systemLocations?.length ?? 0) > 0 &&
+                    (attrs.systemLocations?.some(({ kind }) => kind === 'cloud') ?? false) &&
                       m('.fm-favourites-recents.fm-cloud-locations', [
                         m('strong', 'CLOUD'),
-                        ...(attrs.systemLocations ?? []).map((systemLocation) =>
-                          m(
-                            'button',
-                            {
-                              type: 'button',
-                              role: 'menuitem',
-                              title: systemLocation.location.uri,
-                              onclick: () => void navigateFavourite(systemLocation.location, attrs),
-                            },
-                            systemLocation.name,
+                        ...(attrs.systemLocations ?? [])
+                          .filter(({ kind }) => kind === 'cloud')
+                          .map((systemLocation) =>
+                            m(
+                              'button',
+                              {
+                                type: 'button',
+                                role: 'menuitem',
+                                title: systemLocation.location.uri,
+                                onclick: () =>
+                                  void navigateFavourite(systemLocation.location, attrs),
+                                disabled: attrs.unavailableLocations?.has(
+                                  locationKey(systemLocation.location),
+                                ),
+                              },
+                              attrs.unavailableLocations?.has(locationKey(systemLocation.location))
+                                ? `${systemLocation.name} (unavailable)`
+                                : systemLocation.name,
+                            ),
                           ),
-                        ),
+                      ]),
+                    (attrs.systemLocations?.some(({ kind }) => kind === 'network') ?? false) &&
+                      m('.fm-favourites-recents.fm-network-locations', [
+                        m('strong', 'NETWORK'),
+                        ...(attrs.systemLocations ?? [])
+                          .filter(({ kind }) => kind === 'network')
+                          .map((systemLocation) =>
+                            m(
+                              'button',
+                              {
+                                type: 'button',
+                                role: 'menuitem',
+                                title: systemLocation.location.uri,
+                                onclick: () =>
+                                  void navigateFavourite(systemLocation.location, attrs),
+                                disabled: attrs.unavailableLocations?.has(
+                                  locationKey(systemLocation.location),
+                                ),
+                              },
+                              attrs.unavailableLocations?.has(locationKey(systemLocation.location))
+                                ? `${systemLocation.name} (unavailable)`
+                                : systemLocation.readOnly === true
+                                  ? `${systemLocation.name} (read-only)`
+                                  : systemLocation.name,
+                            ),
+                          ),
                       ]),
                     attrs.systemLocationsError === undefined
                       ? undefined
                       : m('.fm-path-error.fm-cloud-locations-error', { role: 'status' }, [
-                          'Cloud locations unavailable. ',
+                          'System locations unavailable. ',
                           m(
                             'button',
                             {

@@ -16,8 +16,28 @@ export interface SystemLocationDto {
   /** Display label supplied by the OS folder. */
   name: string;
   /**
+     * Optional lower-case mount protocol, for example `smb`.
+     * @nullable
+     */
+  protocol?: string | null;
+  /**
      * Optional advisory provider name; navigation never depends on it.
      * @nullable
      */
   providerHint?: string | null;
+  /**
+     * Whether the filesystem is mounted read-only, when detectable.
+     * @nullable
+     */
+  readOnly?: boolean | null;
+  /**
+     * Optional remote server name.
+     * @nullable
+     */
+  server?: string | null;
+  /**
+     * Optional remote share name.
+     * @nullable
+     */
+  share?: string | null;
 }

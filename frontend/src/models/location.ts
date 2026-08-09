@@ -12,9 +12,13 @@ export interface Location {
 /** A navigable local-provider location discovered by the host operating system. */
 export interface SystemLocation {
   readonly name: string;
-  readonly kind: 'cloud';
+  readonly kind: 'cloud' | 'network';
   readonly location: Location;
   readonly providerHint?: string;
+  readonly protocol?: string;
+  readonly server?: string;
+  readonly share?: string;
+  readonly readOnly?: boolean;
 }
 
 /** Identifies an entry without its full summary, e.g. for metadata requests (spec §6). */

@@ -289,9 +289,16 @@ impl FileManagerService {
                         fm_platform::SystemLocationKind::Cloud => {
                             fm_transport_dto::SystemLocationKindDto::Cloud
                         }
+                        fm_platform::SystemLocationKind::Network => {
+                            fm_transport_dto::SystemLocationKindDto::Network
+                        }
                     },
                     location: local.into(),
                     provider_hint: location.provider_hint,
+                    protocol: location.protocol,
+                    server: location.server,
+                    share: location.share,
+                    read_only: location.read_only,
                 })
             })
             .collect()

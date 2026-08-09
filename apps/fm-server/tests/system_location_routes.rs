@@ -59,6 +59,10 @@ async fn discovered_cloud_directory_uses_the_existing_local_provider() {
             path: directory.path().to_path_buf(),
             kind: SystemLocationKind::Cloud,
             provider_hint: Some("example".to_owned()),
+            protocol: None,
+            server: None,
+            share: None,
+            read_only: None,
         }]),
     };
     let server = spawn(Arc::new(adapter)).await;
@@ -70,6 +74,35 @@ async fn discovered_cloud_directory_uses_the_existing_local_provider() {
     assert_eq!(body[0]["kind"], "cloud");
     assert_eq!(body[0]["location"]["providerId"], "local");
     assert_eq!(body[0]["providerHint"], "example");
+}
+
+#[tokio::test]
+async fn mounted_smb_share_uses_local_provider_and_preserves_mount_metadata() {
+    let directory = tempfile::tempdir().expect("mounted share");
+    let adapter = DiscoveryAdapter {
+        result: Ok(vec![SystemLocation {
+            name: "Team Files".to_owned(),
+            path: directory.path().to_path_buf(),
+            kind: SystemLocationKind::Network,
+            provider_hint: None,
+            protocol: Some("smb".to_owned()),
+            server: Some("files.example.test".to_owned()),
+            share: Some("team".to_owned()),
+            read_only: Some(true),
+        }]),
+    };
+    let server = spawn(Arc::new(adapter)).await;
+    let response = reqwest::get(format!("{}/api/v1/system-locations", server.base_url))
+        .await
+        .expect("request succeeds");
+    assert_eq!(response.status(), reqwest::StatusCode::OK);
+    let body: serde_json::Value = response.json().await.expect("JSON response");
+    assert_eq!(body[0]["kind"], "network");
+    assert_eq!(body[0]["location"]["providerId"], "local");
+    assert_eq!(body[0]["protocol"], "smb");
+    assert_eq!(body[0]["server"], "files.example.test");
+    assert_eq!(body[0]["share"], "team");
+    assert_eq!(body[0]["readOnly"], true);
 }
 
 #[tokio::test]

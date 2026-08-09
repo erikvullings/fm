@@ -5,13 +5,69 @@
 //! everywhere but compiles to nothing off Windows.
 
 #![cfg(target_os = "windows")]
+#![allow(unsafe_code)]
 
+use std::ffi::OsString;
+use std::os::windows::ffi::OsStringExt;
 use std::path::{Path, PathBuf};
 
 use fm_platform::{
     FallbackPlatformAdapter, MountedVolume, PlatformAdapter, PlatformCapabilities, PlatformError,
     SystemLocation, SystemLocationKind,
 };
+use windows_sys::Win32::NetworkManagement::WNet::WNetGetConnectionW;
+use windows_sys::Win32::Storage::FileSystem::{GetDriveTypeW, GetLogicalDrives};
+
+fn mapped_network_locations() -> Vec<SystemLocation> {
+    let drives = unsafe { GetLogicalDrives() };
+    let mut locations = Vec::new();
+    for index in 0..26_u32 {
+        if drives & (1 << index) == 0 {
+            continue;
+        }
+        let letter = char::from_u32(u32::from(b'A') + index).expect("drive letter");
+        let root = format!("{letter}:\\");
+        let root_wide: Vec<u16> = root.encode_utf16().chain(Some(0)).collect();
+        if unsafe { GetDriveTypeW(root_wide.as_ptr()) } != 4 {
+            continue;
+        }
+        let local = format!("{letter}:");
+        let local_wide: Vec<u16> = local.encode_utf16().chain(Some(0)).collect();
+        let mut remote = vec![0_u16; 32_768];
+        let mut length = u32::try_from(remote.len()).expect("fixed buffer length fits u32");
+        if unsafe { WNetGetConnectionW(local_wide.as_ptr(), remote.as_mut_ptr(), &mut length) } != 0
+        {
+            continue;
+        }
+        let end = remote
+            .iter()
+            .position(|value| *value == 0)
+            .unwrap_or(remote.len());
+        let source = OsString::from_wide(&remote[..end])
+            .to_string_lossy()
+            .into_owned();
+        let mut components = source.trim_start_matches('\\').split('\\');
+        let server = components
+            .next()
+            .filter(|value| !value.is_empty())
+            .map(str::to_owned);
+        let share = components
+            .next()
+            .filter(|value| !value.is_empty())
+            .map(str::to_owned);
+        locations.push(SystemLocation {
+            name: share.clone().unwrap_or(local),
+            path: PathBuf::from(root),
+            kind: SystemLocationKind::Network,
+            provider_hint: None,
+            protocol: Some("smb".to_owned()),
+            server,
+            share,
+            read_only: None,
+        });
+    }
+    locations
+}
 
 /// Windows implementation of [`PlatformAdapter`].
 ///
@@ -58,8 +114,13 @@ impl PlatformAdapter for WindowsPlatformAdapter {
                 path,
                 kind: SystemLocationKind::Cloud,
                 provider_hint: Some(hint.to_owned()),
+                protocol: None,
+                server: None,
+                share: None,
+                read_only: None,
             });
         }
+        locations.extend(mapped_network_locations());
         Ok(locations)
     }
 

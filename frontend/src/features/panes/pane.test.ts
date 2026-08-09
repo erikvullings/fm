@@ -1011,6 +1011,33 @@ describe('Pane tab strip', () => {
     expect(onNavigateLocation).toHaveBeenCalledWith(location);
   });
 
+  it('shows network volumes separately and keeps disappeared shares recoverable', () => {
+    const location = { providerId: 'local', uri: 'file:///Volumes/Team%20Files' };
+    mount(
+      attrs({
+        systemLocations: [
+          {
+            name: 'Team Files',
+            kind: 'network',
+            location,
+            protocol: 'smb',
+            server: 'files.example.test',
+            share: 'team',
+            readOnly: true,
+          },
+        ],
+        unavailableLocations: new Set(['local:file:///Volumes/Team%20Files']),
+      }),
+    );
+
+    root.querySelector<HTMLButtonElement>('.fm-pane-tab-favourites')?.click();
+    m.redraw.sync();
+    expect(root.querySelector('.fm-network-locations strong')?.textContent).toBe('NETWORK');
+    const share = root.querySelector<HTMLButtonElement>('.fm-network-locations [role="menuitem"]');
+    expect(share?.textContent).toContain('Team Files (unavailable)');
+    expect(share?.disabled).toBe(true);
+  });
+
   it('shows a recoverable cloud discovery state', () => {
     const onRetrySystemLocations = vi.fn();
     mount(attrs({ systemLocationsError: 'offline', onRetrySystemLocations }));

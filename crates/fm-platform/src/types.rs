@@ -14,6 +14,8 @@ pub struct MountedVolume {
 pub enum SystemLocationKind {
     /// A filesystem location synchronized or mounted by a cloud provider.
     Cloud,
+    /// A filesystem mounted from another computer through the operating system.
+    Network,
 }
 
 /// A filesystem location discovered from operating-system conventions.
@@ -27,6 +29,14 @@ pub struct SystemLocation {
     pub kind: SystemLocationKind,
     /// Optional advisory vendor hint. File semantics never depend on this value.
     pub provider_hint: Option<String>,
+    /// Optional lower-case mount protocol, for example `smb`.
+    pub protocol: Option<String>,
+    /// Optional remote server name supplied by the operating system.
+    pub server: Option<String>,
+    /// Optional remote share name supplied by the operating system.
+    pub share: Option<String>,
+    /// Whether the mounted filesystem is read-only, when detectable.
+    pub read_only: Option<bool>,
 }
 
 /// Platform-facing discovery abstraction for OS-managed locations.
@@ -60,7 +70,8 @@ pub fn cloud_provider_hint(name: &str) -> Option<&'static str> {
 
 #[cfg(test)]
 mod tests {
-    use super::cloud_provider_hint;
+    use super::{SystemLocation, SystemLocationKind, cloud_provider_hint};
+    use std::path::PathBuf;
 
     #[test]
     fn classifies_common_cloud_folder_names_case_insensitively() {
@@ -72,5 +83,25 @@ mod tests {
         assert_eq!(cloud_provider_hint("Dropbox"), Some("dropbox"));
         assert_eq!(cloud_provider_hint("Google Drive"), Some("google-drive"));
         assert_eq!(cloud_provider_hint("Projects"), None);
+    }
+
+    #[test]
+    fn network_locations_carry_optional_mount_metadata() {
+        let location = SystemLocation {
+            name: "Team Files".to_owned(),
+            path: PathBuf::from("/Volumes/Team Files"),
+            kind: SystemLocationKind::Network,
+            provider_hint: None,
+            protocol: Some("smb".to_owned()),
+            server: Some("files.example.test".to_owned()),
+            share: Some("team".to_owned()),
+            read_only: Some(true),
+        };
+
+        assert_eq!(location.kind, SystemLocationKind::Network);
+        assert_eq!(location.protocol.as_deref(), Some("smb"));
+        assert_eq!(location.server.as_deref(), Some("files.example.test"));
+        assert_eq!(location.share.as_deref(), Some("team"));
+        assert_eq!(location.read_only, Some(true));
     }
 }

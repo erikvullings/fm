@@ -45,7 +45,9 @@ use fm_platform::{
 use objc2::MainThreadMarker;
 use objc2_app_kit::{NSApplication, NSBitmapImageFileType, NSBitmapImageRep, NSMenu, NSWorkspace};
 use objc2_foundation::{
-    NSArray, NSDictionary, NSFileManager, NSString, NSURL, NSVolumeEnumerationOptions,
+    NSArray, NSDictionary, NSFileManager, NSNumber, NSString, NSURL, NSURLResourceKey,
+    NSURLVolumeIsLocalKey, NSURLVolumeIsReadOnlyKey, NSURLVolumeMountFromLocationKey,
+    NSVolumeEnumerationOptions,
 };
 
 /// macOS implementation of [`PlatformAdapter`].
@@ -291,6 +293,10 @@ fn discover_system_locations(home: &Path) -> Vec<SystemLocation> {
                 name,
                 path,
                 kind: SystemLocationKind::Cloud,
+                protocol: None,
+                server: None,
+                share: None,
+                read_only: None,
             });
         }
     }
@@ -301,6 +307,10 @@ fn discover_system_locations(home: &Path) -> Vec<SystemLocation> {
             path: icloud,
             kind: SystemLocationKind::Cloud,
             provider_hint: Some("icloud".to_owned()),
+            protocol: None,
+            server: None,
+            share: None,
+            read_only: None,
         });
     }
     locations.sort_by(|left, right| left.name.cmp(&right.name));
@@ -308,12 +318,122 @@ fn discover_system_locations(home: &Path) -> Vec<SystemLocation> {
     locations
 }
 
+fn parse_mount_source(source: &str) -> (Option<String>, Option<String>, Option<String>) {
+    let (protocol, remainder) = source.split_once("://").map_or(
+        (None, source.trim_start_matches('/')),
+        |(protocol, remainder)| (Some(protocol.to_ascii_lowercase()), remainder),
+    );
+    let mut segments = remainder.split('/');
+    let authority = segments.next().unwrap_or_default();
+    let server = authority
+        .rsplit_once('@')
+        .map_or(authority, |(_, server)| server)
+        .split(':')
+        .next()
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned);
+    let share = segments.find(|value| !value.is_empty()).map(str::to_owned);
+    (protocol, server, share)
+}
+
+fn network_location_from_metadata(
+    path: PathBuf,
+    name: String,
+    is_local: bool,
+    read_only: Option<bool>,
+    mount_source: Option<&str>,
+) -> Option<SystemLocation> {
+    if is_local {
+        return None;
+    }
+    let (protocol, server, share) = mount_source
+        .map(parse_mount_source)
+        .unwrap_or((None, None, None));
+    Some(SystemLocation {
+        name,
+        path,
+        kind: SystemLocationKind::Network,
+        provider_hint: None,
+        protocol,
+        server,
+        share,
+        read_only,
+    })
+}
+
+fn bool_resource_value(url: &NSURL, key: &NSURLResourceKey) -> Option<bool> {
+    let mut value = None;
+    unsafe { url.getResourceValue_forKey_error(&mut value, key).ok()? };
+    value?
+        .downcast::<NSNumber>()
+        .ok()
+        .map(|value| value.as_bool())
+}
+
+fn string_resource_value(url: &NSURL, key: &NSURLResourceKey) -> Option<String> {
+    let mut value = None;
+    unsafe { url.getResourceValue_forKey_error(&mut value, key).ok()? };
+    value?
+        .downcast::<NSString>()
+        .ok()
+        .map(|value| value.to_string())
+}
+
+fn discover_network_locations() -> Result<Vec<SystemLocation>, PlatformError> {
+    let (local_key, read_only_key, source_key) = unsafe {
+        (
+            NSURLVolumeIsLocalKey,
+            NSURLVolumeIsReadOnlyKey,
+            NSURLVolumeMountFromLocationKey,
+        )
+    };
+    let keys = NSArray::from_slice(&[local_key, read_only_key, source_key]);
+    let urls = NSFileManager::defaultManager()
+        .mountedVolumeURLsIncludingResourceValuesForKeys_options(
+            Some(&keys),
+            NSVolumeEnumerationOptions::SkipHiddenVolumes,
+        )
+        .ok_or_else(|| PlatformError::Io {
+            message: "failed to enumerate mounted volumes".to_owned(),
+        })?;
+    let mut locations = Vec::new();
+    for url in &urls {
+        let Some(path) = url.path() else {
+            continue;
+        };
+        let path = PathBuf::from(path.to_string());
+        let name = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .map(str::to_owned)
+            .unwrap_or_else(|| path.to_string_lossy().into_owned());
+        let Some(is_local) = bool_resource_value(&url, local_key) else {
+            continue;
+        };
+        let read_only = bool_resource_value(&url, read_only_key);
+        let source = string_resource_value(&url, source_key);
+        if let Some(location) =
+            network_location_from_metadata(path, name, is_local, read_only, source.as_deref())
+        {
+            locations.push(location);
+        }
+    }
+    locations.sort_by(|left, right| left.name.cmp(&right.name));
+    Ok(locations)
+}
+
 impl PlatformAdapter for MacosPlatformAdapter {
     fn system_locations(&self) -> Result<Vec<SystemLocation>, PlatformError> {
         let home = dirs::home_dir().ok_or_else(|| PlatformError::Io {
             message: "home directory is unavailable".to_owned(),
         })?;
-        Ok(discover_system_locations(&home))
+        let mut locations = discover_system_locations(&home);
+        // Network enumeration is advisory: a temporarily unavailable share or a host sandbox
+        // must not hide otherwise reachable cloud-backed locations.
+        if let Ok(network_locations) = discover_network_locations() {
+            locations.extend(network_locations);
+        }
+        Ok(locations)
     }
 
     fn capabilities(&self) -> PlatformCapabilities {
@@ -533,6 +653,38 @@ mod tests {
     use tempfile::tempdir;
 
     use super::*;
+
+    #[test]
+    fn maps_remote_volume_metadata_without_assuming_volumes_are_smb() {
+        let location = network_location_from_metadata(
+            PathBuf::from("/Volumes/Team Files"),
+            "Team Files".to_owned(),
+            false,
+            Some(true),
+            Some("smb://files.example.test/team"),
+        )
+        .expect("remote volume");
+
+        assert_eq!(location.kind, SystemLocationKind::Network);
+        assert_eq!(location.protocol.as_deref(), Some("smb"));
+        assert_eq!(location.server.as_deref(), Some("files.example.test"));
+        assert_eq!(location.share.as_deref(), Some("team"));
+        assert_eq!(location.read_only, Some(true));
+    }
+
+    #[test]
+    fn excludes_local_volumes_even_when_mounted_under_volumes() {
+        assert!(
+            network_location_from_metadata(
+                PathBuf::from("/Volumes/Backup"),
+                "Backup".to_owned(),
+                true,
+                Some(false),
+                None,
+            )
+            .is_none()
+        );
+    }
 
     #[test]
     fn cloud_location_discovery_classifies_known_providers_and_keeps_unknown_folders() {

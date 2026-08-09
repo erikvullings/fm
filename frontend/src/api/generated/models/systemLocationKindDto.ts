@@ -11,4 +11,5 @@ export type SystemLocationKindDto = typeof SystemLocationKindDto[keyof typeof Sy
 
 export const SystemLocationKindDto = {
   cloud: 'cloud',
+  network: 'network',
 } as const;
