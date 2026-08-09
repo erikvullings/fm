@@ -8,6 +8,7 @@ import {
 } from '../../keybindings/dispatcher';
 import type {
   ActionDescriptor,
+  Connection,
   EntryId,
   EntrySummary,
   FavouriteLocation,
@@ -17,6 +18,7 @@ import type {
   SystemLocation,
   TabId,
 } from '../../models';
+import { connectionStatusGlyph, connectionStatusLabel } from '../connections/connections-model';
 import {
   type DirectoryColumnDescriptor,
   DirectoryTable,
@@ -74,6 +76,10 @@ export interface PaneAttrs {
   readonly systemLocations?: readonly SystemLocation[];
   readonly systemLocationsError?: string;
   readonly onRetrySystemLocations?: () => void | Promise<void>;
+  /** Saved application-managed connections shown in the `SERVERS` group (task 0103). */
+  readonly connections?: readonly Connection[];
+  /** Opens the connections manager (add/edit/delete/connect/disconnect/test, task 0103). */
+  readonly onManageConnections?: () => void;
   readonly unavailableLocations?: ReadonlySet<string>;
   readonly onNavigateLocation?: (location: Location) => void | Promise<void>;
   readonly onAddFavourite?: (label: string, location: Location) => void | Promise<void>;
@@ -913,6 +919,38 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
                             ),
                           ),
                       ]),
+                    (attrs.connections?.length ?? 0) > 0 &&
+                      m('.fm-favourites-recents.fm-servers-locations', [
+                        m('strong', 'SERVERS'),
+                        ...(attrs.connections ?? []).map((connection) =>
+                          m(
+                            '.fm-server-item',
+                            {
+                              key: connection.id,
+                              role: 'menuitem',
+                              title: connectionStatusLabel(connection.status),
+                            },
+                            [
+                              m('span.fm-server-status', connectionStatusGlyph(connection.status)),
+                              m('span.fm-server-name', connection.name),
+                            ],
+                          ),
+                        ),
+                      ]),
+                    attrs.onManageConnections === undefined
+                      ? undefined
+                      : m(
+                          'button.fm-manage-connections',
+                          {
+                            type: 'button',
+                            role: 'menuitem',
+                            onclick: () => {
+                              closeFavourites();
+                              attrs.onManageConnections?.();
+                            },
+                          },
+                          'Manage connections…',
+                        ),
                     attrs.systemLocationsError === undefined
                       ? undefined
                       : m('.fm-path-error.fm-cloud-locations-error', { role: 'status' }, [

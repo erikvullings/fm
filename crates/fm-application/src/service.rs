@@ -11,6 +11,10 @@ use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use fm_archive::{ArchiveFileSystemProvider, create_7z_archive, create_zip_archive};
+use fm_connections::{
+    ConnectionDraft, ConnectionId, ConnectionService, JsonFileConnectionRepository,
+};
+use fm_credentials::{CredentialStore, InMemoryCredentialStore};
 use fm_domain::OperationId;
 use fm_domain::{
     ActionContextRequirements, ActionDescriptor, ActionId, ActionSource, DirectorySnapshot,
@@ -36,15 +40,16 @@ use fm_settings::{
 };
 use fm_transport_dto::{
     ActionDescriptorDto, ActionResultDto, ArchiveFormatDto, ConflictPolicyDto,
-    ConflictResolutionDto, DateFormatDto, DefaultPaneLayoutDto, EntryMetadataRequest,
-    InvokeActionRequestDto, ListDirectoryRequest, LoadEditableFileRequestDto,
-    LoadEditableFileResponseDto, NavigateRequest, OperationConflictPolicyDto, OperationDto,
-    OperationKindDto, OperationProgressDto, OperationStateDto, PlatformKindDto, PluginLogEntryDto,
-    PluginPermissionsDto, ReadFileRangeRequestDto, ReadFileRangeResponseDto,
-    ResolveOperationConflictRequestDto, RuntimeCapabilitiesDto, RuntimeKindDto,
-    SaveEditableFileRequestDto, SaveEditableFileResponseDto, SearchInFileMatchDto,
-    SearchInFileRequestDto, SearchInFileResponseDto, SettingsDto, SizeFormatDto,
-    StartOperationRequestDto, StartSearchRequestDto, StartSearchResponseDto, ThemeDto,
+    ConflictResolutionDto, ConnectionDto, CreateConnectionRequestDto, DateFormatDto,
+    DefaultPaneLayoutDto, EntryMetadataRequest, InvokeActionRequestDto, ListDirectoryRequest,
+    LoadEditableFileRequestDto, LoadEditableFileResponseDto, NavigateRequest,
+    OperationConflictPolicyDto, OperationDto, OperationKindDto, OperationProgressDto,
+    OperationStateDto, PlatformKindDto, PluginLogEntryDto, PluginPermissionsDto,
+    ReadFileRangeRequestDto, ReadFileRangeResponseDto, ResolveOperationConflictRequestDto,
+    RuntimeCapabilitiesDto, RuntimeKindDto, SaveEditableFileRequestDto,
+    SaveEditableFileResponseDto, SearchInFileMatchDto, SearchInFileRequestDto,
+    SearchInFileResponseDto, SettingsDto, SizeFormatDto, StartOperationRequestDto,
+    StartSearchRequestDto, StartSearchResponseDto, ThemeDto, UpdateConnectionRequestDto,
     WorkspaceCommandDto, WorkspaceDto, WorkspaceSummaryDto,
 };
 use fm_vfs::{
@@ -58,6 +63,7 @@ use uuid::Uuid;
 
 use crate::DirectoryService;
 use crate::action::ActionRegistry;
+use crate::connection_dto;
 use crate::error::ApplicationError;
 use crate::workspace::{JsonFileWorkspaceRepository, WorkspaceService, WorkspaceSummary};
 
@@ -76,6 +82,7 @@ pub struct FileManagerService {
     runtime: RuntimeKindDto,
     platform: Arc<dyn PlatformAdapter>,
     workspaces: WorkspaceService<JsonFileWorkspaceRepository>,
+    connections: ConnectionService<JsonFileConnectionRepository>,
     directories: DirectoryService,
     providers: ProviderRegistry,
     archive_provider: Arc<ArchiveFileSystemProvider>,
@@ -347,12 +354,46 @@ impl FileManagerService {
     /// should pass [`FallbackPlatformAdapter`] (it has no native access to a
     /// remote client's OS); a desktop host should pass a real per-OS adapter
     /// once one exists.
+    ///
+    /// Credentials are stored through [`InMemoryCredentialStore`] - a real
+    /// host on macOS/Windows must call
+    /// [`Self::with_platform_adapter_and_credential_store`] instead to get
+    /// Keychain/Credential Manager-backed storage (task 0103's acceptance
+    /// criterion); this constructor exists for callers (mainly this crate's
+    /// own tests) that do not care which credential store is used.
     pub fn with_platform_adapter(
         runtime: RuntimeKindDto,
         workspace_directory: impl Into<PathBuf>,
         settings_directory: impl Into<PathBuf>,
         events: EventBus,
         platform: Arc<dyn PlatformAdapter>,
+    ) -> Self {
+        Self::with_platform_adapter_and_credential_store(
+            runtime,
+            workspace_directory,
+            settings_directory,
+            events,
+            platform,
+            Arc::new(InMemoryCredentialStore::new()),
+        )
+    }
+
+    /// Builds a service using a caller-provided event bus, platform adapter
+    /// and credential store.
+    ///
+    /// Every real host (`apps/fm-server`, `apps/fm-desktop`) should call this
+    /// constructor with the OS-appropriate [`CredentialStore`] (`dev.fm`'s
+    /// `fm-credentials-macos`/`fm-credentials-windows`, selected the same way
+    /// each host already selects its [`PlatformAdapter`] - see each host's
+    /// `credentials` module), not [`Self::with_platform_adapter`], which
+    /// defaults to the non-protected in-memory store.
+    pub fn with_platform_adapter_and_credential_store(
+        runtime: RuntimeKindDto,
+        workspace_directory: impl Into<PathBuf>,
+        settings_directory: impl Into<PathBuf>,
+        events: EventBus,
+        platform: Arc<dyn PlatformAdapter>,
+        credential_store: Arc<dyn CredentialStore>,
     ) -> Self {
         let settings_directory = settings_directory.into();
         let mut providers = ProviderRegistry::new();
@@ -399,6 +440,11 @@ impl FileManagerService {
             workspaces: WorkspaceService::new(JsonFileWorkspaceRepository::new(
                 workspace_directory,
             )),
+            connections: ConnectionService::new(
+                JsonFileConnectionRepository::new(settings_directory.join("connections")),
+                credential_store,
+                events.clone(),
+            ),
             directories,
             providers,
             archive_provider,
@@ -1965,6 +2011,103 @@ impl FileManagerService {
     ) -> Result<WorkspaceDto, ApplicationError> {
         let workspace = self.workspaces.apply_command(command.into()).await?;
         Ok(workspace.into())
+    }
+
+    /// Lists every stored connection profile with its current runtime status
+    /// (spec §16 `GET /api/v1/connections`, task 0103).
+    pub async fn list_connections(&self) -> Result<Vec<ConnectionDto>, ApplicationError> {
+        let profiles = self.connections.list().await?;
+        let mut dtos = Vec::with_capacity(profiles.len());
+        for profile in profiles {
+            let status = self.connections.status(profile.id).await?;
+            dtos.push(connection_dto::connection_dto(profile, status));
+        }
+        Ok(dtos)
+    }
+
+    /// Loads a single connection profile with its current runtime status
+    /// (spec §16 `GET /api/v1/connections/{connectionId}`, task 0103).
+    pub async fn get_connection(&self, id: Uuid) -> Result<ConnectionDto, ApplicationError> {
+        let connection_id: ConnectionId = id.into();
+        let profile = self.connections.get(connection_id).await?;
+        let status = self.connections.status(connection_id).await?;
+        Ok(connection_dto::connection_dto(profile, status))
+    }
+
+    /// Creates and persists a new connection profile (spec §16
+    /// `POST /api/v1/connections`, task 0103).
+    pub async fn create_connection(
+        &self,
+        request: CreateConnectionRequestDto,
+    ) -> Result<ConnectionDto, ApplicationError> {
+        let draft = ConnectionDraft {
+            name: request.name,
+            kind: connection_dto::connection_kind_from_dto(request.kind),
+            configuration: connection_dto::connection_configuration_from_dto(request.configuration),
+            secret: request.secret.map(connection_dto::secret_material_from_dto),
+        };
+        let profile = self.connections.create(draft).await?;
+        let status = self.connections.status(profile.id).await?;
+        Ok(connection_dto::connection_dto(profile, status))
+    }
+
+    /// Updates an existing connection profile, optionally replacing its
+    /// stored credential (spec §16 `PUT /api/v1/connections/{connectionId}`,
+    /// task 0103).
+    pub async fn update_connection(
+        &self,
+        id: Uuid,
+        request: UpdateConnectionRequestDto,
+    ) -> Result<ConnectionDto, ApplicationError> {
+        let connection_id: ConnectionId = id.into();
+        let draft = ConnectionDraft {
+            name: request.name,
+            kind: connection_dto::connection_kind_from_dto(request.kind),
+            configuration: connection_dto::connection_configuration_from_dto(request.configuration),
+            secret: request.secret.map(connection_dto::secret_material_from_dto),
+        };
+        let profile = self.connections.update(connection_id, draft).await?;
+        let status = self.connections.status(connection_id).await?;
+        Ok(connection_dto::connection_dto(profile, status))
+    }
+
+    /// Deletes a connection profile and its stored credential, if any (spec
+    /// §16 `DELETE /api/v1/connections/{connectionId}`, task 0103).
+    pub async fn delete_connection(&self, id: Uuid) -> Result<(), ApplicationError> {
+        self.connections.delete(id.into()).await?;
+        Ok(())
+    }
+
+    /// Attempts to connect (spec §16
+    /// `POST /api/v1/connections/{connectionId}/connect`, task 0103); see
+    /// [`fm_connections::ConnectionService`]'s documentation for the honest
+    /// scope of this operation before task 0104/0106 register a real dialer.
+    pub async fn connect_connection(&self, id: Uuid) -> Result<ConnectionDto, ApplicationError> {
+        let connection_id: ConnectionId = id.into();
+        let status = self.connections.connect(connection_id).await?;
+        let profile = self.connections.get(connection_id).await?;
+        Ok(connection_dto::connection_dto(profile, status))
+    }
+
+    /// Marks a connection as disconnected (spec §16
+    /// `POST /api/v1/connections/{connectionId}/disconnect`, task 0103).
+    pub async fn disconnect_connection(&self, id: Uuid) -> Result<ConnectionDto, ApplicationError> {
+        let connection_id: ConnectionId = id.into();
+        let status = self.connections.disconnect(connection_id).await?;
+        let profile = self.connections.get(connection_id).await?;
+        Ok(connection_dto::connection_dto(profile, status))
+    }
+
+    /// Checks whether a connection's configuration and credential are
+    /// currently usable, without changing its tracked status (spec §16
+    /// `POST /api/v1/connections/{connectionId}/test`, task 0103); see
+    /// [`fm_connections::ConnectionService`]'s documentation for the honest
+    /// scope of this operation before task 0104/0106 register a real dialer.
+    pub async fn test_connection(&self, id: Uuid) -> Result<ConnectionDto, ApplicationError> {
+        let connection_id: ConnectionId = id.into();
+        let status = self.connections.test(connection_id).await?;
+        let profile = self.connections.get(connection_id).await?;
+        Ok(connection_dto::connection_dto(profile, status))
     }
 }
 

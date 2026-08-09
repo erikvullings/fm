@@ -6,6 +6,9 @@ import type {
   ActionResult,
   ArchiveCredentialRequest,
   BackendEvent,
+  Connection,
+  ConnectionId,
+  CreateConnectionRequest,
   CreateWorkspaceRequest,
   DirectorySnapshot,
   EditableFile,
@@ -37,6 +40,7 @@ import type {
   StartSearchResult,
   SystemLocation,
   Unsubscribe,
+  UpdateConnectionRequest,
   WorkspaceCommand,
   WorkspaceId,
   WorkspaceProjection,
@@ -95,7 +99,15 @@ export type MockClientMethod =
   | 'getPluginLogs'
   | 'getPluginIconThemeAsset'
   | 'startSearch'
-  | 'cancelSearch';
+  | 'cancelSearch'
+  | 'listConnections'
+  | 'createConnection'
+  | 'getConnection'
+  | 'updateConnection'
+  | 'deleteConnection'
+  | 'connectConnection'
+  | 'disconnectConnection'
+  | 'testConnection';
 
 export interface MockFileManagerClientOptions {
   pageSize?: number;
@@ -291,6 +303,25 @@ function createMockWorkspace(id: WorkspaceId, name = 'Mock Workspace'): Workspac
   };
 }
 
+/**
+ * Mirrors the backend's honest, pre-0104/0106 `connect`/`test` scope (see
+ * `fm_connections::ConnectionService`'s documentation): with no real
+ * protocol dialer, a connection is "usable" once its typed configuration is
+ * well-formed and, for an SSH configuration whose authentication method
+ * needs one, a credential is stored.
+ */
+function evaluateMockConnectionStatus(connection: Connection): Connection['status'] {
+  if (connection.configuration.kind === 'ssh') {
+    const needsStoredCredential =
+      connection.configuration.authentication === 'password' ||
+      connection.configuration.authentication === 'privateKey';
+    if (needsStoredCredential && !connection.hasCredential) {
+      return 'authenticationRequired';
+    }
+  }
+  return 'connected';
+}
+
 /** Strictly typed controls for the deterministic in-memory frontend adapter. */
 export class MockFileManagerClient implements FileManagerClient {
   readonly connection = new MutableEventStreamStatus();
@@ -310,6 +341,7 @@ export class MockFileManagerClient implements FileManagerClient {
   private readonly operations = new Map<OperationId, Operation>();
   private readonly navigationHistory = new Map<string, { back: Location[]; forward: Location[] }>();
   private readonly workspaces = new Map<WorkspaceId, WorkspaceProjection>();
+  private readonly connections = new Map<ConnectionId, Connection>();
   private pluginState: PluginDescriptor[] = structuredClone(plugins);
   private settings: Settings = {
     schemaVersion: 2,
@@ -337,6 +369,7 @@ export class MockFileManagerClient implements FileManagerClient {
   private operationSequence = 0;
   private tabSequence = 0;
   private workspaceSequence = 0;
+  private connectionSequence = 0;
   private searchSequence = 0;
   private eventSequence = 0;
   private readonly searches = new Map<
@@ -963,6 +996,101 @@ export class MockFileManagerClient implements FileManagerClient {
     for (const listener of this.listeners) {
       listener(structuredClone(event));
     }
+  }
+
+  listConnections(signal?: AbortSignal): Promise<Connection[]> {
+    return this.perform('listConnections', signal, () =>
+      [...this.connections.values()].map((connection) => structuredClone(connection)),
+    );
+  }
+
+  createConnection(request: CreateConnectionRequest, signal?: AbortSignal): Promise<Connection> {
+    return this.perform('createConnection', signal, () => {
+      this.connectionSequence += 1;
+      const now = '2026-01-01T00:00:00.000Z';
+      const connection: Connection = {
+        id: `mock-connection-${this.connectionSequence}`,
+        name: request.name,
+        kind: request.kind,
+        configuration: request.configuration,
+        hasCredential: request.secret != null,
+        status: 'disconnected',
+        createdAt: now,
+        updatedAt: now,
+      };
+      this.connections.set(connection.id, connection);
+      return structuredClone(connection);
+    });
+  }
+
+  getConnection(connectionId: ConnectionId, signal?: AbortSignal): Promise<Connection> {
+    return this.perform('getConnection', signal, () =>
+      structuredClone(this.requireConnection(connectionId)),
+    );
+  }
+
+  updateConnection(
+    connectionId: ConnectionId,
+    request: UpdateConnectionRequest,
+    signal?: AbortSignal,
+  ): Promise<Connection> {
+    return this.perform('updateConnection', signal, () => {
+      const existing = this.requireConnection(connectionId);
+      const updated: Connection = {
+        ...existing,
+        name: request.name,
+        kind: request.kind,
+        configuration: request.configuration,
+        hasCredential: request.secret != null ? true : existing.hasCredential,
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      };
+      this.connections.set(connectionId, updated);
+      return structuredClone(updated);
+    });
+  }
+
+  deleteConnection(connectionId: ConnectionId, signal?: AbortSignal): Promise<void> {
+    return this.perform('deleteConnection', signal, () => {
+      this.requireConnection(connectionId);
+      this.connections.delete(connectionId);
+    });
+  }
+
+  connectConnection(connectionId: ConnectionId, signal?: AbortSignal): Promise<Connection> {
+    return this.perform('connectConnection', signal, () => {
+      const connection = this.requireConnection(connectionId);
+      const updated: Connection = {
+        ...connection,
+        status: evaluateMockConnectionStatus(connection),
+      };
+      this.connections.set(connectionId, updated);
+      return structuredClone(updated);
+    });
+  }
+
+  disconnectConnection(connectionId: ConnectionId, signal?: AbortSignal): Promise<Connection> {
+    return this.perform('disconnectConnection', signal, () => {
+      const connection = this.requireConnection(connectionId);
+      const updated: Connection = { ...connection, status: 'disconnected' };
+      this.connections.set(connectionId, updated);
+      return structuredClone(updated);
+    });
+  }
+
+  /** Evaluates status without persisting it, mirroring the backend's `test` semantics. */
+  testConnection(connectionId: ConnectionId, signal?: AbortSignal): Promise<Connection> {
+    return this.perform('testConnection', signal, () => {
+      const connection = this.requireConnection(connectionId);
+      return structuredClone({ ...connection, status: evaluateMockConnectionStatus(connection) });
+    });
+  }
+
+  private requireConnection(connectionId: ConnectionId): Connection {
+    const connection = this.connections.get(connectionId);
+    if (connection === undefined) {
+      throw new MockClientError('notFound', `No mock connection with id ${connectionId}`);
+    }
+    return connection;
   }
 
   /** Returns the current in-memory state for a mock operation. */

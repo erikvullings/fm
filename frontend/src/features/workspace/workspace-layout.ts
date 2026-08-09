@@ -2,6 +2,7 @@ import m, { type FactoryComponent, type Vnode } from 'mithril';
 import { dispatchKeybinding, type KeybindingRuntime } from '../../keybindings/dispatcher';
 import type {
   ActionDescriptor,
+  Connection,
   EntryId,
   EntrySummary,
   FavouriteLocation,
@@ -55,6 +56,10 @@ export interface WorkspacePaneContent {
   readonly systemLocations?: readonly SystemLocation[];
   readonly systemLocationsError?: string;
   readonly onRetrySystemLocations?: () => void | Promise<void>;
+  /** Saved application-managed connections shown in the `SERVERS` group (task 0103). */
+  readonly connections?: readonly Connection[];
+  /** Opens the connections manager (add/edit/delete/connect/disconnect/test, task 0103). */
+  readonly onManageConnections?: () => void;
   readonly unavailableLocations?: ReadonlySet<string>;
   readonly onNavigateLocation?: (location: Location) => void | Promise<void>;
   readonly onAddFavourite?: (label: string, location: Location) => void | Promise<void>;
@@ -399,6 +404,10 @@ export const WorkspaceLayoutView: FactoryComponent<WorkspaceLayoutViewAttrs> = (
         ...(content.onRetrySystemLocations === undefined
           ? {}
           : { onRetrySystemLocations: content.onRetrySystemLocations }),
+        ...(content.connections === undefined ? {} : { connections: content.connections }),
+        ...(content.onManageConnections === undefined
+          ? {}
+          : { onManageConnections: content.onManageConnections }),
         ...(content.unavailableLocations === undefined
           ? {}
           : { unavailableLocations: content.unavailableLocations }),

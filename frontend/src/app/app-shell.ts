@@ -32,6 +32,18 @@ import {
   menuActionsForContext,
 } from '../features/commands/availability';
 import { ContextMenu as DirectoryContextMenu } from '../features/commands/context-menu';
+import { ConnectionsManager } from '../features/connections/connection-editor';
+import {
+  connectConnection as connectConnectionRequest,
+  createConnection as createConnectionRequest,
+  deleteConnection as deleteConnectionRequest,
+  disconnectConnection as disconnectConnectionRequest,
+  loadConnections,
+  testConnection as testConnectionRequest,
+  updateConnection as updateConnectionRequest,
+  upsertConnection,
+  withoutConnection,
+} from '../features/connections/connections-model';
 import { SAMPLE_FILE_AGE_COLUMN } from '../features/directory-table/directory-table';
 import { NativeIconLoader } from '../features/directory-table/native-icon-loader';
 import {
@@ -123,7 +135,9 @@ import type {
   ActionDescriptor,
   ActionInvocationContext,
   BackendEvent,
+  Connection,
   ContentMatchSummary,
+  CreateConnectionRequest,
   DirectoryDelta,
   EntryId,
   EntrySummary,
@@ -141,6 +155,7 @@ import type {
   SystemLocation,
   TabId,
   TabProjection,
+  UpdateConnectionRequest,
   WorkspaceId,
   WorkspaceLayout,
   WorkspaceProjection,
@@ -253,6 +268,8 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
   let systemLocationsError: string | undefined;
   const unavailableLocations = new Set<string>();
   let plugins: readonly PluginDescriptor[] = [];
+  let connections: readonly Connection[] = [];
+  let connectionsManagerOpen = false;
 
   function favouriteActions(): readonly ActionDescriptor[] {
     const favourites = currentSettings?.favouriteLocations ?? [];
@@ -905,6 +922,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     try {
       const capabilities = await client.getRuntimeCapabilities(workspaceRequest.signal);
       await loadSystemLocations(client, workspaceRequest.signal);
+      await loadConnectionsList(client, workspaceRequest.signal);
       platform = capabilities.platform;
       nativeDragOutSupported = capabilities.nativeDragOut;
       if (nativeDragOutSupported && unsubscribeNativeFileDrops === undefined) {
@@ -955,6 +973,19 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     } catch {
       systemLocations = [];
       systemLocationsError = 'Unable to discover cloud locations';
+    }
+    m.redraw();
+  }
+
+  /** Loads the saved-connection list for the `SERVERS` sidebar group (task 0103). */
+  async function loadConnectionsList(
+    client: FileManagerClient,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    try {
+      connections = await loadConnections(client, signal);
+    } catch {
+      connections = [];
     }
     m.redraw();
   }
@@ -1999,6 +2030,29 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
         .catch(() => undefined);
       return;
     }
+    if (
+      payload.type === 'connection.created' ||
+      payload.type === 'connection.updated' ||
+      payload.type === 'connection.statusChanged' ||
+      payload.type === 'connection.deleted'
+    ) {
+      if (payload.type === 'connection.deleted') {
+        connections = withoutConnection(connections, payload.connectionId);
+        m.redraw();
+        return;
+      }
+      // `connection.created`/`connection.updated`/`connection.statusChanged`
+      // only carry the id (and, for the last, the new status): refetch the
+      // full record so the `SERVERS` group and manager stay accurate.
+      void attrsClient
+        .getConnection(payload.connectionId)
+        .then((updated) => {
+          connections = upsertConnection(connections, updated);
+          m.redraw();
+        })
+        .catch(() => undefined);
+      return;
+    }
     if (payload.type === 'search.resultsBatch') {
       if (payload.searchId !== findFilesSearchId) return;
       for (const entry of payload.entries) {
@@ -2284,6 +2338,11 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       systemLocations,
       ...(systemLocationsError === undefined ? {} : { systemLocationsError }),
       onRetrySystemLocations: () => loadSystemLocations(client),
+      connections,
+      onManageConnections: () => {
+        connectionsManagerOpen = true;
+        m.redraw();
+      },
       unavailableLocations,
       entries,
       selectedEntryIds,
@@ -3241,6 +3300,38 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
                     error instanceof Error ? error.message : 'Unable to cache archive password';
                   m.redraw();
                 });
+            },
+          }),
+          m(ConnectionsManager, {
+            open: connectionsManagerOpen,
+            connections,
+            onClose: () => {
+              connectionsManagerOpen = false;
+              m.redraw();
+            },
+            onCreate: async (request: CreateConnectionRequest) => {
+              const created = await createConnectionRequest(attrs.client, request);
+              connections = upsertConnection(connections, created);
+            },
+            onUpdate: async (id, request: UpdateConnectionRequest) => {
+              const updated = await updateConnectionRequest(attrs.client, id, request);
+              connections = upsertConnection(connections, updated);
+            },
+            onDelete: async (id) => {
+              await deleteConnectionRequest(attrs.client, id);
+              connections = withoutConnection(connections, id);
+            },
+            onConnect: async (id) => {
+              const updated = await connectConnectionRequest(attrs.client, id);
+              connections = upsertConnection(connections, updated);
+            },
+            onDisconnect: async (id) => {
+              const updated = await disconnectConnectionRequest(attrs.client, id);
+              connections = upsertConnection(connections, updated);
+            },
+            onTest: async (id) => {
+              const updated = await testConnectionRequest(attrs.client, id);
+              connections = upsertConnection(connections, updated);
             },
           }),
           m(FindFilesDialog, {

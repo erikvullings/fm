@@ -6,6 +6,7 @@
 //! this crate, which is what guarantees the two behave identically.
 
 mod action;
+mod connection_dto;
 mod directory;
 mod error;
 mod service;

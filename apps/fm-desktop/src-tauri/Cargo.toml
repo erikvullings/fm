@@ -32,6 +32,7 @@ tauri-build = { workspace = true, features = [] }
 
 [dependencies]
 fm-application.workspace = true
+fm-credentials.workspace = true
 fm-domain.workspace = true
 fm-events.workspace = true
 fm-platform.workspace = true
@@ -45,10 +46,12 @@ thiserror.workspace = true
 
 [target.'cfg(target_os = "macos")'.dependencies]
 drag.workspace = true
+fm-credentials-macos.workspace = true
 fm-platform-macos.workspace = true
 
 [target.'cfg(target_os = "windows")'.dependencies]
 drag.workspace = true
+fm-credentials-windows.workspace = true
 fm-platform-windows.workspace = true
 
 [dev-dependencies]

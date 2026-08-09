@@ -1,5 +1,7 @@
 //! Application-level errors shared by every host (specification §7, §8).
 
+use fm_connections::ConnectionError;
+use fm_credentials::CredentialError;
 use fm_domain::ActionId;
 use fm_transport_dto::{ApplicationErrorCode, ApplicationErrorDto};
 use fm_vfs::VfsError;
@@ -161,6 +163,26 @@ impl From<WorkspaceError> for ApplicationError {
                 Self::InvalidRequest("tab does not exist in this pane".to_owned())
             }
             WorkspaceError::InvalidCommand(message) => Self::InvalidRequest(message),
+        }
+    }
+}
+
+impl From<ConnectionError> for ApplicationError {
+    fn from(error: ConnectionError) -> Self {
+        match error {
+            ConnectionError::NotFound { .. } => Self::NotFound,
+            ConnectionError::Invalid(details) => {
+                Self::InvalidRequest(format!("connection failed validation: {details:?}"))
+            }
+            ConnectionError::Io(_)
+            | ConnectionError::Serialization(_)
+            | ConnectionError::Corrupt { .. } => Self::Internal,
+            ConnectionError::Credential(credential_error) => match credential_error {
+                CredentialError::NotFound { .. } => Self::CredentialRequired,
+                CredentialError::Unavailable(message) | CredentialError::Backend(message) => {
+                    Self::PlatformOperationFailed(message)
+                }
+            },
         }
     }
 }

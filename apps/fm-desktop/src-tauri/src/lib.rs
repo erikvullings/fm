@@ -5,6 +5,7 @@
 //! below builds, so both exercise the exact same `Builder`.
 
 mod commands;
+mod credentials;
 mod event_stream;
 mod platform;
 
@@ -39,16 +40,19 @@ fn build_context<R: tauri::Runtime>() -> tauri::Context<R> {
 pub fn run() {
     tauri::Builder::default()
         .manage(AppState {
-            service: Arc::new(FileManagerService::with_platform_adapter(
-                RuntimeKindDto::Tauri,
-                fm_application::workspace::JsonFileWorkspaceRepository::default_directory(),
-                fm_application::workspace::JsonFileWorkspaceRepository::default_directory()
-                    .parent()
-                    .unwrap_or_else(|| std::path::Path::new(".fm-config/fm"))
-                    .to_path_buf(),
-                EventBus::default(),
-                platform::build_platform_adapter(),
-            )),
+            service: Arc::new(
+                FileManagerService::with_platform_adapter_and_credential_store(
+                    RuntimeKindDto::Tauri,
+                    fm_application::workspace::JsonFileWorkspaceRepository::default_directory(),
+                    fm_application::workspace::JsonFileWorkspaceRepository::default_directory()
+                        .parent()
+                        .unwrap_or_else(|| std::path::Path::new(".fm-config/fm"))
+                        .to_path_buf(),
+                    EventBus::default(),
+                    platform::build_platform_adapter(),
+                    credentials::build_credential_store(),
+                ),
+            ),
         })
         .manage(event_stream::EventSubscriptionRegistry::default())
         .on_window_event(|window, event| {
@@ -99,6 +103,14 @@ pub fn run() {
             commands::get_plugin_icon_theme_asset,
             commands::start_search,
             commands::cancel_search,
+            commands::list_connections,
+            commands::create_connection,
+            commands::get_connection,
+            commands::update_connection,
+            commands::delete_connection,
+            commands::connect_connection,
+            commands::disconnect_connection,
+            commands::test_connection,
         ])
         .run(build_context())
         .expect("error while running the Tauri application");
@@ -120,13 +132,16 @@ mod tests {
         let workspace_directory = workspace_directory.keep();
         builder
             .manage(AppState {
-                service: Arc::new(FileManagerService::with_platform_adapter(
-                    RuntimeKindDto::Tauri,
-                    workspace_directory,
-                    settings_directory,
-                    EventBus::default(),
-                    platform::build_platform_adapter(),
-                )),
+                service: Arc::new(
+                    FileManagerService::with_platform_adapter_and_credential_store(
+                        RuntimeKindDto::Tauri,
+                        workspace_directory,
+                        settings_directory,
+                        EventBus::default(),
+                        platform::build_platform_adapter(),
+                        credentials::build_credential_store(),
+                    ),
+                ),
             })
             .manage(event_stream::EventSubscriptionRegistry::default())
             .invoke_handler(tauri::generate_handler![
@@ -170,6 +185,14 @@ mod tests {
                 commands::get_plugin_icon_theme_asset,
                 commands::start_search,
                 commands::cancel_search,
+                commands::list_connections,
+                commands::create_connection,
+                commands::get_connection,
+                commands::update_connection,
+                commands::delete_connection,
+                commands::connect_connection,
+                commands::disconnect_connection,
+                commands::test_connection,
             ])
             // Uses the app's real `tauri.conf.json` config (same as `run()`)
             // rather than `mock_context(noop_assets())`'s empty default config,

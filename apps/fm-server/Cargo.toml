@@ -10,8 +10,10 @@ license.workspace = true
 axum.workspace = true
 clap.workspace = true
 fm-application.workspace = true
+fm-credentials.workspace = true
 fm-domain.workspace = true
 fm-events.workspace = true
+fm-platform.workspace = true
 fm-transport-dto.workspace = true
 futures.workspace = true
 dirs.workspace = true
@@ -28,10 +30,15 @@ utoipa-axum.workspace = true
 utoipa-swagger-ui.workspace = true
 uuid.workspace = true
 
+[target.'cfg(target_os = "macos")'.dependencies]
+fm-credentials-macos.workspace = true
+
+[target.'cfg(target_os = "windows")'.dependencies]
+fm-credentials-windows.workspace = true
+
 [lints]
 workspace = true
 
 [dev-dependencies]
-fm-platform.workspace = true
 reqwest.workspace = true
 tempfile.workspace = true

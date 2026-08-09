@@ -7,6 +7,8 @@ import type {
   ActionResultDto,
   ApplicationErrorDto,
   ArchiveCredentialRequestDto,
+  ConnectionDto,
+  CreateConnectionRequestDto,
   CreateWorkspaceRequestDto,
   DeleteWorkspaceParams,
   DirectorySnapshotDto,
@@ -38,6 +40,7 @@ import type {
   StartSearchRequestDto,
   StartSearchResponseDto,
   SystemLocationDto,
+  UpdateConnectionRequestDto,
   WorkspaceCommandDto,
   WorkspaceDto,
   WorkspaceSummaryDto
@@ -167,6 +170,354 @@ export const cacheArchivePassword = async (archiveCredentialRequestDto: ArchiveC
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
     body: JSON.stringify(archiveCredentialRequestDto)
+  }
+);}
+
+
+
+export type listConnectionsResponse200 = {
+  data: ConnectionDto[]
+  status: 200
+}
+
+export type listConnectionsResponseSuccess = (listConnectionsResponse200) & {
+  headers: Headers;
+};
+;
+
+export type listConnectionsResponse = (listConnectionsResponseSuccess)
+
+export const getListConnectionsUrl = () => {
+
+
+
+
+  return `/api/v1/connections`
+}
+
+/**
+ * @summary Lists every stored connection profile with its current runtime status.
+ */
+export const listConnections = async ( options?: Parameters<typeof fetchMutator>[1]): Promise<listConnectionsResponse> => {
+
+  return fetchMutator<listConnectionsResponse>(getListConnectionsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+export type createConnectionResponse201 = {
+  data: ConnectionDto
+  status: 201
+}
+
+export type createConnectionResponse400 = {
+  data: ApplicationErrorDto
+  status: 400
+}
+
+export type createConnectionResponseSuccess = (createConnectionResponse201) & {
+  headers: Headers;
+};
+export type createConnectionResponseError = (createConnectionResponse400) & {
+  headers: Headers;
+};
+
+export type createConnectionResponse = (createConnectionResponseSuccess | createConnectionResponseError)
+
+export const getCreateConnectionUrl = () => {
+
+
+
+
+  return `/api/v1/connections`
+}
+
+/**
+ * @summary Creates and persists a new connection profile.
+ */
+export const createConnection = async (createConnectionRequestDto: CreateConnectionRequestDto, options?: Parameters<typeof fetchMutator>[1]): Promise<createConnectionResponse> => {
+
+  return fetchMutator<createConnectionResponse>(getCreateConnectionUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(createConnectionRequestDto)
+  }
+);}
+
+
+
+export type deleteConnectionResponse204 = {
+  data: void
+  status: 204
+}
+
+export type deleteConnectionResponse404 = {
+  data: ApplicationErrorDto
+  status: 404
+}
+
+export type deleteConnectionResponseSuccess = (deleteConnectionResponse204) & {
+  headers: Headers;
+};
+export type deleteConnectionResponseError = (deleteConnectionResponse404) & {
+  headers: Headers;
+};
+
+export type deleteConnectionResponse = (deleteConnectionResponseSuccess | deleteConnectionResponseError)
+
+export const getDeleteConnectionUrl = (connectionId: string,) => {
+
+
+
+
+  return `/api/v1/connections/${connectionId}`
+}
+
+/**
+ * @summary Deletes a connection profile and its stored credential, if any.
+ */
+export const deleteConnection = async (connectionId: string, options?: Parameters<typeof fetchMutator>[1]): Promise<deleteConnectionResponse> => {
+
+  return fetchMutator<deleteConnectionResponse>(getDeleteConnectionUrl(connectionId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+export type getConnectionResponse200 = {
+  data: ConnectionDto
+  status: 200
+}
+
+export type getConnectionResponse404 = {
+  data: ApplicationErrorDto
+  status: 404
+}
+
+export type getConnectionResponseSuccess = (getConnectionResponse200) & {
+  headers: Headers;
+};
+export type getConnectionResponseError = (getConnectionResponse404) & {
+  headers: Headers;
+};
+
+export type getConnectionResponse = (getConnectionResponseSuccess | getConnectionResponseError)
+
+export const getGetConnectionUrl = (connectionId: string,) => {
+
+
+
+
+  return `/api/v1/connections/${connectionId}`
+}
+
+/**
+ * @summary Loads a single connection profile by id.
+ */
+export const getConnection = async (connectionId: string, options?: Parameters<typeof fetchMutator>[1]): Promise<getConnectionResponse> => {
+
+  return fetchMutator<getConnectionResponse>(getGetConnectionUrl(connectionId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+export type updateConnectionResponse200 = {
+  data: ConnectionDto
+  status: 200
+}
+
+export type updateConnectionResponse400 = {
+  data: ApplicationErrorDto
+  status: 400
+}
+
+export type updateConnectionResponse404 = {
+  data: ApplicationErrorDto
+  status: 404
+}
+
+export type updateConnectionResponseSuccess = (updateConnectionResponse200) & {
+  headers: Headers;
+};
+export type updateConnectionResponseError = (updateConnectionResponse400 | updateConnectionResponse404) & {
+  headers: Headers;
+};
+
+export type updateConnectionResponse = (updateConnectionResponseSuccess | updateConnectionResponseError)
+
+export const getUpdateConnectionUrl = (connectionId: string,) => {
+
+
+
+
+  return `/api/v1/connections/${connectionId}`
+}
+
+/**
+ * @summary Updates an existing connection profile.
+ */
+export const updateConnection = async (connectionId: string,
+    updateConnectionRequestDto: UpdateConnectionRequestDto, options?: Parameters<typeof fetchMutator>[1]): Promise<updateConnectionResponse> => {
+
+  return fetchMutator<updateConnectionResponse>(getUpdateConnectionUrl(connectionId),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(updateConnectionRequestDto)
+  }
+);}
+
+
+
+export type connectConnectionResponse200 = {
+  data: ConnectionDto
+  status: 200
+}
+
+export type connectConnectionResponse404 = {
+  data: ApplicationErrorDto
+  status: 404
+}
+
+export type connectConnectionResponseSuccess = (connectConnectionResponse200) & {
+  headers: Headers;
+};
+export type connectConnectionResponseError = (connectConnectionResponse404) & {
+  headers: Headers;
+};
+
+export type connectConnectionResponse = (connectConnectionResponseSuccess | connectConnectionResponseError)
+
+export const getConnectConnectionUrl = (connectionId: string,) => {
+
+
+
+
+  return `/api/v1/connections/${connectionId}/connect`
+}
+
+/**
+ * @summary Attempts to connect. See `fm_connections::ConnectionService`'s
+documentation for the honest scope of this operation before task
+0104/0106 register a real protocol dialer.
+ */
+export const connectConnection = async (connectionId: string, options?: Parameters<typeof fetchMutator>[1]): Promise<connectConnectionResponse> => {
+
+  return fetchMutator<connectConnectionResponse>(getConnectConnectionUrl(connectionId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+export type disconnectConnectionResponse200 = {
+  data: ConnectionDto
+  status: 200
+}
+
+export type disconnectConnectionResponse404 = {
+  data: ApplicationErrorDto
+  status: 404
+}
+
+export type disconnectConnectionResponseSuccess = (disconnectConnectionResponse200) & {
+  headers: Headers;
+};
+export type disconnectConnectionResponseError = (disconnectConnectionResponse404) & {
+  headers: Headers;
+};
+
+export type disconnectConnectionResponse = (disconnectConnectionResponseSuccess | disconnectConnectionResponseError)
+
+export const getDisconnectConnectionUrl = (connectionId: string,) => {
+
+
+
+
+  return `/api/v1/connections/${connectionId}/disconnect`
+}
+
+/**
+ * @summary Marks a connection as disconnected.
+ */
+export const disconnectConnection = async (connectionId: string, options?: Parameters<typeof fetchMutator>[1]): Promise<disconnectConnectionResponse> => {
+
+  return fetchMutator<disconnectConnectionResponse>(getDisconnectConnectionUrl(connectionId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+export type testConnectionResponse200 = {
+  data: ConnectionDto
+  status: 200
+}
+
+export type testConnectionResponse404 = {
+  data: ApplicationErrorDto
+  status: 404
+}
+
+export type testConnectionResponseSuccess = (testConnectionResponse200) & {
+  headers: Headers;
+};
+export type testConnectionResponseError = (testConnectionResponse404) & {
+  headers: Headers;
+};
+
+export type testConnectionResponse = (testConnectionResponseSuccess | testConnectionResponseError)
+
+export const getTestConnectionUrl = (connectionId: string,) => {
+
+
+
+
+  return `/api/v1/connections/${connectionId}/test`
+}
+
+/**
+ * @summary Checks whether a connection's configuration and credential are currently
+usable, without changing its tracked status. See
+`fm_connections::ConnectionService`'s documentation for the honest scope
+of this operation before task 0104/0106 register a real protocol dialer.
+ */
+export const testConnection = async (connectionId: string, options?: Parameters<typeof fetchMutator>[1]): Promise<testConnectionResponse> => {
+
+  return fetchMutator<testConnectionResponse>(getTestConnectionUrl(connectionId),
+  {
+    ...options,
+    method: 'POST'
+
+
   }
 );}
 

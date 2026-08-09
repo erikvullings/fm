@@ -3,6 +3,9 @@ import type {
   ActionResult,
   ArchiveCredentialRequest,
   BackendEvent,
+  Connection,
+  ConnectionId,
+  CreateConnectionRequest,
   CreateWorkspaceRequest,
   DirectorySnapshot,
   EditableFile,
@@ -32,6 +35,7 @@ import type {
   StartSearchResult,
   SystemLocation,
   Unsubscribe,
+  UpdateConnectionRequest,
   WorkspaceCommand,
   WorkspaceId,
   WorkspaceProjection,
@@ -170,4 +174,30 @@ export interface FileManagerClient {
   onResynchronise(listener: () => void): Unsubscribe;
 
   disconnect(): void;
+
+  /** Lists every stored connection profile with its current runtime status (task 0103). */
+  listConnections(signal?: AbortSignal): Promise<Connection[]>;
+
+  createConnection(request: CreateConnectionRequest, signal?: AbortSignal): Promise<Connection>;
+
+  getConnection(connectionId: ConnectionId, signal?: AbortSignal): Promise<Connection>;
+
+  updateConnection(
+    connectionId: ConnectionId,
+    request: UpdateConnectionRequest,
+    signal?: AbortSignal,
+  ): Promise<Connection>;
+
+  deleteConnection(connectionId: ConnectionId, signal?: AbortSignal): Promise<void>;
+
+  /**
+   * Attempts to connect. See the backend `fm_connections::ConnectionService`
+   * for the honest scope of this operation before task 0104/0106 register a
+   * real protocol dialer.
+   */
+  connectConnection(connectionId: ConnectionId, signal?: AbortSignal): Promise<Connection>;
+
+  disconnectConnection(connectionId: ConnectionId, signal?: AbortSignal): Promise<Connection>;
+
+  testConnection(connectionId: ConnectionId, signal?: AbortSignal): Promise<Connection>;
 }

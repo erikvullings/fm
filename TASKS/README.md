@@ -172,12 +172,12 @@ the workspace-service tasks; see Step 2b above).
 
 These are the quickest wins and deliberately do **not** depend on the remote connection framework.
 
-- [ ] 0101 OS cloud-backed locations
+- [x] 0101 OS cloud-backed locations
 - [ ] 0102 Mounted network volumes
 
 ## Milestone 7 — Remote connection foundation
 
-- [ ] 0103 Remote connection framework
+- [x] 0103 Remote connection framework
 
 ## Milestone 8 — Remote protocols and actions
 

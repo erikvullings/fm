@@ -1218,6 +1218,8 @@ dependencies = [
  "chrono",
  "dirs",
  "fm-archive",
+ "fm-connections",
+ "fm-credentials",
  "fm-domain",
  "fm-events",
  "fm-operations",
@@ -1268,11 +1270,65 @@ name = "fm-cli"
 version = "0.1.0"
 
 [[package]]
+name = "fm-connections"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "fm-credentials",
+ "fm-events",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.19",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
+name = "fm-credentials"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.19",
+ "tokio",
+ "uuid",
+ "zeroize",
+]
+
+[[package]]
+name = "fm-credentials-macos"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "fm-credentials",
+ "security-framework",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
+name = "fm-credentials-windows"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "fm-credentials",
+ "tokio",
+ "uuid",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
 name = "fm-desktop"
 version = "0.1.0"
 dependencies = [
  "drag",
  "fm-application",
+ "fm-credentials",
+ "fm-credentials-macos",
+ "fm-credentials-windows",
  "fm-domain",
  "fm-events",
  "fm-platform",
@@ -1409,6 +1465,9 @@ dependencies = [
  "clap",
  "dirs",
  "fm-application",
+ "fm-credentials",
+ "fm-credentials-macos",
+ "fm-credentials-windows",
  "fm-domain",
  "fm-events",
  "fm-platform",

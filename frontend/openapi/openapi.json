@@ -361,6 +361,361 @@
         ],
         "type": "string"
       },
+      "ConnectionConfigurationDto": {
+        "description": "Tagged, protocol-specific connection configuration (spec §5.2).",
+        "oneOf": [
+          {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/SshConnectionConfigurationDto",
+                "description": "SSH configuration."
+              },
+              {
+                "properties": {
+                  "kind": {
+                    "enum": [
+                      "ssh"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind"
+                ],
+                "type": "object"
+              }
+            ],
+            "description": "SSH configuration."
+          },
+          {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/FtpConnectionConfigurationDto",
+                "description": "Plain FTP configuration."
+              },
+              {
+                "properties": {
+                  "kind": {
+                    "enum": [
+                      "ftp"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind"
+                ],
+                "type": "object"
+              }
+            ],
+            "description": "Plain FTP configuration."
+          },
+          {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/FtpConnectionConfigurationDto",
+                "description": "FTP over TLS configuration."
+              },
+              {
+                "properties": {
+                  "kind": {
+                    "enum": [
+                      "ftps"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind"
+                ],
+                "type": "object"
+              }
+            ],
+            "description": "FTP over TLS configuration."
+          },
+          {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/OneDriveConnectionConfigurationDto",
+                "description": "Native OneDrive configuration."
+              },
+              {
+                "properties": {
+                  "kind": {
+                    "enum": [
+                      "oneDrive"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind"
+                ],
+                "type": "object"
+              }
+            ],
+            "description": "Native OneDrive configuration."
+          },
+          {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/WebDavConnectionConfigurationDto",
+                "description": "WebDAV configuration."
+              },
+              {
+                "properties": {
+                  "kind": {
+                    "enum": [
+                      "webDav"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind"
+                ],
+                "type": "object"
+              }
+            ],
+            "description": "WebDAV configuration."
+          },
+          {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/S3ConnectionConfigurationDto",
+                "description": "S3-compatible configuration."
+              },
+              {
+                "properties": {
+                  "kind": {
+                    "enum": [
+                      "s3"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind"
+                ],
+                "type": "object"
+              }
+            ],
+            "description": "S3-compatible configuration."
+          },
+          {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/SmbConnectionConfigurationDto",
+                "description": "Native SMB configuration."
+              },
+              {
+                "properties": {
+                  "kind": {
+                    "enum": [
+                      "smb"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind"
+                ],
+                "type": "object"
+              }
+            ],
+            "description": "Native SMB configuration."
+          }
+        ]
+      },
+      "ConnectionDto": {
+        "description": "A connection profile as returned by the API.\n\nStructurally unable to carry a secret: `has_credential` is a presence\nboolean only.",
+        "properties": {
+          "configuration": {
+            "$ref": "#/components/schemas/ConnectionConfigurationDto",
+            "description": "Protocol-specific configuration."
+          },
+          "createdAt": {
+            "description": "When this connection was first created.",
+            "format": "date-time",
+            "type": "string"
+          },
+          "hasCredential": {
+            "description": "Whether a credential is currently stored for this connection. Never\nthe credential itself or its reference.",
+            "type": "boolean"
+          },
+          "id": {
+            "description": "Stable identifier.",
+            "format": "uuid",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/ConnectionKindDto",
+            "description": "Protocol/provider family."
+          },
+          "name": {
+            "description": "Display name.",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ConnectionStatusDto",
+            "description": "Current runtime status."
+          },
+          "updatedAt": {
+            "description": "When this connection was last persisted.",
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "kind",
+          "configuration",
+          "hasCredential",
+          "status",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "ConnectionKindDto": {
+        "description": "Protocol/provider family (mirrors `fm_connections::ConnectionKind`).",
+        "enum": [
+          "ssh",
+          "ftp",
+          "ftps",
+          "oneDrive",
+          "webDav",
+          "s3",
+          "smb"
+        ],
+        "type": "string"
+      },
+      "ConnectionSecretInputDto": {
+        "description": "Write-only secret input accepted when creating or updating a connection\n(spec §16 \"Credential write requests must never echo secret values\nback\").\n\n`Debug` is implemented by hand below and never prints secret content, so\nthis type stays safe even if a request is accidentally `{:?}`-logged\nsomewhere upstream of the handler that consumes it.",
+        "oneOf": [
+          {
+            "description": "A plain password.",
+            "properties": {
+              "kind": {
+                "enum": [
+                  "password"
+                ],
+                "type": "string"
+              },
+              "password": {
+                "description": "The password itself.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "password",
+              "kind"
+            ],
+            "type": "object"
+          },
+          {
+            "description": "A private key, optionally protected by a passphrase.",
+            "properties": {
+              "key": {
+                "description": "PEM (or provider-specific) private key content.",
+                "type": "string"
+              },
+              "kind": {
+                "enum": [
+                  "privateKey"
+                ],
+                "type": "string"
+              },
+              "passphrase": {
+                "description": "Passphrase protecting `key`, if any.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "key",
+              "kind"
+            ],
+            "type": "object"
+          },
+          {
+            "description": "An OAuth token pair.",
+            "properties": {
+              "accessToken": {
+                "description": "The current access token.",
+                "type": "string"
+              },
+              "kind": {
+                "enum": [
+                  "oAuthToken"
+                ],
+                "type": "string"
+              },
+              "refreshToken": {
+                "description": "The refresh token, if the provider issued one.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "accessToken",
+              "kind"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "ConnectionStatusDto": {
+        "description": "A connection's runtime state (mirrors `fm_connections::ConnectionStatus`).",
+        "enum": [
+          "disconnected",
+          "connecting",
+          "connected",
+          "reconnecting",
+          "authenticationRequired",
+          "failed"
+        ],
+        "type": "string"
+      },
+      "CreateConnectionRequestDto": {
+        "description": "Request body for `POST /api/v1/connections`.",
+        "properties": {
+          "configuration": {
+            "$ref": "#/components/schemas/ConnectionConfigurationDto",
+            "description": "Protocol-specific configuration."
+          },
+          "kind": {
+            "$ref": "#/components/schemas/ConnectionKindDto",
+            "description": "Protocol/provider family."
+          },
+          "name": {
+            "description": "Display name.",
+            "type": "string"
+          },
+          "secret": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ConnectionSecretInputDto",
+                "description": "New secret material to store, if this connection needs one."
+              }
+            ]
+          }
+        },
+        "required": [
+          "name",
+          "kind",
+          "configuration"
+        ],
+        "type": "object"
+      },
       "CreateWorkspaceRequestDto": {
         "description": "Requests a new workspace (`POST /api/v1/workspaces`).",
         "example": {
@@ -876,6 +1231,31 @@
         ],
         "type": "object"
       },
+      "FtpConnectionConfigurationDto": {
+        "description": "Minimal FTP/FTPS configuration.",
+        "properties": {
+          "host": {
+            "description": "Hostname or IP address.",
+            "type": "string"
+          },
+          "port": {
+            "description": "TCP port, conventionally 21.",
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "username": {
+            "description": "Remote username.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "host",
+          "port",
+          "username"
+        ],
+        "type": "object"
+      },
       "HealthDto": {
         "description": "Response body for `GET /api/v1/health`.",
         "example": {
@@ -896,6 +1276,14 @@
         "description": "Health status of the backend process.",
         "enum": [
           "ok"
+        ],
+        "type": "string"
+      },
+      "HostKeyPolicyDto": {
+        "description": "SSH host-key verification policy (mirrors `fm_connections::HostKeyPolicy`).",
+        "enum": [
+          "promptOnFirstUse",
+          "requireKnownHost"
         ],
         "type": "string"
       },
@@ -1294,6 +1682,19 @@
           "refresh"
         ],
         "type": "string"
+      },
+      "OneDriveConnectionConfigurationDto": {
+        "description": "Minimal native OneDrive configuration stub.",
+        "properties": {
+          "accountHint": {
+            "description": "Optional display hint for the target account.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
       },
       "OperationCentrePreferencesDto": {
         "description": "Workspace-level operation-centre visibility and sizing preferences.",
@@ -2166,6 +2567,33 @@
         ],
         "type": "string"
       },
+      "S3ConnectionConfigurationDto": {
+        "description": "Minimal S3-compatible configuration stub.",
+        "properties": {
+          "bucket": {
+            "description": "Target bucket name.",
+            "type": "string"
+          },
+          "endpoint": {
+            "description": "Optional custom endpoint.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "region": {
+            "description": "Optional region.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "bucket"
+        ],
+        "type": "object"
+      },
       "SaveEditableFileRequestDto": {
         "description": "Atomically replaces a text file after an optimistic revision check.",
         "properties": {
@@ -2491,6 +2919,24 @@
         ],
         "type": "string"
       },
+      "SmbConnectionConfigurationDto": {
+        "description": "Minimal native SMB configuration stub.",
+        "properties": {
+          "server": {
+            "description": "Server hostname or IP address.",
+            "type": "string"
+          },
+          "share": {
+            "description": "Share name.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "server",
+          "share"
+        ],
+        "type": "object"
+      },
       "SortDescriptorDto": {
         "description": "A single sort descriptor: a column and a direction.",
         "properties": {
@@ -2524,6 +2970,59 @@
           "vertical"
         ],
         "type": "string"
+      },
+      "SshAuthenticationMethodDto": {
+        "description": "How an SSH connection authenticates (mirrors\n`fm_connections::SshAuthenticationMethod`).",
+        "enum": [
+          "password",
+          "privateKey",
+          "agent"
+        ],
+        "type": "string"
+      },
+      "SshConnectionConfigurationDto": {
+        "description": "SSH connection configuration (spec §6.3).",
+        "properties": {
+          "authentication": {
+            "$ref": "#/components/schemas/SshAuthenticationMethodDto",
+            "description": "Authentication method."
+          },
+          "host": {
+            "description": "Hostname or IP address.",
+            "type": "string"
+          },
+          "hostKeyPolicy": {
+            "$ref": "#/components/schemas/HostKeyPolicyDto",
+            "description": "Host-key verification policy."
+          },
+          "keepaliveSeconds": {
+            "description": "Keepalive interval in seconds, if any.",
+            "format": "int64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "port": {
+            "description": "TCP port, conventionally 22.",
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "username": {
+            "description": "Remote username.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "host",
+          "port",
+          "username",
+          "authentication",
+          "hostKeyPolicy"
+        ],
+        "type": "object"
       },
       "StartOperationRequestDto": {
         "description": "A request to start one backend-owned semantic operation.",
@@ -2826,6 +3325,53 @@
           "dark"
         ],
         "type": "string"
+      },
+      "UpdateConnectionRequestDto": {
+        "description": "Request body for `PUT /api/v1/connections/{connectionId}`.",
+        "properties": {
+          "configuration": {
+            "$ref": "#/components/schemas/ConnectionConfigurationDto",
+            "description": "Protocol-specific configuration."
+          },
+          "kind": {
+            "$ref": "#/components/schemas/ConnectionKindDto",
+            "description": "Protocol/provider family."
+          },
+          "name": {
+            "description": "Display name.",
+            "type": "string"
+          },
+          "secret": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ConnectionSecretInputDto",
+                "description": "New secret material to store, replacing any existing credential.\n`None` leaves the existing credential untouched - the secret input is\nnever pre-filled from the stored connection (spec §16, task 0103's\nfrontend requirement \"never pre-filled when editing\")."
+              }
+            ]
+          }
+        },
+        "required": [
+          "name",
+          "kind",
+          "configuration"
+        ],
+        "type": "object"
+      },
+      "WebDavConnectionConfigurationDto": {
+        "description": "Minimal WebDAV configuration stub.",
+        "properties": {
+          "baseUrl": {
+            "description": "The WebDAV collection's base URL.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "baseUrl"
+        ],
+        "type": "object"
       },
       "WorkspaceCommandDto": {
         "description": "A semantic workspace mutation (spec §5.3.9). Every variant carries the\n`workspaceId` it targets and the `expectedRevision` it was issued\nagainst, so the service can detect a stale-view conflict (spec §5.3.10)\nbefore applying the mutation.",
@@ -3468,6 +4014,312 @@
           }
         },
         "summary": "Caches an archive password for this backend session only."
+      }
+    },
+    "/api/v1/connections": {
+      "get": {
+        "operationId": "listConnections",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ConnectionDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Every stored connection profile"
+          }
+        },
+        "summary": "Lists every stored connection profile with its current runtime status."
+      },
+      "post": {
+        "operationId": "createConnection",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateConnectionRequestDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectionDto"
+                }
+              }
+            },
+            "description": "The created connection"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationErrorDto"
+                }
+              }
+            },
+            "description": "The request was invalid"
+          }
+        },
+        "summary": "Creates and persists a new connection profile."
+      }
+    },
+    "/api/v1/connections/{connectionId}": {
+      "delete": {
+        "operationId": "deleteConnection",
+        "parameters": [
+          {
+            "description": "The connection to delete",
+            "in": "path",
+            "name": "connectionId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "The connection was deleted"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationErrorDto"
+                }
+              }
+            },
+            "description": "No connection exists with this id"
+          }
+        },
+        "summary": "Deletes a connection profile and its stored credential, if any."
+      },
+      "get": {
+        "operationId": "getConnection",
+        "parameters": [
+          {
+            "description": "The connection to load",
+            "in": "path",
+            "name": "connectionId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectionDto"
+                }
+              }
+            },
+            "description": "The connection"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationErrorDto"
+                }
+              }
+            },
+            "description": "No connection exists with this id"
+          }
+        },
+        "summary": "Loads a single connection profile by id."
+      },
+      "put": {
+        "operationId": "updateConnection",
+        "parameters": [
+          {
+            "description": "The connection to update",
+            "in": "path",
+            "name": "connectionId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateConnectionRequestDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectionDto"
+                }
+              }
+            },
+            "description": "The updated connection"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationErrorDto"
+                }
+              }
+            },
+            "description": "The request was invalid"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationErrorDto"
+                }
+              }
+            },
+            "description": "No connection exists with this id"
+          }
+        },
+        "summary": "Updates an existing connection profile."
+      }
+    },
+    "/api/v1/connections/{connectionId}/connect": {
+      "post": {
+        "operationId": "connectConnection",
+        "parameters": [
+          {
+            "description": "The connection to connect",
+            "in": "path",
+            "name": "connectionId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectionDto"
+                }
+              }
+            },
+            "description": "The connection's new status"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationErrorDto"
+                }
+              }
+            },
+            "description": "No connection exists with this id"
+          }
+        },
+        "summary": "Attempts to connect. See `fm_connections::ConnectionService`'s\ndocumentation for the honest scope of this operation before task\n0104/0106 register a real protocol dialer."
+      }
+    },
+    "/api/v1/connections/{connectionId}/disconnect": {
+      "post": {
+        "operationId": "disconnectConnection",
+        "parameters": [
+          {
+            "description": "The connection to disconnect",
+            "in": "path",
+            "name": "connectionId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectionDto"
+                }
+              }
+            },
+            "description": "The connection's new status"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationErrorDto"
+                }
+              }
+            },
+            "description": "No connection exists with this id"
+          }
+        },
+        "summary": "Marks a connection as disconnected."
+      }
+    },
+    "/api/v1/connections/{connectionId}/test": {
+      "post": {
+        "operationId": "testConnection",
+        "parameters": [
+          {
+            "description": "The connection to test",
+            "in": "path",
+            "name": "connectionId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectionDto"
+                }
+              }
+            },
+            "description": "The connection's current status"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationErrorDto"
+                }
+              }
+            },
+            "description": "No connection exists with this id"
+          }
+        },
+        "summary": "Checks whether a connection's configuration and credential are currently\nusable, without changing its tracked status. See\n`fm_connections::ConnectionService`'s documentation for the honest scope\nof this operation before task 0104/0106 register a real protocol dialer."
       }
     },
     "/api/v1/directories/list": {

@@ -6,6 +6,7 @@
 //! byte-for-byte compatible.
 
 pub mod action;
+pub mod connection;
 pub mod entry;
 pub mod error;
 pub mod files;
@@ -25,6 +26,13 @@ pub mod workspace_command;
 pub use action::{
     ActionContextRequirementsDto, ActionDescriptorDto, ActionInvocationContextDto, ActionResultDto,
     ActionSourceDto, InvokeActionRequestDto, KeyChordDto,
+};
+pub use connection::{
+    ConnectionConfigurationDto, ConnectionDto, ConnectionKindDto, ConnectionSecretInputDto,
+    ConnectionStatusDto, CreateConnectionRequestDto, FtpConnectionConfigurationDto,
+    HostKeyPolicyDto, OneDriveConnectionConfigurationDto, S3ConnectionConfigurationDto,
+    SmbConnectionConfigurationDto, SshAuthenticationMethodDto, SshConnectionConfigurationDto,
+    UpdateConnectionRequestDto, WebDavConnectionConfigurationDto,
 };
 pub use entry::{
     ArchiveInfoDto, EntryKindDto, EntryMetadataDto, EntrySummaryDto, ImageDimensionsDto,

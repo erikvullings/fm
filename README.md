@@ -100,6 +100,15 @@ metadata or Windows mapped drives appear separately under `NETWORK`. They also u
 `local` provider, preserve optional protocol/server/share and read-only metadata, and require no
 embedded SMB client or vendor credentials.
 
+Application-managed remote connections (SSH today; FTP/FTPS and native cloud/SMB in later tasks)
+are kept separate from both, in `fm-connections` and `fm-credentials`, and appear in the favourites
+menu under `SERVERS` with a `●`/`○` status dot. A connection profile never stores a password,
+passphrase or token directly - only an opaque reference into a `CredentialStore`, backed by the
+macOS Keychain or Windows Credential Manager (an in-memory store is used on other hosts and in
+tests only). No SSH/FTP protocol crate exists yet, so `connect`/`test` validate the saved
+configuration and resolve its credential without performing a live network handshake; a later task
+registers a real dialer per connection kind behind the same service methods.
+
 Mutating filesystem work is represented by typed jobs in `fm-operations`. Its bounded scheduler
 runs a planning phase before execution, publishes lifecycle and coalesced progress events through
 the shared event bus, calculates a smoothed transfer rate, and cooperatively cancels at safe points

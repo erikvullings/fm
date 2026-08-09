@@ -3,6 +3,9 @@ import type {
   ActionResult,
   ArchiveCredentialRequest,
   BackendEvent,
+  Connection,
+  ConnectionId,
+  CreateConnectionRequest,
   CreateWorkspaceRequest,
   DirectorySnapshot,
   EditableFile,
@@ -33,6 +36,7 @@ import type {
   StartSearchResult,
   SystemLocation,
   Unsubscribe,
+  UpdateConnectionRequest,
   WorkspaceCommand,
   WorkspaceId,
   WorkspaceProjection,
@@ -47,6 +51,14 @@ import {
   listActions as requestActions,
   cacheArchivePassword as requestArchivePasswordCache,
   resolveOperationConflict as requestConflictResolution,
+  getConnection as requestConnection,
+  connectConnection as requestConnectionConnect,
+  createConnection as requestConnectionCreation,
+  deleteConnection as requestConnectionDeletion,
+  disconnectConnection as requestConnectionDisconnect,
+  listConnections as requestConnections,
+  testConnection as requestConnectionTest,
+  updateConnection as requestConnectionUpdate,
   listDirectory as requestDirectory,
   getEntryMetadata as requestEntryMetadata,
   getFileIcon as requestFileIcon,
@@ -547,6 +559,93 @@ export class HttpFileManagerClient implements FileManagerClient {
 
   disconnect(): void {
     this.eventStream.close();
+  }
+
+  async listConnections(signal?: AbortSignal): Promise<Connection[]> {
+    const response = await requestConnections(signal === undefined ? undefined : { signal });
+    if (response.status !== 200)
+      throw new Error(`Unexpected listConnections response status: ${response.status}`);
+    return response.data;
+  }
+
+  async createConnection(
+    request: CreateConnectionRequest,
+    signal?: AbortSignal,
+  ): Promise<Connection> {
+    const response = await requestConnectionCreation(
+      request,
+      signal === undefined ? undefined : { signal },
+    );
+    if (response.status !== 201)
+      throw new Error(`Unexpected createConnection response status: ${response.status}`);
+    return response.data;
+  }
+
+  async getConnection(connectionId: ConnectionId, signal?: AbortSignal): Promise<Connection> {
+    const response = await requestConnection(
+      connectionId,
+      signal === undefined ? undefined : { signal },
+    );
+    if (response.status !== 200)
+      throw new Error(`Unexpected getConnection response status: ${response.status}`);
+    return response.data;
+  }
+
+  async updateConnection(
+    connectionId: ConnectionId,
+    request: UpdateConnectionRequest,
+    signal?: AbortSignal,
+  ): Promise<Connection> {
+    const response = await requestConnectionUpdate(
+      connectionId,
+      request,
+      signal === undefined ? undefined : { signal },
+    );
+    if (response.status !== 200)
+      throw new Error(`Unexpected updateConnection response status: ${response.status}`);
+    return response.data;
+  }
+
+  async deleteConnection(connectionId: ConnectionId, signal?: AbortSignal): Promise<void> {
+    const response = await requestConnectionDeletion(
+      connectionId,
+      signal === undefined ? undefined : { signal },
+    );
+    if (response.status !== 204)
+      throw new Error(`Unexpected deleteConnection response status: ${response.status}`);
+  }
+
+  async connectConnection(connectionId: ConnectionId, signal?: AbortSignal): Promise<Connection> {
+    const response = await requestConnectionConnect(
+      connectionId,
+      signal === undefined ? undefined : { signal },
+    );
+    if (response.status !== 200)
+      throw new Error(`Unexpected connectConnection response status: ${response.status}`);
+    return response.data;
+  }
+
+  async disconnectConnection(
+    connectionId: ConnectionId,
+    signal?: AbortSignal,
+  ): Promise<Connection> {
+    const response = await requestConnectionDisconnect(
+      connectionId,
+      signal === undefined ? undefined : { signal },
+    );
+    if (response.status !== 200)
+      throw new Error(`Unexpected disconnectConnection response status: ${response.status}`);
+    return response.data;
+  }
+
+  async testConnection(connectionId: ConnectionId, signal?: AbortSignal): Promise<Connection> {
+    const response = await requestConnectionTest(
+      connectionId,
+      signal === undefined ? undefined : { signal },
+    );
+    if (response.status !== 200)
+      throw new Error(`Unexpected testConnection response status: ${response.status}`);
+    return response.data;
   }
 }
 

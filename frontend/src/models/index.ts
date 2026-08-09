@@ -1,5 +1,6 @@
 export * from './action';
 export * from './clipboard';
+export * from './connection';
 export * from './entry';
 export * from './events';
 export * from './ids';

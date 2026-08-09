@@ -30,3 +30,6 @@ export type PluginId = string;
 
 /** Identifies a registered action (built-in or plugin-provided). */
 export type ActionId = string;
+
+/** Identifies a {@link import('./connection').Connection}. */
+export type ConnectionId = string;

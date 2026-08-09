@@ -6,6 +6,9 @@ import type {
   ActionResult,
   ArchiveCredentialRequest,
   BackendEvent,
+  Connection,
+  ConnectionId,
+  CreateConnectionRequest,
   CreateWorkspaceRequest,
   DirectorySnapshot,
   EditableFile,
@@ -35,6 +38,7 @@ import type {
   StartSearchResult,
   SystemLocation,
   Unsubscribe,
+  UpdateConnectionRequest,
   WorkspaceCommand,
   WorkspaceId,
   WorkspaceProjection,
@@ -291,5 +295,41 @@ export class TauriFileManagerClient implements FileManagerClient {
 
   disconnect(): void {
     this.eventStream.close();
+  }
+
+  listConnections(_signal?: AbortSignal): Promise<Connection[]> {
+    return invoke<Connection[]>('list_connections');
+  }
+
+  createConnection(request: CreateConnectionRequest, _signal?: AbortSignal): Promise<Connection> {
+    return invoke<Connection>('create_connection', { request });
+  }
+
+  getConnection(connectionId: ConnectionId, _signal?: AbortSignal): Promise<Connection> {
+    return invoke<Connection>('get_connection', { connectionId });
+  }
+
+  updateConnection(
+    connectionId: ConnectionId,
+    request: UpdateConnectionRequest,
+    _signal?: AbortSignal,
+  ): Promise<Connection> {
+    return invoke<Connection>('update_connection', { connectionId, request });
+  }
+
+  async deleteConnection(connectionId: ConnectionId, _signal?: AbortSignal): Promise<void> {
+    await invoke('delete_connection', { connectionId });
+  }
+
+  connectConnection(connectionId: ConnectionId, _signal?: AbortSignal): Promise<Connection> {
+    return invoke<Connection>('connect_connection', { connectionId });
+  }
+
+  disconnectConnection(connectionId: ConnectionId, _signal?: AbortSignal): Promise<Connection> {
+    return invoke<Connection>('disconnect_connection', { connectionId });
+  }
+
+  testConnection(connectionId: ConnectionId, _signal?: AbortSignal): Promise<Connection> {
+    return invoke<Connection>('test_connection', { connectionId });
   }
 }

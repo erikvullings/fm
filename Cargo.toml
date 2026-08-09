@@ -24,6 +24,10 @@ debug = "line-tables-only"
 # Internal crates, versioned together with the rest of the workspace.
 fm-application = { path = "crates/fm-application" }
 fm-archive = { path = "crates/fm-archive" }
+fm-connections = { path = "crates/fm-connections" }
+fm-credentials = { path = "crates/fm-credentials" }
+fm-credentials-macos = { path = "crates/fm-credentials-macos" }
+fm-credentials-windows = { path = "crates/fm-credentials-windows" }
 fm-domain = { path = "crates/fm-domain" }
 fm-events = { path = "crates/fm-events" }
 fm-operations = { path = "crates/fm-operations" }
@@ -65,6 +69,7 @@ reqwest = { version = "0.13.4", default-features = false, features = [
   "json",
   "rustls",
 ] }
+security-framework = "3.7.0"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 sevenz-rust2 = { version = "0.21.3", default-features = false, features = [

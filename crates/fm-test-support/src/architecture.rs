@@ -30,6 +30,7 @@ const CRATE_LAYERS: &[(&str, u8)] = &[
     // Layer 0 - the domain model, dependent on nothing in the workspace.
     ("fm-domain", 0),
     // Layer 1 - contracts expressed in terms of the domain model.
+    ("fm-credentials", 1),
     ("fm-events", 1),
     ("fm-platform", 1),
     ("fm-plugin-api", 1),
@@ -37,6 +38,9 @@ const CRATE_LAYERS: &[(&str, u8)] = &[
     ("fm-vfs", 1),
     // Layer 2 - implementations of those contracts.
     ("fm-archive", 2),
+    ("fm-connections", 2),
+    ("fm-credentials-macos", 2),
+    ("fm-credentials-windows", 2),
     ("fm-metadata", 2),
     ("fm-operations", 2),
     ("fm-platform-macos", 2),

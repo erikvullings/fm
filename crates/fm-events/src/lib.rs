@@ -590,6 +590,30 @@ pub struct NotificationPayload {
     pub message: String,
 }
 
+/// A connection's runtime state (task 0103, spec §5.4).
+///
+/// Mirrors `fm_connections::ConnectionStatus`; defined here rather than
+/// depended on directly so `fm-events` never needs a dependency on the
+/// connections feature crate (matching how `search.resultsBatch` above
+/// carries a plain `Uuid` rather than a feature-crate-specific id type).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ConnectionStatusPayload {
+    /// No active or attempted session.
+    Disconnected,
+    /// A connection attempt is in progress.
+    Connecting,
+    /// The connection is usable.
+    Connected,
+    /// A previously connected session is being re-established.
+    Reconnecting,
+    /// The connection could not authenticate; a valid credential is needed.
+    AuthenticationRequired,
+    /// The last connection attempt failed for a reason other than
+    /// authentication.
+    Failed,
+}
+
 /// User-visible notification severity.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -804,6 +828,32 @@ pub enum BackendEventPayload {
         /// Cumulative count of unreadable directories skipped so far.
         warnings_count: u32,
     },
+    /// A new connection profile was created (task 0103).
+    #[serde(rename = "connection.created")]
+    ConnectionCreated {
+        /// The created connection's identifier.
+        connection_id: Uuid,
+    },
+    /// A connection profile was updated.
+    #[serde(rename = "connection.updated")]
+    ConnectionUpdated {
+        /// The updated connection's identifier.
+        connection_id: Uuid,
+    },
+    /// A connection's runtime status changed.
+    #[serde(rename = "connection.statusChanged")]
+    ConnectionStatusChanged {
+        /// The connection whose status changed.
+        connection_id: Uuid,
+        /// The connection's new status.
+        status: ConnectionStatusPayload,
+    },
+    /// A connection profile was deleted.
+    #[serde(rename = "connection.deleted")]
+    ConnectionDeleted {
+        /// The deleted connection's identifier.
+        connection_id: Uuid,
+    },
 }
 
 impl BackendEventPayload {
@@ -835,6 +885,10 @@ impl BackendEventPayload {
             Self::PluginChanged { .. } => "plugin.changed",
             Self::NotificationCreated { .. } => "notification.created",
             Self::SearchResultsBatch { .. } => "search.resultsBatch",
+            Self::ConnectionCreated { .. } => "connection.created",
+            Self::ConnectionUpdated { .. } => "connection.updated",
+            Self::ConnectionStatusChanged { .. } => "connection.statusChanged",
+            Self::ConnectionDeleted { .. } => "connection.deleted",
         }
     }
 
@@ -860,12 +914,13 @@ mod tests {
 
     use super::{
         BackendEventPayload, ColumnConfigurationPayload, ConflictPolicyPayload,
-        DirectoryDeltaPayload, DirectorySnapshotPayload, DirectoryViewConfigurationPayload,
-        EntryKindPayload, EventEnvelope, LoadingStatePayload, LocationPayload,
-        NotificationLevelPayload, NotificationPayload, OperationConflictEntryPayload,
-        OperationConflictPayload, OperationKindPayload, OperationPayload, OperationProgressDetails,
-        OperationProgressPayload, OperationStatePayload, PersistedFilterPayload, PluginPayload,
-        SortDescriptorPayload, SortDirectionPayload, WorkspaceLayoutPayload,
+        ConnectionStatusPayload, DirectoryDeltaPayload, DirectorySnapshotPayload,
+        DirectoryViewConfigurationPayload, EntryKindPayload, EventEnvelope, LoadingStatePayload,
+        LocationPayload, NotificationLevelPayload, NotificationPayload,
+        OperationConflictEntryPayload, OperationConflictPayload, OperationKindPayload,
+        OperationPayload, OperationProgressDetails, OperationProgressPayload,
+        OperationStatePayload, PersistedFilterPayload, PluginPayload, SortDescriptorPayload,
+        SortDirectionPayload, WorkspaceLayoutPayload,
     };
 
     const WORKSPACE_ID: &str = "11111111-1111-4111-8111-111111111111";
@@ -1105,8 +1160,27 @@ mod tests {
                 "plugin.changed",
                 "notification.created",
                 "search.resultsBatch",
+                "connection.created",
+                "connection.updated",
+                "connection.statusChanged",
+                "connection.deleted",
             ]
         );
+    }
+
+    #[test]
+    fn connection_status_changed_carries_the_connection_id_and_new_status() {
+        let connection_id =
+            Uuid::from_str(OPERATION_ID).expect("fixture operation id must be valid");
+        let event = BackendEventPayload::ConnectionStatusChanged {
+            connection_id,
+            status: ConnectionStatusPayload::AuthenticationRequired,
+        };
+
+        let json = serde_json::to_value(event).expect("serialization must succeed");
+        assert_eq!(json["type"], "connection.statusChanged");
+        assert_eq!(json["connectionId"], connection_id.to_string());
+        assert_eq!(json["status"], "authenticationRequired");
     }
 
     #[test]
@@ -1281,6 +1355,23 @@ mod tests {
                     entries: vec![],
                     is_complete: true,
                     warnings_count: 0,
+                },
+                Self::ConnectionCreated {
+                    connection_id: Uuid::from_str(OPERATION_ID)
+                        .expect("fixture operation id must be valid"),
+                },
+                Self::ConnectionUpdated {
+                    connection_id: Uuid::from_str(OPERATION_ID)
+                        .expect("fixture operation id must be valid"),
+                },
+                Self::ConnectionStatusChanged {
+                    connection_id: Uuid::from_str(OPERATION_ID)
+                        .expect("fixture operation id must be valid"),
+                    status: ConnectionStatusPayload::Connected,
+                },
+                Self::ConnectionDeleted {
+                    connection_id: Uuid::from_str(OPERATION_ID)
+                        .expect("fixture operation id must be valid"),
                 },
             ]
         }

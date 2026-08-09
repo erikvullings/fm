@@ -8,12 +8,13 @@ use uuid::Uuid;
 use fm_domain::OperationId;
 use fm_transport_dto::{
     ActionDescriptorDto, ActionResultDto, ApplicationErrorDto, ArchiveCredentialRequestDto,
-    CreateWorkspaceRequestDto, DirectorySnapshotDto, EntryMetadataDto, EntryMetadataRequest,
-    InvokeActionRequestDto, ListDirectoryRequest, LocationDto, NavigateRequest, OperationDto,
-    PluginDescriptorDto, PluginLogEntryDto, ReadFileRangeRequestDto, ReadFileRangeResponseDto,
-    ResolveOperationConflictRequestDto, RuntimeCapabilitiesDto, SearchInFileRequestDto,
-    SearchInFileResponseDto, SettingsDto, StartOperationRequestDto, StartSearchRequestDto,
-    StartSearchResponseDto, WorkspaceCommandDto, WorkspaceDto, WorkspaceSummaryDto,
+    ConnectionDto, CreateConnectionRequestDto, CreateWorkspaceRequestDto, DirectorySnapshotDto,
+    EntryMetadataDto, EntryMetadataRequest, InvokeActionRequestDto, ListDirectoryRequest,
+    LocationDto, NavigateRequest, OperationDto, PluginDescriptorDto, PluginLogEntryDto,
+    ReadFileRangeRequestDto, ReadFileRangeResponseDto, ResolveOperationConflictRequestDto,
+    RuntimeCapabilitiesDto, SearchInFileRequestDto, SearchInFileResponseDto, SettingsDto,
+    StartOperationRequestDto, StartSearchRequestDto, StartSearchResponseDto,
+    UpdateConnectionRequestDto, WorkspaceCommandDto, WorkspaceDto, WorkspaceSummaryDto,
 };
 
 use crate::{AppState, event_stream::EventSubscriptionRegistry};
@@ -569,6 +570,121 @@ pub(crate) fn cancel_search(
     state
         .service
         .cancel_search(search_id)
+        .map_err(|error| error.into_dto(Uuid::new_v4()))
+}
+
+/// Lists every stored connection profile with its current runtime status,
+/// identical in shape to `GET /api/v1/connections` (task 0103).
+#[tauri::command]
+pub(crate) async fn list_connections(
+    state: State<'_, AppState>,
+) -> Result<Vec<ConnectionDto>, ApplicationErrorDto> {
+    state
+        .service
+        .list_connections()
+        .await
+        .map_err(|error| error.into_dto(Uuid::new_v4()))
+}
+
+/// Creates and persists a new connection profile, identical in shape to
+/// `POST /api/v1/connections`.
+#[tauri::command]
+pub(crate) async fn create_connection(
+    state: State<'_, AppState>,
+    request: CreateConnectionRequestDto,
+) -> Result<ConnectionDto, ApplicationErrorDto> {
+    state
+        .service
+        .create_connection(request)
+        .await
+        .map_err(|error| error.into_dto(Uuid::new_v4()))
+}
+
+/// Loads a single connection profile by id, identical in shape to
+/// `GET /api/v1/connections/{connectionId}`.
+#[tauri::command]
+pub(crate) async fn get_connection(
+    state: State<'_, AppState>,
+    connection_id: Uuid,
+) -> Result<ConnectionDto, ApplicationErrorDto> {
+    state
+        .service
+        .get_connection(connection_id)
+        .await
+        .map_err(|error| error.into_dto(Uuid::new_v4()))
+}
+
+/// Updates an existing connection profile, identical in shape to
+/// `PUT /api/v1/connections/{connectionId}`.
+#[tauri::command]
+pub(crate) async fn update_connection(
+    state: State<'_, AppState>,
+    connection_id: Uuid,
+    request: UpdateConnectionRequestDto,
+) -> Result<ConnectionDto, ApplicationErrorDto> {
+    state
+        .service
+        .update_connection(connection_id, request)
+        .await
+        .map_err(|error| error.into_dto(Uuid::new_v4()))
+}
+
+/// Deletes a connection profile and its stored credential, if any, identical
+/// in shape to `DELETE /api/v1/connections/{connectionId}`.
+#[tauri::command]
+pub(crate) async fn delete_connection(
+    state: State<'_, AppState>,
+    connection_id: Uuid,
+) -> Result<(), ApplicationErrorDto> {
+    state
+        .service
+        .delete_connection(connection_id)
+        .await
+        .map_err(|error| error.into_dto(Uuid::new_v4()))
+}
+
+/// Attempts to connect, identical in shape to
+/// `POST /api/v1/connections/{connectionId}/connect`. See
+/// `fm_connections::ConnectionService`'s documentation for the honest scope
+/// of this operation before task 0104/0106 register a real protocol dialer.
+#[tauri::command]
+pub(crate) async fn connect_connection(
+    state: State<'_, AppState>,
+    connection_id: Uuid,
+) -> Result<ConnectionDto, ApplicationErrorDto> {
+    state
+        .service
+        .connect_connection(connection_id)
+        .await
+        .map_err(|error| error.into_dto(Uuid::new_v4()))
+}
+
+/// Marks a connection as disconnected, identical in shape to
+/// `POST /api/v1/connections/{connectionId}/disconnect`.
+#[tauri::command]
+pub(crate) async fn disconnect_connection(
+    state: State<'_, AppState>,
+    connection_id: Uuid,
+) -> Result<ConnectionDto, ApplicationErrorDto> {
+    state
+        .service
+        .disconnect_connection(connection_id)
+        .await
+        .map_err(|error| error.into_dto(Uuid::new_v4()))
+}
+
+/// Checks whether a connection's configuration and credential are currently
+/// usable, without changing its tracked status, identical in shape to
+/// `POST /api/v1/connections/{connectionId}/test`.
+#[tauri::command]
+pub(crate) async fn test_connection(
+    state: State<'_, AppState>,
+    connection_id: Uuid,
+) -> Result<ConnectionDto, ApplicationErrorDto> {
+    state
+        .service
+        .test_connection(connection_id)
+        .await
         .map_err(|error| error.into_dto(Uuid::new_v4()))
 }
 

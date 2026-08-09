@@ -4,6 +4,7 @@
 //! `main` serves and drive it with `axum::serve` on an ephemeral port.
 
 pub mod config;
+mod credentials;
 mod error;
 pub mod openapi_export;
 mod routes;
@@ -14,6 +15,8 @@ use std::sync::Arc;
 use axum::Router;
 use axum::http::{HeaderName, HeaderValue, Method};
 use fm_application::FileManagerService;
+use fm_events::EventBus;
+use fm_platform::FallbackPlatformAdapter;
 use fm_transport_dto::RuntimeKindDto;
 use tokio_util::sync::CancellationToken;
 use tower::ServiceBuilder;
@@ -82,6 +85,16 @@ fn api_router() -> OpenApiRouter<AppState> {
         .routes(utoipa_axum::routes!(
             routes::workspace::apply_workspace_command
         ))
+        .routes(utoipa_axum::routes!(routes::connection::list_connections))
+        .routes(utoipa_axum::routes!(routes::connection::create_connection))
+        .routes(utoipa_axum::routes!(routes::connection::get_connection))
+        .routes(utoipa_axum::routes!(routes::connection::update_connection))
+        .routes(utoipa_axum::routes!(routes::connection::delete_connection))
+        .routes(utoipa_axum::routes!(routes::connection::connect_connection))
+        .routes(utoipa_axum::routes!(
+            routes::connection::disconnect_connection
+        ))
+        .routes(utoipa_axum::routes!(routes::connection::test_connection))
 }
 
 /// Builds the OpenAPI document without constructing application state or
@@ -97,11 +110,21 @@ pub fn openapi_document() -> utoipa::openapi::OpenApi {
 /// request into a [`FileManagerService`] call and back into a DTO; no
 /// filesystem logic lives in this crate (spec §3 rule 2).
 pub fn build_router(config: &ServerConfig) -> Router {
-    let service = Arc::new(FileManagerService::new(
-        RuntimeKindDto::BrowserServer,
-        config.workspace_directory.clone(),
-        config.settings_directory.clone(),
-    ));
+    // Browser/server mode has no native access to a remote client's OS, so
+    // the platform adapter stays the fallback (see
+    // `FileManagerService::with_platform_adapter`'s documentation) - but
+    // credential storage is local to wherever this server process itself
+    // runs, so it still gets a real per-OS store (task 0103).
+    let service = Arc::new(
+        FileManagerService::with_platform_adapter_and_credential_store(
+            RuntimeKindDto::BrowserServer,
+            config.workspace_directory.clone(),
+            config.settings_directory.clone(),
+            EventBus::default(),
+            Arc::new(FallbackPlatformAdapter),
+            credentials::build_credential_store(),
+        ),
+    );
     build_router_with_service(config, service)
 }
 

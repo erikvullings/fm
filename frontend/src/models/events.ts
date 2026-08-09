@@ -1,5 +1,6 @@
+import type { ConnectionStatus } from './connection';
 import type { EntrySummary } from './entry';
-import type { OperationId, PaneId, TabId, WorkspaceId } from './ids';
+import type { ConnectionId, OperationId, PaneId, TabId, WorkspaceId } from './ids';
 import type { Location } from './location';
 import type { Operation, OperationProgress, OperationState } from './operation';
 import type { PluginSummary } from './plugin';
@@ -92,7 +93,11 @@ export type BackendEventPayload =
       entries: EntrySummary[];
       isComplete: boolean;
       warningsCount: number;
-    };
+    }
+  | { type: 'connection.created'; connectionId: ConnectionId }
+  | { type: 'connection.updated'; connectionId: ConnectionId }
+  | { type: 'connection.statusChanged'; connectionId: ConnectionId; status: ConnectionStatus }
+  | { type: 'connection.deleted'; connectionId: ConnectionId };
 
 /** A backend event delivered identically over SSE and Tauri. */
 export type BackendEvent = EventEnvelope<BackendEventPayload>;
