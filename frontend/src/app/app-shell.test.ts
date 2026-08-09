@@ -1559,6 +1559,32 @@ describe('AppShell', () => {
     );
   });
 
+  it.each([
+    ['cloud', 'OneDrive'],
+    ['network', 'Mounted SMB'],
+  ] as const)('navigates a discovered %s symlink inside the pane', async (kind, name) => {
+    const client = new MockFileManagerClient();
+    const location = { providerId: 'file', uri: 'mock:///documents-link' } as const;
+    vi.spyOn(client, 'getSystemLocations').mockResolvedValue([{ name, kind, location }]);
+    const navigatePane = vi.spyOn(client, 'navigatePane');
+    const invokeAction = vi.spyOn(client, 'invokeAction');
+    m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
+
+    await vi.waitFor(() => expect(root.textContent).toContain('documents-link'));
+    const linkRow = [...root.querySelectorAll<HTMLElement>('.fm-directory-row')].find((row) =>
+      row.textContent?.includes('documents-link'),
+    );
+    linkRow?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+
+    await vi.waitFor(() =>
+      expect(navigatePane).toHaveBeenCalledWith(
+        expect.objectContaining({ location }),
+        expect.anything(),
+      ),
+    );
+    expect(invokeAction).not.toHaveBeenCalled();
+  });
+
   it('shows filename-search results as a virtual directory and opens a result in its folder', async () => {
     const client = new MockFileManagerClient();
     const navigatePane = vi.spyOn(client, 'navigatePane');

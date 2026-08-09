@@ -39,3 +39,6 @@ Add first-class discovery and presentation of cloud-backed filesystem locations 
   also retains three pre-existing errors in archive request optionality, a conflict-dialog fixture,
   and the Vite config's `.ts` import setting. Rust formatting/clippy pass; repository Biome lint is
   still blocked by pre-existing formatting/lint findings outside this task's files.
+- 2026-08-09: Follow-up fixed Tauri double-click handling for discovered roots that macOS reports as
+  symlinks. Known cloud locations now navigate inside the active pane through the local provider
+  instead of falling through to `core.open` and launching Finder.

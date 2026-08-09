@@ -2376,7 +2376,14 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
           }
           return navigation.navigate(paneId, parentLocation(entry.location), entry.name);
         }
-        if (entry.kind === 'directory') return navigation.navigate(paneId, entry.location);
+        const isSystemLocation = systemLocations.some(
+          ({ location }) =>
+            location.providerId === entry.location.providerId &&
+            location.uri === entry.location.uri,
+        );
+        if (entry.kind === 'directory' || isSystemLocation) {
+          return navigation.navigate(paneId, entry.location);
+        }
         const archiveRoot = archiveRootForEntry(entry);
         if (archiveRoot !== undefined) return navigation.navigate(paneId, archiveRoot);
         return invokeActionById(

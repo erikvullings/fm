@@ -46,3 +46,6 @@ Add discovery and presentation of network filesystems already mounted by the OS,
 - 2026-08-09: The Windows adapter is cfg-checked by the host workspace build, but a Windows-target
   cross-check could not run because this machine's listed MSVC target lacks its Rust standard
   library. Runtime validation on Windows remains outstanding.
+- 2026-08-09: Follow-up aligned mounted-share activation with cloud locations when the OS reports a
+  discovered root as a symlink: double-click navigates inside the active pane through the local
+  provider rather than invoking the host's external-open action.
