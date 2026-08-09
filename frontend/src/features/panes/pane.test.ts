@@ -1011,6 +1011,38 @@ describe('Pane tab strip', () => {
     expect(onNavigateLocation).toHaveBeenCalledWith(location);
   });
 
+  it.each(['Enter', 'double-click'] as const)(
+    'keeps %s on a discovered location inside the favourites menu',
+    async (activation) => {
+      const location = { providerId: 'local', uri: 'file:///Users/example/OneDrive' } as const;
+      const onNavigateLocation = vi.fn();
+      const onOpenEntry = vi.fn();
+      mount(
+        attrs({
+          systemLocations: [{ name: 'OneDrive', kind: 'cloud', location }],
+          cursorIndex: 0,
+          onNavigateLocation,
+          onOpenEntry,
+        }),
+      );
+      root.querySelector<HTMLButtonElement>('.fm-pane-tab-favourites')?.click();
+      m.redraw.sync();
+      const item = root.querySelector<HTMLButtonElement>('.fm-cloud-locations [role="menuitem"]');
+
+      if (activation === 'Enter') {
+        item?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+        item?.click();
+      } else {
+        item?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+        item?.click();
+      }
+      await Promise.resolve();
+
+      expect(onNavigateLocation).toHaveBeenCalledWith(location);
+      expect(onOpenEntry).not.toHaveBeenCalled();
+    },
+  );
+
   it('shows network volumes separately and keeps disappeared shares recoverable', () => {
     const location = { providerId: 'local', uri: 'file:///Volumes/Team%20Files' };
     mount(

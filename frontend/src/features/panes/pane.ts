@@ -857,15 +857,16 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
                     tabindex: -1,
                     'aria-label': 'Favourites',
                     oncreate: ({ dom }: VnodeDOM) => focusFirstFavouritesItem(dom as HTMLElement),
+                    onclick: (event: MouseEvent) => event.stopPropagation(),
+                    ondblclick: (event: MouseEvent) => event.stopPropagation(),
                     onkeydown: (event: KeyboardEvent) => {
+                      event.stopPropagation();
                       if (event.key === 'Escape') {
                         event.preventDefault();
-                        event.stopPropagation();
                         closeFavourites();
                         m.redraw();
                       } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
                         event.preventDefault();
-                        event.stopPropagation();
                         moveFavouritesFocus(
                           event.currentTarget as HTMLElement,
                           event.key === 'ArrowDown' ? 1 : -1,
