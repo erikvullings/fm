@@ -49,3 +49,6 @@ Add discovery and presentation of network filesystems already mounted by the OS,
 - 2026-08-09: Follow-up aligned mounted-share activation with cloud locations when the OS reports a
   discovered root as a symlink: double-click navigates inside the active pane through the local
   provider rather than invoking the host's external-open action.
+- 2026-08-10: The same macOS home-symlink alias resolution is applied after mounted network volumes
+  are added, so a home link targeting an SMB mount is published as the navigable system location
+  while retaining its network/protocol/read-only metadata.

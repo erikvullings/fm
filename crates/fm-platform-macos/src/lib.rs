@@ -313,9 +313,40 @@ fn discover_system_locations(home: &Path) -> Vec<SystemLocation> {
             read_only: None,
         });
     }
+    prefer_home_symlink_aliases(home, &mut locations);
     locations.sort_by(|left, right| left.name.cmp(&right.name));
     locations.dedup_by(|left, right| left.path == right.path);
     locations
+}
+
+fn prefer_home_symlink_aliases(home: &Path, locations: &mut [SystemLocation]) {
+    let mut aliases = std::fs::read_dir(home)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter_map(|entry| {
+            let path = entry.path();
+            std::fs::symlink_metadata(&path)
+                .ok()?
+                .file_type()
+                .is_symlink()
+                .then(|| (entry.file_name().to_string_lossy().into_owned(), path))
+        })
+        .collect::<Vec<_>>();
+    aliases.sort_by(|left, right| left.0.cmp(&right.0));
+
+    for location in locations {
+        let Ok(target) = std::fs::canonicalize(&location.path) else {
+            continue;
+        };
+        if let Some((name, path)) = aliases
+            .iter()
+            .find(|(_, path)| std::fs::canonicalize(path).is_ok_and(|alias| alias == target))
+        {
+            location.name.clone_from(name);
+            location.path.clone_from(path);
+        }
+    }
 }
 
 fn parse_mount_source(source: &str) -> (Option<String>, Option<String>, Option<String>) {
@@ -433,6 +464,7 @@ impl PlatformAdapter for MacosPlatformAdapter {
         if let Ok(network_locations) = discover_network_locations() {
             locations.extend(network_locations);
         }
+        prefer_home_symlink_aliases(&home, &mut locations);
         Ok(locations)
     }
 
@@ -713,6 +745,47 @@ mod tests {
         assert!(locations.iter().all(|location| {
             location.kind == SystemLocationKind::Cloud && location.path.starts_with(home.path())
         }));
+    }
+
+    #[test]
+    fn cloud_location_discovery_prefers_a_home_symlink_to_the_canonical_provider_root() {
+        let home = tempdir().expect("temp home");
+        let canonical = home.path().join("Library/CloudStorage/OneDrive-Example");
+        std::fs::create_dir_all(&canonical).expect("create cloud fixture");
+        let alias = home.path().join("OneDrive");
+        std::os::unix::fs::symlink(&canonical, &alias).expect("create home symlink");
+
+        let locations = discover_system_locations(home.path());
+
+        assert_eq!(locations.len(), 1);
+        assert_eq!(locations[0].name, "OneDrive");
+        assert_eq!(locations[0].path, alias);
+        assert_eq!(locations[0].provider_hint.as_deref(), Some("onedrive"));
+    }
+
+    #[test]
+    fn home_symlink_aliases_apply_to_mounted_network_locations_too() {
+        let home = tempdir().expect("temp home");
+        let mount = home.path().join("Volumes/Team Files");
+        std::fs::create_dir_all(&mount).expect("create mounted share fixture");
+        let alias = home.path().join("Team Files");
+        std::os::unix::fs::symlink(&mount, &alias).expect("create home symlink");
+        let mut locations = vec![SystemLocation {
+            name: "Team Files".to_owned(),
+            path: mount,
+            kind: SystemLocationKind::Network,
+            provider_hint: None,
+            protocol: Some("smb".to_owned()),
+            server: Some("files.example.test".to_owned()),
+            share: Some("team".to_owned()),
+            read_only: Some(false),
+        }];
+
+        prefer_home_symlink_aliases(home.path(), &mut locations);
+
+        assert_eq!(locations[0].path, alias);
+        assert_eq!(locations[0].kind, SystemLocationKind::Network);
+        assert_eq!(locations[0].protocol.as_deref(), Some("smb"));
     }
 
     #[test]

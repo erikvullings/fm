@@ -42,3 +42,7 @@ Add first-class discovery and presentation of cloud-backed filesystem locations 
 - 2026-08-09: Follow-up fixed Tauri double-click handling for discovered roots that macOS reports as
   symlinks. Known cloud locations now navigate inside the active pane through the local provider
   instead of falling through to `core.open` and launching Finder.
+- 2026-08-10: macOS discovery now prefers a home-directory symlink whose canonical target is a
+  discovered cloud root (for example `~/OneDrive` targeting
+  `~/Library/CloudStorage/OneDrive-Personal`). This makes activation of the visible home-directory
+  link match the discovered local-provider location and navigate inside the pane.
