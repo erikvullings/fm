@@ -46,3 +46,6 @@ Add first-class discovery and presentation of cloud-backed filesystem locations 
   discovered cloud root (for example `~/OneDrive` targeting
   `~/Library/CloudStorage/OneDrive-Personal`). This makes activation of the visible home-directory
   link match the discovered local-provider location and navigate inside the pane.
+- 2026-08-10: Axum browser mode now selects the platform adapter for the server host instead of the
+  empty fallback adapter. Because browser clients browse the server filesystem, cloud locations
+  (including macOS iCloud Drive) are now discoverable and navigable there as well as in Tauri.

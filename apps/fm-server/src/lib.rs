@@ -7,6 +7,7 @@ pub mod config;
 mod credentials;
 mod error;
 pub mod openapi_export;
+mod platform;
 mod routes;
 mod state;
 
@@ -16,7 +17,6 @@ use axum::Router;
 use axum::http::{HeaderName, HeaderValue, Method};
 use fm_application::FileManagerService;
 use fm_events::EventBus;
-use fm_platform::FallbackPlatformAdapter;
 use fm_transport_dto::RuntimeKindDto;
 use tokio_util::sync::CancellationToken;
 use tower::ServiceBuilder;
@@ -114,18 +114,15 @@ pub fn openapi_document() -> utoipa::openapi::OpenApi {
 /// request into a [`FileManagerService`] call and back into a DTO; no
 /// filesystem logic lives in this crate (spec §3 rule 2).
 pub fn build_router(config: &ServerConfig) -> Router {
-    // Browser/server mode has no native access to a remote client's OS, so
-    // the platform adapter stays the fallback (see
-    // `FileManagerService::with_platform_adapter`'s documentation) - but
-    // credential storage is local to wherever this server process itself
-    // runs, so it still gets a real per-OS store (task 0103).
+    // Browser clients browse the server process's filesystem, so discovery and
+    // platform actions describe that machine rather than the browser device.
     let service = Arc::new(
         FileManagerService::with_platform_adapter_and_credential_store(
             RuntimeKindDto::BrowserServer,
             config.workspace_directory.clone(),
             config.settings_directory.clone(),
             EventBus::default(),
-            Arc::new(FallbackPlatformAdapter),
+            platform::build_platform_adapter(),
             credentials::build_credential_store(),
         ),
     );

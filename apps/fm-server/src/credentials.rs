@@ -7,10 +7,8 @@
 //! crate just to pick one at runtime, so the `#[cfg(target_os = ...)]`
 //! branch lives here in the host binary instead.
 //!
-//! Unlike the platform adapter (which browser/server mode always leaves as
-//! [`fm_platform::FallbackPlatformAdapter`], since it has no native access to
-//! a remote client's OS), credential storage is local to wherever this
-//! server process itself runs - so this host still selects a real
+//! Like the platform adapter, credential storage is local to wherever this
+//! server process itself runs, so this host selects a real
 //! Keychain/Credential Manager-backed store on macOS/Windows, matching task
 //! 0103's acceptance criteria. Any other host OS falls back to
 //! [`fm_credentials::InMemoryCredentialStore`], which is explicitly not

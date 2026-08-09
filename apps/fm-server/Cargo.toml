@@ -32,9 +32,11 @@ uuid.workspace = true
 
 [target.'cfg(target_os = "macos")'.dependencies]
 fm-credentials-macos.workspace = true
+fm-platform-macos.workspace = true
 
 [target.'cfg(target_os = "windows")'.dependencies]
 fm-credentials-windows.workspace = true
+fm-platform-windows.workspace = true
 
 [lints]
 workspace = true

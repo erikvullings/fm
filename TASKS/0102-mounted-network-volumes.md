@@ -52,3 +52,5 @@ Add discovery and presentation of network filesystems already mounted by the OS,
 - 2026-08-10: The same macOS home-symlink alias resolution is applied after mounted network volumes
   are added, so a home link targeting an SMB mount is published as the navigable system location
   while retaining its network/protocol/read-only metadata.
+- 2026-08-10: Axum browser mode now uses the server host's native platform adapter, restoring the
+  same mounted-network discovery and in-pane navigation available in Tauri.
