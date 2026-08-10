@@ -77,6 +77,7 @@ russh-sftp = "2.4"
 security-framework = "3.7.0"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
+sha2 = "0.11.0"
 sevenz-rust2 = { version = "0.21.3", default-features = false, features = [
   "aes256",
   "compress",

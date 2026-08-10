@@ -39,6 +39,10 @@ struct Cli {
     /// Filesystem roots the server is permitted to expose (task 0064).
     #[arg(long = "root", env = "FM_SERVER_ROOT", value_delimiter = ',')]
     root: Vec<PathBuf>,
+    /// DEVELOPMENT ONLY: Disable authentication checks. Logged at startup
+    /// and impossible when binding to non-loopback addresses (task 0064).
+    #[arg(long, env = "FM_SERVER_DEV_MODE_AUTH_DISABLED")]
+    dev_mode_auth_disabled: bool,
 }
 
 /// Subcommands that run instead of serving requests.
@@ -54,11 +58,29 @@ enum Command {
 
 impl From<Cli> for ServerConfig {
     fn from(cli: Cli) -> Self {
+        // Validate that non-loopback binding doesn't enable dev-mode auth disable.
+        let is_loopback = matches!(
+            cli.bind,
+            IpAddr::V4(addr) if addr.octets()[0] == 127,
+        ) || matches!(cli.bind, IpAddr::V6(addr) if addr.is_loopback());
+
+        let dev_mode_auth_disabled = if cli.dev_mode_auth_disabled {
+            if !is_loopback {
+                panic!(
+                    "dev-mode auth disable is not allowed when binding to non-loopback addresses"
+                );
+            }
+            true
+        } else {
+            false
+        };
+
         Self {
             bind_address: cli.bind,
             port: cli.port,
             cors_allowed_origins: cli.cors_origin,
             roots: cli.root,
+            dev_mode_auth_disabled,
             ..Self::default()
         }
     }
@@ -95,10 +117,33 @@ async fn main() {
         .await
         .expect("failed to bind fm-server listener");
 
+    // Log security configuration at startup.
+    let is_loopback = matches!(
+        config.bind_address,
+        IpAddr::V4(addr) if addr.octets()[0] == 127,
+    ) || matches!(config.bind_address, IpAddr::V6(addr) if addr.is_loopback());
+
+    if !is_loopback {
+        tracing::warn!(
+            bind = %config.bind_address,
+            "binding to non-loopback address; ensure TLS and authentication are configured"
+        );
+    }
+
+    if config.dev_mode_auth_disabled {
+        tracing::warn!("DEVELOPMENT MODE: authentication disabled; do not use in production");
+    }
+
+    if config.roots.is_empty() {
+        tracing::warn!("no accessible roots configured; server can access entire filesystem");
+    }
+
     tracing::info!(
         bind = %config.bind_address,
         port = config.port,
-        roots = ?config.roots,
+        loopback_only = is_loopback,
+        auth_required = !config.dev_mode_auth_disabled,
+        num_roots = config.roots.len(),
         "starting fm-server"
     );
 

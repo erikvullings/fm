@@ -3,6 +3,9 @@
 //! Split out from `main.rs` so integration tests can build the exact router
 //! `main` serves and drive it with `axum::serve` on an ephemeral port.
 
+pub mod accessible_roots;
+pub mod audit;
+pub mod auth;
 pub mod config;
 mod credentials;
 mod error;
