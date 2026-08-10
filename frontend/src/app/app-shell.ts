@@ -147,7 +147,6 @@ import type {
   ActionInvocationContext,
   BackendEvent,
   Connection,
-  ContentMatchSummary,
   CreateConnectionRequest,
   DirectoryDelta,
   EntryId,
@@ -174,9 +173,14 @@ import type {
 import {
   type AppState,
   applyAppPatches,
+  cacheContentMatchesPatch,
   clipboardPatch,
   connectionPatch,
   createInitialAppState,
+  deleteClosedTabStackPatch,
+  deleteQuickFilterDraftPatch,
+  setClosedTabStackPatch,
+  setQuickFilterDraftPatch,
 } from '../state';
 import { installPluginIconTheme, restoreDefaultIconTheme } from '../themes/plugin-icon-theme';
 import type { RuntimeKind } from '../utilities/runtime';
@@ -364,14 +368,6 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
    * JSON) so F3's content-query lookup always has a real params object to read, instead of
    * needing to `JSON.parse` a string that usually isn't JSON at all. */
   const findFilesParamsByLocationUri = new Map<string, FindFilesSearchParams>();
-  /** Content matches are only ever delivered on the live `search.resultsBatch` SSE event -
-   * `EntrySummaryDto` (the REST `listDirectory` wire type used to refresh/page a `search://`
-   * pane) has no `contentMatches` field at all, so an entry refetched via `navigation.load()`
-   * never carries them, even though the backend found and streamed them moments earlier. Caching
-   * them here by entry location as batches arrive lets F3/double-click pre-populate the content
-   * search regardless of whether the specific `entry` object in hand came from the SSE batch or
-   * a subsequent REST refresh. */
-  const contentMatchesByEntryUri = new Map<string, readonly ContentMatchSummary[]>();
   /** Panes with a `search.resultsBatch`-triggered reload already in flight - see the handler
    * below for why this debounce is needed to make results stream in incrementally. */
   const searchBatchReloadInFlight = new Set<PaneId>();
@@ -420,8 +416,6 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     }
   >();
   const sortRequests = new Map<string, object>();
-  /** Live, uncommitted-per-keystroke quick-filter text; committed to the tab's view on blur/close. */
-  const quickFilterDrafts = new Map<string, string>();
   /** Whether the inline quick-filter box is shown for a pane, independent of a persisted query. */
   const quickFilterOpen = new Map<string, boolean>();
   const filteredEntries = new Map<
@@ -432,8 +426,6 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       readonly entries: readonly EntrySummary[];
     }
   >();
-  /** Last tab closed per pane (depth 1), for `core.reopenClosedTab`; restores the location only. */
-  const closedTabStacks = new Map<PaneId, TabProjection>();
   /** Pending confirmation for closing a pane's only remaining tab (spec §37). */
   let closeTabConfirmation: { readonly paneId: PaneId; readonly tabId: TabId } | undefined;
   let platform: SelectionPlatform = 'unknown';
@@ -762,7 +754,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
   }
 
   function quickFilterQueryFor(key: string, tab: TabProjection | undefined): string {
-    return quickFilterDrafts.get(key) ?? tab?.view.quickFilter?.query ?? '';
+    return appState?.quickFilterDrafts.byTabKey[key] ?? tab?.view.quickFilter?.query ?? '';
   }
 
   function quickFilterOpenFor(key: string, tab: TabProjection | undefined): boolean {
@@ -791,7 +783,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     // search batch or a plain tab switch) never carries `contentMatches` - only the live
     // `search.resultsBatch` SSE event does (`EntrySummaryDto` has no such field) - so fall back
     // to whatever that event most recently cached for this entry's location.
-    const matches = entry.contentMatches ?? contentMatchesByEntryUri.get(entry.location.uri);
+    const matches = entry.contentMatches ?? appState?.contentMatches.byEntryUri[entry.location.uri];
     if (matches === undefined || matches.length === 0) return undefined;
     return {
       query: params.contentQuery,
@@ -880,7 +872,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     selections.delete(key);
     sortedEntries.delete(key);
     sortRequests.delete(key);
-    quickFilterDrafts.delete(key);
+    if (appState !== undefined) appState = applyAppPatches(appState, deleteQuickFilterDraftPatch(key));
     quickFilterOpen.delete(key);
     filteredEntries.delete(key);
   }
@@ -1799,10 +1791,10 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       event.preventDefault();
       const key = activeTabKey(active.paneId);
       quickFilterOpen.set(key, true);
-      if (!quickFilterDrafts.has(key)) {
+      if (!(key in (appState?.quickFilterDrafts.byTabKey ?? {}))) {
         const pane = workspace?.panesById[active.paneId];
         const tab = pane?.tabsById[pane.activeTabId];
-        quickFilterDrafts.set(key, tab?.view.quickFilter?.query ?? '');
+        appState = applyAppPatches(appState!, setQuickFilterDraftPatch(key, tab?.view.quickFilter?.query ?? ''));
       }
       m.redraw();
       return;
@@ -2007,7 +1999,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     getFindFilesSearchId: () => findFilesSearchId,
     getSearchBatchReloadInFlight: () => searchBatchReloadInFlight,
     cacheContentMatches: (uri, matches) => {
-      contentMatchesByEntryUri.set(uri, matches);
+      if (appState !== undefined) appState = applyAppPatches(appState, cacheContentMatchesPatch(uri, matches));
     },
     findPanesWithUri: (uri) =>
       workspace === undefined
@@ -2140,7 +2132,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
   function performCloseTab(client: FileManagerClient, paneId: PaneId, tabId: TabId): void {
     if (workspace === undefined) return;
     const closedTab = workspace.panesById[paneId]?.tabsById[tabId];
-    if (closedTab !== undefined) closedTabStacks.set(paneId, closedTab);
+    if (closedTab !== undefined) appState = applyAppPatches(appState!, setClosedTabStackPatch(paneId, closedTab));
     void dispatchWorkspaceCommand(
       client,
       {
@@ -2176,9 +2168,9 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
 
   /** Reopens the most recently closed tab in `paneId` (depth 1), restoring its location only. */
   function reopenClosedTab(client: FileManagerClient, paneId: PaneId): void {
-    const closed = closedTabStacks.get(paneId);
+    const closed = appState?.closedTabStacks.byPaneId[paneId];
     if (workspace === undefined || closed === undefined) return;
-    closedTabStacks.delete(paneId);
+    appState = applyAppPatches(appState!, deleteClosedTabStackPatch(paneId));
     void dispatchWorkspaceCommand(
       client,
       {
@@ -2472,12 +2464,12 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       },
       onFilterQueryChange: (query) => {
         if (key === undefined) return;
-        quickFilterDrafts.set(key, query);
+        appState = applyAppPatches(appState!, setQuickFilterDraftPatch(key, query));
         m.redraw();
       },
       onFilterCommit: () => {
         if (key === undefined) return;
-        const draft = quickFilterDrafts.get(key);
+        const draft = appState?.quickFilterDrafts.byTabKey[key];
         if (workspace === undefined || tab === undefined || draft === undefined) return;
         const committed = tab.view.quickFilter?.query ?? '';
         if (draft === committed) return;
@@ -2500,7 +2492,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       onFilterClose: () => {
         if (key !== undefined) {
           quickFilterOpen.set(key, false);
-          quickFilterDrafts.delete(key);
+          appState = applyAppPatches(appState!, deleteQuickFilterDraftPatch(key));
         }
         if (workspace !== undefined && tab !== undefined && tab.view.quickFilter != null) {
           void dispatchWorkspaceCommand(

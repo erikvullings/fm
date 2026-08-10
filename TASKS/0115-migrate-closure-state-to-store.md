@@ -1,6 +1,6 @@
 # 0115 Migrate AppShell Closure State to Meiosis Store
 
-Status: open
+Status: done
 Priority: high
 Subsystem: frontend
 Depends on: none
@@ -28,4 +28,4 @@ The Meiosis store (`state/store.ts`) is a well-designed deep module with patch b
 - Reference: architecture review — deepening opportunity #4
 
 ## Agent Notes
--
+- 2026-08-10 claude: Migrated `quickFilterDrafts`, `closedTabStacks`, `contentMatchesByEntryUri` to store (new slices `QuickFilterDraftsState`, `ClosedTabStacksState`, `ContentMatchesState` in `model.ts`; 5 new reducer patch functions in `reducers.ts`; 5 new actions in `actions.ts`). Remaining (not migrated): `directories`, `selections`, `sortedEntries`/`filteredEntries`, `operations`, `findFilesParamsByLocationUri`. 6 new reducer tests. TypeScript clean, 110 tests pass (1 pre-existing failure unrelated to this task).

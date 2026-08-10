@@ -1,6 +1,7 @@
 import type {
   BackendNotification,
   ClipboardState,
+  ContentMatchSummary,
   DirectoryDelta,
   DirectorySnapshot,
   EntryId,
@@ -11,6 +12,7 @@ import type {
   PaneId,
   PluginDescriptor,
   RuntimeCapabilities,
+  TabProjection,
   WorkspaceProjection,
   WorkspaceViewState,
 } from '../models';
@@ -215,4 +217,42 @@ export function notificationPatch(notification: BackendNotification): AppPatch {
 /** Replaces connection status fields as one immutable snapshot. */
 export function connectionPatch(connection: ConnectionState): AppPatch {
   return { connection: () => connection };
+}
+
+/** Sets or replaces the uncommitted quick-filter draft for one tab key. */
+export function setQuickFilterDraftPatch(key: string, draft: string): AppPatch {
+  return { quickFilterDrafts: (s) => ({ byTabKey: { ...s.byTabKey, [key]: draft } }) };
+}
+
+/** Removes the quick-filter draft for one tab key. */
+export function deleteQuickFilterDraftPatch(key: string): AppPatch {
+  return {
+    quickFilterDrafts: (s) => {
+      const { [key]: _, ...rest } = s.byTabKey;
+      return { byTabKey: rest };
+    },
+  };
+}
+
+/** Stores the most recently closed tab for a pane (depth-1 stack). */
+export function setClosedTabStackPatch(paneId: PaneId, tab: TabProjection): AppPatch {
+  return { closedTabStacks: (s) => ({ byPaneId: { ...s.byPaneId, [paneId]: tab } }) };
+}
+
+/** Removes the closed-tab record for a pane after it has been restored. */
+export function deleteClosedTabStackPatch(paneId: PaneId): AppPatch {
+  return {
+    closedTabStacks: (s) => {
+      const { [paneId]: _, ...rest } = s.byPaneId;
+      return { byPaneId: rest };
+    },
+  };
+}
+
+/** Caches content-match summaries for an entry URI from a search SSE batch. */
+export function cacheContentMatchesPatch(
+  uri: string,
+  matches: readonly ContentMatchSummary[],
+): AppPatch {
+  return { contentMatches: (s) => ({ byEntryUri: { ...s.byEntryUri, [uri]: matches } }) };
 }

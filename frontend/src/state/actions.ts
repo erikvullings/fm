@@ -1,6 +1,7 @@
 import type {
   BackendNotification,
   ClipboardState,
+  ContentMatchSummary,
   DirectoryDelta,
   DirectorySnapshot,
   Operation,
@@ -8,14 +9,18 @@ import type {
   OperationProgress,
   PaneId,
   PluginDescriptor,
+  TabProjection,
   WorkspaceProjection,
   WorkspaceViewState,
 } from '../models';
 import type { ConnectionState, RuntimeState } from './model';
 import type { AppUpdate } from './patch';
 import {
+  cacheContentMatchesPatch,
   clipboardPatch,
   connectionPatch,
+  deleteClosedTabStackPatch,
+  deleteQuickFilterDraftPatch,
   directoryDeltaPatch,
   directorySnapshotPatch,
   notificationPatch,
@@ -23,6 +28,8 @@ import {
   operationProgressPatch,
   pluginPatch,
   runtimePatch,
+  setClosedTabStackPatch,
+  setQuickFilterDraftPatch,
   workspaceSnapshotPatch,
   workspaceViewPatch,
 } from './reducers';
@@ -40,6 +47,11 @@ export interface AppActions {
   upsertPlugin(plugin: PluginDescriptor): void;
   notify(notification: BackendNotification): void;
   setConnection(connection: ConnectionState): void;
+  setQuickFilterDraft(key: string, draft: string): void;
+  deleteQuickFilterDraft(key: string): void;
+  setClosedTabStack(paneId: PaneId, tab: TabProjection): void;
+  deleteClosedTabStack(paneId: PaneId): void;
+  cacheContentMatches(uri: string, matches: readonly ContentMatchSummary[]): void;
 }
 
 /** Binds pure slice reducers to the store's single batched update boundary. */
@@ -57,5 +69,10 @@ export function createAppActions(update: AppUpdate): AppActions {
     upsertPlugin: (plugin) => update(pluginPatch(plugin)),
     notify: (notification) => update(notificationPatch(notification)),
     setConnection: (connection) => update(connectionPatch(connection)),
+    setQuickFilterDraft: (key, draft) => update(setQuickFilterDraftPatch(key, draft)),
+    deleteQuickFilterDraft: (key) => update(deleteQuickFilterDraftPatch(key)),
+    setClosedTabStack: (paneId, tab) => update(setClosedTabStackPatch(paneId, tab)),
+    deleteClosedTabStack: (paneId) => update(deleteClosedTabStackPatch(paneId)),
+    cacheContentMatches: (uri, matches) => update(cacheContentMatchesPatch(uri, matches)),
   };
 }

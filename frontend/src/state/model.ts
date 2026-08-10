@@ -1,6 +1,7 @@
 import type {
   BackendNotification,
   ClipboardState,
+  ContentMatchSummary,
   EntryId,
   EntrySummary,
   Operation,
@@ -9,6 +10,7 @@ import type {
   PluginDescriptor,
   PluginId,
   RuntimeCapabilities,
+  TabProjection,
   WorkspaceProjection,
   WorkspaceViewState,
 } from '../models';
@@ -68,6 +70,21 @@ export interface ConnectionState {
   readonly error?: string;
 }
 
+/** Uncommitted quick-filter keystroke text per tab key (`${paneId}:${tabId}`). */
+export interface QuickFilterDraftsState {
+  readonly byTabKey: Readonly<Partial<Record<string, string>>>;
+}
+
+/** Most recently closed tab per pane — depth-1 stack for `core.reopenClosedTab`. */
+export interface ClosedTabStacksState {
+  readonly byPaneId: Readonly<Partial<Record<PaneId, DeepReadonly<TabProjection>>>>;
+}
+
+/** Content-match summaries keyed by entry URI, cached from SSE batches for viewer pre-population. */
+export interface ContentMatchesState {
+  readonly byEntryUri: Readonly<Partial<Record<string, readonly DeepReadonly<ContentMatchSummary>[]>>>;
+}
+
 /** Complete readonly frontend application snapshot. */
 export interface AppState {
   readonly runtime: RuntimeState;
@@ -79,6 +96,9 @@ export interface AppState {
   readonly plugins: PluginsState;
   readonly notifications: NotificationsState;
   readonly connection: ConnectionState;
+  readonly quickFilterDrafts: QuickFilterDraftsState;
+  readonly closedTabStacks: ClosedTabStacksState;
+  readonly contentMatches: ContentMatchesState;
 }
 
 /** Creates the deterministic state used before backend data is received. */
@@ -92,5 +112,8 @@ export function createInitialAppState(kind: RuntimeKind): AppState {
     plugins: { byId: {} },
     notifications: { items: [] },
     connection: { status: 'closed' },
+    quickFilterDrafts: { byTabKey: {} },
+    closedTabStacks: { byPaneId: {} },
+    contentMatches: { byEntryUri: {} },
   };
 }

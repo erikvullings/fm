@@ -5,12 +5,16 @@ import type {
   EntrySummary,
   Operation,
   PluginDescriptor,
+  TabProjection,
   WorkspaceProjection,
 } from '../models';
 import { createInitialAppState } from './model';
 import {
+  cacheContentMatchesPatch,
   clipboardPatch,
   connectionPatch,
+  deleteClosedTabStackPatch,
+  deleteQuickFilterDraftPatch,
   directoryDeltaPatch,
   directorySnapshotPatch,
   notificationPatch,
@@ -18,6 +22,8 @@ import {
   operationProgressPatch,
   pluginPatch,
   runtimePatch,
+  setClosedTabStackPatch,
+  setQuickFilterDraftPatch,
   workspaceSnapshotPatch,
   workspaceViewPatch,
 } from './reducers';
@@ -189,5 +195,65 @@ describe('state slice reducers', () => {
     expect(state.plugins.byId['plugin-1']).toEqual(plugin);
     expect(state.notifications.items).toHaveLength(1);
     expect(state.connection).toEqual({ status: 'open', lastEventId: 7 });
+  });
+
+  it('sets and deletes quick-filter drafts by tab key', () => {
+    const withDraft = applyAppPatches(
+      createInitialAppState('mock'),
+      setQuickFilterDraftPatch('pane-1:tab-1', 'hello'),
+    );
+    expect(withDraft.quickFilterDrafts.byTabKey['pane-1:tab-1']).toBe('hello');
+
+    const withSecond = applyAppPatches(withDraft, setQuickFilterDraftPatch('pane-1:tab-2', 'world'));
+    expect(withSecond.quickFilterDrafts.byTabKey['pane-1:tab-1']).toBe('hello');
+    expect(withSecond.quickFilterDrafts.byTabKey['pane-1:tab-2']).toBe('world');
+
+    const deleted = applyAppPatches(withSecond, deleteQuickFilterDraftPatch('pane-1:tab-1'));
+    expect(deleted.quickFilterDrafts.byTabKey['pane-1:tab-1']).toBeUndefined();
+    expect(deleted.quickFilterDrafts.byTabKey['pane-1:tab-2']).toBe('world');
+  });
+
+  it('initialises quick-filter drafts as empty', () => {
+    const state = createInitialAppState('mock');
+    expect(state.quickFilterDrafts.byTabKey).toEqual({});
+  });
+
+  it('sets and deletes closed-tab stacks by pane id', () => {
+    const tab: TabProjection = {
+      id: 'tab-1',
+      title: 'My Tab',
+      location: { providerId: 'local', uri: 'file:///tmp' },
+      canNavigateBack: false,
+      canNavigateForward: false,
+      view: { showHidden: false, sort: [], quickFilter: null, columns: [], foldersFirst: true },
+    };
+    const withStack = applyAppPatches(
+      createInitialAppState('mock'),
+      setClosedTabStackPatch('pane-1', tab),
+    );
+    expect(withStack.closedTabStacks.byPaneId['pane-1']?.id).toBe('tab-1');
+
+    const cleared = applyAppPatches(withStack, deleteClosedTabStackPatch('pane-1'));
+    expect(cleared.closedTabStacks.byPaneId['pane-1']).toBeUndefined();
+  });
+
+  it('initialises closed-tab stacks as empty', () => {
+    const state = createInitialAppState('mock');
+    expect(state.closedTabStacks.byPaneId).toEqual({});
+  });
+
+  it('caches content matches by entry URI', () => {
+    const matches = [{ lineNumber: 1, offset: 0, length: 5 }] as const;
+    const withMatches = applyAppPatches(
+      createInitialAppState('mock'),
+      cacheContentMatchesPatch('file:///tmp/a.txt', matches),
+    );
+    expect(withMatches.contentMatches.byEntryUri['file:///tmp/a.txt']).toHaveLength(1);
+    expect(withMatches.contentMatches.byEntryUri['file:///tmp/a.txt']?.[0]?.lineNumber).toBe(1);
+  });
+
+  it('initialises content matches as empty', () => {
+    const state = createInitialAppState('mock');
+    expect(state.contentMatches.byEntryUri).toEqual({});
   });
 });
