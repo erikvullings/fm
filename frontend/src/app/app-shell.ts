@@ -1281,7 +1281,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
         const active = activeDirectory();
         if (active !== undefined) {
           event.preventDefault();
-          jumpToTab(attrsClient, active.paneId, Number(key));
+          tabController.jumpToTab(active.paneId, Number(key));
         }
         return;
       }
@@ -1451,7 +1451,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       const active = activeDirectory();
       if (active === undefined) return;
       event.preventDefault();
-      openTab(attrsClient, active.paneId);
+      tabController.openTab(active.paneId);
       return;
     }
     if (dispatchedAction === 'core.switchPane') {
@@ -1473,19 +1473,19 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       const pane = workspace.panesById[paneId];
       if (pane === undefined) return;
       event.preventDefault();
-      requestCloseTab(attrsClient, paneId, pane.activeTabId);
+      tabController.requestCloseTab(paneId, pane.activeTabId);
       return;
     }
     if (dispatchedAction === 'core.nextTab' || dispatchedAction === 'core.previousTab') {
       if (workspace === undefined) return;
       event.preventDefault();
-      cycleTab(attrsClient, workspace.activePaneId, dispatchedAction === 'core.nextTab' ? 1 : -1);
+      tabController.cycleTab(workspace.activePaneId, dispatchedAction === 'core.nextTab' ? 1 : -1);
       return;
     }
     if (dispatchedAction === 'core.reopenClosedTab') {
       if (workspace === undefined) return;
       event.preventDefault();
-      reopenClosedTab(attrsClient, workspace.activePaneId);
+      tabController.reopenClosedTab(workspace.activePaneId);
       return;
     }
     if (dispatchedAction === 'core.view' && !forceSystemView) {
@@ -1840,48 +1840,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
   }
 
   /** Opens a new tab in `paneId`, starting at the pane's currently active location. */
-  function openTab(_client: FileManagerClient, paneId: PaneId): void {
-    tabController.openTab(paneId);
-  }
 
-  /** Switches `paneId`'s active tab, cancelling any in-flight request for the tab being hidden. */
-  function activateTab(_client: FileManagerClient, paneId: PaneId, tabId: TabId): void {
-    tabController.activateTab(paneId, tabId);
-  }
-
-  /**
-   * Closes `tabId` in `paneId` (spec §37). The backend picks whichever tab
-   * becomes active next (and replaces a pane's last tab with a fresh one at
-   * the home directory rather than leaving an empty pane) — the frontend
-   * just clears the closed tab's caches and trusts the returned projection.
-   */
-  function performCloseTab(_client: FileManagerClient, paneId: PaneId, tabId: TabId): void {
-    tabController.performCloseTab(paneId, tabId);
-  }
-
-  /**
-   * Gates closing a pane's only remaining tab behind confirmation (spec
-   * §37) — the backend would otherwise silently replace it with a blank
-   * tab, which is surprising without warning.
-   */
-  function requestCloseTab(_client: FileManagerClient, paneId: PaneId, tabId: TabId): void {
-    tabController.requestCloseTab(paneId, tabId);
-  }
-
-  /** Reopens the most recently closed tab in `paneId` (depth 1), restoring its location only. */
-  function reopenClosedTab(_client: FileManagerClient, paneId: PaneId): void {
-    tabController.reopenClosedTab(paneId);
-  }
-
-  /** Activates the next/previous tab in `paneId`, wrapping around at the ends. */
-  function cycleTab(_client: FileManagerClient, paneId: PaneId, direction: 1 | -1): void {
-    tabController.cycleTab(paneId, direction);
-  }
-
-  /** Activates the `oneBasedIndex`-th tab in `paneId`, if one exists (Ctrl+1-9 jump). */
-  function jumpToTab(_client: FileManagerClient, paneId: PaneId, oneBasedIndex: number): void {
-    tabController.jumpToTab(paneId, oneBasedIndex);
-  }
 
   function paneContent(
     client: FileManagerClient,
@@ -2718,9 +2677,9 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
                   ),
                 onActivatePane: (paneId) => activatePane(attrs.client, paneId),
                 onUpdateLayout: (layout) => updateLayout(attrs.client, layout),
-                onSelectTab: (paneId, tabId) => activateTab(attrs.client, paneId, tabId),
-                onCloseTab: (paneId, tabId) => requestCloseTab(attrs.client, paneId, tabId),
-                onNewTab: (paneId) => openTab(attrs.client, paneId),
+                onSelectTab: (paneId, tabId) => tabController.activateTab(paneId, tabId),
+                onCloseTab: (paneId, tabId) => tabController.requestCloseTab(paneId, tabId),
+                onNewTab: (paneId) => tabController.openTab(paneId),
                 registerFlush: (flush) => {
                   flushPendingLayoutUpdate = flush;
                 },
@@ -2979,7 +2938,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
               const confirmation = closeTabConfirmation;
               closeTabConfirmation = undefined;
               if (confirmation !== undefined) {
-                performCloseTab(attrs.client, confirmation.paneId, confirmation.tabId);
+                tabController.performCloseTab(confirmation.paneId, confirmation.tabId);
               }
             },
             onCancel: () => {
