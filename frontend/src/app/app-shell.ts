@@ -24,8 +24,8 @@ import {
   menuActionsForContext,
 } from '../features/commands/availability';
 import { ContextMenu as DirectoryContextMenu } from '../features/commands/context-menu';
+import { type AppDialogsContext, renderAppDialogs } from '../features/dialogs/app-dialogs';
 import { createDialogUIController } from '../features/dialogs/dialog-ui-controller';
-import { renderAppDialogs, type AppDialogsContext } from '../features/dialogs/app-dialogs';
 import type { NativeIconLoader } from '../features/directory-table/native-icon-loader';
 import {
   createFileEditorController,
@@ -50,10 +50,7 @@ import {
   type NavigationController,
   type PaneDirectoryView,
 } from '../features/navigation/navigation';
-import {
-  createOperationsState,
-  dismissOperation,
-} from '../features/operations/operation-state';
+import { createOperationsState, dismissOperation } from '../features/operations/operation-state';
 import {
   createOperationsController,
   type OperationsController,
@@ -316,11 +313,11 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
   let nativeIconLoader: NativeIconLoader | undefined;
   let contextMenu:
     | {
-      readonly paneId: PaneId;
-      readonly entries: readonly EntrySummary[];
-      readonly x: number;
-      readonly y: number;
-    }
+        readonly paneId: PaneId;
+        readonly entries: readonly EntrySummary[];
+        readonly x: number;
+        readonly y: number;
+      }
     | undefined;
   const commandPaletteRecency = new Map<string, number>();
   /**
@@ -560,11 +557,11 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     entry: EntrySummary,
   ):
     | {
-      readonly query: string;
-      readonly regex: boolean;
-      readonly caseSensitive: boolean;
-      readonly wholeWord: boolean;
-    }
+        readonly query: string;
+        readonly regex: boolean;
+        readonly caseSensitive: boolean;
+        readonly wholeWord: boolean;
+      }
     | undefined {
     const params = findFilesParamsByLocationUri.get(locationUri);
     if (params?.contentQuery === undefined || params.contentQuery === '') return undefined;
@@ -891,12 +888,12 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       workspace === undefined
         ? []
         : (
-          Object.entries(workspace.panesById) as Array<
-            [PaneId, WorkspaceProjection['panesById'][PaneId]]
-          >
-        )
-          .filter(([, pane]) => pane.tabsById[pane.activeTabId]?.location.uri === uri)
-          .map(([paneId]) => paneId),
+            Object.entries(workspace.panesById) as Array<
+              [PaneId, WorkspaceProjection['panesById'][PaneId]]
+            >
+          )
+            .filter(([, pane]) => pane.tabsById[pane.activeTabId]?.location.uri === uri)
+            .map(([paneId]) => paneId),
     loadPane: (paneId, options) => navigation.load(paneId, options),
     redraw: () => m.redraw(),
   };
@@ -1292,18 +1289,28 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
 
   const appDialogsContext: AppDialogsContext = {
     getOperations: () => operations,
-    setOperations: (next) => { operations = next; },
+    setOperations: (next) => {
+      operations = next;
+    },
     getPendingConflict: () => pendingConflict,
-    setPendingConflict: (conflict) => { pendingConflict = conflict; },
+    setPendingConflict: (conflict) => {
+      pendingConflict = conflict;
+    },
     getConnections: () => connections,
-    setConnections: (conns) => { connections = conns; },
+    setConnections: (conns) => {
+      connections = conns;
+    },
     getConnectionsManagerOpen: () => connectionsManagerOpen,
-    setConnectionsManagerOpen: (open) => { connectionsManagerOpen = open; },
+    setConnectionsManagerOpen: (open) => {
+      connectionsManagerOpen = open;
+    },
     getFindFilesOpen: () => findFilesOpen,
     getFindFilesRoot: () => findFilesRoot,
     getFindFilesError: () => findFilesError,
     getCloseTabConfirmation: () => closeTabConfirmation,
-    setCloseTabConfirmation: (conf) => { closeTabConfirmation = conf; },
+    setCloseTabConfirmation: (conf) => {
+      closeTabConfirmation = conf;
+    },
     getDialogs: () => dialogs,
     getFindFilesController: () => findFilesController,
     getTabController: () => tabController,
@@ -1477,8 +1484,8 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
         [
           isMacOverlay
             ? m('.fm-titlebar-spacer', { 'data-tauri-drag-region': '' }, [
-              m('span.fm-titlebar-label', 'Procyon'),
-            ])
+                m('span.fm-titlebar-label', 'Procyon'),
+              ])
             : null,
           m('.fm-workspace-toolbar', [
             m('.fm-navigation-controls', { 'aria-label': 'Active pane navigation' }, [
@@ -1669,41 +1676,41 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
                         ? m('p', 'Loading settings…')
                         : settingsDialogOpen
                           ? m(SettingsEditor, {
-                            settings: currentSettings,
-                            actions: registeredActions,
-                            platform,
-                            runtime: keybindingRuntime,
-                            plugins,
-                            onPreview: (draft: Settings) => {
-                              applyAppearance(draft);
-                              m.redraw();
-                            },
-                            onSave: async (draft: Settings) => {
-                              const showHiddenChanged =
-                                currentSettings !== undefined &&
-                                currentSettings.showHiddenFiles !== draft.showHiddenFiles;
-                              await attrs.client.updateSettings(draft);
-                              currentSettings = draft;
-                              applyAppearance(draft);
-                              closeSettingsDialog();
-                              if (showHiddenChanged) {
-                                void applyShowHiddenFilesToAllTabs(
-                                  attrs.client,
-                                  draft.showHiddenFiles,
-                                );
-                              }
-                            },
-                            onCancel: () => {
-                              if (currentSettings !== undefined) applyAppearance(currentSettings);
-                              closeSettingsDialog();
-                            },
-                            onTogglePlugin: (pluginId: PluginId, enabled: boolean) =>
-                              attrs.client.setPluginEnabled(pluginId, enabled),
-                            onRequestPluginLogs: (
-                              pluginId: PluginId,
-                            ): Promise<readonly PluginLogEntry[]> =>
-                              attrs.client.getPluginLogs(pluginId),
-                          })
+                              settings: currentSettings,
+                              actions: registeredActions,
+                              platform,
+                              runtime: keybindingRuntime,
+                              plugins,
+                              onPreview: (draft: Settings) => {
+                                applyAppearance(draft);
+                                m.redraw();
+                              },
+                              onSave: async (draft: Settings) => {
+                                const showHiddenChanged =
+                                  currentSettings !== undefined &&
+                                  currentSettings.showHiddenFiles !== draft.showHiddenFiles;
+                                await attrs.client.updateSettings(draft);
+                                currentSettings = draft;
+                                applyAppearance(draft);
+                                closeSettingsDialog();
+                                if (showHiddenChanged) {
+                                  void applyShowHiddenFilesToAllTabs(
+                                    attrs.client,
+                                    draft.showHiddenFiles,
+                                  );
+                                }
+                              },
+                              onCancel: () => {
+                                if (currentSettings !== undefined) applyAppearance(currentSettings);
+                                closeSettingsDialog();
+                              },
+                              onTogglePlugin: (pluginId: PluginId, enabled: boolean) =>
+                                attrs.client.setPluginEnabled(pluginId, enabled),
+                              onRequestPluginLogs: (
+                                pluginId: PluginId,
+                              ): Promise<readonly PluginLogEntry[]> =>
+                                attrs.client.getPluginLogs(pluginId),
+                            })
                           : undefined,
                     ]),
                   ],
@@ -1715,26 +1722,26 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
             workspace === undefined
               ? m('.fm-workspace-loading', workspaceError ?? 'Loading workspace…')
               : m(WorkspaceLayoutView, {
-                workspace,
-                paneContent: (paneId) =>
-                  paneContentBuilder(
-                    attrs.client,
-                    attrs.entryFormatSettings ?? loadedEntryFormatSettings,
-                    paneId,
-                  ),
-                onActivatePane: (paneId) => activatePane(attrs.client, paneId),
-                onUpdateLayout: (layout) => updateLayout(attrs.client, layout),
-                onSelectTab: (paneId, tabId) => tabController.activateTab(paneId, tabId),
-                onCloseTab: (paneId, tabId) => tabController.requestCloseTab(paneId, tabId),
-                onNewTab: (paneId) => tabController.openTab(paneId),
-                registerFlush: (flush) => {
-                  flushPendingLayoutUpdate = flush;
-                },
-                registerFocusPane: (focus) => {
-                  focusPane = focus;
-                },
-                searchQueryForLocationUri: (uri) => findFilesQueriesByLocationUri.get(uri),
-              }),
+                  workspace,
+                  paneContent: (paneId) =>
+                    paneContentBuilder(
+                      attrs.client,
+                      attrs.entryFormatSettings ?? loadedEntryFormatSettings,
+                      paneId,
+                    ),
+                  onActivatePane: (paneId) => activatePane(attrs.client, paneId),
+                  onUpdateLayout: (layout) => updateLayout(attrs.client, layout),
+                  onSelectTab: (paneId, tabId) => tabController.activateTab(paneId, tabId),
+                  onCloseTab: (paneId, tabId) => tabController.requestCloseTab(paneId, tabId),
+                  onNewTab: (paneId) => tabController.openTab(paneId),
+                  registerFlush: (flush) => {
+                    flushPendingLayoutUpdate = flush;
+                  },
+                  registerFocusPane: (focus) => {
+                    focusPane = focus;
+                  },
+                  searchQueryForLocationUri: (uri) => findFilesQueriesByLocationUri.get(uri),
+                }),
           ]),
           clipboardMessage === undefined
             ? undefined
@@ -1758,12 +1765,12 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
               contextMenu === undefined
                 ? []
                 : menuActionsForContext(
-                  registeredActions,
-                  actionCommandController.commandAvailabilityContext(
-                    contextMenu.entries,
-                    contextMenu.paneId,
+                    registeredActions,
+                    actionCommandController.commandAvailabilityContext(
+                      contextMenu.entries,
+                      contextMenu.paneId,
+                    ),
                   ),
-                ),
             onClose: () => {
               contextMenu = undefined;
             },
@@ -1784,12 +1791,12 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
                 evaluateActionAvailability(
                   action.id === 'core.edit' || action.id === 'core.view'
                     ? {
-                      ...action,
-                      contextRequirements: {
-                        ...action.contextRequirements,
-                        featureAvailable: true,
-                      },
-                    }
+                        ...action,
+                        contextRequirements: {
+                          ...action.contextRequirements,
+                          featureAvailable: true,
+                        },
+                      }
                     : action,
                   actionCommandController.commandAvailabilityContext(),
                 ).available,

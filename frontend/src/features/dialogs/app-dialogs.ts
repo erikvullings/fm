@@ -1,37 +1,4 @@
 import m from 'mithril';
-import { OperationCentre } from '../operations/operation-centre';
-import {
-  dismissOperation,
-  transitionOperationState,
-  type OperationCentreState,
-} from '../operations/operation-state';
-import { CreateDirectoryDialog } from '../operations/create-directory-dialog';
-import { ArchiveCreateDialog, type ArchiveFormat } from '../operations/archive-create-dialog';
-import { MultiRenameDialog } from '../operations/multi-rename-dialog';
-import { ArchivePasswordDialog } from '../navigation/archive-password-dialog';
-import { ConnectionsManager } from '../connections/connection-editor';
-import {
-  loadConnections,
-  saveConnection,
-  upsertConnection,
-  withoutConnection,
-  connectConnection as connectConnectionRequest,
-  disconnectConnection as disconnectConnectionRequest,
-  testConnection as testConnectionRequest,
-  deleteConnection as deleteConnectionRequest,
-  probeSshHostKey as probeSshHostKeyRequest,
-  acceptSshHostKey as acceptSshHostKeyRequest,
-} from '../connections/connections-model';
-import type { FindFilesSearchParams } from '../search/find-files-dialog';
-import { FindFilesDialog } from '../search/find-files-dialog';
-import { pathFromUri } from '../workspace/workspace-layout';
-import { PermanentDeleteDialog } from '../operations/permanent-delete-dialog';
-import { ConflictDialog } from '../operations/conflict-dialog';
-import { CloseLastTabDialog } from '../panes/close-last-tab-dialog';
-import type { DialogUIController } from '../dialogs/dialog-ui-controller';
-import type { FindFilesController } from '../search/find-files-controller';
-import type { TabController } from '../panes/tab-controller';
-import type { OperationsController } from '../operations/operations-controller';
 import type { FileManagerClient } from '../../api/client/file-manager-client';
 import type {
   Connection,
@@ -41,6 +8,39 @@ import type {
   PaneId,
   TabId,
 } from '../../models';
+import { ConnectionsManager } from '../connections/connection-editor';
+import {
+  acceptSshHostKey as acceptSshHostKeyRequest,
+  connectConnection as connectConnectionRequest,
+  deleteConnection as deleteConnectionRequest,
+  disconnectConnection as disconnectConnectionRequest,
+  loadConnections,
+  probeSshHostKey as probeSshHostKeyRequest,
+  saveConnection,
+  testConnection as testConnectionRequest,
+  upsertConnection,
+  withoutConnection,
+} from '../connections/connections-model';
+import type { DialogUIController } from '../dialogs/dialog-ui-controller';
+import { ArchivePasswordDialog } from '../navigation/archive-password-dialog';
+import { ArchiveCreateDialog, type ArchiveFormat } from '../operations/archive-create-dialog';
+import { ConflictDialog } from '../operations/conflict-dialog';
+import { CreateDirectoryDialog } from '../operations/create-directory-dialog';
+import { MultiRenameDialog } from '../operations/multi-rename-dialog';
+import { OperationCentre } from '../operations/operation-centre';
+import {
+  dismissOperation,
+  type OperationCentreState,
+  transitionOperationState,
+} from '../operations/operation-state';
+import type { OperationsController } from '../operations/operations-controller';
+import { PermanentDeleteDialog } from '../operations/permanent-delete-dialog';
+import { CloseLastTabDialog } from '../panes/close-last-tab-dialog';
+import type { TabController } from '../panes/tab-controller';
+import type { FindFilesController } from '../search/find-files-controller';
+import type { FindFilesSearchParams } from '../search/find-files-dialog';
+import { FindFilesDialog } from '../search/find-files-dialog';
+import { pathFromUri } from '../workspace/workspace-layout';
 
 export interface AppDialogsContext {
   getOperations(): OperationCentreState;
@@ -101,7 +101,10 @@ export function renderAppDialogs(
       onCancel: () => dialogs.cancelCreateDirectory(),
       onConfirm: (name: string) =>
         dialogs.confirmCreateDirectory(name, ctx.getActiveDirectoryLocation(), (loc, n) =>
-          ctx.getOpsController().createDirectory(loc, n).then(() => undefined),
+          ctx
+            .getOpsController()
+            .createDirectory(loc, n)
+            .then(() => undefined),
         ),
     }),
     m(ArchiveCreateDialog, {
@@ -194,7 +197,8 @@ export function renderAppDialogs(
       },
       onSave: async (draft, editingId) => {
         const result = await saveConnection(client, draft, editingId);
-        if (result.ok) ctx.setConnections(upsertConnection(ctx.getConnections(), result.connection));
+        if (result.ok)
+          ctx.setConnections(upsertConnection(ctx.getConnections(), result.connection));
         return result;
       },
       onDelete: async (id) => {
