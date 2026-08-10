@@ -130,11 +130,11 @@ the workspace-service tasks; see Step 2b above).
 
 ## Cross-cutting quality
 
-- [ ] 0064 Browser/server mode security hardening (§22)
-- [ ] 0065 Performance fixtures and benchmarks (§28)
-- [ ] 0066 Accessibility review (§29)
-- [ ] 0073 Diagnostics view and structured logging (§30)
-- [ ] 0074 README, development commands and roadmap (§38)
+- [x] 0064 Browser/server mode security hardening (§22)
+- [x] 0065 Performance fixtures and benchmarks (§28)
+- [x] 0066 Accessibility review (§29)
+- [x] 0073 Diagnostics view and structured logging (§30)
+- [x] 0074 README, development commands and roadmap (§38)
 - [x] 0085 Directory entry icons (themeable, with optional native-icon overlay)
 - [x] 0086 F4 edit-in-external-editor action
 - [x] 0087 F3 view action
