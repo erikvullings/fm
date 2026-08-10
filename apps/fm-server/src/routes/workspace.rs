@@ -10,7 +10,9 @@ use fm_transport_dto::{
     WorkspaceSummaryDto,
 };
 use serde::Deserialize;
+use std::time::Instant;
 use tower_http::request_id::RequestId;
+use tracing::{info, warn};
 use utoipa::IntoParams;
 use uuid::Uuid;
 
@@ -183,12 +185,36 @@ pub(crate) async fn apply_workspace_command(
         ));
     }
 
-    let workspace = state
-        .service
-        .apply_workspace_command(command)
-        .await
-        .map_err(|error| ApiError::new(error, request_id))?;
-    Ok(Json(workspace))
+    let started = Instant::now();
+    let command_kind = workspace_command_kind(&command);
+    info!(
+        request_id = %request_id,
+        workspace_id = %workspace_id,
+        command = command_kind,
+        "apply_workspace_command received"
+    );
+    match state.service.apply_workspace_command(command).await {
+        Ok(workspace) => {
+            info!(
+                request_id = %request_id,
+                workspace_id = %workspace_id,
+                elapsed_ms = started.elapsed().as_millis(),
+                "apply_workspace_command honored"
+            );
+            Ok(Json(workspace))
+        }
+        Err(error) => {
+            warn!(
+                request_id = %request_id,
+                workspace_id = %workspace_id,
+                elapsed_ms = started.elapsed().as_millis(),
+                command = command_kind,
+                error = ?error,
+                "apply_workspace_command failed"
+            );
+            Err(ApiError::new(error, request_id))
+        }
+    }
 }
 
 /// Extracts the target workspace id carried by every [`WorkspaceCommandDto`]
@@ -203,5 +229,18 @@ fn command_workspace_id(command: &WorkspaceCommandDto) -> Uuid {
         | WorkspaceCommandDto::NavigateTab { workspace_id, .. }
         | WorkspaceCommandDto::UpdateView { workspace_id, .. }
         | WorkspaceCommandDto::UpdateLayout { workspace_id, .. } => *workspace_id,
+    }
+}
+
+fn workspace_command_kind(command: &WorkspaceCommandDto) -> &'static str {
+    match command {
+        WorkspaceCommandDto::RenameWorkspace { .. } => "renameWorkspace",
+        WorkspaceCommandDto::SetActivePane { .. } => "setActivePane",
+        WorkspaceCommandDto::AddTab { .. } => "addTab",
+        WorkspaceCommandDto::CloseTab { .. } => "closeTab",
+        WorkspaceCommandDto::ActivateTab { .. } => "activateTab",
+        WorkspaceCommandDto::NavigateTab { .. } => "navigateTab",
+        WorkspaceCommandDto::UpdateView { .. } => "updateView",
+        WorkspaceCommandDto::UpdateLayout { .. } => "updateLayout",
     }
 }

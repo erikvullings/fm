@@ -6,7 +6,9 @@ use fm_transport_dto::{
     ApplicationErrorDto, DirectorySnapshotDto, EntryMetadataDto, EntryMetadataRequest,
     ListDirectoryRequest, NavigateRequest,
 };
+use std::time::Instant;
 use tower_http::request_id::RequestId;
+use tracing::{info, warn};
 
 use crate::error::{ApiError, extract_request_id};
 use crate::state::AppState;
@@ -30,13 +32,34 @@ pub(crate) async fn list_directory(
     Json(request): Json<ListDirectoryRequest>,
 ) -> Result<Json<DirectorySnapshotDto>, ApiError> {
     let request_id = extract_request_id(&request_id);
-    state
-        .service
-        .list_directory(request)
-        .await
-        .map(DirectorySnapshotDto::from)
-        .map(Json)
-        .map_err(|error| ApiError::new(error, request_id))
+    let started = Instant::now();
+    info!(
+        request_id = %request_id,
+        workspace_id = %request.workspace_id,
+        pane_id = %request.pane_id,
+        provider_id = %request.location.provider_id,
+        uri = %request.location.uri,
+        "list_directory received"
+    );
+    match state.service.list_directory(request).await {
+        Ok(snapshot) => {
+            info!(
+                request_id = %request_id,
+                elapsed_ms = started.elapsed().as_millis(),
+                "list_directory honored"
+            );
+            Ok(Json(DirectorySnapshotDto::from(snapshot)))
+        }
+        Err(error) => {
+            warn!(
+                request_id = %request_id,
+                elapsed_ms = started.elapsed().as_millis(),
+                error = ?error,
+                "list_directory failed"
+            );
+            Err(ApiError::new(error, request_id))
+        }
+    }
 }
 
 /// Refreshes one directory page.
@@ -58,13 +81,34 @@ pub(crate) async fn refresh_directory(
     Json(request): Json<ListDirectoryRequest>,
 ) -> Result<Json<DirectorySnapshotDto>, ApiError> {
     let request_id = extract_request_id(&request_id);
-    state
-        .service
-        .refresh_directory(request)
-        .await
-        .map(DirectorySnapshotDto::from)
-        .map(Json)
-        .map_err(|error| ApiError::new(error, request_id))
+    let started = Instant::now();
+    info!(
+        request_id = %request_id,
+        workspace_id = %request.workspace_id,
+        pane_id = %request.pane_id,
+        provider_id = %request.location.provider_id,
+        uri = %request.location.uri,
+        "refresh_directory received"
+    );
+    match state.service.refresh_directory(request).await {
+        Ok(snapshot) => {
+            info!(
+                request_id = %request_id,
+                elapsed_ms = started.elapsed().as_millis(),
+                "refresh_directory honored"
+            );
+            Ok(Json(DirectorySnapshotDto::from(snapshot)))
+        }
+        Err(error) => {
+            warn!(
+                request_id = %request_id,
+                elapsed_ms = started.elapsed().as_millis(),
+                error = ?error,
+                "refresh_directory failed"
+            );
+            Err(ApiError::new(error, request_id))
+        }
+    }
 }
 
 /// Navigates a pane and returns the destination's first page.
@@ -86,13 +130,34 @@ pub(crate) async fn navigate_pane(
     Json(request): Json<NavigateRequest>,
 ) -> Result<Json<DirectorySnapshotDto>, ApiError> {
     let request_id = extract_request_id(&request_id);
-    state
-        .service
-        .navigate_pane(request)
-        .await
-        .map(DirectorySnapshotDto::from)
-        .map(Json)
-        .map_err(|error| ApiError::new(error, request_id))
+    let started = Instant::now();
+    info!(
+        request_id = %request_id,
+        workspace_id = %request.workspace_id,
+        pane_id = %request.pane_id,
+        provider_id = %request.location.provider_id,
+        uri = %request.location.uri,
+        "navigate_pane received"
+    );
+    match state.service.navigate_pane(request).await {
+        Ok(snapshot) => {
+            info!(
+                request_id = %request_id,
+                elapsed_ms = started.elapsed().as_millis(),
+                "navigate_pane honored"
+            );
+            Ok(Json(DirectorySnapshotDto::from(snapshot)))
+        }
+        Err(error) => {
+            warn!(
+                request_id = %request_id,
+                elapsed_ms = started.elapsed().as_millis(),
+                error = ?error,
+                "navigate_pane failed"
+            );
+            Err(ApiError::new(error, request_id))
+        }
+    }
 }
 
 /// Fetches detailed metadata for one entry.

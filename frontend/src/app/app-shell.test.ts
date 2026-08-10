@@ -1169,6 +1169,36 @@ describe('AppShell', () => {
     await vi.waitFor(() => expect(listDirectory.mock.calls.length).toBeGreaterThan(initialCalls));
   });
 
+  it('falls back to a full refetch when receiving a malformed entriesRemoved delta payload', async () => {
+    const client = new MockFileManagerClient();
+    const listDirectory = vi.spyOn(client, 'listDirectory');
+    m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
+    await vi.waitFor(() => expect(root.textContent).toContain('Documents'));
+    const summary = (await client.listWorkspaces())[0];
+    if (summary === undefined) throw new Error('mock workspace fixture missing');
+    const projection = await client.openWorkspace(summary.id);
+    const paneId = projection.paneOrder[0];
+    if (paneId === undefined) throw new Error('mock workspace pane missing');
+    const before = listDirectory.mock.calls.length;
+
+    client.emit({
+      eventId: 13,
+      timestamp: '2026-07-31T12:00:00Z',
+      payload: {
+        type: 'directory.delta',
+        paneId,
+        delta: {
+          type: 'entriesRemoved',
+          revision: 99,
+          // Simulate malformed payload from a bad producer/version skew.
+          entryIds: undefined,
+        } as unknown as import('../models').DirectoryDelta,
+      },
+    });
+
+    await vi.waitFor(() => expect(listDirectory.mock.calls.length).toBeGreaterThan(before));
+  });
+
   it('refreshes pane snapshots when a mutating operation reaches failed state', async () => {
     const client = new MockFileManagerClient();
     const listDirectory = vi.spyOn(client, 'listDirectory');
@@ -1201,6 +1231,58 @@ describe('AppShell', () => {
       },
     });
 
+    await vi.waitFor(() => expect(listDirectory.mock.calls.length).toBeGreaterThan(before));
+  });
+
+  it('switches to the other pane on Tab', async () => {
+    const client = new MockFileManagerClient();
+    const dispatchWorkspaceCommand = vi.spyOn(client, 'dispatchWorkspaceCommand');
+    m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
+    await vi.waitFor(() => expect(root.textContent).toContain('Documents'));
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }));
+
+    await vi.waitFor(() =>
+      expect(dispatchWorkspaceCommand).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'setActivePane' }),
+        undefined,
+      ),
+    );
+  });
+
+  it('refetches panes after confirming a conflict resolution', async () => {
+    const client = new MockFileManagerClient();
+    const listDirectory = vi.spyOn(client, 'listDirectory');
+    const resolveConflict = vi.spyOn(client, 'resolveConflict').mockResolvedValue();
+    m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
+    await vi.waitFor(() => expect(root.textContent).toContain('Documents'));
+    const before = listDirectory.mock.calls.length;
+
+    client.emit({
+      eventId: 13,
+      timestamp: '2026-08-10T12:00:00.000Z',
+      payload: {
+        type: 'operation.conflict',
+        operationId: 'delete-conflict-op',
+        conflictId: 'delete-conflict-1',
+        message: 'Target already exists',
+        source: { name: 'old-folder', kind: 'directory' },
+        destination: { name: 'old-folder', kind: 'directory' },
+      },
+    });
+    await vi.waitFor(() => expect(root.textContent).toContain('Resolve conflict'));
+
+    [...root.querySelectorAll<HTMLButtonElement>('.fm-conflict-dialog button')]
+      .find((button) => button.textContent === 'Overwrite')
+      ?.click();
+
+    await vi.waitFor(() =>
+      expect(resolveConflict).toHaveBeenCalledWith({
+        operationId: 'delete-conflict-op',
+        resolution: 'overwrite',
+        applyToAllSimilar: false,
+      }),
+    );
     await vi.waitFor(() => expect(listDirectory.mock.calls.length).toBeGreaterThan(before));
   });
 

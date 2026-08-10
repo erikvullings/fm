@@ -15,7 +15,9 @@ use fm_transport_dto::{
     StartOperationRequestDto,
 };
 use serde::Deserialize;
+use std::time::Instant;
 use tower_http::request_id::RequestId;
+use tracing::{info, warn};
 use uuid::Uuid;
 
 #[utoipa::path(
@@ -63,15 +65,40 @@ pub(crate) async fn start_operation(
     Json(request): Json<StartOperationRequestDto>,
 ) -> Result<(StatusCode, Json<OperationDto>), ApiError> {
     let correlation_id = extract_request_id(&request_id);
+    let started = Instant::now();
+    let operation_kind = request.operation_type.clone();
     let key = headers
         .get("idempotency-key")
         .and_then(|value| value.to_str().ok())
         .map(str::to_owned);
-    state
-        .service
-        .start_operation(request, key)
-        .map(|operation| (StatusCode::CREATED, Json(operation)))
-        .map_err(|error| ApiError::new(error, correlation_id))
+    info!(
+        request_id = %correlation_id,
+        operation_kind = ?operation_kind,
+        has_idempotency_key = key.is_some(),
+        "start_operation received"
+    );
+    match state.service.start_operation(request, key) {
+        Ok(operation) => {
+            info!(
+                request_id = %correlation_id,
+                operation_id = %operation.id,
+                operation_kind = ?operation_kind,
+                elapsed_ms = started.elapsed().as_millis(),
+                "start_operation honored"
+            );
+            Ok((StatusCode::CREATED, Json(operation)))
+        }
+        Err(error) => {
+            warn!(
+                request_id = %correlation_id,
+                operation_kind = ?operation_kind,
+                elapsed_ms = started.elapsed().as_millis(),
+                error = ?error,
+                "start_operation failed"
+            );
+            Err(ApiError::new(error, correlation_id))
+        }
+    }
 }
 
 #[utoipa::path(
@@ -112,11 +139,31 @@ pub(crate) async fn cancel_operation(
     Extension(request_id): Extension<RequestId>,
     Path(id): Path<Uuid>,
 ) -> Result<StatusCode, ApiError> {
-    state
-        .service
-        .cancel_operation(OperationId::from(id))
-        .map(|()| StatusCode::NO_CONTENT)
-        .map_err(|error| ApiError::new(error, extract_request_id(&request_id)))
+    let correlation_id = extract_request_id(&request_id);
+    let started = Instant::now();
+    let operation_id = OperationId::from(id);
+    info!(request_id = %correlation_id, operation_id = %operation_id, "cancel_operation received");
+    match state.service.cancel_operation(operation_id) {
+        Ok(()) => {
+            info!(
+                request_id = %correlation_id,
+                operation_id = %operation_id,
+                elapsed_ms = started.elapsed().as_millis(),
+                "cancel_operation honored"
+            );
+            Ok(StatusCode::NO_CONTENT)
+        }
+        Err(error) => {
+            warn!(
+                request_id = %correlation_id,
+                operation_id = %operation_id,
+                elapsed_ms = started.elapsed().as_millis(),
+                error = ?error,
+                "cancel_operation failed"
+            );
+            Err(ApiError::new(error, correlation_id))
+        }
+    }
 }
 
 #[utoipa::path(
@@ -135,11 +182,31 @@ pub(crate) async fn pause_operation(
     Extension(request_id): Extension<RequestId>,
     Path(id): Path<Uuid>,
 ) -> Result<StatusCode, ApiError> {
-    state
-        .service
-        .pause_operation(OperationId::from(id))
-        .map(|()| StatusCode::NO_CONTENT)
-        .map_err(|error| ApiError::new(error, extract_request_id(&request_id)))
+    let correlation_id = extract_request_id(&request_id);
+    let started = Instant::now();
+    let operation_id = OperationId::from(id);
+    info!(request_id = %correlation_id, operation_id = %operation_id, "pause_operation received");
+    match state.service.pause_operation(operation_id) {
+        Ok(()) => {
+            info!(
+                request_id = %correlation_id,
+                operation_id = %operation_id,
+                elapsed_ms = started.elapsed().as_millis(),
+                "pause_operation honored"
+            );
+            Ok(StatusCode::NO_CONTENT)
+        }
+        Err(error) => {
+            warn!(
+                request_id = %correlation_id,
+                operation_id = %operation_id,
+                elapsed_ms = started.elapsed().as_millis(),
+                error = ?error,
+                "pause_operation failed"
+            );
+            Err(ApiError::new(error, correlation_id))
+        }
+    }
 }
 
 #[utoipa::path(
@@ -158,11 +225,31 @@ pub(crate) async fn resume_operation(
     Extension(request_id): Extension<RequestId>,
     Path(id): Path<Uuid>,
 ) -> Result<StatusCode, ApiError> {
-    state
-        .service
-        .resume_operation(OperationId::from(id))
-        .map(|()| StatusCode::NO_CONTENT)
-        .map_err(|error| ApiError::new(error, extract_request_id(&request_id)))
+    let correlation_id = extract_request_id(&request_id);
+    let started = Instant::now();
+    let operation_id = OperationId::from(id);
+    info!(request_id = %correlation_id, operation_id = %operation_id, "resume_operation received");
+    match state.service.resume_operation(operation_id) {
+        Ok(()) => {
+            info!(
+                request_id = %correlation_id,
+                operation_id = %operation_id,
+                elapsed_ms = started.elapsed().as_millis(),
+                "resume_operation honored"
+            );
+            Ok(StatusCode::NO_CONTENT)
+        }
+        Err(error) => {
+            warn!(
+                request_id = %correlation_id,
+                operation_id = %operation_id,
+                elapsed_ms = started.elapsed().as_millis(),
+                error = ?error,
+                "resume_operation failed"
+            );
+            Err(ApiError::new(error, correlation_id))
+        }
+    }
 }
 
 #[utoipa::path(
@@ -183,9 +270,38 @@ pub(crate) async fn resolve_operation_conflict(
     Path(id): Path<Uuid>,
     Json(request): Json<ResolveOperationConflictRequestDto>,
 ) -> Result<StatusCode, ApiError> {
-    state
+    let correlation_id = extract_request_id(&request_id);
+    let started = Instant::now();
+    let operation_id = OperationId::from(id);
+    info!(
+        request_id = %correlation_id,
+        operation_id = %operation_id,
+        resolution = ?request.resolution,
+        apply_to_all = request.apply_to_all_similar,
+        "resolve_operation_conflict received"
+    );
+    match state
         .service
-        .resolve_operation_conflict(OperationId::from(id), request)
-        .map(|()| StatusCode::NO_CONTENT)
-        .map_err(|e| ApiError::new(e, extract_request_id(&request_id)))
+        .resolve_operation_conflict(operation_id, request)
+    {
+        Ok(()) => {
+            info!(
+                request_id = %correlation_id,
+                operation_id = %operation_id,
+                elapsed_ms = started.elapsed().as_millis(),
+                "resolve_operation_conflict honored"
+            );
+            Ok(StatusCode::NO_CONTENT)
+        }
+        Err(error) => {
+            warn!(
+                request_id = %correlation_id,
+                operation_id = %operation_id,
+                elapsed_ms = started.elapsed().as_millis(),
+                error = ?error,
+                "resolve_operation_conflict failed"
+            );
+            Err(ApiError::new(error, correlation_id))
+        }
+    }
 }

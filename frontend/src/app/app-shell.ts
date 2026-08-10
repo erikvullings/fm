@@ -1849,6 +1849,19 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       openTab(attrsClient, active.paneId);
       return;
     }
+    if (dispatchedAction === 'core.switchPane') {
+      if (workspace === undefined) return;
+      event.preventDefault();
+      const paneOrder = workspace.paneOrder;
+      if (paneOrder.length < 2) return;
+      const currentIndex = paneOrder.indexOf(workspace.activePaneId);
+      if (currentIndex < 0) return;
+      const direction = event.shiftKey ? -1 : 1;
+      const nextIndex = (currentIndex + direction + paneOrder.length) % paneOrder.length;
+      const nextPaneId = paneOrder[nextIndex];
+      if (nextPaneId !== undefined) activatePane(attrsClient, nextPaneId);
+      return;
+    }
     if (dispatchedAction === 'core.closeTab') {
       if (workspace === undefined) return;
       const paneId = workspace.activePaneId;
@@ -3414,11 +3427,16 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
             },
             onConfirm: () => {
               if (pendingDelete !== undefined) {
-                void attrs.client.resolveConflict({
-                  operationId: pendingDelete.id,
-                  resolution: 'confirm',
-                  applyToAllSimilar: false,
-                });
+                void attrs.client
+                  .resolveConflict({
+                    operationId: pendingDelete.id,
+                    resolution: 'confirm',
+                    applyToAllSimilar: false,
+                  })
+                  .then(() => {
+                    refetchAffectedPanes();
+                    m.redraw();
+                  });
               }
             },
           }),
@@ -3436,6 +3454,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
                 .then(() => {
                   if (pendingConflict?.conflictId === conflict.conflictId) {
                     pendingConflict = undefined;
+                    refetchAffectedPanes();
                     m.redraw();
                   }
                 });

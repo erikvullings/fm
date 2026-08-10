@@ -103,6 +103,11 @@ function applicationErrorCode(error: unknown): string | undefined {
   return typeof code === 'string' ? code : undefined;
 }
 
+function isRetryableNavigationError(error: unknown): boolean {
+  const code = applicationErrorCode(error);
+  return code === 'platformOperationFailed' || code === 'providerUnavailable';
+}
+
 function activeTab(workspace: WorkspaceProjection, paneId: PaneId) {
   const pane = workspace.panesById[paneId];
   return pane?.tabsById[pane.activeTabId];
@@ -185,7 +190,7 @@ export function createNavigationController(
     location: Location,
     operation: () => Promise<T>,
   ): Promise<T> {
-    for (;;) {
+    for (; ;) {
       try {
         return await operation();
       } catch (error: unknown) {
@@ -382,6 +387,30 @@ export function createNavigationController(
       expectedRevision: workspace.revision,
       ...(location === undefined ? {} : { location }),
     };
+    const navigatePane = async (
+      currentWorkspaceId: string,
+      currentPaneId: PaneId,
+      currentRequestId: string,
+      currentLocation: Location,
+      currentTab: TabProjection,
+      currentSignal: AbortSignal,
+    ): Promise<DirectorySnapshot> => {
+      const payload = {
+        workspaceId: currentWorkspaceId,
+        paneId: currentPaneId,
+        requestId: currentRequestId,
+        location: currentLocation,
+        ...viewOptionsFor(currentTab),
+      };
+      try {
+        return await options.client.navigatePane(payload, currentSignal);
+      } catch (error: unknown) {
+        if (currentSignal.aborted || !isRetryableNavigationError(error)) {
+          throw error;
+        }
+        return options.client.navigatePane(payload, currentSignal);
+      }
+    };
     try {
       // Explicit destinations can be validated without mutating workspace history. This keeps a
       // failed archive open (for example an unsupported RAR-backed CBR) from replacing the tab's
@@ -390,17 +419,15 @@ export function createNavigationController(
         location === undefined
           ? undefined
           : await withArchiveCredential(location, () =>
-              options.client.navigatePane(
-                {
-                  workspaceId: workspace.id,
-                  paneId,
-                  requestId: request.id,
-                  location,
-                  ...viewOptionsFor(tab),
-                },
-                request.controller.signal,
-              ),
-            );
+            navigatePane(
+              workspace.id,
+              paneId,
+              request.id,
+              location,
+              tab,
+              request.controller.signal,
+            ),
+          );
       if (!isCurrent(paneId, tab.id, request)) {
         return;
       }
@@ -425,14 +452,12 @@ export function createNavigationController(
       const snapshot =
         pendingSnapshot ??
         (await withArchiveCredential(updatedTab.location, () =>
-          options.client.navigatePane(
-            {
-              workspaceId: updated.id,
-              paneId,
-              requestId: request.id,
-              location: updatedTab.location,
-              ...viewOptionsFor(updatedTab),
-            },
+          navigatePane(
+            updated.id,
+            paneId,
+            request.id,
+            updatedTab.location,
+            updatedTab,
             request.controller.signal,
           ),
         ));
@@ -527,7 +552,7 @@ export function createNavigationController(
     if (tabId === undefined) {
       return;
     }
-    for (;;) {
+    for (; ;) {
       // Stop (without switching targets) once the tab this was started for is no longer
       // active, e.g. the user switched tabs while pages were still loading in the background.
       const stillActive = options.getWorkspace();

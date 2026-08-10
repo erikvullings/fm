@@ -478,6 +478,34 @@ describe('navigation controller', () => {
     });
   });
 
+  it('retries navigatePane once after a transient platform failure', async () => {
+    const context = setup();
+    const nextLocation = { providerId: 'local', uri: 'file:///home/erik/Documents' } as const;
+    vi.mocked(context.client.navigatePane)
+      .mockRejectedValueOnce(
+        new ApiError(502, {
+          code: 'platformOperationFailed',
+          message: 'transient provider error',
+        }),
+      )
+      .mockImplementationOnce(async (request) => snapshot(request.requestId, nextLocation.uri, []));
+    vi.mocked(context.client.dispatchWorkspaceCommand).mockResolvedValue(
+      workspace(nextLocation.uri, nextLocation.providerId),
+    );
+    const controller = createNavigationController({
+      client: context.client,
+      getWorkspace: context.getWorkspace,
+      replaceWorkspace: context.replaceWorkspace,
+      updatePane: (_paneId, _tabId, view) => context.views.push(view),
+    });
+
+    await controller.navigate('left', nextLocation);
+
+    expect(context.client.navigatePane).toHaveBeenCalledTimes(2);
+    expect(context.client.dispatchWorkspaceCommand).toHaveBeenCalledOnce();
+    expect(context.views.at(-1)?.state).toEqual({ type: 'loaded' });
+  });
+
   it('resyncs the local workspace revision on a conflict instead of leaving it stale forever', async () => {
     const context = setup();
     const staleWorkspace = context.getWorkspace();
