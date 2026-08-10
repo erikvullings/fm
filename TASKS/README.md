@@ -210,3 +210,9 @@ are the highest-impact changes.
 - [ ] 0115 Migrate AppShell Closure State to Meiosis Store *(gradual, slice-by-slice)*
 - [x] 0116 Centralize Selections-to-Locations Translation
 - [ ] 0117 Deepen Connections Model with Full Lifecycle
+
+## Backlog
+
+Features not yet implemented.
+
+- [ ] 0118 Integrate parallel-disk-usage with WinDirStat Treemap View
