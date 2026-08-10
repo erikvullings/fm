@@ -1,6 +1,6 @@
 # 0116 Centralize Selections-to-Locations Translation
 
-Status: open
+Status: done
 Priority: medium
 Subsystem: frontend
 Depends on: none
@@ -23,4 +23,4 @@ The translation from `SelectionState` → array of location URIs (needed for cop
 - Reference: architecture review — deepening opportunity #5
 
 ## Agent Notes
--
+- 2026-08-10 Erik/Vullings: Added `getSelectedEntries(selection, entries)` and `getSelectedEntryLocations(selection, entries)` to `selection.ts`. Both are pure functions that filter directory entries by selection state using a Set for O(1) lookup. Replaced all 11 occurrences of inline `selection?.selectedEntryIds.includes(entry.id)` filtering in AppShell (~11 call sites across clipboard, commands, copy, move, pack, moveToArchive, trash, delete, view, edit). Also replaced 1 occurrence of `context.selectedEntryIds.includes` with a `Set`-based filter. Added 10 new tests covering undefined selection, empty selection, single selection, discontinuous multi-selection, no-overlap, empty entries, order preservation, and location equivalence. AppShell shrank by ~45 lines net. All 20 selection tests pass. No new type errors. No new test failures introduced (4 pre-existing failures in theme/runtests/body/content-search/unrelated files).

@@ -208,5 +208,5 @@ are the highest-impact changes.
 - [ ] 0113 Extract EventHandler Registry from AppShell
 - [ ] 0114 Decompose Pane Component *(1,324 lines → sub-modules)*
 - [ ] 0115 Migrate AppShell Closure State to Meiosis Store *(gradual, slice-by-slice)*
-- [ ] 0116 Centralize Selections-to-Locations Translation *(quick win)*
+- [x] 0116 Centralize Selections-to-Locations Translation
 - [ ] 0117 Deepen Connections Model with Full Lifecycle

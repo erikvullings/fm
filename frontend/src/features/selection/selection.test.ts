@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
-import type { EntryId } from '../../models';
-import { emptySelection, reduceSelection, type SelectionState } from './selection';
+import type { EntryId, EntrySummary, Location } from '../../models';
+import {
+  emptySelection,
+  getSelectedEntries,
+  getSelectedEntryLocations,
+  reduceSelection,
+  type SelectionState,
+} from './selection';
 
 const ids = (...values: string[]): readonly EntryId[] => values;
 
@@ -153,5 +159,91 @@ describe('selection reducer', () => {
       cursorEntryId: 'visible',
       anchorEntryId: 'visible',
     });
+  });
+});
+
+function makeEntries(
+  ...specs: { id: string; locationUri?: string }[]
+): EntrySummary[] {
+  return specs.map((s) => ({
+    id: s.id as EntryId,
+    location: s.locationUri
+      ? { providerId: 'local' as never, uri: s.locationUri }
+      : ({ providerId: 'local' as never, uri: `/entries/${s.id}` } as Location),
+    name: s.id,
+    kind: 'file',
+    hidden: false,
+    readOnly: false,
+    metadataRevision: 0,
+  }));
+}
+
+describe('getSelectedEntries', () => {
+  it('returns empty array when selection is undefined', () => {
+    const entries = makeEntries({ id: 'a' }, { id: 'b' });
+    expect(getSelectedEntries(undefined, entries)).toEqual([]);
+  });
+
+  it('returns empty array when selection has no items', () => {
+    expect(getSelectedEntries(emptySelection, makeEntries({ id: 'a' }))).toEqual([]);
+  });
+
+  it('returns matching entries for single selection', () => {
+    const selection: SelectionState = { selectedEntryIds: ['b'] };
+    const entries = makeEntries({ id: 'a' }, { id: 'b' }, { id: 'c' });
+    expect(getSelectedEntries(selection, entries)).toEqual([entries[1]]);
+  });
+
+  it('returns matching entries for discontinuous multi-selection', () => {
+    const selection: SelectionState = { selectedEntryIds: ['a', 'c'] };
+    const entries = makeEntries({ id: 'a' }, { id: 'b' }, { id: 'c' });
+    expect(getSelectedEntries(selection, entries)).toEqual([entries[0], entries[2]]);
+  });
+
+  it('returns empty array when selected ids have no overlap with entries', () => {
+    const selection: SelectionState = { selectedEntryIds: ['x', 'y'] };
+    const entries = makeEntries({ id: 'a' }, { id: 'b' });
+    expect(getSelectedEntries(selection, entries)).toEqual([]);
+  });
+
+  it('returns empty array when entries list is empty', () => {
+    const selection: SelectionState = { selectedEntryIds: ['a'] };
+    expect(getSelectedEntries(selection, [])).toEqual([]);
+  });
+
+  it('preserves entry order from the directory listing, not selection order', () => {
+    const selection: SelectionState = { selectedEntryIds: ['c', 'a'] };
+    const entries = makeEntries({ id: 'a' }, { id: 'b' }, { id: 'c' });
+    // Selection says ['c','a'] but directory order is ['a','b','c'], so result is ['a','c']
+    expect(getSelectedEntries(selection, entries)).toEqual([entries[0], entries[2]]);
+  });
+});
+
+describe('getSelectedEntryLocations', () => {
+  it('returns empty array when selection is undefined', () => {
+    const entries = makeEntries({ id: 'a' });
+    expect(getSelectedEntryLocations(undefined, entries)).toEqual([]);
+  });
+
+  it('returns locations for matching entries', () => {
+    const selection: SelectionState = { selectedEntryIds: ['b', 'c'] };
+    const entries = makeEntries(
+      { id: 'a', locationUri: '/dir/a' },
+      { id: 'b', locationUri: '/dir/b' },
+      { id: 'c', locationUri: '/dir/c' },
+    );
+    const locations = getSelectedEntryLocations(selection, entries);
+    expect(locations).toEqual([
+      entries[1]!.location,
+      entries[2]!.location,
+    ]);
+  });
+
+  it('is equivalent to getSelectedEntries().map(entry => entry.location)', () => {
+    const selection: SelectionState = { selectedEntryIds: ['a', 'c'] };
+    const entries = makeEntries({ id: 'a' }, { id: 'b' }, { id: 'c' });
+    const locations = getSelectedEntryLocations(selection, entries);
+    const expected = getSelectedEntries(selection, entries).map((e) => e.location);
+    expect(locations).toEqual(expected);
   });
 });

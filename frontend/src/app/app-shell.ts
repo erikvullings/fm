@@ -102,6 +102,8 @@ import { FindFilesDialog } from '../features/search/find-files-dialog';
 import type { SelectionPlatform } from '../features/selection/keybindings';
 import {
   emptySelection,
+  getSelectedEntries,
+  getSelectedEntryLocations,
   reduceSelection,
   type SelectionAction,
   type SelectionState,
@@ -1189,8 +1191,16 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     const entries = [...current.entries];
     const byId = new Map(entries.map((entry) => [entry.id, entry]));
     if (delta.type === 'entriesRemoved') {
+      if (!Array.isArray(delta.entryIds)) {
+        refetchAffectedPanes(paneId);
+        return;
+      }
       for (const id of delta.entryIds) byId.delete(id);
     } else {
+      if (!Array.isArray(delta.entries)) {
+        refetchAffectedPanes(paneId);
+        return;
+      }
       for (const entry of delta.entries) byId.set(entry.id, entry);
     }
     const ordered = entries.flatMap((entry) => {
@@ -1331,11 +1341,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       active === undefined ? undefined : directories.get(activeTabKey(active.paneId));
     const selection =
       active === undefined ? undefined : selections.get(activeTabKey(active.paneId));
-    return (
-      directory?.entries
-        .filter((entry) => selection?.selectedEntryIds.includes(entry.id) === true)
-        .map((entry) => entry.location) ?? []
-    );
+    return getSelectedEntryLocations(selection, directory?.entries ?? []);
   }
 
   function actionContext() {
@@ -1362,11 +1368,10 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       selectedEntries ??
       (effectiveKey === undefined
         ? []
-        : (directories
-          .get(effectiveKey)
-          ?.entries.filter(
-            (entry) => selections.get(effectiveKey)?.selectedEntryIds.includes(entry.id) === true,
-          ) ?? []));
+        : getSelectedEntries(
+          selections.get(effectiveKey),
+          directories.get(effectiveKey)?.entries ?? [],
+        ));
     const directory = effectiveKey === undefined ? undefined : directories.get(effectiveKey);
     return {
       selectedEntries: effectiveEntries,
@@ -1456,9 +1461,11 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     const paneId = context.paneId;
     const directory = paneId === undefined ? undefined : directories.get(activeTabKey(paneId));
     const selectedEntries =
-      directory === undefined
+      directory === undefined || context.selectedEntryIds === undefined
         ? []
-        : directory.entries.filter((entry) => context.selectedEntryIds?.includes(entry.id));
+        : directory.entries.filter((entry) =>
+          new Set(context.selectedEntryIds).has(entry.id),
+        );
     if (isCopySelectionAction(action.id)) {
       if (directory === undefined || directory.location === undefined) return;
       void copySelectionToClipboard(action.id, selectedEntries, directory.location)
@@ -1668,15 +1675,13 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
         active === undefined ? undefined : selections.get(activeTabKey(active.paneId));
       const directory =
         active === undefined ? undefined : directories.get(activeTabKey(active.paneId));
-      const selected = directory?.entries.filter(
-        (entry) => selection?.selectedEntryIds.includes(entry.id) === true,
-      );
+      const selected = getSelectedEntries(selection, directory?.entries ?? []);
       const otherPaneId = workspace?.paneOrder.find((paneId) => paneId !== active?.paneId);
       const destination =
         otherPaneId === undefined
           ? undefined
           : directories.get(activeTabKey(otherPaneId))?.location;
-      if (selected !== undefined && selected.length > 0 && destination !== undefined) {
+      if (selected.length > 0 && destination !== undefined) {
         event.preventDefault();
         void attrsClient.startOperation({
           type: 'copy',
@@ -1693,10 +1698,8 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
         active === undefined ? undefined : selections.get(activeTabKey(active.paneId));
       const directory =
         active === undefined ? undefined : directories.get(activeTabKey(active.paneId));
-      const selected = directory?.entries.filter(
-        (entry) => selection?.selectedEntryIds.includes(entry.id) === true,
-      );
-      if (selected !== undefined && selected.length > 0 && directory?.location !== undefined) {
+      const selected = getSelectedEntries(selection, directory?.entries ?? []);
+      if (selected.length > 0 && directory?.location !== undefined) {
         event.preventDefault();
         archiveCreateRequest = {
           sources: selected.map((entry) => entry.location),
@@ -1712,10 +1715,8 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
         active === undefined ? undefined : selections.get(activeTabKey(active.paneId));
       const directory =
         active === undefined ? undefined : directories.get(activeTabKey(active.paneId));
-      const selected = directory?.entries.filter(
-        (entry) => selection?.selectedEntryIds.includes(entry.id) === true,
-      );
-      if (selected !== undefined && selected.length > 0 && directory?.location !== undefined) {
+      const selected = getSelectedEntries(selection, directory?.entries ?? []);
+      if (selected.length > 0 && directory?.location !== undefined) {
         event.preventDefault();
         archiveCreateRequest = {
           sources: selected.map((entry) => entry.location),
@@ -1756,15 +1757,13 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
         active === undefined ? undefined : selections.get(activeTabKey(active.paneId));
       const directory =
         active === undefined ? undefined : directories.get(activeTabKey(active.paneId));
-      const selected = directory?.entries.filter(
-        (entry) => selection?.selectedEntryIds.includes(entry.id) === true,
-      );
+      const selected = getSelectedEntries(selection, directory?.entries ?? []);
       const otherPaneId = workspace?.paneOrder.find((paneId) => paneId !== active?.paneId);
       const destination =
         otherPaneId === undefined
           ? undefined
           : directories.get(activeTabKey(otherPaneId))?.location;
-      if (selected !== undefined && selected.length > 0 && destination !== undefined) {
+      if (selected.length > 0 && destination !== undefined) {
         event.preventDefault();
         void attrsClient.startOperation({
           type: 'move',
@@ -1781,10 +1780,8 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
         active === undefined ? undefined : selections.get(activeTabKey(active.paneId));
       const directory =
         active === undefined ? undefined : directories.get(activeTabKey(active.paneId));
-      const selected = directory?.entries.filter(
-        (entry) => selection?.selectedEntryIds.includes(entry.id) === true,
-      );
-      if (selected !== undefined && selected.length > 0) {
+      const selected = getSelectedEntries(selection, directory?.entries ?? []);
+      if (selected.length > 0) {
         event.preventDefault();
         void attrsClient.startOperation({
           type: 'trash',
@@ -1800,10 +1797,8 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
         active === undefined ? undefined : selections.get(activeTabKey(active.paneId));
       const directory =
         active === undefined ? undefined : directories.get(activeTabKey(active.paneId));
-      const selected = directory?.entries.filter(
-        (entry) => selection?.selectedEntryIds.includes(entry.id) === true,
-      );
-      if (selected !== undefined && selected.length > 0) {
+      const selected = getSelectedEntries(selection, directory?.entries ?? []);
+      if (selected.length > 0) {
         event.preventDefault();
         void attrsClient.startOperation({
           type: 'delete',
@@ -1889,9 +1884,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
         active === undefined ? undefined : selections.get(activeTabKey(active.paneId));
       const directory =
         active === undefined ? undefined : directories.get(activeTabKey(active.paneId));
-      const selected = directory?.entries.filter(
-        (entry) => selection?.selectedEntryIds.includes(entry.id) === true,
-      );
+      const selected = getSelectedEntries(selection, directory?.entries ?? []);
       const viewEntry = selected?.length === 1 ? selected[0] : undefined;
       const otherPaneId = workspace?.paneOrder.find((paneId) => paneId !== active?.paneId);
       // Only intercept single-file selections into the in-app viewer (task 0088); directories,
@@ -1923,9 +1916,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
         active === undefined ? undefined : selections.get(activeTabKey(active.paneId));
       const directory =
         active === undefined ? undefined : directories.get(activeTabKey(active.paneId));
-      const selected = directory?.entries.filter(
-        (entry) => selection?.selectedEntryIds.includes(entry.id) === true,
-      );
+      const selected = getSelectedEntries(selection, directory?.entries ?? []);
       const editEntry = selected?.length === 1 ? selected[0] : undefined;
       const otherPaneId = workspace?.paneOrder.find((paneId) => paneId !== active?.paneId);
       if (editEntry?.kind === 'file' && !isParentEntry(editEntry.id) && otherPaneId !== undefined) {
@@ -1969,9 +1960,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
         active === undefined ? undefined : selections.get(activeTabKey(active.paneId));
       const directory =
         active === undefined ? undefined : directories.get(activeTabKey(active.paneId));
-      const selected = directory?.entries.filter(
-        (entry) => selection?.selectedEntryIds.includes(entry.id) === true,
-      );
+      const selected = getSelectedEntries(selection, directory?.entries ?? []);
       const parameters = platformActionParameters(
         viewActionId,
         selected ?? [],
@@ -2061,7 +2050,12 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       return;
     }
     if (payload.type === 'directory.delta') {
-      applyDelta(payload.paneId, payload.delta);
+      try {
+        applyDelta(payload.paneId, payload.delta);
+      } catch {
+        // A malformed delta payload should degrade to a full refetch, not crash the UI loop.
+        refetchAffectedPanes(payload.paneId);
+      }
       return;
     }
     if (payload.type === 'plugin.changed') {

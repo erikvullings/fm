@@ -1,4 +1,4 @@
-import type { EntryId } from '../../models';
+import type { EntryId, EntrySummary, Location } from '../../models';
 
 /** Stable-ID selection state for one pane. */
 export interface SelectionState {
@@ -140,4 +140,28 @@ export function reduceSelection(
       };
     }
   }
+}
+
+/**
+ * Retrieves the directory entries that are currently selected.
+ * Returns entries in the same order as the directory listing, not the selection order.
+ */export function getSelectedEntries(
+  selection: SelectionState | undefined,
+  entries: readonly EntrySummary[],
+): readonly EntrySummary[] {
+  if (selection === undefined || selection.selectedEntryIds.length === 0) {
+    return [];
+  }
+  const idSet = new Set(selection.selectedEntryIds);
+  return entries.filter((entry) => idSet.has(entry.id) === true);
+}
+
+/**
+ * Retrieves the locations of the currently selected entries.
+ * Equivalent to `getSelectedEntries(selection, entries).map(e => e.location)`.
+ */export function getSelectedEntryLocations(
+  selection: SelectionState | undefined,
+  entries: readonly EntrySummary[],
+): readonly Location[] {
+  return getSelectedEntries(selection, entries).map((entry) => entry.location);
 }
