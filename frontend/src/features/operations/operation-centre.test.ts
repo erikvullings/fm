@@ -267,4 +267,35 @@ describe('OperationCentre states', () => {
     const result = root.querySelector('[data-operation-id="search"] .fm-operation-result');
     expect(result?.textContent).toBe('Cancelled after finding 2 / 4 files.');
   });
+
+  it('shows entry-level warning details for completedWithWarnings operations', () => {
+    const withWarnings: Operation = {
+      ...operation('completedWithWarnings', 'warned-copy'),
+      errors: [
+        {
+          entry: {
+            id: 'existing-folder',
+            location: { providerId: 'sftp', uri: 'sftp://server/home/demo/existing-folder' },
+          },
+          message: 'Skipped because destination already exists.',
+        },
+      ],
+    };
+
+    m.mount(root, {
+      view: () =>
+        m(OperationCentre, {
+          state: createOperationsState([withWarnings]),
+          onCancel: vi.fn(),
+          onPause: vi.fn(),
+          onResume: vi.fn(),
+          onDismiss: vi.fn(),
+        }),
+    });
+
+    const result = root.querySelector('[data-operation-id="warned-copy"] .fm-operation-result');
+    expect(result?.textContent).toContain('Completed with 1 warning.');
+    const warningText = root.querySelector('[data-operation-id="warned-copy"] .fm-operation-warning');
+    expect(warningText?.textContent).toContain('existing-folder: Skipped because destination already exists.');
+  });
 });

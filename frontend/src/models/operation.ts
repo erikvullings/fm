@@ -61,6 +61,8 @@ export interface Operation {
   queuePosition?: number;
   /** Backend-provided completion summary retained in the operation centre. */
   result?: OperationResult;
+  /** Entry-level warnings collected for completed-with-warnings operations. */
+  errors?: readonly OperationEntryError[];
 }
 
 export interface OperationResult {
@@ -72,4 +74,9 @@ export interface OperationFailure {
   code: string;
   message: string;
   details?: Readonly<Record<string, unknown>>;
+}
+
+export interface OperationEntryError {
+  entry: EntryRef;
+  message: string;
 }

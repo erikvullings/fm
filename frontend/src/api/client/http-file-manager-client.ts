@@ -710,6 +710,14 @@ function operationFromDto(dto: OperationDto): Operation {
     ...(dto.completedAt == null ? {} : { completedAt: dto.completedAt }),
     ...(dto.queuePosition == null ? {} : { queuePosition: dto.queuePosition }),
     ...(dto.resultSummary == null ? {} : { result: { message: dto.resultSummary } }),
+    ...(dto.errors.length === 0
+      ? {}
+      : {
+        errors: dto.errors.map((error) => ({
+          entry: error.entry,
+          message: error.message,
+        })),
+      }),
   };
 }
 
@@ -741,11 +749,11 @@ function settingsFromDto(settings: SettingsDto): Settings {
         workspaceId,
         Array.isArray(locations)
           ? locations.map(
-              (location): FileLocation => ({
-                providerId: String((location as { providerId?: unknown }).providerId),
-                uri: String((location as { uri?: unknown }).uri),
-              }),
-            )
+            (location): FileLocation => ({
+              providerId: String((location as { providerId?: unknown }).providerId),
+              uri: String((location as { uri?: unknown }).uri),
+            }),
+          )
           : [],
       ]),
     ),

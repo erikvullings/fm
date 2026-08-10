@@ -257,6 +257,17 @@ function isAutoDismissibleState(state: OperationState): boolean {
   );
 }
 
+function shouldRefreshOnTerminalOperation(operation: Operation): boolean {
+  if (operation.kind === 'search') return false;
+  return (
+    operation.state === 'completed' ||
+    operation.state === 'completedWithWarnings' ||
+    operation.state === 'failed' ||
+    operation.state === 'cancelled' ||
+    operation.state === 'interrupted'
+  );
+}
+
 /** Converts a displayed breadcrumb path back to its provider-specific location. */
 export function locationForPath(current: Location, path: string): Location {
   if (current.providerId === 'archive') {
@@ -2021,7 +2032,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
             const previousState = previous.byId[id]?.state;
             if (previousState === current.state) continue;
             clearDismissedOperation(id);
-            if (current.state === 'completed' || current.state === 'completedWithWarnings') {
+            if (shouldRefreshOnTerminalOperation(current)) {
               panesNeedRefresh = true;
             }
             if (!isAutoDismissibleState(current.state)) continue;

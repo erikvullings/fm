@@ -1169,6 +1169,41 @@ describe('AppShell', () => {
     await vi.waitFor(() => expect(listDirectory.mock.calls.length).toBeGreaterThan(initialCalls));
   });
 
+  it('refreshes pane snapshots when a mutating operation reaches failed state', async () => {
+    const client = new MockFileManagerClient();
+    const listDirectory = vi.spyOn(client, 'listDirectory');
+    m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
+    await vi.waitFor(() => expect(root.textContent).toContain('Documents'));
+    const before = listDirectory.mock.calls.length;
+
+    const op: Operation = {
+      id: 'copy-with-warning-path',
+      kind: 'copy',
+      state: 'running',
+      sources: [],
+      progress: { completedItems: 1, completedBytes: 1_024 },
+      conflictPolicy: 'ask',
+      createdAt: '2026-08-10T12:00:00.000Z',
+    };
+    client.emit({
+      eventId: 21,
+      timestamp: '2026-08-10T12:00:00.000Z',
+      payload: { type: 'operation.created', operation: op },
+    });
+    client.emit({
+      eventId: 22,
+      timestamp: '2026-08-10T12:00:00.100Z',
+      payload: {
+        type: 'operation.failed',
+        operationId: op.id,
+        code: 'destinationAlreadyExists',
+        message: 'Destination already exists.',
+      },
+    });
+
+    await vi.waitFor(() => expect(listDirectory.mock.calls.length).toBeGreaterThan(before));
+  });
+
   it('does not expose the runtime in the workspace chrome', () => {
     const client = new MockFileManagerClient();
     m.mount(root, { view: () => m(AppShell, { runtime: 'tauri', client }) });

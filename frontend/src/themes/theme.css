@@ -717,6 +717,15 @@ input[type="text"].fm-command-palette-input {
   color: var(--fm-success);
 }
 
+.fm-operation-warning {
+  color: var(--fm-warning);
+}
+
+.fm-operation-warning ul {
+  margin: 0.25rem 0 0;
+  padding-left: 1.1rem;
+}
+
 .fm-operation-failure {
   color: var(--fm-error);
 }
