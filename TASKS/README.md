@@ -217,3 +217,18 @@ FindFilesController, ActionCommandController, DialogUIController, AppDialogs, an
 Features not yet implemented.
 
 - [ ] 0118 Integrate parallel-disk-usage with WinDirStat Treemap View
+
+## Architecture deepening — backend
+
+Cross-cutting refactors to increase module depth, testability, and AI-navigability.
+`FileManagerService` (~5,800 lines) is the primary target. 0119 coordinates the decomposition;
+0120–0123 each extract one capability and can land in any order once 0119's composition plan is
+decided. 0124 and 0125 are independent and can be picked up early.
+
+- [ ] 0119 Decompose FileManagerService into capability sub-services
+- [ ] 0120 Extract Operation Planner module *(needs 0119)*
+- [ ] 0121 Extract File Editor Service *(needs 0119)*
+- [ ] 0122 Extract Connection Facade *(needs 0119)*
+- [ ] 0123 Extract Plugin Manager module *(needs 0119)*
+- [ ] 0124 Narrow Location URI parsing in fm-domain *(independent)*
+- [ ] 0125 Make Search Engine VFS-provider agnostic *(independent)*
