@@ -4,10 +4,6 @@ import { IconButton, type Theme, ThemeManager, toast } from 'mithril-materialize
 
 import type { FileManagerClient } from '../api/client/file-manager-client';
 import {
-  createBackendEventHandler,
-  type BackendEventContext,
-} from '../features/events/backend-event-handler';
-import {
   arrowLeftIcon,
   arrowRightIcon,
   closeIcon,
@@ -66,6 +62,10 @@ import {
   DEFAULT_ENTRY_FORMAT_SETTINGS,
   type EntryFormatSettings,
 } from '../features/entry-formatting/entry-formatting';
+import {
+  type BackendEventContext,
+  createBackendEventHandler,
+} from '../features/events/backend-event-handler';
 import { recordRecentLocation, reorderFavourites } from '../features/favourites/favourites';
 import { archiveRootForEntry } from '../features/navigation/archive-location';
 import { ArchivePasswordDialog } from '../features/navigation/archive-password-dialog';
@@ -123,7 +123,6 @@ import {
 } from '../features/sorting/sorting';
 import {
   dispatchWorkspaceCommand,
-  isWorkspaceRevisionConflict,
 } from '../features/workspace/dispatch-workspace-command';
 import {
   pathFromUri,
@@ -131,10 +130,14 @@ import {
   type WorkspacePaneContent,
 } from '../features/workspace/workspace-layout';
 import {
-  firstAvailableWorkspaceId,
   sortWorkspaceSummaries,
 } from '../features/workspace/workspace-manager';
 import { WorkspaceSwitcher } from '../features/workspace/workspace-switcher';
+import {
+  createWorkspaceController,
+  type WorkspaceController,
+  type WorkspaceControllerContext,
+} from '../features/workspace/workspace-controller';
 import {
   dispatchKeybinding,
   footerFunctionKeyBindings,
@@ -194,8 +197,6 @@ export interface AppShellAttrs {
 
 const DEFAULT_THEME: Theme = 'auto';
 
-
-
 /** Applies host-detected mount access metadata to a directory view. */
 export function respectSystemLocationReadOnly(
   view: PaneDirectoryView,
@@ -217,8 +218,6 @@ export function respectSystemLocationReadOnly(
   }
   return { ...view, writable: false };
 }
-
-
 
 const DISMISSED_OPERATIONS_STORAGE_KEY = 'fm.dismissedOperationIds';
 const MAX_DISMISSED_OPERATIONS = 500;
@@ -253,8 +252,6 @@ function isAutoDismissibleState(state: OperationState): boolean {
     state === 'interrupted'
   );
 }
-
-
 
 /** Converts a displayed breadcrumb path back to its provider-specific location. */
 export function locationForPath(current: Location, path: string): Location {
@@ -869,7 +866,8 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     selections.delete(key);
     sortedEntries.delete(key);
     sortRequests.delete(key);
-    if (appState !== undefined) appState = applyAppPatches(appState, deleteQuickFilterDraftPatch(key));
+    if (appState !== undefined)
+      appState = applyAppPatches(appState, deleteQuickFilterDraftPatch(key));
     quickFilterOpen.delete(key);
     filteredEntries.delete(key);
   }
@@ -900,118 +898,6 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
   }
 
   /** Flushes any pending layout edit and swaps in an already-fetched workspace projection. */
-  function activateWorkspace(loaded: WorkspaceProjection): void {
-    flushPendingLayoutUpdate?.();
-    if (workspace !== undefined) {
-      releaseWorkspaceTabState(workspace);
-    }
-    workspace = loaded;
-    workspaceError = undefined;
-    loadPanesActiveFirst(loaded);
-  }
-
-  /** Opens the first persisted workspace, or creates the global-default one if none exist. */
-  async function openOrCreateDefaultWorkspace(
-    client: FileManagerClient,
-    signal?: AbortSignal,
-  ): Promise<{ loaded: WorkspaceProjection; summaries: readonly WorkspaceSummary[] }> {
-    const summaries = await client.listWorkspaces(signal);
-    const loaded =
-      summaries[0] === undefined
-        ? await client.createWorkspace({ name: 'Default' }, signal)
-        : await client.openWorkspace(summaries[0].id, signal);
-    const refreshedSummaries =
-      summaries[0] === undefined ? await client.listWorkspaces(signal) : summaries;
-    return { loaded, summaries: refreshedSummaries };
-  }
-
-  /** Chooses and activates a replacement workspace once the active one is no longer valid. */
-  async function recoverActiveWorkspace(
-    client: FileManagerClient,
-    summaries: readonly WorkspaceSummary[],
-  ): Promise<void> {
-    const nextId = firstAvailableWorkspaceId(summaries);
-    if (nextId === undefined) {
-      const created = await client.createWorkspace({ name: 'Default' });
-      activateWorkspace(created);
-      workspaceSummaries = await client.listWorkspaces();
-      return;
-    }
-    await switchWorkspace(client, nextId);
-  }
-
-  async function loadWorkspace(client: FileManagerClient): Promise<void> {
-    workspaceRequest = new AbortController();
-    try {
-      const capabilities = await client.getRuntimeCapabilities(workspaceRequest.signal);
-      await loadSystemLocations(client, workspaceRequest.signal);
-      await loadConnectionsList(client, workspaceRequest.signal);
-      platform = capabilities.platform;
-      nativeDragOutSupported = capabilities.nativeDragOut;
-      if (nativeDragOutSupported && unsubscribeNativeFileDrops === undefined) {
-        unsubscribeNativeFileDrops = await client.subscribeNativeFileDrops((drop) => {
-          draggedLocations = drop.locations;
-          const scale = window.devicePixelRatio || 1;
-          const hit = document.elementFromPoint(drop.position.x / scale, drop.position.y / scale);
-          const target = hit?.closest<HTMLElement>(
-            '.fm-directory-row, .fm-directory-viewport, .fm-pane-tab',
-          );
-          if (target === undefined || target === null) {
-            clipboardMessage = 'Drop files onto a directory pane or tab';
-            m.redraw();
-            return;
-          }
-          nativeDropInProgress = true;
-          try {
-            target.dispatchEvent(new Event('drop', { bubbles: true, cancelable: true }));
-          } finally {
-            nativeDropInProgress = false;
-          }
-        });
-      }
-      openTerminalSupported = capabilities.openTerminal;
-      nativeIconLoader = capabilities.nativeFileIcons ? new NativeIconLoader(client) : undefined;
-      const { loaded, summaries } = await openOrCreateDefaultWorkspace(
-        client,
-        workspaceRequest.signal,
-      );
-      activateWorkspace(loaded);
-      workspaceSummaries = summaries;
-    } catch (error: unknown) {
-      if (workspaceRequest.signal.aborted) {
-        return;
-      }
-      workspaceError = workspaceErrorMessage(error, 'Unable to load workspace');
-    }
-    m.redraw();
-  }
-
-  async function loadSystemLocations(
-    client: FileManagerClient,
-    signal?: AbortSignal,
-  ): Promise<void> {
-    try {
-      systemLocations = await client.getSystemLocations(signal);
-      systemLocationsError = undefined;
-    } catch {
-      systemLocations = [];
-      systemLocationsError = 'Unable to discover cloud locations';
-    }
-    m.redraw();
-  }
-
-  /** Loads the saved-connection list for the `SERVERS` sidebar group (task 0103). */
-  async function loadConnectionsList(
-    client: FileManagerClient,
-    signal?: AbortSignal,
-  ): Promise<void> {
-    try {
-      connections = await loadConnections(client, signal);
-    } catch {
-      connections = [];
-    }
-    m.redraw();
-  }
 
   /**
    * Switches the active workspace (task 0084): flushes any pending debounced
@@ -1020,98 +906,8 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
    * tabs first. Never touches `operations` — running file operations must
    * survive a switch untouched.
    */
-  async function switchWorkspace(
-    client: FileManagerClient,
-    workspaceId: WorkspaceId,
-  ): Promise<void> {
-    if (workspace?.id === workspaceId) return;
-    workspaceRequest?.abort();
-    const request = new AbortController();
-    workspaceRequest = request;
-    workspaceActionError = undefined;
-    try {
-      const loaded = await client.openWorkspace(workspaceId, request.signal);
-      activateWorkspace(loaded);
-      workspaceSummaries = await client.listWorkspaces(request.signal);
-    } catch (error: unknown) {
-      if (request.signal.aborted) return;
-      workspaceActionError = workspaceErrorMessage(error, 'Unable to switch workspace');
-    }
-    m.redraw();
-  }
-
-  function refreshWorkspaceSummaries(client: FileManagerClient): void {
-    void client
-      .listWorkspaces()
-      .then((summaries) => {
-        workspaceSummaries = summaries;
-        m.redraw();
-      })
-      .catch(() => undefined);
-  }
-
-  function revisionForWorkspace(workspaceId: WorkspaceId): number {
-    if (workspace?.id === workspaceId) return workspace.revision;
-    return workspaceSummaries.find((summary) => summary.id === workspaceId)?.revision ?? 0;
-  }
-
-  function createWorkspaceAction(client: FileManagerClient): void {
-    workspaceActionError = undefined;
-    void client
-      .createWorkspace({})
-      .then(async (created) => {
-        activateWorkspace(created);
-        workspaceSummaries = await client.listWorkspaces();
-        m.redraw();
-      })
-      .catch((error: unknown) => {
-        workspaceActionError = workspaceErrorMessage(error, 'Unable to create workspace');
-        m.redraw();
-      });
-  }
-
-  function renameWorkspaceAction(
-    client: FileManagerClient,
-    workspaceId: WorkspaceId,
-    name: string,
-  ): void {
-    workspaceActionError = undefined;
-    void client
-      .renameWorkspace(workspaceId, name, revisionForWorkspace(workspaceId))
-      .then(async (updated) => {
-        if (workspace?.id === workspaceId) workspace = updated;
-        workspaceSummaries = await client.listWorkspaces();
-        m.redraw();
-      })
-      .catch(async (error: unknown) => {
-        if (isWorkspaceRevisionConflict(error)) {
-          workspaceSummaries = await client.listWorkspaces().catch(() => workspaceSummaries);
-          workspaceActionError =
-            'This workspace changed elsewhere; refresh and try renaming again.';
-        } else {
-          workspaceActionError = workspaceErrorMessage(error, 'Unable to rename workspace');
-        }
-        m.redraw();
-      });
-  }
-
-  function deleteWorkspaceAction(client: FileManagerClient, workspaceId: WorkspaceId): void {
-    workspaceActionError = undefined;
-    const wasActive = workspace?.id === workspaceId;
-    void client
-      .deleteWorkspace(workspaceId, revisionForWorkspace(workspaceId))
-      .then(async () => {
-        const summaries = await client.listWorkspaces();
-        workspaceSummaries = summaries;
-        if (wasActive) await recoverActiveWorkspace(client, summaries);
-        m.redraw();
-      })
-      .catch((error: unknown) => {
-        workspaceActionError = isWorkspaceRevisionConflict(error)
-          ? 'This workspace changed elsewhere; refresh and try deleting again.'
-          : workspaceErrorMessage(error, 'Unable to delete workspace');
-        m.redraw();
-      });
+  async function switchWorkspace(workspaceId: WorkspaceId): Promise<void> {
+    await workspaceController.switchWorkspace(workspaceId);
   }
 
   function refetchAffectedPanes(paneId?: PaneId): void {
@@ -1437,9 +1233,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     const selectedEntries =
       directory === undefined || context.selectedEntryIds === undefined
         ? []
-        : directory.entries.filter((entry) =>
-          new Set(context.selectedEntryIds).has(entry.id),
-        );
+        : directory.entries.filter((entry) => new Set(context.selectedEntryIds).has(entry.id));
     if (isCopySelectionAction(action.id)) {
       if (directory === undefined || directory.location === undefined) return;
       void copySelectionToClipboard(action.id, selectedEntries, directory.location)
@@ -1791,7 +1585,10 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       if (!(key in (appState?.quickFilterDrafts.byTabKey ?? {}))) {
         const pane = workspace?.panesById[active.paneId];
         const tab = pane?.tabsById[pane.activeTabId];
-        appState = applyAppPatches(appState!, setQuickFilterDraftPatch(key, tab?.view.quickFilter?.query ?? ''));
+        appState = applyAppPatches(
+          appState!,
+          setQuickFilterDraftPatch(key, tab?.view.quickFilter?.query ?? ''),
+        );
       }
       m.redraw();
       return;
@@ -1945,14 +1742,14 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     getWorkspaceId: () => workspace?.id,
     getWorkspaceRevision: () => workspace?.revision,
     replaceWorkspace,
-    refreshWorkspaceSummaries: () => refreshWorkspaceSummaries(attrsClient),
+    refreshWorkspaceSummaries: () => workspaceController.refreshWorkspaceSummaries(),
     setWorkspaceSummaries: (summaries) => {
       workspaceSummaries = summaries;
     },
     setWorkspaceActionError: (message) => {
       workspaceActionError = message;
     },
-    recoverActiveWorkspace: (summaries) => recoverActiveWorkspace(attrsClient, summaries),
+    recoverActiveWorkspace: (summaries) => workspaceController.recoverActiveWorkspace(summaries),
     listWorkspaces: () => attrsClient.listWorkspaces(),
     getWorkspace: (id) => attrsClient.getWorkspace(id),
     setPendingConflict: (conflict) => {
@@ -1996,18 +1793,19 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     getFindFilesSearchId: () => findFilesSearchId,
     getSearchBatchReloadInFlight: () => searchBatchReloadInFlight,
     cacheContentMatches: (uri, matches) => {
-      if (appState !== undefined) appState = applyAppPatches(appState, cacheContentMatchesPatch(uri, matches));
+      if (appState !== undefined)
+        appState = applyAppPatches(appState, cacheContentMatchesPatch(uri, matches));
     },
     findPanesWithUri: (uri) =>
       workspace === undefined
         ? []
         : (
-            Object.entries(workspace.panesById) as Array<
-              [PaneId, WorkspaceProjection['panesById'][PaneId]]
-            >
-          )
-            .filter(([, pane]) => pane.tabsById[pane.activeTabId]?.location.uri === uri)
-            .map(([paneId]) => paneId),
+          Object.entries(workspace.panesById) as Array<
+            [PaneId, WorkspaceProjection['panesById'][PaneId]]
+          >
+        )
+          .filter(([, pane]) => pane.tabsById[pane.activeTabId]?.location.uri === uri)
+          .map(([paneId]) => paneId),
     loadPane: (paneId, options) => navigation.load(paneId, options),
     redraw: () => m.redraw(),
   };
@@ -2015,6 +1813,75 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
 
   let attrsClient: FileManagerClient;
   let opsController: OperationsController;
+  let workspaceController: WorkspaceController;
+
+  const workspaceControllerContext: WorkspaceControllerContext = {
+    getWorkspace: () => workspace,
+    setWorkspace: (ws) => {
+      workspace = ws;
+    },
+    getWorkspaceError: () => workspaceError,
+    setWorkspaceError: (msg) => {
+      workspaceError = msg;
+    },
+    getWorkspaceSummaries: () => workspaceSummaries,
+    setWorkspaceSummaries: (summaries) => {
+      workspaceSummaries = summaries;
+    },
+    getWorkspaceActionError: () => workspaceActionError,
+    setWorkspaceActionError: (msg) => {
+      workspaceActionError = msg;
+    },
+    getWorkspaceRequest: () => workspaceRequest,
+    setWorkspaceRequest: (ac) => {
+      workspaceRequest = ac;
+    },
+    getPlatform: () => platform,
+    setPlatform: (p) => {
+      platform = p;
+    },
+    getNativeDragOutSupported: () => nativeDragOutSupported,
+    setNativeDragOutSupported: (v) => {
+      nativeDragOutSupported = v;
+    },
+    getUnsubscribeNativeFileDrops: () => unsubscribeNativeFileDrops,
+    setUnsubscribeNativeFileDrops: (fn) => {
+      unsubscribeNativeFileDrops = fn;
+    },
+    subscribeNativeFileDrops: (callback) => attrsClient.subscribeNativeFileDrops(callback),
+    setOpenTerminalSupported: (v) => {
+      openTerminalSupported = v;
+    },
+    setNativeIconLoader: (loader) => {
+      nativeIconLoader = loader;
+    },
+    getSystemLocations: () => systemLocations,
+    setSystemLocations: (locs) => {
+      systemLocations = locs;
+    },
+    setSystemLocationsError: (msg) => {
+      systemLocationsError = msg;
+    },
+    getConnections: () => connections,
+    setConnections: (conns) => {
+      connections = conns;
+    },
+    setDraggedLocations: (locs) => {
+      draggedLocations = locs;
+    },
+    getNativeDropInProgress: () => nativeDropInProgress,
+    setNativeDropInProgress: (v) => {
+      nativeDropInProgress = v;
+    },
+    setClipboardMessage: (msg) => {
+      clipboardMessage = msg;
+    },
+    getNavigation: () => navigation,
+    getFlushPendingLayoutUpdate: () => flushPendingLayoutUpdate,
+    redraw: () => m.redraw(),
+    releaseWorkspaceTabState: (outgoing) => releaseWorkspaceTabState(outgoing),
+    loadPanesActiveFirst: (ws) => loadPanesActiveFirst(ws),
+  };
 
   function replaceWorkspace(next: WorkspaceProjection): void {
     workspace = next;
@@ -2129,7 +1996,8 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
   function performCloseTab(client: FileManagerClient, paneId: PaneId, tabId: TabId): void {
     if (workspace === undefined) return;
     const closedTab = workspace.panesById[paneId]?.tabsById[tabId];
-    if (closedTab !== undefined) appState = applyAppPatches(appState!, setClosedTabStackPatch(paneId, closedTab));
+    if (closedTab !== undefined)
+      appState = applyAppPatches(appState!, setClosedTabStackPatch(paneId, closedTab));
     void dispatchWorkspaceCommand(
       client,
       {
@@ -2257,7 +2125,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
           : (currentSettings.recentLocationsByWorkspace[workspace.id] ?? []),
       systemLocations,
       ...(systemLocationsError === undefined ? {} : { systemLocationsError }),
-      onRetrySystemLocations: () => loadSystemLocations(client),
+      onRetrySystemLocations: () => workspaceController.loadSystemLocations(),
       connections,
       onManageConnections: () => {
         connectionsManagerOpen = true;
@@ -2642,6 +2510,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     oninit: ({ attrs }) => {
       attrsClient = attrs.client;
       opsController = createOperationsController(attrs.client);
+      workspaceController = createWorkspaceController(attrs.client, workspaceControllerContext);
       keybindingRuntime = attrs.runtime === 'http' ? 'browser' : 'desktop';
       runtimeKind = attrs.runtime;
       document.addEventListener('keydown', handleGlobalKeydown);
@@ -2724,7 +2593,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
           m.redraw();
         })
         .catch(() => undefined);
-      void loadWorkspace(attrs.client);
+      void workspaceController.loadWorkspace();
       void Promise.resolve()
         .then(() => attrs.client.listOperations())
         .then((listed) => {
@@ -2915,12 +2784,12 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
                     activeWorkspaceId: workspace?.id,
                     error: workspaceActionError,
                     onSwitch: (workspaceId) => {
-                      void switchWorkspace(attrs.client, workspaceId);
+                      void switchWorkspace(workspaceId);
                     },
-                    onCreate: () => createWorkspaceAction(attrs.client),
+                    onCreate: () => workspaceController.createWorkspaceAction(),
                     onRename: (workspaceId, name) =>
-                      renameWorkspaceAction(attrs.client, workspaceId, name),
-                    onDelete: (workspaceId) => deleteWorkspaceAction(attrs.client, workspaceId),
+                      workspaceController.renameWorkspaceAction(workspaceId, name),
+                    onDelete: (workspaceId) => workspaceController.deleteWorkspaceAction(workspaceId),
                   }),
                 ]),
               ],

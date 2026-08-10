@@ -1,0 +1,283 @@
+import type { FileManagerClient, NativeFileDrop } from '../../api/client/file-manager-client';
+import { loadConnections } from '../connections/connections-model';
+import { NativeIconLoader } from '../directory-table/native-icon-loader';
+import type { NavigationController } from '../navigation/navigation';
+import type { SelectionPlatform } from '../selection/keybindings';
+import { isWorkspaceRevisionConflict } from './dispatch-workspace-command';
+import { firstAvailableWorkspaceId } from './workspace-manager';
+import type {
+  Connection,
+  Location,
+  SystemLocation,
+  WorkspaceId,
+  WorkspaceProjection,
+  WorkspaceSummary,
+} from '../../models';
+
+export interface WorkspaceControllerContext {
+  getWorkspace(): WorkspaceProjection | undefined;
+  setWorkspace(ws: WorkspaceProjection | undefined): void;
+  getWorkspaceError(): string | undefined;
+  setWorkspaceError(msg?: string): void;
+  getWorkspaceSummaries(): readonly WorkspaceSummary[];
+  setWorkspaceSummaries(summaries: readonly WorkspaceSummary[]): void;
+  getWorkspaceActionError(): string | undefined;
+  setWorkspaceActionError(msg?: string): void;
+  getWorkspaceRequest(): AbortController | undefined;
+  setWorkspaceRequest(ac?: AbortController): void;
+  getPlatform(): SelectionPlatform;
+  setPlatform(p: SelectionPlatform): void;
+  getNativeDragOutSupported(): boolean;
+  setNativeDragOutSupported(v: boolean): void;
+  getUnsubscribeNativeFileDrops(): (() => void) | undefined;
+  setUnsubscribeNativeFileDrops(fn?: () => void): void;
+  subscribeNativeFileDrops(callback: (drop: NativeFileDrop) => void): Promise<() => void>;
+  setOpenTerminalSupported(v: boolean): void;
+  setNativeIconLoader(loader?: NativeIconLoader): void;
+  getSystemLocations(): readonly SystemLocation[];
+  setSystemLocations(locs: readonly SystemLocation[]): void;
+  setSystemLocationsError(msg?: string): void;
+  getConnections(): readonly Connection[];
+  setConnections(conns: readonly Connection[]): void;
+  setDraggedLocations(locs: readonly Location[]): void;
+  getNativeDropInProgress(): boolean;
+  setNativeDropInProgress(v: boolean): void;
+  setClipboardMessage(msg?: string): void;
+  getNavigation(): NavigationController;
+  getFlushPendingLayoutUpdate(): (() => void) | undefined;
+  redraw(): void;
+  releaseWorkspaceTabState(outgoing: WorkspaceProjection): void;
+  loadPanesActiveFirst(ws: WorkspaceProjection): void;
+}
+
+export interface WorkspaceController {
+  activateWorkspace(loaded: WorkspaceProjection): void;
+  recoverActiveWorkspace(summaries: readonly WorkspaceSummary[]): Promise<void>;
+  loadWorkspace(): Promise<void>;
+  loadSystemLocations(signal?: AbortSignal): Promise<void>;
+  switchWorkspace(workspaceId: WorkspaceId): Promise<void>;
+  refreshWorkspaceSummaries(): void;
+  revisionForWorkspace(workspaceId: WorkspaceId): number;
+  createWorkspaceAction(): void;
+  renameWorkspaceAction(workspaceId: WorkspaceId, name: string): void;
+  deleteWorkspaceAction(workspaceId: WorkspaceId): void;
+}
+
+function workspaceErrorMessage(error: unknown, fallback: string): string {
+  return error instanceof Error ? error.message : fallback;
+}
+
+export function createWorkspaceController(
+  client: FileManagerClient,
+  context: WorkspaceControllerContext,
+): WorkspaceController {
+  function activateWorkspace(loaded: WorkspaceProjection): void {
+    context.getFlushPendingLayoutUpdate()?.();
+    const current = context.getWorkspace();
+    if (current !== undefined) {
+      context.releaseWorkspaceTabState(current);
+    }
+    context.setWorkspace(loaded);
+    context.setWorkspaceError(undefined);
+    context.loadPanesActiveFirst(loaded);
+  }
+
+  async function openOrCreateDefaultWorkspace(
+    signal?: AbortSignal,
+  ): Promise<{ loaded: WorkspaceProjection; summaries: readonly WorkspaceSummary[] }> {
+    const summaries = await client.listWorkspaces(signal);
+    const loaded =
+      summaries[0] === undefined
+        ? await client.createWorkspace({ name: 'Default' }, signal)
+        : await client.openWorkspace(summaries[0].id, signal);
+    const refreshedSummaries =
+      summaries[0] === undefined ? await client.listWorkspaces(signal) : summaries;
+    return { loaded, summaries: refreshedSummaries };
+  }
+
+  async function recoverActiveWorkspace(summaries: readonly WorkspaceSummary[]): Promise<void> {
+    const nextId = firstAvailableWorkspaceId(summaries);
+    if (nextId === undefined) {
+      const created = await client.createWorkspace({ name: 'Default' });
+      activateWorkspace(created);
+      context.setWorkspaceSummaries(await client.listWorkspaces());
+      return;
+    }
+    await switchWorkspace(nextId);
+  }
+
+  async function loadSystemLocations(signal?: AbortSignal): Promise<void> {
+    try {
+      context.setSystemLocations(await client.getSystemLocations(signal));
+      context.setSystemLocationsError(undefined);
+    } catch {
+      context.setSystemLocations([]);
+      context.setSystemLocationsError('Unable to discover cloud locations');
+    }
+    context.redraw();
+  }
+
+  async function loadConnectionsList(signal?: AbortSignal): Promise<void> {
+    try {
+      context.setConnections(await loadConnections(client, signal));
+    } catch {
+      context.setConnections([]);
+    }
+    context.redraw();
+  }
+
+  async function loadWorkspace(): Promise<void> {
+    const request = new AbortController();
+    context.setWorkspaceRequest(request);
+    try {
+      const capabilities = await client.getRuntimeCapabilities(request.signal);
+      await loadSystemLocations(request.signal);
+      await loadConnectionsList(request.signal);
+      context.setPlatform(capabilities.platform);
+      context.setNativeDragOutSupported(capabilities.nativeDragOut);
+      if (capabilities.nativeDragOut && context.getUnsubscribeNativeFileDrops() === undefined) {
+        const unsub = await context.subscribeNativeFileDrops((drop) => {
+          context.setDraggedLocations(drop.locations);
+          const scale = window.devicePixelRatio || 1;
+          const hit = document.elementFromPoint(drop.position.x / scale, drop.position.y / scale);
+          const target = hit?.closest<HTMLElement>(
+            '.fm-directory-row, .fm-directory-viewport, .fm-pane-tab',
+          );
+          if (target === undefined || target === null) {
+            context.setClipboardMessage('Drop files onto a directory pane or tab');
+            context.redraw();
+            return;
+          }
+          context.setNativeDropInProgress(true);
+          try {
+            target.dispatchEvent(new Event('drop', { bubbles: true, cancelable: true }));
+          } finally {
+            context.setNativeDropInProgress(false);
+          }
+        });
+        context.setUnsubscribeNativeFileDrops(unsub);
+      }
+      context.setOpenTerminalSupported(capabilities.openTerminal);
+      context.setNativeIconLoader(
+        capabilities.nativeFileIcons ? new NativeIconLoader(client) : undefined,
+      );
+      const { loaded, summaries } = await openOrCreateDefaultWorkspace(request.signal);
+      activateWorkspace(loaded);
+      context.setWorkspaceSummaries(summaries);
+    } catch (error: unknown) {
+      if (request.signal.aborted) return;
+      context.setWorkspaceError(workspaceErrorMessage(error, 'Unable to load workspace'));
+    }
+    context.redraw();
+  }
+
+  async function switchWorkspace(workspaceId: WorkspaceId): Promise<void> {
+    if (context.getWorkspace()?.id === workspaceId) return;
+    context.getWorkspaceRequest()?.abort();
+    const request = new AbortController();
+    context.setWorkspaceRequest(request);
+    context.setWorkspaceActionError(undefined);
+    try {
+      const loaded = await client.openWorkspace(workspaceId, request.signal);
+      activateWorkspace(loaded);
+      context.setWorkspaceSummaries(await client.listWorkspaces(request.signal));
+    } catch (error: unknown) {
+      if (request.signal.aborted) return;
+      context.setWorkspaceActionError(workspaceErrorMessage(error, 'Unable to switch workspace'));
+    }
+    context.redraw();
+  }
+
+  function refreshWorkspaceSummaries(): void {
+    void client
+      .listWorkspaces()
+      .then((summaries) => {
+        context.setWorkspaceSummaries(summaries);
+        context.redraw();
+      })
+      .catch(() => undefined);
+  }
+
+  function revisionForWorkspace(workspaceId: WorkspaceId): number {
+    const ws = context.getWorkspace();
+    if (ws?.id === workspaceId) return ws.revision;
+    return (
+      context.getWorkspaceSummaries().find((summary) => summary.id === workspaceId)?.revision ?? 0
+    );
+  }
+
+  function createWorkspaceAction(): void {
+    context.setWorkspaceActionError(undefined);
+    void client
+      .createWorkspace({})
+      .then(async (created) => {
+        activateWorkspace(created);
+        context.setWorkspaceSummaries(await client.listWorkspaces());
+        context.redraw();
+      })
+      .catch((error: unknown) => {
+        context.setWorkspaceActionError(workspaceErrorMessage(error, 'Unable to create workspace'));
+        context.redraw();
+      });
+  }
+
+  function renameWorkspaceAction(workspaceId: WorkspaceId, name: string): void {
+    context.setWorkspaceActionError(undefined);
+    void client
+      .renameWorkspace(workspaceId, name, revisionForWorkspace(workspaceId))
+      .then(async (updated) => {
+        if (context.getWorkspace()?.id === workspaceId) context.setWorkspace(updated);
+        context.setWorkspaceSummaries(await client.listWorkspaces());
+        context.redraw();
+      })
+      .catch(async (error: unknown) => {
+        if (isWorkspaceRevisionConflict(error)) {
+          context.setWorkspaceSummaries(
+            await client.listWorkspaces().catch(() => context.getWorkspaceSummaries()),
+          );
+          context.setWorkspaceActionError(
+            'This workspace changed elsewhere; refresh and try renaming again.',
+          );
+        } else {
+          context.setWorkspaceActionError(
+            workspaceErrorMessage(error, 'Unable to rename workspace'),
+          );
+        }
+        context.redraw();
+      });
+  }
+
+  function deleteWorkspaceAction(workspaceId: WorkspaceId): void {
+    context.setWorkspaceActionError(undefined);
+    const wasActive = context.getWorkspace()?.id === workspaceId;
+    void client
+      .deleteWorkspace(workspaceId, revisionForWorkspace(workspaceId))
+      .then(async () => {
+        const summaries = await client.listWorkspaces();
+        context.setWorkspaceSummaries(summaries);
+        if (wasActive) await recoverActiveWorkspace(summaries);
+        context.redraw();
+      })
+      .catch((error: unknown) => {
+        context.setWorkspaceActionError(
+          isWorkspaceRevisionConflict(error)
+            ? 'This workspace changed elsewhere; refresh and try deleting again.'
+            : workspaceErrorMessage(error, 'Unable to delete workspace'),
+        );
+        context.redraw();
+      });
+  }
+
+  return {
+    activateWorkspace,
+    recoverActiveWorkspace,
+    loadWorkspace,
+    loadSystemLocations,
+    switchWorkspace,
+    refreshWorkspaceSummaries,
+    revisionForWorkspace,
+    createWorkspaceAction,
+    renameWorkspaceAction,
+    deleteWorkspaceAction,
+  };
+}
