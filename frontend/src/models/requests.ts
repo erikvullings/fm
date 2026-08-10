@@ -75,7 +75,7 @@ export interface StartOperationRequest {
   conflictPolicy: ConflictPolicy;
   name?: string;
   archiveFormat?: 'zip' | 'sevenZip';
-  archiveCompressionLevel?: number;
+  archiveCompressionLevel?: number | undefined;
   createIntermediateDirectories?: boolean;
   symlinkPolicy?: 'copyLink' | 'copyTarget';
   permanentDeleteConfirmed?: boolean;
