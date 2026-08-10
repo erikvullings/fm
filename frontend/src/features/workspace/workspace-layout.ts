@@ -20,6 +20,13 @@ import type { DirectoryColumnDescriptor } from '../directory-table/directory-tab
 import type { NativeIconLoader } from '../directory-table/native-icon-loader';
 import type { EntryFormatSettings } from '../entry-formatting/entry-formatting';
 import { Pane } from '../panes/pane';
+import type {
+  DirectorySummaryAttrs,
+  FavouritesAttrs,
+  FilterAttrs,
+  PaneNavigationAttrs,
+  TableConfigAttrs,
+} from '../panes/pane';
 import type { SelectionPlatform } from '../selection/keybindings';
 import type { SelectionAction } from '../selection/selection';
 import './workspace-layout.css';
@@ -401,66 +408,58 @@ export const WorkspaceLayoutView: FactoryComponent<WorkspaceLayoutViewAttrs> = (
           tabOrderOverrides.set(paneId, order);
           m.redraw();
         },
-        ...(content.location === undefined ? {} : { location: content.location }),
-        ...(content.favouriteLocations === undefined
-          ? {}
-          : { favouriteLocations: content.favouriteLocations }),
-        ...(content.recentLocations === undefined
-          ? {}
-          : { recentLocations: content.recentLocations }),
-        ...(content.systemLocations === undefined
-          ? {}
-          : { systemLocations: content.systemLocations }),
-        ...(content.systemLocationsError === undefined
-          ? {}
-          : { systemLocationsError: content.systemLocationsError }),
-        ...(content.onRetrySystemLocations === undefined
-          ? {}
-          : { onRetrySystemLocations: content.onRetrySystemLocations }),
-        ...(content.connections === undefined ? {} : { connections: content.connections }),
-        ...(content.onManageConnections === undefined
-          ? {}
-          : { onManageConnections: content.onManageConnections }),
-        ...(content.onRefreshConnections === undefined
-          ? {}
-          : { onRefreshConnections: content.onRefreshConnections }),
-        ...(content.unavailableLocations === undefined
-          ? {}
-          : { unavailableLocations: content.unavailableLocations }),
-        ...(content.onNavigateLocation === undefined
-          ? {}
-          : { onNavigateLocation: content.onNavigateLocation }),
-        ...(content.onAddFavourite === undefined ? {} : { onAddFavourite: content.onAddFavourite }),
-        ...(content.onDeleteFavourite === undefined
-          ? {}
-          : { onDeleteFavourite: content.onDeleteFavourite }),
-        ...(content.onReorderFavourites === undefined
-          ? {}
-          : { onReorderFavourites: content.onReorderFavourites }),
+        ...(content.onTabDragOver === undefined ? {} : { onTabDragOver: content.onTabDragOver }),
+        ...(content.onTabDrop === undefined ? {} : { onTabDrop: content.onTabDrop }),
+        favourites: {
+          location: content.location,
+          favouriteLocations: content.favouriteLocations,
+          recentLocations: content.recentLocations,
+          systemLocations: content.systemLocations,
+          systemLocationsError: content.systemLocationsError,
+          onRetrySystemLocations: content.onRetrySystemLocations,
+          connections: content.connections,
+          onManageConnections: content.onManageConnections,
+          onRefreshConnections: content.onRefreshConnections,
+          unavailableLocations: content.unavailableLocations,
+          onNavigateLocation: content.onNavigateLocation,
+          onAddFavourite: content.onAddFavourite,
+          onDeleteFavourite: content.onDeleteFavourite,
+          onReorderFavourites: content.onReorderFavourites,
+        } satisfies FavouritesAttrs,
+        tableConfig: {
+          sortLabel: content.sortLabel,
+          sort: content.sort,
+          formatSettings: content.formatSettings,
+          pluginColumns: content.pluginColumns,
+          nativeIconLoader: content.nativeIconLoader,
+        } satisfies TableConfigAttrs,
+        directorySummary: {
+          hasMore: content.hasMore,
+          totalEntryCount: content.totalEntryCount,
+          totalKnownEntries: content.totalKnownEntries,
+          totalKnownSize: content.totalKnownSize,
+          totalKnownFileCount: content.totalKnownFileCount,
+          hiddenSelectedCount: content.hiddenSelectedCount,
+        } satisfies DirectorySummaryAttrs,
+        filter: {
+          filterOpen: content.filterOpen,
+          filterQuery: content.filterQuery,
+          onFilterQueryChange: content.onFilterQueryChange,
+          onFilterCommit: content.onFilterCommit,
+          onFilterClose: content.onFilterClose,
+        } satisfies FilterAttrs,
+        navigation: {
+          onNavigate: content.onNavigate,
+          onBack: content.onBack,
+          onForward: content.onForward,
+          onParent: content.onParent,
+          canNavigateBack: tab.canNavigateBack,
+          canNavigateForward: tab.canNavigateForward,
+        } satisfies PaneNavigationAttrs,
         state: content.state,
         entries: content.entries,
         selectedEntryIds: content.selectedEntryIds,
         cutEntryIds: content.cutEntryIds,
-        sortLabel: content.sortLabel,
-        sort: content.sort,
-        ...(content.hasMore === undefined ? {} : { hasMore: content.hasMore }),
-        totalEntryCount: content.totalEntryCount,
-        ...(content.totalKnownEntries === undefined
-          ? {}
-          : { totalKnownEntries: content.totalKnownEntries }),
-        ...(content.totalKnownSize === undefined ? {} : { totalKnownSize: content.totalKnownSize }),
-        ...(content.totalKnownFileCount === undefined
-          ? {}
-          : { totalKnownFileCount: content.totalKnownFileCount }),
-        hiddenSelectedCount: content.hiddenSelectedCount,
-        filterOpen: content.filterOpen,
-        filterQuery: content.filterQuery,
-        ...(content.formatSettings === undefined ? {} : { formatSettings: content.formatSettings }),
-        ...(content.pluginColumns === undefined ? {} : { pluginColumns: content.pluginColumns }),
-        ...(content.nativeIconLoader === undefined
-          ? {}
-          : { nativeIconLoader: content.nativeIconLoader }),
-        ...(content.viewerContent === undefined ? {} : { viewerContent: content.viewerContent }),
         active,
         platform: content.platform,
         ...(content.keybindingRuntime === undefined
@@ -470,29 +469,19 @@ export const WorkspaceLayoutView: FactoryComponent<WorkspaceLayoutViewAttrs> = (
         ...(content.keybindingOverrides === undefined
           ? {}
           : { keybindingOverrides: content.keybindingOverrides }),
-        canNavigateBack: tab.canNavigateBack,
-        canNavigateForward: tab.canNavigateForward,
         ...(content.cursorIndex === undefined ? {} : { cursorIndex: content.cursorIndex }),
-        onNavigate: content.onNavigate,
-        onBack: content.onBack,
-        onForward: content.onForward,
-        onParent: content.onParent,
         onOpenEntry: content.onOpenEntry,
         onSelectionAction: content.onSelectionAction,
         onRetry: content.onRetry,
         onLoadNextPage: content.onLoadNextPage,
         onSortChange: content.onSortChange,
-        onFilterQueryChange: content.onFilterQueryChange,
-        onFilterCommit: content.onFilterCommit,
-        onFilterClose: content.onFilterClose,
         onRename: content.onRename,
         ...(content.onMultiRename === undefined ? {} : { onMultiRename: content.onMultiRename }),
         onContextMenu: content.onContextMenu ?? (() => undefined),
         ...(content.onDragStart === undefined ? {} : { onDragStart: content.onDragStart }),
         ...(content.onDragOver === undefined ? {} : { onDragOver: content.onDragOver }),
         ...(content.onDrop === undefined ? {} : { onDrop: content.onDrop }),
-        ...(content.onTabDragOver === undefined ? {} : { onTabDragOver: content.onTabDragOver }),
-        ...(content.onTabDrop === undefined ? {} : { onTabDrop: content.onTabDrop }),
+        ...(content.viewerContent === undefined ? {} : { viewerContent: content.viewerContent }),
       }),
     );
   }

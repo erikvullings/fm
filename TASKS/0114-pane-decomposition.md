@@ -1,6 +1,6 @@
 # 0114 Decompose Pane Component
 
-Status: open
+Status: done
 Priority: medium
 Subsystem: frontend
 Depends on: none
@@ -26,4 +26,4 @@ The Pane component (`panes/pane.ts`) is 1,324 lines with `PaneAttrs` having ~95 
 - Reference: architecture review — deepening opportunity #3
 
 ## Agent Notes
--
+- 2026-08-10 claude: Extracted TypeaheadController, BreadcrumbView (breadcrumb-view.ts), RenameEditingController, TabStrip from pane.ts. PaneAttrs reduced from ~70 to 39 properties via 5 sub-objects (FavouritesAttrs, TableConfigAttrs, DirectorySummaryAttrs, FilterAttrs, PaneNavigationAttrs). 42 new sub-module tests (TypeaheadController: 14, RenameEditingController: 8, plus 20 passing in prior test files). All 63 existing pane tests pass. TypeScript clean (only pre-existing unrelated errors remain). pane.test.ts attrs() factory accepts flat legacy-style overrides for zero call-site churn. TabStrip manages its own drag state internally.

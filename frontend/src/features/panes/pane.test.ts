@@ -1,7 +1,23 @@
 import m from 'mithril';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { ActionDescriptor, Connection, EntryId, EntrySummary, TabId } from '../../models';
+import type {
+  ActionDescriptor,
+  Connection,
+  EntryId,
+  EntrySummary,
+  FavouriteLocation,
+  LoadingState,
+  Location,
+  SortDescriptor,
+  SystemLocation,
+  TabId,
+} from '../../models';
+import type { DirectoryColumnDescriptor } from '../directory-table/directory-table';
+import type { NativeIconLoader } from '../directory-table/native-icon-loader';
+import type { EntryFormatSettings } from '../entry-formatting/entry-formatting';
+import type { SelectionPlatform } from '../selection/keybindings';
+import type { SelectionAction } from '../selection/selection';
 import {
   breadcrumbSegments,
   Pane,
@@ -9,6 +25,7 @@ import {
   type PaneTab,
   searchBreadcrumbSegments,
 } from './pane';
+import type { KeybindingRuntime } from '../../keybindings/dispatcher';
 
 let root: HTMLElement;
 
@@ -98,48 +115,172 @@ function sampleConnection(overrides: Partial<Connection> = {}): Connection {
   };
 }
 
-function attrs(overrides: Partial<PaneAttrs> = {}): PaneAttrs {
+/** Flat input shape accepted by the test factory — mirrors the old flat PaneAttrs API. */
+type FlatAttrsInput = Partial<{
+  // Location
+  path: string;
+  locationUri: string;
+  tabTitle: string;
+  searchQuery: string;
+  // Tabs
+  tabs: readonly PaneTab[];
+  activeTabId: TabId;
+  onSelectTab: (tabId: TabId) => void;
+  onCloseTab: (tabId: TabId) => void;
+  onNewTab: () => void;
+  onReorderTabs: (order: readonly TabId[]) => void;
+  onTabDragOver: (tabId: TabId, event: DragEvent) => boolean;
+  onTabDrop: (tabId: TabId, event: DragEvent) => void;
+  // Favourites props (flat for test convenience)
+  location: Location;
+  favouriteLocations: readonly FavouriteLocation[];
+  recentLocations: readonly Location[];
+  systemLocations: readonly SystemLocation[];
+  systemLocationsError: string;
+  onRetrySystemLocations: () => void | Promise<void>;
+  connections: readonly Connection[];
+  onManageConnections: () => void;
+  onRefreshConnections: () => void | Promise<void>;
+  unavailableLocations: ReadonlySet<string>;
+  onNavigateLocation: (location: Location) => void | Promise<void>;
+  onAddFavourite: (label: string, location: Location) => void | Promise<void>;
+  onDeleteFavourite: (location: Location) => void | Promise<void>;
+  onReorderFavourites: (from: number, to: number) => void | Promise<void>;
+  // Table config props
+  sortLabel: string;
+  sort: readonly SortDescriptor[];
+  formatSettings: EntryFormatSettings;
+  pluginColumns: readonly DirectoryColumnDescriptor[];
+  nativeIconLoader: NativeIconLoader;
+  // Directory summary props
+  hasMore: boolean;
+  totalEntryCount: number;
+  totalKnownEntries: number;
+  totalKnownSize: number;
+  totalKnownFileCount: number;
+  hiddenSelectedCount: number;
+  // Filter props
+  filterOpen: boolean;
+  filterQuery: string;
+  onFilterQueryChange: (query: string) => void;
+  onFilterCommit: () => void;
+  onFilterClose: () => void;
+  // Navigation props
+  onNavigate: (path: string) => void | Promise<void>;
+  onBack: () => void | Promise<void>;
+  onForward: () => void | Promise<void>;
+  onParent: () => void | Promise<void>;
+  canNavigateBack: boolean;
+  canNavigateForward: boolean;
+  // Directory data
+  state: LoadingState;
+  entries: readonly EntrySummary[];
+  selectedEntryIds: ReadonlySet<EntryId>;
+  cutEntryIds: ReadonlySet<EntryId>;
+  active: boolean;
+  cursorIndex: number;
+  platform: SelectionPlatform;
+  keybindingRuntime: KeybindingRuntime;
+  actions: readonly ActionDescriptor[];
+  keybindingOverrides: Readonly<Record<string, string>>;
+  // Operations
+  onOpenEntry: (entry: EntrySummary) => void | Promise<void>;
+  onSelectionAction: (action: SelectionAction) => void;
+  onRetry: () => void | Promise<void>;
+  onLoadNextPage: () => void | Promise<void>;
+  onSortChange: (sort: readonly SortDescriptor[]) => void;
+  onRename: (entry: EntrySummary, name: string) => void | Promise<void>;
+  onMultiRename: (entries: readonly EntrySummary[]) => void;
+  onContextMenu: (entries: readonly EntrySummary[], x: number, y: number) => void;
+  onDragStart: (entries: readonly EntrySummary[], event: DragEvent) => void;
+  onDragOver: (entry: EntrySummary | undefined, event: DragEvent) => boolean;
+  onDrop: (entry: EntrySummary | undefined, event: DragEvent) => void;
+  viewerContent: m.Children;
+}>;
+
+/** Builds a PaneAttrs from a flat legacy-style input, keeping test call sites unchanged. */
+function attrs(input: FlatAttrsInput = {}): PaneAttrs {
   return {
-    path: '/home/erik',
-    tabTitle: 'erik',
-    tabs: defaultTabs,
-    activeTabId: 'tab-1' as TabId,
-    onSelectTab: vi.fn(),
-    onCloseTab: vi.fn(),
-    onNewTab: vi.fn(),
-    onReorderTabs: vi.fn(),
-    state: { type: 'loaded' },
-    entries,
-    sortLabel: 'Name ascending',
-    sort: [{ columnId: 'core.name', direction: 'ascending' }],
-    selectedEntryIds: new Set<EntryId>(),
-    cutEntryIds: new Set<EntryId>(),
-    active: true,
-    platform: 'linux',
-    keybindingRuntime: 'desktop',
-    actions: keybindingActions,
-    keybindingOverrides: {},
-    canNavigateBack: true,
-    canNavigateForward: true,
-    totalEntryCount: entries.length,
-    hiddenSelectedCount: 0,
-    filterOpen: false,
-    filterQuery: '',
-    onFilterQueryChange: vi.fn(),
-    onFilterCommit: vi.fn(),
-    onFilterClose: vi.fn(),
-    onBack: vi.fn(),
-    onForward: vi.fn(),
-    onParent: vi.fn(),
-    onOpenEntry: vi.fn(),
-    onSelectionAction: vi.fn(),
-    onRetry: vi.fn(),
-    onLoadNextPage: vi.fn(),
-    onSortChange: vi.fn(),
-    onNavigate: vi.fn(),
-    onRename: vi.fn(),
-    onContextMenu: vi.fn(),
-    ...overrides,
+    path: input.path ?? '/home/erik',
+    ...(input.locationUri === undefined ? {} : { locationUri: input.locationUri }),
+    tabTitle: input.tabTitle ?? 'erik',
+    ...(input.searchQuery === undefined ? {} : { searchQuery: input.searchQuery }),
+    tabs: input.tabs ?? defaultTabs,
+    activeTabId: input.activeTabId ?? ('tab-1' as TabId),
+    onSelectTab: input.onSelectTab ?? vi.fn(),
+    onCloseTab: input.onCloseTab ?? vi.fn(),
+    onNewTab: input.onNewTab ?? vi.fn(),
+    onReorderTabs: input.onReorderTabs ?? vi.fn(),
+    ...(input.onTabDragOver === undefined ? {} : { onTabDragOver: input.onTabDragOver }),
+    ...(input.onTabDrop === undefined ? {} : { onTabDrop: input.onTabDrop }),
+    favourites: {
+      location: input.location,
+      favouriteLocations: input.favouriteLocations,
+      recentLocations: input.recentLocations,
+      systemLocations: input.systemLocations,
+      systemLocationsError: input.systemLocationsError,
+      onRetrySystemLocations: input.onRetrySystemLocations,
+      connections: input.connections,
+      onManageConnections: input.onManageConnections,
+      onRefreshConnections: input.onRefreshConnections,
+      unavailableLocations: input.unavailableLocations,
+      onNavigateLocation: input.onNavigateLocation,
+      onAddFavourite: input.onAddFavourite,
+      onDeleteFavourite: input.onDeleteFavourite,
+      onReorderFavourites: input.onReorderFavourites,
+    },
+    tableConfig: {
+      sortLabel: input.sortLabel ?? 'Name ascending',
+      sort: input.sort ?? [{ columnId: 'core.name', direction: 'ascending' }],
+      formatSettings: input.formatSettings,
+      pluginColumns: input.pluginColumns,
+      nativeIconLoader: input.nativeIconLoader,
+    },
+    directorySummary: {
+      hasMore: input.hasMore,
+      totalEntryCount: input.totalEntryCount ?? entries.length,
+      totalKnownEntries: input.totalKnownEntries,
+      totalKnownSize: input.totalKnownSize,
+      totalKnownFileCount: input.totalKnownFileCount,
+      hiddenSelectedCount: input.hiddenSelectedCount ?? 0,
+    },
+    filter: {
+      filterOpen: input.filterOpen ?? false,
+      filterQuery: input.filterQuery ?? '',
+      onFilterQueryChange: input.onFilterQueryChange ?? vi.fn(),
+      onFilterCommit: input.onFilterCommit ?? vi.fn(),
+      onFilterClose: input.onFilterClose ?? vi.fn(),
+    },
+    navigation: {
+      onNavigate: input.onNavigate ?? vi.fn(),
+      onBack: input.onBack ?? vi.fn(),
+      onForward: input.onForward ?? vi.fn(),
+      onParent: input.onParent ?? vi.fn(),
+      canNavigateBack: input.canNavigateBack ?? true,
+      canNavigateForward: input.canNavigateForward ?? true,
+    },
+    state: input.state ?? { type: 'loaded' },
+    entries: input.entries ?? entries,
+    selectedEntryIds: input.selectedEntryIds ?? new Set<EntryId>(),
+    cutEntryIds: input.cutEntryIds ?? new Set<EntryId>(),
+    active: input.active ?? true,
+    ...(input.cursorIndex === undefined ? {} : { cursorIndex: input.cursorIndex }),
+    platform: input.platform ?? 'linux',
+    keybindingRuntime: input.keybindingRuntime ?? 'desktop',
+    actions: input.actions ?? keybindingActions,
+    keybindingOverrides: input.keybindingOverrides ?? {},
+    onOpenEntry: input.onOpenEntry ?? vi.fn(),
+    onSelectionAction: input.onSelectionAction ?? vi.fn(),
+    onRetry: input.onRetry ?? vi.fn(),
+    onLoadNextPage: input.onLoadNextPage ?? vi.fn(),
+    onSortChange: input.onSortChange ?? vi.fn(),
+    onRename: input.onRename ?? vi.fn(),
+    ...(input.onMultiRename === undefined ? {} : { onMultiRename: input.onMultiRename }),
+    onContextMenu: input.onContextMenu ?? vi.fn(),
+    ...(input.onDragStart === undefined ? {} : { onDragStart: input.onDragStart }),
+    ...(input.onDragOver === undefined ? {} : { onDragOver: input.onDragOver }),
+    ...(input.onDrop === undefined ? {} : { onDrop: input.onDrop }),
+    ...(input.viewerContent === undefined ? {} : { viewerContent: input.viewerContent }),
   };
 }
 

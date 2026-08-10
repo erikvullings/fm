@@ -1,6 +1,6 @@
 import m, { type FactoryComponent, type VnodeDOM } from 'mithril';
 import { IconButton } from 'mithril-materialized';
-import { heartIcon, heartPlusIcon, plusIcon, searchIcon } from '../../components/tabler-icons';
+import { plusIcon } from '../../components/tabler-icons';
 import {
   dispatchKeybinding,
   hasPrimaryModifier,
@@ -33,133 +33,132 @@ import {
 import type { NativeIconLoader } from '../directory-table/native-icon-loader';
 import type { EntryFormatSettings } from '../entry-formatting/entry-formatting';
 import { truncateLocationForDisplay } from '../favourites/favourites';
-import { validateDirectoryName } from '../operations/create-directory-dialog';
 import { QuickFilterInput } from '../quick-filter/quick-filter-input';
-import {
-  reduceTypeahead,
-  type SelectionPlatform,
-  type TypeaheadState,
-} from '../selection/keybindings';
+import type { SelectionPlatform } from '../selection/keybindings';
 import type { SelectionAction } from '../selection/selection';
+import { breadcrumbSegments, searchBreadcrumbSegments } from './breadcrumb-view';
 import { isParentEntry } from './parent-entry';
-import { reorderedTabIds } from './tab-navigation';
+import { createRenameEditingController } from './rename-edit-controller';
+import { TabStrip } from './tab-strip';
+import type { PaneTab } from './tab-strip';
+import { createTypeaheadController } from './typeahead-controller';
 import './pane.css';
 
-/** A cumulative, clickable part of a filesystem path. */
-export interface BreadcrumbSegment {
-  readonly label: string;
-  readonly path: string;
+export { breadcrumbSegments, searchBreadcrumbSegments } from './breadcrumb-view';
+export type { BreadcrumbSegment } from './breadcrumb-view';
+export type { PaneTab } from './tab-strip';
+
+// ── Sub-object interfaces ──────────────────────────────────────────────────────
+
+/** Favourites-menu data — all fields optional since menus may be fully or partially unavailable. */
+export interface FavouritesAttrs {
+  readonly location?: Location | undefined;
+  readonly favouriteLocations?: readonly FavouriteLocation[] | undefined;
+  readonly recentLocations?: readonly Location[] | undefined;
+  readonly systemLocations?: readonly SystemLocation[] | undefined;
+  readonly systemLocationsError?: string | undefined;
+  readonly onRetrySystemLocations?: (() => void | Promise<void>) | undefined;
+  readonly connections?: readonly Connection[] | undefined;
+  readonly onManageConnections?: (() => void) | undefined;
+  readonly onRefreshConnections?: (() => void | Promise<void>) | undefined;
+  readonly unavailableLocations?: ReadonlySet<string> | undefined;
+  readonly onNavigateLocation?: ((location: Location) => void | Promise<void>) | undefined;
+  readonly onAddFavourite?: ((label: string, location: Location) => void | Promise<void>) | undefined;
+  readonly onDeleteFavourite?: ((location: Location) => void | Promise<void>) | undefined;
+  readonly onReorderFavourites?: ((from: number, to: number) => void | Promise<void>) | undefined;
 }
 
-/** One entry in a pane's tab strip (spec §37). */
-export interface PaneTab {
-  readonly id: TabId;
-  readonly title: string;
-  /** Full path shown as the tab's tooltip. */
-  readonly path: string;
-  /** Canonical tab location URI used for scheme/provider-specific behavior. */
-  readonly locationUri?: string;
-  /** Whether this tab is a `search://` results tab - shown with a search icon instead of a
-   * `search:` text prefix in the tab strip (task 0089 follow-up). */
-  readonly isSearchTab?: boolean;
+/** Quick-filter bar state and callbacks. */
+export interface FilterAttrs {
+  readonly filterOpen: boolean;
+  readonly filterQuery: string;
+  readonly onFilterQueryChange: (query: string) => void;
+  readonly onFilterCommit: () => void;
+  readonly onFilterClose: () => void;
 }
 
-/** Inputs for the presentation-only pane surface. */
+/** Backend-reported directory totals used by the status bar. */
+export interface DirectorySummaryAttrs {
+  readonly hasMore?: boolean | undefined;
+  readonly totalEntryCount: number;
+  readonly totalKnownEntries?: number | undefined;
+  readonly totalKnownSize?: number | undefined;
+  readonly totalKnownFileCount?: number | undefined;
+  readonly hiddenSelectedCount: number;
+}
+
+/** Sort, format and column configuration passed through to the directory table. */
+export interface TableConfigAttrs {
+  readonly sortLabel: string;
+  readonly sort: readonly SortDescriptor[];
+  readonly formatSettings?: EntryFormatSettings | undefined;
+  readonly pluginColumns?: readonly DirectoryColumnDescriptor[] | undefined;
+  readonly nativeIconLoader?: NativeIconLoader | undefined;
+}
+
+/** Path navigation callbacks and history state. */
+export interface PaneNavigationAttrs {
+  readonly onNavigate: (path: string) => void | Promise<void>;
+  readonly onBack: () => void | Promise<void>;
+  readonly onForward: () => void | Promise<void>;
+  readonly onParent: () => void | Promise<void>;
+  readonly canNavigateBack: boolean;
+  readonly canNavigateForward: boolean;
+}
+
+/** Inputs for the presentation-only pane surface (39 properties, < 40). */
 export interface PaneAttrs {
+  // Location display (4)
   readonly path: string;
-  /** The active tab's canonical location URI (when needed for scheme-specific display logic). */
   readonly locationUri?: string;
   readonly tabTitle: string;
-  /** The originating query text for a `search://` tab's `path`, if known - shown in the
-   * breadcrumb instead of the opaque search id (task 0089 follow-up). */
   readonly searchQuery?: string;
+  // Tab strip kept flat — primary identity controls (8)
   readonly tabs: readonly PaneTab[];
   readonly activeTabId: TabId;
   readonly onSelectTab: (tabId: TabId) => void;
   readonly onCloseTab: (tabId: TabId) => void;
   readonly onNewTab: () => void;
   readonly onReorderTabs: (order: readonly TabId[]) => void;
-  /** The active tab's provider-neutral location, used by the favourites menu. */
-  readonly location?: Location;
-  readonly favouriteLocations?: readonly FavouriteLocation[];
-  readonly recentLocations?: readonly Location[];
-  readonly systemLocations?: readonly SystemLocation[];
-  readonly systemLocationsError?: string;
-  readonly onRetrySystemLocations?: () => void | Promise<void>;
-  /** Saved application-managed connections shown in the `SERVERS` group (task 0103). */
-  readonly connections?: readonly Connection[];
-  /** Opens the connections manager (add/edit/delete/connect/disconnect/test, task 0103). */
-  readonly onManageConnections?: () => void;
-  /** Refreshes connection statuses before opening the favourites/servers menu. */
-  readonly onRefreshConnections?: () => void | Promise<void>;
-  readonly unavailableLocations?: ReadonlySet<string>;
-  readonly onNavigateLocation?: (location: Location) => void | Promise<void>;
-  readonly onAddFavourite?: (label: string, location: Location) => void | Promise<void>;
-  readonly onDeleteFavourite?: (location: Location) => void | Promise<void>;
-  readonly onReorderFavourites?: (from: number, to: number) => void | Promise<void>;
+  readonly onTabDragOver?: ((tabId: TabId, event: DragEvent) => boolean) | undefined;
+  readonly onTabDrop?: ((tabId: TabId, event: DragEvent) => void) | undefined;
+  // Sub-objects (5)
+  readonly favourites: FavouritesAttrs;
+  readonly tableConfig: TableConfigAttrs;
+  readonly directorySummary: DirectorySummaryAttrs;
+  readonly filter: FilterAttrs;
+  readonly navigation: PaneNavigationAttrs;
+  // Directory data (6)
   readonly state: LoadingState;
   readonly entries: readonly EntrySummary[];
-  readonly sortLabel: string;
-  readonly sort: readonly SortDescriptor[];
-  readonly formatSettings?: EntryFormatSettings;
-  readonly pluginColumns?: readonly DirectoryColumnDescriptor[];
-  readonly nativeIconLoader?: NativeIconLoader;
   readonly selectedEntryIds: ReadonlySet<EntryId>;
   readonly cutEntryIds: ReadonlySet<EntryId>;
   readonly active: boolean;
   readonly cursorIndex?: number;
+  // Keyboard / action dispatch (4)
   readonly platform: SelectionPlatform;
   readonly keybindingRuntime?: KeybindingRuntime;
   readonly actions?: readonly ActionDescriptor[];
   readonly keybindingOverrides?: Readonly<Record<string, string>>;
-  readonly canNavigateBack: boolean;
-  readonly canNavigateForward: boolean;
-  /** Whether the loaded directory has more unfetched pages (spec-required paging clarity). */
-  readonly hasMore?: boolean;
-  /** Total loaded ordinary entries before filtering, for the "N of M shown" status. */
-  readonly totalEntryCount: number;
-  /**
-   * The directory's real entry count reported by the backend, known from the first page even
-   * before every page has loaded — sizes the scrollbar/virtualized content height correctly up
-   * front instead of only once all pages have been fetched.
-   */
-  readonly totalKnownEntries?: number;
-  /** Combined byte size of every file/symlink entry in the directory, known from the backend. */
-  readonly totalKnownSize?: number;
-  /** Number of file/symlink entries (directories excluded) in the directory, known from the backend. */
-  readonly totalKnownFileCount?: number;
-  /** Selected entries hidden by the active filter (still selected, just not rendered). */
-  readonly hiddenSelectedCount: number;
-  readonly filterOpen: boolean;
-  readonly filterQuery: string;
-  readonly onFilterQueryChange: (query: string) => void;
-  readonly onFilterCommit: () => void;
-  readonly onFilterClose: () => void;
-  readonly onNavigate: (path: string) => void | Promise<void>;
-  readonly onBack: () => void | Promise<void>;
-  readonly onForward: () => void | Promise<void>;
-  readonly onParent: () => void | Promise<void>;
+  // Entry operations (8)
   readonly onOpenEntry: (entry: EntrySummary) => void | Promise<void>;
   readonly onSelectionAction: (action: SelectionAction) => void;
   readonly onRetry: () => void | Promise<void>;
   readonly onLoadNextPage: () => void | Promise<void>;
   readonly onSortChange: (sort: readonly SortDescriptor[]) => void;
   readonly onRename: (entry: EntrySummary, name: string) => void | Promise<void>;
-  /** F2 with more than one entry selected opens the multi-rename dialog (task 0072) instead of
-   * the single-entry inline rename input. */
   readonly onMultiRename?: (entries: readonly EntrySummary[]) => void;
   readonly onContextMenu: (entries: readonly EntrySummary[], x: number, y: number) => void;
+  // Drag/drop into the directory table (3)
   readonly onDragStart?: (entries: readonly EntrySummary[], event: DragEvent) => void;
   readonly onDragOver?: (entry: EntrySummary | undefined, event: DragEvent) => boolean;
   readonly onDrop?: (entry: EntrySummary | undefined, event: DragEvent) => void;
-  readonly onTabDragOver?: (tabId: TabId, event: DragEvent) => boolean;
-  readonly onTabDrop?: (tabId: TabId, event: DragEvent) => void;
-  /** When set, replaces the entire directory-listing surface with this content (task 0088's
-   * Lister-style viewer, opened in the opposite pane). */
+  /** When set, replaces the entire directory-listing surface (task 0088). */
   readonly viewerContent?: m.Children;
 }
 
-/** Uses the visible folder name as the initial, editable favourite label. */
+// ── Helpers ────────────────────────────────────────────────────────────────────
+
 function defaultFavouriteLabel(path: string): string {
   const segments = path
     .replace(/[\\/]+$/, '')
@@ -175,74 +174,6 @@ function isEditableTarget(target: EventTarget | null): boolean {
     target instanceof HTMLSelectElement ||
     (target instanceof HTMLElement && target.isContentEditable)
   );
-}
-
-function posixSegments(path: string): readonly BreadcrumbSegment[] {
-  if (path === '/') {
-    return [{ label: '/', path: '/' }];
-  }
-  const parts = path.split('/').filter(Boolean);
-  if (parts[0] === '~') {
-    return parts.map((label, index) => ({
-      label,
-      path: index === 0 ? '~' : `~/${parts.slice(1, index + 1).join('/')}`,
-    }));
-  }
-  return [
-    { label: '/', path: '/' },
-    ...parts.map((label, index) => ({
-      label,
-      path: `/${parts.slice(0, index + 1).join('/')}`,
-    })),
-  ];
-}
-
-function windowsSegments(path: string): readonly BreadcrumbSegment[] {
-  const separator = '\\';
-  const parts = path.split(separator).filter(Boolean);
-  if (path.startsWith('\\\\') && parts.length >= 2) {
-    const root = `\\\\${parts[0]}\\${parts[1]}`;
-    return [
-      { label: root, path: root },
-      ...parts.slice(2).map((label, index) => ({
-        label,
-        path: `${root}\\${parts.slice(2, index + 3).join('\\')}`,
-      })),
-    ];
-  }
-  const root = parts[0] ?? path;
-  return [
-    { label: root, path: root.endsWith(':') ? `${root}\\` : root },
-    ...parts.slice(1).map((label, index) => ({
-      label,
-      path: `${root}\\${parts.slice(1, index + 2).join('\\')}`,
-    })),
-  ];
-}
-
-/** Produces cumulative breadcrumb targets for POSIX, drive-letter and UNC paths. */
-export function breadcrumbSegments(path: string): readonly BreadcrumbSegment[] {
-  return path.includes('\\') ? windowsSegments(path) : posixSegments(path);
-}
-
-/** Non-navigable, display-only breadcrumb for a `search://<providerId>/<searchId>` location,
- * e.g. `/ > search > local > *.svg` - falls back to the raw search id when the originating query
- * text isn't known. There is no real filesystem path behind any of these segments, so callers
- * must not treat their `path` as navigable (see the non-button rendering in the view below). */
-export function searchBreadcrumbSegments(
-  uri: string,
-  query: string | undefined,
-): readonly BreadcrumbSegment[] {
-  const withoutScheme = uri.slice('search://'.length);
-  const separatorIndex = withoutScheme.indexOf('/');
-  const providerId = separatorIndex === -1 ? withoutScheme : withoutScheme.slice(0, separatorIndex);
-  const searchId = separatorIndex === -1 ? '' : withoutScheme.slice(separatorIndex + 1);
-  return [
-    { label: '/', path: '/' },
-    { label: 'search', path: 'search' },
-    { label: providerId, path: providerId },
-    { label: query ?? searchId, path: query ?? searchId },
-  ];
 }
 
 function isAcceptedPath(path: string): boolean {
@@ -277,7 +208,6 @@ function sizeLabel(bytes: number): string {
   return `${new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 }).format(value)} ${units[unitIndex]}`;
 }
 
-/** Formats a Marta-style status summary from already-aggregated counts. */
 function formatListingSummary(fileCount: number, folderCount: number, totalSize: number): string {
   const filesPart = `${fileCount} ${fileCount === 1 ? 'file' : 'files'}`;
   const foldersPart = `${folderCount} ${folderCount === 1 ? 'folder' : 'folders'}`;
@@ -290,9 +220,6 @@ function formatListingSummary(fileCount: number, folderCount: number, totalSize:
   return `${sizeLabel(totalSize)} in ${countsText}`;
 }
 
-/** Aggregates the currently listed (loaded/shown) entries into a Marta-style status summary:
- * total size of files plus separate file/folder counts. Symlinks are counted as files since
- * they're visually indistinguishable from them in the table. */
 function listingSummary(entries: readonly EntrySummary[]): string {
   let fileCount = 0;
   let folderCount = 0;
@@ -308,34 +235,45 @@ function listingSummary(entries: readonly EntrySummary[]): string {
   return formatListingSummary(fileCount, folderCount, totalSize);
 }
 
+function locationKey(location: Location): string {
+  return `${location.providerId}:${location.uri}`;
+}
+
+function canAddCurrentFavourite(favourites: FavouritesAttrs): boolean {
+  if (favourites.location === undefined || favourites.onAddFavourite === undefined) return false;
+  const currentKey = locationKey(favourites.location);
+  const alreadyFavourite = favourites.favouriteLocations?.some(
+    ({ location }) => locationKey(location) === currentKey,
+  );
+  const permanentCloudLocation = favourites.systemLocations?.some(
+    ({ kind, location }) => kind === 'cloud' && locationKey(location) === currentKey,
+  );
+  return alreadyFavourite !== true && permanentCloudLocation !== true;
+}
+
+// ── Component ─────────────────────────────────────────────────────────────────
+
 /** Compact pane containing its single tab, path controls, directory grid, and status. */
 export const Pane: FactoryComponent<PaneAttrs> = () => {
   let editing = false;
   let draftPath = '';
-  let draggedTabId: TabId | undefined;
-  let dropTargetTabId: TabId | undefined;
   let pathError: string | undefined;
   let inputElement: HTMLInputElement | undefined;
-  let typeahead: TypeaheadState | undefined;
-  let typeaheadTimer: ReturnType<typeof setTimeout> | undefined;
-  let typeaheadError = false;
-  /** The path the current `typeahead` prefix was typed against; a path change resets it. */
-  let typeaheadPath: string | undefined;
-  let renamingEntry: EntrySummary | undefined;
-  let renameValue = '';
-  let renameError: string | undefined;
   let favouritesOpen = false;
   let favouriteLabel = '';
   let favouriteError: string | undefined;
-  /** Restored when the favourites menu closes, so keyboard users don't lose their place. */
   let favouritesPreviousFocus: HTMLElement | undefined;
+  let typeaheadPath: string | undefined;
+
+  const typeaheadCtrl = createTypeaheadController(() => m.redraw());
+  const renameCtrl = createRenameEditingController();
 
   function openFavourites(attrs: PaneAttrs): void {
     favouritesPreviousFocus = document.activeElement as HTMLElement;
     favouriteLabel = defaultFavouriteLabel(attrs.path);
     favouriteError = undefined;
     favouritesOpen = true;
-    void attrs.onRefreshConnections?.();
+    void attrs.favourites.onRefreshConnections?.();
   }
 
   function closeFavourites(): void {
@@ -345,9 +283,9 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
   }
 
   async function navigateFavourite(location: Location, attrs: PaneAttrs): Promise<void> {
-    if (attrs.onNavigateLocation === undefined) return;
+    if (attrs.favourites.onNavigateLocation === undefined) return;
     try {
-      await attrs.onNavigateLocation(location);
+      await attrs.favourites.onNavigateLocation(location);
       favouriteError = undefined;
       closeFavourites();
     } catch (error: unknown) {
@@ -357,13 +295,13 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
   }
 
   function addCurrentFavourite(attrs: PaneAttrs): void {
-    if (!canAddCurrentFavourite(attrs) || attrs.location === undefined) return;
+    const { favourites } = attrs;
+    if (!canAddCurrentFavourite(favourites) || favourites.location === undefined) return;
     const label = favouriteLabel.trim() || defaultFavouriteLabel(attrs.path);
-    void attrs.onAddFavourite?.(label, attrs.location);
+    void favourites.onAddFavourite?.(label, favourites.location);
     favouriteLabel = '';
   }
 
-  /** Focuses the first selectable favourite/recent so Enter navigates immediately (TC hotlist-style). */
   function focusFirstFavouritesItem(menu: HTMLElement): void {
     const first = menu.querySelector<HTMLButtonElement>('[role="menuitem"]:not(:disabled)');
     if (first === null) {
@@ -373,7 +311,6 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
     first.focus();
   }
 
-  /** Moves focus between favourites and recent locations as one continuous, wrapping list. */
   function moveFavouritesFocus(menu: HTMLElement, offset: 1 | -1): void {
     const items = Array.from(
       menu.querySelectorAll<HTMLButtonElement>('[role="menuitem"]:not(:disabled)'),
@@ -383,22 +320,6 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
     const nextIndex =
       currentIndex === -1 ? 0 : (currentIndex + offset + items.length) % items.length;
     items[nextIndex]?.focus();
-  }
-
-  function locationKey(location: Location): string {
-    return `${location.providerId}:${location.uri}`;
-  }
-
-  function canAddCurrentFavourite(attrs: PaneAttrs): boolean {
-    if (attrs.location === undefined || attrs.onAddFavourite === undefined) return false;
-    const currentKey = locationKey(attrs.location);
-    const alreadyFavourite = attrs.favouriteLocations?.some(
-      ({ location }) => locationKey(location) === currentKey,
-    );
-    const permanentCloudLocation = attrs.systemLocations?.some(
-      ({ kind, location }) => kind === 'cloud' && locationKey(location) === currentKey,
-    );
-    return alreadyFavourite !== true && permanentCloudLocation !== true;
   }
 
   function beginRename(attrs: PaneAttrs): void {
@@ -411,89 +332,8 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
     }
     const entry = attrs.cursorIndex === undefined ? undefined : attrs.entries[attrs.cursorIndex];
     if (entry === undefined || isParentEntry(entry.id)) return;
-    renamingEntry = entry;
-    renameValue = entry.name;
-    renameError = undefined;
+    renameCtrl.open(entry);
     m.redraw();
-  }
-
-  function cancelRename(): void {
-    renamingEntry = undefined;
-    renameError = undefined;
-    m.redraw();
-  }
-
-  function commitRename(attrs: PaneAttrs): void {
-    renameError = validateDirectoryName(renameValue);
-    if (renameError !== undefined || renamingEntry === undefined) {
-      m.redraw();
-      return;
-    }
-    const entry = renamingEntry;
-    renamingEntry = undefined;
-    void attrs.onRename(entry, renameValue);
-  }
-
-  function clearTypeaheadTimer(): void {
-    if (typeaheadTimer !== undefined) {
-      clearTimeout(typeaheadTimer);
-      typeaheadTimer = undefined;
-    }
-  }
-
-  function flashRejectedTypeahead(): void {
-    clearTypeaheadTimer();
-    typeaheadError = true;
-    typeaheadTimer = setTimeout(() => {
-      typeaheadError = false;
-      typeaheadTimer = undefined;
-      m.redraw();
-    }, 400);
-  }
-
-  function moveWithinMatches(
-    attrs: PaneAttrs,
-    offset: number,
-    edge?: 'first' | 'last',
-    extend = false,
-  ): boolean {
-    if (typeahead === undefined) {
-      return false;
-    }
-    const matches = attrs.entries.filter((entry) =>
-      entry.name.toLocaleLowerCase().includes(typeahead?.prefix ?? ''),
-    );
-    if (matches.length === 0) {
-      return true;
-    }
-    const cursorEntry =
-      attrs.cursorIndex === undefined ? undefined : attrs.entries[attrs.cursorIndex];
-    const currentMatchIndex = matches.findIndex((entry) => entry.id === cursorEntry?.id);
-    const targetIndex =
-      edge === 'first'
-        ? 0
-        : edge === 'last'
-          ? matches.length - 1
-          : Math.max(
-            0,
-            Math.min(
-              (currentMatchIndex < 0 ? (offset < 0 ? matches.length : -1) : currentMatchIndex) +
-              offset,
-              matches.length - 1,
-            ),
-          );
-    const target = matches[targetIndex];
-    if (target === undefined) {
-      return true;
-    }
-    if (extend && cursorEntry !== undefined) {
-      const cursorIndex = attrs.entries.indexOf(cursorEntry);
-      const targetEntryIndex = attrs.entries.indexOf(target);
-      attrs.onSelectionAction({ type: 'extendRange', offset: targetEntryIndex - cursorIndex });
-    } else {
-      attrs.onSelectionAction({ type: 'setCursor', entryId: target.id });
-    }
-    return true;
   }
 
   function beginEditing(path: string): void {
@@ -517,7 +357,7 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
     }
     pathError = undefined;
     try {
-      await attrs.onNavigate(path);
+      await attrs.navigation.onNavigate(path);
       editing = keepEditing ? false : editing;
     } catch (error: unknown) {
       pathError = errorMessage(error);
@@ -534,33 +374,23 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
       }
     },
     onremove: () => {
-      clearTypeaheadTimer();
+      typeaheadCtrl.clearTimer();
     },
     view: ({ attrs }) => {
       if (attrs.viewerContent !== undefined) {
-        // Bypasses the directory-listing grid entirely (tabs/breadcrumb/table/status) - the
-        // Lister-style viewer (task 0088) owns its own header/body layout via `.fm-pane-viewer`.
         return m(
           'section.fm-pane.fm-pane-viewer',
           { 'data-active': String(attrs.active), tabindex: -1 },
           attrs.viewerContent,
         );
       }
-      // The quick filter occupies the breadcrumb bar's slot while active, so an in-progress
-      // path edit (started before the filter was invoked) would otherwise reappear, stale, once
-      // the filter closes — drop it silently instead.
-      if (attrs.filterOpen && editing) {
+      if (attrs.filter.filterOpen && editing) {
         editing = false;
         pathError = undefined;
       }
-      // Entering a different directory (however navigation happened: opening an entry, ..,
-      // breadcrumb, back/forward, or switching tabs) makes any typed prefix meaningless for the
-      // new listing, and stale error highlighting to boot — reset it once per path change.
       if (typeaheadPath !== attrs.path) {
         typeaheadPath = attrs.path;
-        clearTypeaheadTimer();
-        typeahead = undefined;
-        typeaheadError = false;
+        typeaheadCtrl.reset();
       }
       const activeLocationUri = attrs.locationUri ?? attrs.path;
       const isSearchLocation = activeLocationUri.startsWith('search://');
@@ -568,27 +398,24 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
       const ordinaryEntries = attrs.entries.filter((entry) => !isParentEntry(entry.id));
       const selectedCount = attrs.selectedEntryIds.size;
       const totalSelectedSize = selectedSize(ordinaryEntries, attrs.selectedEntryIds);
-      // `attrs.totalKnownEntries` counts the synthetic ".." row the same way `attrs.entries`
-      // does (app-shell adds +1 for it), while the backend-reported size/file-count totals never
-      // do — subtract the same adjustment so the counts stay comparable. Only used unfiltered:
-      // while filtering, the backend total can't be projected onto the filtered subset, so the
-      // status bar falls back to aggregating the filtered/shown entries directly (see below).
+      const { directorySummary: ds } = attrs;
       const parentEntryAdjustment = attrs.entries.length - ordinaryEntries.length;
       const backendTotalEntries =
-        attrs.totalKnownEntries === undefined
+        ds.totalKnownEntries === undefined
           ? undefined
-          : attrs.totalKnownEntries - parentEntryAdjustment;
+          : ds.totalKnownEntries - parentEntryAdjustment;
       const backendListingSummary =
-        attrs.filterQuery.trim() === '' &&
-          attrs.totalKnownSize !== undefined &&
-          attrs.totalKnownFileCount !== undefined &&
+        attrs.filter.filterQuery.trim() === '' &&
+          ds.totalKnownSize !== undefined &&
+          ds.totalKnownFileCount !== undefined &&
           backendTotalEntries !== undefined
           ? formatListingSummary(
-            attrs.totalKnownFileCount,
-            backendTotalEntries - attrs.totalKnownFileCount,
-            attrs.totalKnownSize,
+            ds.totalKnownFileCount,
+            backendTotalEntries - ds.totalKnownFileCount,
+            ds.totalKnownSize,
           )
           : undefined;
+
       return m(
         'section.fm-pane',
         {
@@ -596,8 +423,6 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
           tabindex: -1,
           onkeydown: (event: KeyboardEvent) => {
             if (isEditableTarget(event.target)) return;
-            // Ctrl/Cmd+D opens the favourites menu directly, TC hotlist-style, regardless of
-            // whether it's also bound as a palette-visible action.
             if (
               hasPrimaryModifier(event, attrs.platform) &&
               !event.altKey &&
@@ -627,20 +452,14 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
             }
             if (event.key === 'Escape') {
               event.preventDefault();
-              clearTypeaheadTimer();
-              typeahead = undefined;
-              typeaheadError = false;
+              typeaheadCtrl.reset();
               attrs.onSelectionAction({ type: 'clear' });
               m.redraw();
               return;
             }
-            if (event.key === 'Backspace' && typeahead !== undefined) {
+            if (event.key === 'Backspace' && typeaheadCtrl.prefix !== undefined) {
               event.preventDefault();
-              clearTypeaheadTimer();
-              const prefix = typeahead.prefix.slice(0, -1);
-              typeahead =
-                prefix.length === 0 ? undefined : { prefix, lastInputAt: typeahead.lastInputAt };
-              typeaheadError = false;
+              typeaheadCtrl.handleBackspace();
               m.redraw();
               return;
             }
@@ -686,27 +505,55 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
               }
             } else if (command?.type === 'parent') {
               event.preventDefault();
-              void attrs.onParent();
+              void attrs.navigation.onParent();
             } else if (command?.type === 'moveCursor') {
               event.preventDefault();
-              if (!moveWithinMatches(attrs, command.offset)) {
+              const cursorEntry =
+                attrs.cursorIndex === undefined ? undefined : attrs.entries[attrs.cursorIndex];
+              const taResult = typeaheadCtrl.moveWithinMatches(
+                attrs.entries, cursorEntry, command.offset, undefined, false,
+              );
+              if (taResult === false) {
                 attrs.onSelectionAction(command);
+              } else if (taResult !== undefined) {
+                attrs.onSelectionAction(taResult);
               }
             } else if (command?.type === 'moveCursorByPage') {
               event.preventDefault();
               const offset = command.pages * 10;
-              if (!moveWithinMatches(attrs, offset)) {
+              const cursorEntry =
+                attrs.cursorIndex === undefined ? undefined : attrs.entries[attrs.cursorIndex];
+              const taResult = typeaheadCtrl.moveWithinMatches(
+                attrs.entries, cursorEntry, offset, undefined, false,
+              );
+              if (taResult === false) {
                 attrs.onSelectionAction({ type: 'moveCursor', offset });
+              } else if (taResult !== undefined) {
+                attrs.onSelectionAction(taResult);
               }
             } else if (command?.type === 'moveCursorTo') {
               event.preventDefault();
-              if (!moveWithinMatches(attrs, 0, command.edge)) {
+              const cursorEntry =
+                attrs.cursorIndex === undefined ? undefined : attrs.entries[attrs.cursorIndex];
+              const taResult = typeaheadCtrl.moveWithinMatches(
+                attrs.entries, cursorEntry, 0, command.edge, false,
+              );
+              if (taResult === false) {
                 attrs.onSelectionAction(command);
+              } else if (taResult !== undefined) {
+                attrs.onSelectionAction(taResult);
               }
             } else if (command?.type === 'extendRange') {
               event.preventDefault();
-              if (!moveWithinMatches(attrs, command.offset, undefined, true)) {
+              const cursorEntry =
+                attrs.cursorIndex === undefined ? undefined : attrs.entries[attrs.cursorIndex];
+              const taResult = typeaheadCtrl.moveWithinMatches(
+                attrs.entries, cursorEntry, command.offset, undefined, true,
+              );
+              if (taResult === false) {
                 attrs.onSelectionAction(command);
+              } else if (taResult !== undefined) {
+                attrs.onSelectionAction(taResult);
               }
             } else if (command?.type === 'toggleCursorSelection') {
               const entry =
@@ -720,31 +567,20 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
               attrs.onSelectionAction({ type: 'selectAll' });
             } else if (event.altKey && event.key === 'ArrowLeft') {
               event.preventDefault();
-              void attrs.onBack();
+              void attrs.navigation.onBack();
             } else if (event.altKey && event.key === 'ArrowRight') {
               event.preventDefault();
-              void attrs.onForward();
+              void attrs.navigation.onForward();
             } else if (
               event.key.length === 1 &&
               !event.ctrlKey &&
               !event.metaKey &&
               !event.altKey
             ) {
-              const result = reduceTypeahead(
-                typeahead,
-                event.key,
-                attrs.entries,
-                Date.now(),
-                Number.POSITIVE_INFINITY,
-              );
-              typeahead = result.state;
-              if (result.matchedEntryId !== undefined) {
-                clearTypeaheadTimer();
-                typeaheadError = false;
-                event.preventDefault();
-                attrs.onSelectionAction({ type: 'selectOnly', entryId: result.matchedEntryId });
-              } else {
-                flashRejectedTypeahead();
+              event.preventDefault();
+              const action = typeaheadCtrl.handleChar(event.key, attrs.entries, Date.now());
+              if (action !== undefined) {
+                attrs.onSelectionAction(action);
               }
               m.redraw();
             }
@@ -752,124 +588,31 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
           onauxclick: (event: MouseEvent) => {
             if (event.button === 3) {
               event.preventDefault();
-              void attrs.onBack();
+              void attrs.navigation.onBack();
             } else if (event.button === 4) {
               event.preventDefault();
-              void attrs.onForward();
+              void attrs.navigation.onForward();
             }
           },
         },
         [
-          m('.fm-pane-tabs', { role: 'tablist', 'aria-label': 'Pane tabs' }, [
-            ...attrs.tabs.map((tab) =>
-              m(
-                '.fm-pane-tab',
-                {
-                  key: tab.id,
-                  role: 'tab',
-                  tabindex: 0,
-                  draggable: true,
-                  title: tab.path,
-                  'aria-selected': tab.id === attrs.activeTabId ? 'true' : 'false',
-                  onclick: () => {
-                    attrs.onSelectTab(tab.id);
-                  },
-                  onkeydown: (event: KeyboardEvent) => {
-                    if (event.key === 'Enter' || event.key === ' ') {
-                      event.preventDefault();
-                      attrs.onSelectTab(tab.id);
-                    }
-                  },
-                  ondragstart: (event: DragEvent) => {
-                    draggedTabId = tab.id;
-                    event.dataTransfer?.setData('text/plain', tab.id);
-                  },
-                  ondragover: (event: DragEvent) => {
-                    const accepted = attrs.onTabDragOver?.(tab.id, event) === true;
-                    if (draggedTabId !== undefined || accepted) {
-                      event.preventDefault();
-                      if (draggedTabId === undefined && accepted) dropTargetTabId = tab.id;
-                    }
-                  },
-                  ondragleave: () => {
-                    if (dropTargetTabId === tab.id) dropTargetTabId = undefined;
-                  },
-                  ondrop: (event: DragEvent) => {
-                    event.preventDefault();
-                    if (draggedTabId === undefined) {
-                      dropTargetTabId = undefined;
-                      attrs.onTabDrop?.(tab.id, event);
-                      return;
-                    }
-                    const sourceId =
-                      draggedTabId ?? (event.dataTransfer?.getData('text/plain') as TabId | '');
-                    draggedTabId = undefined;
-                    if (sourceId !== undefined && sourceId !== '' && sourceId !== tab.id) {
-                      attrs.onReorderTabs(
-                        reorderedTabIds(
-                          attrs.tabs.map((candidate) => candidate.id),
-                          sourceId,
-                          tab.id,
-                        ),
-                      );
-                    }
-                  },
-                  ondragend: () => {
-                    draggedTabId = undefined;
-                    dropTargetTabId = undefined;
-                  },
-                  class: dropTargetTabId === tab.id ? 'fm-drop-target' : '',
-                },
-                [
-                  m(
-                    'span.fm-pane-tab-title',
-                    tab.isSearchTab === true
-                      ? [searchIcon({ size: 14, className: 'fm-pane-tab-search-icon' }), tab.title]
-                      : tab.title,
-                  ),
-                  m(
-                    'button.fm-pane-tab-close',
-                    {
-                      type: 'button',
-                      'aria-label': `Close ${tab.title}`,
-                      tabindex: -1,
-                      onclick: (event: MouseEvent) => {
-                        event.stopPropagation();
-                        attrs.onCloseTab(tab.id);
-                      },
-                    },
-                    '×',
-                  ),
-                ],
-              ),
-            ),
-            m(
-              IconButton,
-              {
-                key: '__new-tab__',
-                className: 'fm-pane-tab-new',
-                'aria-label': 'New tab',
-                tooltip: 'New tab',
-                onclick: () => attrs.onNewTab(),
-              },
-              plusIcon(),
-            ),
-            m(
-              IconButton,
-              {
-                key: '__favourites__',
-                className: 'fm-pane-tab-favourites',
-                'aria-label': 'Favourites',
-                tooltip: 'Favourites',
-                'aria-expanded': String(favouritesOpen),
-                onclick: () => {
-                  if (favouritesOpen) closeFavourites();
-                  else openFavourites(attrs);
-                },
-              },
-              canAddCurrentFavourite(attrs) ? heartPlusIcon() : heartIcon(),
-            ),
-          ]),
+          m(TabStrip, {
+            tabs: attrs.tabs,
+            activeTabId: attrs.activeTabId,
+            onSelectTab: attrs.onSelectTab,
+            onCloseTab: attrs.onCloseTab,
+            onNewTab: attrs.onNewTab,
+            onReorderTabs: attrs.onReorderTabs,
+            onTabDragOver: attrs.onTabDragOver,
+            onTabDrop: attrs.onTabDrop,
+            favouritesOpen,
+            canAddFavourite: canAddCurrentFavourite(attrs.favourites),
+            onToggleFavourites: () => {
+              if (favouritesOpen) closeFavourites();
+              else openFavourites(attrs);
+              m.redraw();
+            },
+          }),
           favouritesOpen && [
             m('.fm-favourites-menu-backdrop', { onclick: () => closeFavourites() }),
             m(
@@ -909,10 +652,10 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
                   },
                   '×',
                 ),
-                (attrs.systemLocations?.some(({ kind }) => kind === 'cloud') ?? false) &&
+                (attrs.favourites.systemLocations?.some(({ kind }) => kind === 'cloud') ?? false) &&
                 m('.fm-favourites-recents.fm-cloud-locations', [
                   m('strong', 'Cloud'),
-                  ...(attrs.systemLocations ?? [])
+                  ...(attrs.favourites.systemLocations ?? [])
                     .filter(({ kind }) => kind === 'cloud')
                     .map((systemLocation) =>
                       m(
@@ -922,20 +665,23 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
                           role: 'menuitem',
                           title: systemLocation.location.uri,
                           onclick: () => void navigateFavourite(systemLocation.location, attrs),
-                          disabled: attrs.unavailableLocations?.has(
+                          disabled: attrs.favourites.unavailableLocations?.has(
                             locationKey(systemLocation.location),
                           ),
                         },
-                        attrs.unavailableLocations?.has(locationKey(systemLocation.location))
+                        attrs.favourites.unavailableLocations?.has(
+                          locationKey(systemLocation.location),
+                        )
                           ? `${systemLocation.name} (unavailable)`
                           : systemLocation.name,
                       ),
                     ),
                 ]),
-                (attrs.systemLocations?.some(({ kind }) => kind === 'network') ?? false) &&
+                (attrs.favourites.systemLocations?.some(({ kind }) => kind === 'network') ??
+                  false) &&
                 m('.fm-favourites-recents.fm-network-locations', [
                   m('strong', 'Network'),
-                  ...(attrs.systemLocations ?? [])
+                  ...(attrs.favourites.systemLocations ?? [])
                     .filter(({ kind }) => kind === 'network')
                     .map((systemLocation) =>
                       m(
@@ -945,11 +691,13 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
                           role: 'menuitem',
                           title: systemLocation.location.uri,
                           onclick: () => void navigateFavourite(systemLocation.location, attrs),
-                          disabled: attrs.unavailableLocations?.has(
+                          disabled: attrs.favourites.unavailableLocations?.has(
                             locationKey(systemLocation.location),
                           ),
                         },
-                        attrs.unavailableLocations?.has(locationKey(systemLocation.location))
+                        attrs.favourites.unavailableLocations?.has(
+                          locationKey(systemLocation.location),
+                        )
                           ? `${systemLocation.name} (unavailable)`
                           : systemLocation.readOnly === true
                             ? `${systemLocation.name} (read-only)`
@@ -957,16 +705,14 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
                       ),
                     ),
                 ]),
-                (attrs.connections?.length ?? 0) > 0 &&
+                (attrs.favourites.connections?.length ?? 0) > 0 &&
                 m('.fm-favourites-recents.fm-servers-locations', [
-                  // Every vnode in this array must carry a key, or none may
-                  // (Mithril throws otherwise): the label needs one too since
-                  // its siblings below are keyed by connection id.
                   m('strong', { key: '__servers_label__' }, 'Servers'),
-                  ...(attrs.connections ?? []).map((connection) =>
+                  ...(attrs.favourites.connections ?? []).map((connection) =>
                     (() => {
                       const openInPane = attrs.tabs.some(
-                        (tab) => tab.locationUri?.startsWith(`sftp://${connection.id}/`) === true,
+                        (tab) =>
+                          tab.locationUri?.startsWith(`sftp://${connection.id}/`) === true,
                       );
                       const status = openInPane ? 'connected' : connection.status;
                       return m(
@@ -982,7 +728,10 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
                           onclick: isBrowsable(connection)
                             ? () =>
                               void navigateFavourite(
-                                sftpRootLocation(connection.id, sftpStartPathForConnection(connection)),
+                                sftpRootLocation(
+                                  connection.id,
+                                  sftpStartPathForConnection(connection),
+                                ),
                                 attrs,
                               )
                             : undefined,
@@ -995,7 +744,7 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
                     })(),
                   ),
                 ]),
-                attrs.systemLocationsError === undefined
+                attrs.favourites.systemLocationsError === undefined
                   ? undefined
                   : m('.fm-path-error.fm-cloud-locations-error', { role: 'status' }, [
                     'System locations unavailable. ',
@@ -1003,12 +752,12 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
                       'button',
                       {
                         type: 'button',
-                        onclick: () => void attrs.onRetrySystemLocations?.(),
+                        onclick: () => void attrs.favourites.onRetrySystemLocations?.(),
                       },
                       'Retry',
                     ),
                   ]),
-                canAddCurrentFavourite(attrs)
+                canAddCurrentFavourite(attrs.favourites)
                   ? m(
                     'form.fm-favourites-add',
                     {
@@ -1039,10 +788,10 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
                     ],
                   )
                   : undefined,
-                (attrs.favouriteLocations?.length ?? 0) > 0 &&
+                (attrs.favourites.favouriteLocations?.length ?? 0) > 0 &&
                 m('.fm-favourites-recents', [
                   m('strong', 'Favorites'),
-                  ...(attrs.favouriteLocations ?? []).map((favourite, index) =>
+                  ...(attrs.favourites.favouriteLocations ?? []).map((favourite, index) =>
                     m('.fm-favourites-item', [
                       m(
                         'button',
@@ -1050,15 +799,17 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
                           type: 'button',
                           role: 'menuitem',
                           onclick: () => void navigateFavourite(favourite.location, attrs),
-                          disabled: attrs.unavailableLocations?.has(
+                          disabled: attrs.favourites.unavailableLocations?.has(
                             locationKey(favourite.location),
                           ),
                         },
-                        attrs.unavailableLocations?.has(locationKey(favourite.location))
+                        attrs.favourites.unavailableLocations?.has(
+                          locationKey(favourite.location),
+                        )
                           ? `${favourite.label} (unavailable)`
                           : favourite.label,
                       ),
-                      attrs.onReorderFavourites === undefined
+                      attrs.favourites.onReorderFavourites === undefined
                         ? undefined
                         : m(
                           'button',
@@ -1066,28 +817,30 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
                             type: 'button',
                             disabled: index === 0,
                             'aria-label': `Move ${favourite.label} up`,
-                            onclick: () => void attrs.onReorderFavourites?.(index, index - 1),
+                            onclick: () =>
+                              void attrs.favourites.onReorderFavourites?.(index, index - 1),
                           },
                           '↑',
                         ),
-                      attrs.onDeleteFavourite === undefined
+                      attrs.favourites.onDeleteFavourite === undefined
                         ? undefined
                         : m(
                           'button',
                           {
                             type: 'button',
                             'aria-label': `Remove ${favourite.label}`,
-                            onclick: () => void attrs.onDeleteFavourite?.(favourite.location),
+                            onclick: () =>
+                              void attrs.favourites.onDeleteFavourite?.(favourite.location),
                           },
                           '×',
                         ),
                     ]),
                   ),
                 ]),
-                (attrs.recentLocations?.length ?? 0) > 0 &&
+                (attrs.favourites.recentLocations?.length ?? 0) > 0 &&
                 m('.fm-favourites-recents', [
                   m('strong', 'Recent locations'),
-                  ...(attrs.recentLocations ?? []).map((location) =>
+                  ...(attrs.favourites.recentLocations ?? []).map((location) =>
                     m(
                       'button',
                       {
@@ -1095,9 +848,11 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
                         role: 'menuitem',
                         title: location.uri,
                         onclick: () => void navigateFavourite(location, attrs),
-                        disabled: attrs.unavailableLocations?.has(locationKey(location)),
+                        disabled: attrs.favourites.unavailableLocations?.has(
+                          locationKey(location),
+                        ),
                       },
-                      attrs.unavailableLocations?.has(locationKey(location))
+                      attrs.favourites.unavailableLocations?.has(locationKey(location))
                         ? `${truncateLocationForDisplay(location.uri)} (unavailable)`
                         : truncateLocationForDisplay(location.uri),
                     ),
@@ -1106,7 +861,7 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
                 favouriteError === undefined
                   ? undefined
                   : m('.fm-path-error', { role: 'alert' }, favouriteError),
-                attrs.onManageConnections === undefined
+                attrs.favourites.onManageConnections === undefined
                   ? undefined
                   : m(
                     'button.fm-manage-connections',
@@ -1115,7 +870,7 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
                       role: 'menuitem',
                       onclick: () => {
                         closeFavourites();
-                        attrs.onManageConnections?.();
+                        attrs.favourites.onManageConnections?.();
                       },
                     },
                     'Manage connections…',
@@ -1123,16 +878,12 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
               ],
             ),
           ],
-          // : // A text vnode keeps this sibling slot present without becoming a grid item. Mithril
-          //   // otherwise treats the conditional `undefined` as a fragment hole beside keyed tab
-          //   // descendants during redraw.
-          //   '',
-          attrs.filterOpen
+          attrs.filter.filterOpen
             ? m(QuickFilterInput, {
-              query: attrs.filterQuery,
-              onQueryChange: attrs.onFilterQueryChange,
-              onCommit: attrs.onFilterCommit,
-              onClose: attrs.onFilterClose,
+              query: attrs.filter.filterQuery,
+              onQueryChange: attrs.filter.onFilterQueryChange,
+              onCommit: attrs.filter.onFilterCommit,
+              onClose: attrs.filter.onFilterClose,
             })
             : editing
               ? m('.fm-path-editor', [
@@ -1177,9 +928,11 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
                   isSearchLocation
                     ? searchBreadcrumbSegments(activeLocationUri, attrs.searchQuery).map(
                       (segment) =>
-                        // Search breadcrumbs are display-only - there's no real filesystem path
-                        // behind any segment, so they render as plain (non-clickable) text.
-                        m('span.fm-breadcrumb-segment', { key: segment.path }, segment.label),
+                        m(
+                          'span.fm-breadcrumb-segment',
+                          { key: segment.path },
+                          segment.label,
+                        ),
                     )
                     : (isSftpLocation && attrs.path !== '/'
                       ? breadcrumbSegments(attrs.path).slice(1)
@@ -1202,35 +955,46 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
               ]),
           m(DirectoryTable, {
             state: attrs.state,
-            source: entryArraySource(attrs.entries, attrs.totalKnownEntries),
+            source: entryArraySource(attrs.entries, ds.totalKnownEntries),
             selectedEntryIds: attrs.selectedEntryIds,
             cutEntryIds: attrs.cutEntryIds,
             active: attrs.active,
-            sort: attrs.sort,
-            ...(attrs.pluginColumns === undefined ? {} : { pluginColumns: attrs.pluginColumns }),
-            ...(attrs.formatSettings === undefined ? {} : { formatSettings: attrs.formatSettings }),
-            ...(attrs.nativeIconLoader === undefined
+            sort: attrs.tableConfig.sort,
+            ...(attrs.tableConfig.pluginColumns === undefined
               ? {}
-              : { nativeIconLoader: attrs.nativeIconLoader }),
+              : { pluginColumns: attrs.tableConfig.pluginColumns }),
+            ...(attrs.tableConfig.formatSettings === undefined
+              ? {}
+              : { formatSettings: attrs.tableConfig.formatSettings }),
+            ...(attrs.tableConfig.nativeIconLoader === undefined
+              ? {}
+              : { nativeIconLoader: attrs.tableConfig.nativeIconLoader }),
             label: `${attrs.tabTitle} directory`,
             showFullPath: isSearchLocation,
-            ...(renamingEntry === undefined ? {} : { renamingEntryId: renamingEntry.id }),
-            renameValue,
-            ...(renameError === undefined ? {} : { renameError }),
+            ...(renameCtrl.entry === undefined ? {} : { renamingEntryId: renameCtrl.entry.id }),
+            renameValue: renameCtrl.value,
+            ...(renameCtrl.error === undefined ? {} : { renameError: renameCtrl.error }),
             onRenameInput: (value) => {
-              renameValue = value;
-              renameError = validateDirectoryName(value);
+              renameCtrl.updateValue(value);
             },
-            onRenameCancel: cancelRename,
-            onRenameCommit: () => commitRename(attrs),
-            ...(typeahead === undefined ? {} : { nameMatchPrefix: typeahead.prefix }),
+            onRenameCancel: () => {
+              renameCtrl.cancel();
+              m.redraw();
+            },
+            onRenameCommit: () => {
+              const committed = renameCtrl.commit();
+              if (committed !== undefined) {
+                void attrs.onRename(committed.entry, committed.name);
+              } else {
+                m.redraw();
+              }
+            },
+            ...(typeaheadCtrl.prefix === undefined ? {} : { nameMatchPrefix: typeaheadCtrl.prefix }),
             onRetry: () => void attrs.onRetry(),
             onEndReached: () => void attrs.onLoadNextPage(),
             onCursorChange: (index, modifiers) => {
               const entry = attrs.entries[index];
-              if (entry === undefined) {
-                return;
-              }
+              if (entry === undefined) return;
               if (isParentEntry(entry.id)) {
                 attrs.onSelectionAction({ type: 'setCursor', entryId: entry.id });
               } else if (modifiers?.shiftKey === true) {
@@ -1248,9 +1012,6 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
               }
             },
             onContextMenu: (index, x, y) => {
-              // A right-click on empty space below/around the rows always means
-              // the location-level menu, regardless of which entry happens to be
-              // selected (the cursor/selection now always lands somewhere).
               if (index === undefined) {
                 attrs.onContextMenu([], x, y);
                 return;
@@ -1278,14 +1039,17 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
               if (dragged === undefined || isParentEntry(dragged.id)) return;
               const selection = attrs.selectedEntryIds.has(dragged.id)
                 ? attrs.entries.filter(
-                  (entry) => !isParentEntry(entry.id) && attrs.selectedEntryIds.has(entry.id),
+                  (entry) =>
+                    !isParentEntry(entry.id) && attrs.selectedEntryIds.has(entry.id),
                 )
                 : [dragged];
               attrs.onDragStart?.(selection, event);
             },
             onDragOver: (index, event) =>
-              attrs.onDragOver?.(index === undefined ? undefined : attrs.entries[index], event) ??
-              false,
+              attrs.onDragOver?.(
+                index === undefined ? undefined : attrs.entries[index],
+                event,
+              ) ?? false,
             onDrop: (index, event) =>
               attrs.onDrop?.(index === undefined ? undefined : attrs.entries[index], event),
             onSortChange: attrs.onSortChange,
@@ -1294,25 +1058,25 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
           m('.fm-pane-status', { role: 'status' }, [
             m(
               'span',
-              attrs.filterQuery.trim() === ''
+              attrs.filter.filterQuery.trim() === ''
                 ? (backendListingSummary ?? listingSummary(ordinaryEntries))
-                : `${listingSummary(ordinaryEntries)} (${ordinaryEntries.length} of ${attrs.totalEntryCount} shown${attrs.hasMore === true ? ', more available' : ''
+                : `${listingSummary(ordinaryEntries)} (${ordinaryEntries.length} of ${ds.totalEntryCount} shown${ds.hasMore === true ? ', more available' : ''
                 })`,
             ),
             selectedCount === 0
               ? undefined
               : m(
                 'span',
-                `${sizeLabel(totalSelectedSize)} in ${selectedCount} selected${attrs.hiddenSelectedCount > 0
-                  ? ` (${attrs.hiddenSelectedCount} hidden by filter)`
+                `${sizeLabel(totalSelectedSize)} in ${selectedCount} selected${ds.hiddenSelectedCount > 0
+                  ? ` (${ds.hiddenSelectedCount} hidden by filter)`
                   : ''
                 }`,
               ),
-            typeahead === undefined
+            typeaheadCtrl.prefix === undefined
               ? undefined
               : m(
-                `span.fm-typeahead-status${typeaheadError ? '.fm-typeahead-status-error' : ''}`,
-                typeahead.prefix,
+                `span.fm-typeahead-status${typeaheadCtrl.hasError ? '.fm-typeahead-status-error' : ''}`,
+                typeaheadCtrl.prefix,
               ),
           ]),
         ],
