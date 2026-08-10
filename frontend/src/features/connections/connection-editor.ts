@@ -18,14 +18,14 @@ import type {
   ConnectionId,
   ConnectionKind,
   ConnectionSecretInput,
-  CreateConnectionRequest,
   HostKeyPolicy,
   HostKeyProbe,
   SshAuthenticationMethod,
-  UpdateConnectionRequest,
 } from '../../models';
 import { defaultSshConfiguration } from '../../models/connection';
 import {
+  type ConnectionSaveDraft,
+  type ConnectionSaveResult,
   connectionStatusGlyph,
   connectionStatusLabel,
   validateConnectionDraft,
@@ -37,8 +37,7 @@ export interface ConnectionsManagerAttrs {
   /** Reloads the current connection list from the backend on modal open. */
   readonly onRefresh: () => Promise<void>;
   readonly onClose: () => void;
-  readonly onCreate: (request: CreateConnectionRequest) => Promise<void>;
-  readonly onUpdate: (id: ConnectionId, request: UpdateConnectionRequest) => Promise<void>;
+  readonly onSave: (draft: ConnectionSaveDraft, editingId?: ConnectionId) => Promise<ConnectionSaveResult>;
   readonly onDelete: (id: ConnectionId) => Promise<void>;
   readonly onConnect: (id: ConnectionId) => Promise<Connection>;
   readonly onDisconnect: (id: ConnectionId) => Promise<Connection>;
@@ -289,29 +288,25 @@ export const ConnectionsManager: FactoryComponent<ConnectionsManagerAttrs> = () 
     busy = true;
     error = undefined;
     success = undefined;
-    const request: CreateConnectionRequest = {
-      name: form.name,
-      kind: form.configuration.kind,
-      configuration: form.configuration,
-      secret: secretInputFrom(form) ?? null,
-    };
-    const save =
-      mode.editingId === undefined
-        ? attrs.onCreate(request)
-        : attrs.onUpdate(mode.editingId, request);
-    save.then(
-      () => {
-        clearSecretFields(form);
+    attrs
+      .onSave(
+        {
+          name: form.name,
+          configuration: form.configuration,
+          secret: secretInputFrom(form) ?? null,
+        },
+        mode.editingId,
+      )
+      .then((result) => {
         busy = false;
-        backToList();
+        if (!result.ok) {
+          error = result.message;
+        } else {
+          clearSecretFields(form);
+          backToList();
+        }
         m.redraw();
-      },
-      (caught: unknown) => {
-        busy = false;
-        error = errorMessage(caught, 'Failed to save the connection.');
-        m.redraw();
-      },
-    );
+      });
   }
 
   function handleDelete(attrs: ConnectionsManagerAttrs, connection: Connection): void {

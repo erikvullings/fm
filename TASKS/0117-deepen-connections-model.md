@@ -1,6 +1,6 @@
 # 0117 Deepen Connections Model with Full Lifecycle
 
-Status: open
+Status: done
 Priority: medium
 Subsystem: frontend
 Depends on: none
@@ -23,4 +23,4 @@ The connections module (`connections-model.ts`) has real substance in its first 
 - Reference: architecture review — deepening opportunity #6
 
 ## Agent Notes
--
+- 2026-08-10 claude: Added ConnectionSaveDraft, ConnectionSaveResult, ConnectionLifecycle types and saveConnection lifecycle to connections-model.ts. Removed createConnection/updateConnection pass-throughs. connection-editor.ts updated to use onSave callback (replaced onCreate/onUpdate). app-shell.ts wired onSave to saveConnection. 10 new tests. TypeScript clean (pre-existing errors only), all connection tests pass (34 total).

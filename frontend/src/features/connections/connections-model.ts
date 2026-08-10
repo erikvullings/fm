@@ -3,11 +3,11 @@ import type {
   Connection,
   ConnectionConfiguration,
   ConnectionId,
+  ConnectionSecretInput,
   ConnectionStatus,
   CreateConnectionRequest,
   HostKeyProbe,
   Location,
-  UpdateConnectionRequest,
 } from '../../models';
 
 /** The `fm-domain` provider id every `sftp://` location carries (spec §6.5). */
@@ -120,6 +120,25 @@ export interface ConnectionDraftValidationError {
   readonly message: string;
 }
 
+/** Draft fields plus the write-only secret, passed to `saveConnection`. */
+export interface ConnectionSaveDraft extends ConnectionDraftFields {
+  readonly secret: ConnectionSecretInput | null;
+}
+
+export type ConnectionSaveResult =
+  | { readonly ok: true; readonly connection: Connection }
+  | {
+      readonly ok: false;
+      readonly errors: readonly ConnectionDraftValidationError[];
+      readonly message: string;
+    };
+
+/** Runtime status for connection lifecycle operations in the UI. */
+export interface ConnectionLifecycle {
+  readonly status: 'idle' | 'loading' | 'saving' | 'error';
+  readonly error?: string;
+}
+
 /**
  * Validates the fields the connection editor form lets a user type freely
  * (task 0103). Only SSH-specific fields are checked client-side, matching
@@ -155,10 +174,50 @@ export function validateConnectionDraft(
   return errors;
 }
 
-// Thin, one-line wrappers over the shared `FileManagerClient` (spec §12):
-// components must depend only on this module for connection CRUD/lifecycle,
-// never call `client.*Connection*` directly, so the client dependency and
-// the exact request/response shape stay in one place.
+// Wrappers over the shared `FileManagerClient` (spec §12): components must
+// depend only on this module for connection CRUD/lifecycle, never call
+// `client.*Connection*` directly.
+
+function mapConnectionError(error: unknown): string {
+  if (!(error instanceof Error)) return 'Failed to save the connection.';
+  const { message } = error;
+  if (/already exists/i.test(message)) return 'A connection with that name already exists.';
+  if (/not found/i.test(message)) return 'Connection not found.';
+  if (/network|unreachable|ECONNREFUSED/i.test(message))
+    return 'Network error. Check your connection.';
+  return message;
+}
+
+/**
+ * Validates, then creates or updates a connection profile in one step.
+ * Returns `{ ok: false }` for validation or server errors — callers do not
+ * need their own try/catch patterns.
+ */
+export async function saveConnection(
+  client: FileManagerClient,
+  draft: ConnectionSaveDraft,
+  editingId?: ConnectionId,
+): Promise<ConnectionSaveResult> {
+  const errors = validateConnectionDraft(draft);
+  if (errors.length > 0) {
+    return { ok: false, errors, message: errors[0]?.message ?? 'Validation failed.' };
+  }
+  const request: CreateConnectionRequest = {
+    name: draft.name,
+    kind: draft.configuration.kind,
+    configuration: draft.configuration,
+    secret: draft.secret,
+  };
+  try {
+    const connection =
+      editingId !== undefined
+        ? await client.updateConnection(editingId, request)
+        : await client.createConnection(request);
+    return { ok: true, connection };
+  } catch (e) {
+    return { ok: false, errors: [], message: mapConnectionError(e) };
+  }
+}
 
 /** Lists every stored connection profile with its current runtime status. */
 export function loadConnections(
@@ -166,23 +225,6 @@ export function loadConnections(
   signal?: AbortSignal,
 ): Promise<Connection[]> {
   return client.listConnections(signal);
-}
-
-/** Creates a new connection profile. */
-export function createConnection(
-  client: FileManagerClient,
-  request: CreateConnectionRequest,
-): Promise<Connection> {
-  return client.createConnection(request);
-}
-
-/** Updates an existing connection profile. */
-export function updateConnection(
-  client: FileManagerClient,
-  id: ConnectionId,
-  request: UpdateConnectionRequest,
-): Promise<Connection> {
-  return client.updateConnection(id, request);
 }
 
 /** Deletes a connection profile and its stored credential, if any. */

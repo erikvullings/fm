@@ -40,13 +40,12 @@ import { ConnectionsManager } from '../features/connections/connection-editor';
 import {
   acceptSshHostKey as acceptSshHostKeyRequest,
   connectConnection as connectConnectionRequest,
-  createConnection as createConnectionRequest,
   deleteConnection as deleteConnectionRequest,
   disconnectConnection as disconnectConnectionRequest,
   loadConnections,
   probeSshHostKey as probeSshHostKeyRequest,
+  saveConnection,
   testConnection as testConnectionRequest,
-  updateConnection as updateConnectionRequest,
   upsertConnection,
   withoutConnection,
 } from '../features/connections/connections-model';
@@ -147,7 +146,6 @@ import type {
   ActionInvocationContext,
   BackendEvent,
   Connection,
-  CreateConnectionRequest,
   DirectoryDelta,
   EntryId,
   EntrySummary,
@@ -164,7 +162,6 @@ import type {
   SystemLocation,
   TabId,
   TabProjection,
-  UpdateConnectionRequest,
   WorkspaceId,
   WorkspaceLayout,
   WorkspaceProjection,
@@ -3218,13 +3215,12 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
               connectionsManagerOpen = false;
               m.redraw();
             },
-            onCreate: async (request: CreateConnectionRequest) => {
-              const created = await createConnectionRequest(attrs.client, request);
-              connections = upsertConnection(connections, created);
-            },
-            onUpdate: async (id, request: UpdateConnectionRequest) => {
-              const updated = await updateConnectionRequest(attrs.client, id, request);
-              connections = upsertConnection(connections, updated);
+            onSave: async (draft, editingId) => {
+              const result = await saveConnection(attrs.client, draft, editingId);
+              if (result.ok) {
+                connections = upsertConnection(connections, result.connection);
+              }
+              return result;
             },
             onDelete: async (id) => {
               await deleteConnectionRequest(attrs.client, id);

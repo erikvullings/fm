@@ -1,11 +1,13 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import type { Connection, ConnectionConfiguration } from '../../models';
+import type { FileManagerClient } from '../../api/client/file-manager-client';
 import {
   connectionStatusGlyph,
   connectionStatusLabel,
   defaultSshStartPath,
   isBrowsable,
+  saveConnection,
   sftpRootLocation,
   sftpStartPathForConnection,
   upsertConnection,
@@ -227,5 +229,114 @@ describe('validateConnectionDraft', () => {
       configuration: { kind: 'smb', server: 'nas.local', share: 'media' },
     });
     expect(errors).toEqual([]);
+  });
+});
+
+function mockClient(
+  overrides: Partial<Pick<FileManagerClient, 'createConnection' | 'updateConnection'>> = {},
+): FileManagerClient {
+  return {
+    createConnection: vi.fn().mockResolvedValue(sampleConnection({ id: 'new-id' })),
+    updateConnection: vi.fn().mockResolvedValue(sampleConnection({ id: 'existing-id' })),
+    ...overrides,
+  } as unknown as FileManagerClient;
+}
+
+function validDraft() {
+  return {
+    name: 'Home Server',
+    configuration: sshConfiguration(),
+    secret: null,
+  };
+}
+
+describe('saveConnection', () => {
+  it('returns validation errors without calling the client when name is empty', async () => {
+    const client = mockClient();
+    const result = await saveConnection(client, { ...validDraft(), name: '  ' });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.errors.some((e) => e.field === 'name')).toBe(true);
+    expect(client.createConnection).not.toHaveBeenCalled();
+    expect(client.updateConnection).not.toHaveBeenCalled();
+  });
+
+  it('returns a field error for an invalid port without calling the client', async () => {
+    const client = mockClient();
+    const result = await saveConnection(client, {
+      ...validDraft(),
+      configuration: sshConfiguration({ port: 0 }),
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.errors.some((e) => e.field === 'port')).toBe(true);
+    expect(client.createConnection).not.toHaveBeenCalled();
+  });
+
+  it('returns a field error for an out-of-range port', async () => {
+    const client = mockClient();
+    const result = await saveConnection(client, {
+      ...validDraft(),
+      configuration: sshConfiguration({ port: 65_536 }),
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.errors.some((e) => e.field === 'port')).toBe(true);
+  });
+
+  it('returns ok: true with no errors for a valid config', async () => {
+    const client = mockClient();
+    const result = await saveConnection(client, validDraft());
+    expect(result.ok).toBe(true);
+  });
+
+  it('calls createConnection when no editingId is provided', async () => {
+    const client = mockClient();
+    const result = await saveConnection(client, validDraft());
+    expect(result.ok).toBe(true);
+    expect(client.createConnection).toHaveBeenCalledOnce();
+    expect(client.updateConnection).not.toHaveBeenCalled();
+  });
+
+  it('calls updateConnection when an editingId is provided', async () => {
+    const client = mockClient();
+    const result = await saveConnection(client, validDraft(), 'connection-1');
+    expect(result.ok).toBe(true);
+    expect(client.updateConnection).toHaveBeenCalledWith('connection-1', expect.any(Object));
+    expect(client.createConnection).not.toHaveBeenCalled();
+  });
+
+  it('returns the connection from the client on success', async () => {
+    const created = sampleConnection({ id: 'fresh', name: 'Fresh' });
+    const client = mockClient({
+      createConnection: vi.fn().mockResolvedValue(created),
+    });
+    const result = await saveConnection(client, validDraft());
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.connection).toEqual(created);
+  });
+
+  it('maps a network error to a friendly message', async () => {
+    const client = mockClient({
+      createConnection: vi.fn().mockRejectedValue(new Error('ECONNREFUSED: connection refused')),
+    });
+    const result = await saveConnection(client, validDraft());
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.message).toMatch(/network/i);
+  });
+
+  it('maps an already-exists error to a friendly message', async () => {
+    const client = mockClient({
+      createConnection: vi.fn().mockRejectedValue(new Error('Connection already exists')),
+    });
+    const result = await saveConnection(client, validDraft());
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.message).toMatch(/already exists/i);
+  });
+
+  it('returns a fallback message for an unknown error object', async () => {
+    const client = mockClient({
+      createConnection: vi.fn().mockRejectedValue('boom'),
+    });
+    const result = await saveConnection(client, validDraft());
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.message.length).toBeGreaterThan(0);
   });
 });
