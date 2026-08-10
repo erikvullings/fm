@@ -195,21 +195,22 @@ These are the quickest wins and deliberately do **not** depend on the remote con
 
 OneDrive is already useful through 0101 when exposed by the OS, and SMB through 0102 when mounted by the OS.
 
-- [ ] 0010 Native OneDrive provider *(optional; needs 0103, 0108, 0109)*
-- [ ] 0011 Native SMB provider *(optional; needs 0103, 0108, 0109)*
+- [ ] 0110 Native OneDrive provider *(optional; needs 0103, 0108, 0109)*
+- [ ] 0111 Native SMB provider *(optional; needs 0103, 0108, 0109)*
 
 ## Architecture deepening — frontend
 
-Cross-cutting refactors to increase module depth, testability, and AI-navigability. None depend on
-each other — pick any. **0116** is the lowest-effort quick win. **0112**, **0113**, and **0115**
-are the highest-impact changes.
+Cross-cutting refactors to increase module depth, testability, and AI-navigability. All complete.
+AppShell reduced from 3,351 lines to ~1,816 lines (−46%) through extraction of 12 focused modules
+(WorkspaceController, TabController, SettingsController, GlobalKeydownHandler, PaneContentBuilder,
+FindFilesController, ActionCommandController, DialogUIController, AppDialogs, and others).
 
-- [ ] 0112 Extract Operations Controller from AppShell
-- [ ] 0113 Extract EventHandler Registry from AppShell
-- [ ] 0114 Decompose Pane Component *(1,324 lines → sub-modules)*
-- [ ] 0115 Migrate AppShell Closure State to Meiosis Store *(gradual, slice-by-slice)*
+- [x] 0112 Extract Operations Controller from AppShell
+- [x] 0113 Extract EventHandler Registry from AppShell
+- [x] 0114 Decompose Pane Component *(1,324 lines → sub-modules)*
+- [x] 0115 Migrate AppShell Closure State to Meiosis Store *(gradual, slice-by-slice)*
 - [x] 0116 Centralize Selections-to-Locations Translation
-- [ ] 0117 Deepen Connections Model with Full Lifecycle
+- [x] 0117 Deepen Connections Model with Full Lifecycle
 
 ## Backlog
 
