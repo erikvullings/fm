@@ -197,3 +197,16 @@ OneDrive is already useful through 0101 when exposed by the OS, and SMB through 
 
 - [ ] 0010 Native OneDrive provider *(optional; needs 0103, 0108, 0109)*
 - [ ] 0011 Native SMB provider *(optional; needs 0103, 0108, 0109)*
+
+## Architecture deepening — frontend
+
+Cross-cutting refactors to increase module depth, testability, and AI-navigability. None depend on
+each other — pick any. **0116** is the lowest-effort quick win. **0112**, **0113**, and **0115**
+are the highest-impact changes.
+
+- [ ] 0112 Extract Operations Controller from AppShell
+- [ ] 0113 Extract EventHandler Registry from AppShell
+- [ ] 0114 Decompose Pane Component *(1,324 lines → sub-modules)*
+- [ ] 0115 Migrate AppShell Closure State to Meiosis Store *(gradual, slice-by-slice)*
+- [ ] 0116 Centralize Selections-to-Locations Translation *(quick win)*
+- [ ] 0117 Deepen Connections Model with Full Lifecycle
