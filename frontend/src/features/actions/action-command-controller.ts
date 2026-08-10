@@ -1,24 +1,23 @@
 import type { FileManagerClient } from '../../api/client/file-manager-client';
-import { clearClipboard } from '../clipboard/clipboard';
+import type {
+  ActionDescriptor,
+  ActionInvocationContext,
+  EntrySummary,
+  Location,
+  PaneId,
+  Settings,
+  WorkspaceProjection,
+} from '../../models';
 import type { ClipboardState } from '../clipboard/clipboard';
+import { clearClipboard } from '../clipboard/clipboard';
 import {
   copySelectionToClipboard,
   isCopySelectionAction,
 } from '../clipboard/copy-selection-actions';
 import type { CommandAvailabilityContext } from '../commands/availability';
 import { evaluateActionAvailability } from '../commands/availability';
-import type { NavigationController } from '../navigation/navigation';
-import type { PaneDirectoryView } from '../navigation/navigation';
+import type { NavigationController, PaneDirectoryView } from '../navigation/navigation';
 import type { OperationsController } from '../operations/operations-controller';
-import type {
-  EntrySummary,
-  Location,
-  PaneId,
-  ActionDescriptor,
-  Settings,
-  ActionInvocationContext,
-  WorkspaceProjection,
-} from '../../models';
 import type { SelectionState } from '../selection/selection';
 
 /** Context required by ActionCommandController for state access and dependencies. */
@@ -67,6 +66,7 @@ export interface ActionCommandControllerContext {
   replaceClipboard(next?: ClipboardState): void;
   toast(options: { html: string }): void;
   getOpenTerminalSupported(): boolean;
+  openCreateDirectory(location?: import('../../models').Location): void;
   redraw(): void;
 }
 
@@ -97,11 +97,7 @@ export interface ActionCommandController {
   /**
    * Invokes an action by ID, updating recency and handling errors.
    */
-  invokeActionById(
-    actionId: string,
-    parameters: unknown,
-    context: ActionInvocationContext,
-  ): void;
+  invokeActionById(actionId: string, parameters: unknown, context: ActionInvocationContext): void;
 
   /**
    * Invokes an action from the command palette, with special handling for favorites, copy, etc.
@@ -115,12 +111,7 @@ export interface ActionCommandController {
   /**
    * Opens the context menu at the given position for the specified entries.
    */
-  openContextMenu(
-    paneId: PaneId,
-    entries: readonly EntrySummary[],
-    x: number,
-    y: number,
-  ): void;
+  openContextMenu(paneId: PaneId, entries: readonly EntrySummary[], x: number, y: number): void;
 
   /**
    * Invokes an action from the context menu, with special handling for paste, refresh, etc.
@@ -142,11 +133,9 @@ export function createActionCommandController(
         : context.getSelections().get(context.getActiveTabKey(active.paneId));
     return {
       ...(active === undefined ? {} : { paneId: active.paneId }),
-      ...(
-        selection?.selectedEntryIds.length === 0 || selection?.selectedEntryIds === undefined
-          ? {}
-          : { selectedEntryIds: [...selection.selectedEntryIds] }
-      ),
+      ...(selection?.selectedEntryIds.length === 0 || selection?.selectedEntryIds === undefined
+        ? {}
+        : { selectedEntryIds: [...selection.selectedEntryIds] }),
       ...(selection?.cursorEntryId === undefined ? {} : { cursorEntryId: selection.cursorEntryId }),
     };
   }
@@ -241,7 +230,7 @@ export function createActionCommandController(
       return;
     }
     if (action.id === 'core.createDirectory') {
-      // createDirectoryLocation and createDirectoryOpen should be managed by the view layer
+      context.openCreateDirectory(undefined);
       return;
     }
     const paneId = contextParam.paneId;
@@ -252,9 +241,7 @@ export function createActionCommandController(
     const selectedEntries =
       directory === undefined || contextParam.selectedEntryIds === undefined
         ? []
-        : directory.entries.filter((entry) =>
-          new Set(contextParam.selectedEntryIds).has(entry.id),
-        );
+        : directory.entries.filter((entry) => new Set(contextParam.selectedEntryIds).has(entry.id));
     if (isCopySelectionAction(action.id)) {
       if (directory === undefined || directory.location === undefined) return;
       void copySelectionToClipboard(action.id, selectedEntries, directory.location)
@@ -265,9 +252,7 @@ export function createActionCommandController(
         .catch((error: unknown) => {
           context.toast({
             html:
-              error instanceof Error
-                ? error.message
-                : 'Unable to write to the system clipboard.',
+              error instanceof Error ? error.message : 'Unable to write to the system clipboard.',
           });
           context.redraw();
         });
@@ -301,7 +286,7 @@ export function createActionCommandController(
       return;
     }
     if (action.id === 'core.createDirectory') {
-      // createDirectoryLocation and createDirectoryOpen should be managed by the view layer
+      context.openCreateDirectory(directory.location);
       return;
     }
     if (action.id === 'core.refresh') {

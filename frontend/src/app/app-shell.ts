@@ -12,9 +12,17 @@ import {
   searchIcon,
   settingsIcon,
 } from '../components/tabler-icons';
+import {
+  type ActionCommandController,
+  type ActionCommandControllerContext,
+  createActionCommandController,
+} from '../features/actions/action-command-controller';
 import { emptyClipboard } from '../features/clipboard/clipboard';
 import { CommandPalette } from '../features/command-palette/command-palette';
-import { evaluateActionAvailability, menuActionsForContext } from '../features/commands/availability';
+import {
+  evaluateActionAvailability,
+  menuActionsForContext,
+} from '../features/commands/availability';
 import { ContextMenu as DirectoryContextMenu } from '../features/commands/context-menu';
 import { ConnectionsManager } from '../features/connections/connection-editor';
 import {
@@ -29,6 +37,7 @@ import {
   upsertConnection,
   withoutConnection,
 } from '../features/connections/connections-model';
+import { createDialogUIController } from '../features/dialogs/dialog-ui-controller';
 import type { NativeIconLoader } from '../features/directory-table/native-icon-loader';
 import {
   createFileEditorController,
@@ -71,11 +80,6 @@ import {
   createOperationsController,
   type OperationsController,
 } from '../features/operations/operations-controller';
-import {
-  createActionCommandController,
-  type ActionCommandController,
-  type ActionCommandControllerContext,
-} from '../features/actions/action-command-controller';
 import { PermanentDeleteDialog } from '../features/operations/permanent-delete-dialog';
 import { CloseLastTabDialog } from '../features/panes/close-last-tab-dialog';
 import {
@@ -312,27 +316,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
   let workspaceSummaries: readonly WorkspaceSummary[] = [];
   let workspaceActionError: string | undefined;
   let flushPendingLayoutUpdate: (() => void) | undefined;
-  let createDirectoryOpen = false;
-  let createDirectoryLocation: Location | undefined;
-  let archiveCreateRequest:
-    | {
-      readonly sources: readonly Location[];
-      readonly destinationDirectory: Location;
-      readonly moveSources: boolean;
-    }
-    | undefined;
-  let multiRenameOpen = false;
-  let multiRenameEntries: readonly EntrySummary[] = [];
-  let multiRenameLocation: Location | undefined;
-  let multiRenameExistingNames: ReadonlySet<string> = new Set();
-  let pendingArchiveCredential:
-    | {
-      readonly location: Location;
-      readonly invalid: boolean;
-      readonly resolve: (supplied: boolean) => void;
-    }
-    | undefined;
-  let archiveCredentialError: string | undefined;
+  const dialogs = createDialogUIController();
   let findFilesOpen = false;
   let findFilesRoot: Location | undefined;
   let findFilesSearchId: string | undefined;
@@ -365,7 +349,6 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     }
     | undefined;
   const commandPaletteRecency = new Map<string, number>();
-  let pendingCreatedLocation: string | undefined;
   /**
    * Every per-tab runtime cache below is keyed by a composite `${paneId}:${tabId}`
    * string (see {@link tabKey}) rather than by `PaneId` alone, so switching tabs
@@ -818,8 +801,10 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       return [next];
     });
     directories.set(key, { ...current, revision, entries: [...ordered, ...byId.values()] });
-    if (delta.type === 'entriesAdded' && pendingCreatedLocation !== undefined) {
-      const created = delta.entries.find((entry) => entry.location.uri === pendingCreatedLocation);
+    if (delta.type === 'entriesAdded' && dialogs.getState().pendingCreatedLocation !== undefined) {
+      const created = delta.entries.find(
+        (entry) => entry.location.uri === dialogs.getState().pendingCreatedLocation,
+      );
       if (created !== undefined) {
         selections.set(
           key,
@@ -827,7 +812,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
             created.id,
           ]),
         );
-        pendingCreatedLocation = undefined;
+        dialogs.setPendingCreatedLocation(undefined);
       }
     }
     m.redraw();
@@ -1086,8 +1071,8 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     clipboard,
     getFindFilesOpen: () => findFilesOpen,
     getViewer: (paneId) => viewerByPane.get(paneId),
-    getArchiveCreateRequest: () => archiveCreateRequest,
-    getCreateDirectoryOpen: () => createDirectoryOpen,
+    getArchiveCreateRequest: () => dialogs.getState().archiveCreateRequest,
+    getCreateDirectoryOpen: () => dialogs.getState().createDirectoryOpen,
     getAppState: () => appState,
     setCommandPaletteOpen: (open) => {
       commandPaletteOpen = open;
@@ -1096,10 +1081,11 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       clipboardMessage = msg;
     },
     setArchiveCreateRequest: (req) => {
-      archiveCreateRequest = req;
+      dialogs.openArchiveCreate(req!);
     },
     setCreateDirectoryOpen: (open) => {
-      createDirectoryOpen = open;
+      if (open) dialogs.openCreateDirectory();
+      else dialogs.cancelCreateDirectory();
     },
     setAppState: (state) => {
       appState = state;
@@ -1127,7 +1113,11 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     contentSearchInitialQuery,
     refetchAffectedPanes,
     platformActionParameters: (actionId, selectedEntries, directoryLocation) =>
-      actionCommandController.platformActionParameters(actionId, selectedEntries, directoryLocation),
+      actionCommandController.platformActionParameters(
+        actionId,
+        selectedEntries,
+        directoryLocation,
+      ),
     activatePane: (paneId) => activatePane(attrsClient, paneId),
     redraw: () => m.redraw(),
   };
@@ -1189,6 +1179,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     replaceClipboard: (next) => replaceClipboard(next),
     toast: (options) => toast(options),
     getOpenTerminalSupported: () => openTerminalSupported,
+    openCreateDirectory: (location) => dialogs.openCreateDirectory(location),
     redraw: () => m.redraw(),
   };
 
@@ -1240,16 +1231,16 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       clipboardMessage = msg;
     },
     setMultiRenameOpen: (open) => {
-      multiRenameOpen = open;
+      if (!open) dialogs.cancelMultiRename();
     },
     setMultiRenameEntries: (entries) => {
-      multiRenameEntries = entries;
+      dialogs.getState().multiRenameEntries = entries;
     },
     setMultiRenameLocation: (location) => {
-      multiRenameLocation = location;
+      dialogs.getState().multiRenameLocation = location;
     },
     setMultiRenameExistingNames: (names) => {
-      multiRenameExistingNames = names;
+      dialogs.getState().multiRenameExistingNames = names;
     },
     tabKey,
     effectiveSort,
@@ -1351,32 +1342,23 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
         },
       }),
       m(CreateDirectoryDialog, {
-        open: createDirectoryOpen,
-        onCancel: () => {
-          createDirectoryOpen = false;
-          createDirectoryLocation = undefined;
-        },
-        onConfirm: (name: string) => {
-          const location = createDirectoryLocation ?? activeDirectory()?.location;
-          if (location === undefined) return;
-          createDirectoryOpen = false;
-          createDirectoryLocation = undefined;
-          pendingCreatedLocation = `${location.uri.replace(/\/$/u, '')}/${encodeURIComponent(name)}`;
-          void opsController.createDirectory(location, name).catch(() => {
-            pendingCreatedLocation = undefined;
-          });
-        },
+        open: dialogs.getState().createDirectoryOpen,
+        onCancel: () => dialogs.cancelCreateDirectory(),
+        onConfirm: (name: string) =>
+          dialogs.confirmCreateDirectory(
+            name,
+            activeDirectory()?.location,
+            (loc, n) => opsController.createDirectory(loc, n).then(() => undefined),
+          ),
       }),
       m(ArchiveCreateDialog, {
-        open: archiveCreateRequest !== undefined,
-        moveSources: archiveCreateRequest?.moveSources ?? false,
-        onCancel: () => {
-          archiveCreateRequest = undefined;
-        },
+        open: dialogs.getState().archiveCreateRequest !== undefined,
+        moveSources: dialogs.getState().archiveCreateRequest?.moveSources ?? false,
+        onCancel: () => dialogs.cancelArchiveCreate(),
         onConfirm: (name: string, format: ArchiveFormat, compressionLevel?: number) => {
-          const request = archiveCreateRequest;
+          const request = dialogs.getState().archiveCreateRequest;
           if (request === undefined) return;
-          archiveCreateRequest = undefined;
+          dialogs.cancelArchiveCreate();
           void opsController.pack(
             request.sources,
             {
@@ -1390,66 +1372,61 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
         },
       }),
       m(MultiRenameDialog, {
-        open: multiRenameOpen,
-        entries: multiRenameEntries,
-        existingSiblingNames: multiRenameExistingNames,
-        onCancel: () => {
-          multiRenameOpen = false;
-          multiRenameEntries = [];
-          multiRenameLocation = undefined;
-          multiRenameExistingNames = new Set();
-        },
+        open: dialogs.getState().multiRenameOpen,
+        entries: dialogs.getState().multiRenameEntries,
+        existingSiblingNames: dialogs.getState().multiRenameExistingNames,
+        onCancel: () => dialogs.cancelMultiRename(),
         onApply: (renamed) => {
-          const location = multiRenameLocation;
-          multiRenameOpen = false;
+          const { multiRenameLocation: location, multiRenameEntries: entries } = dialogs.getState();
+          dialogs.cancelMultiRename();
           if (location === undefined) return;
-          const entriesById = new Map(multiRenameEntries.map((entry) => [entry.id, entry]));
+          const entriesById = new Map(entries.map((entry) => [entry.id, entry]));
           const sources: Location[] = [];
           const destinations: Location[] = [];
           for (const { id, newName } of renamed) {
             const entry = entriesById.get(id);
             if (entry === undefined) continue;
-            const destinationUri = `${location.uri.replace(/\/$/u, '')}/${encodeURIComponent(newName)}`;
             sources.push(entry.location);
-            destinations.push({ ...entry.location, uri: destinationUri });
+            destinations.push({
+              ...entry.location,
+              uri: `${location.uri.replace(/\/$/u, '')}/${encodeURIComponent(newName)}`,
+            });
           }
-          multiRenameEntries = [];
-          multiRenameLocation = undefined;
-          multiRenameExistingNames = new Set();
           if (sources.length === 0) return;
           void opsController.multiRename(sources, destinations);
         },
       }),
       m(ArchivePasswordDialog, {
-        open: pendingArchiveCredential !== undefined,
-        invalid: pendingArchiveCredential?.invalid ?? false,
+        open: dialogs.getState().pendingArchiveCredential !== undefined,
+        invalid: dialogs.getState().pendingArchiveCredential?.invalid ?? false,
         archiveLabel:
-          pendingArchiveCredential === undefined
+          dialogs.getState().pendingArchiveCredential === undefined
             ? ''
-            : pathFromUri(pendingArchiveCredential.location.uri),
-        ...(archiveCredentialError === undefined ? {} : { error: archiveCredentialError }),
+            : pathFromUri(dialogs.getState().pendingArchiveCredential!.location.uri),
+        ...(dialogs.getState().archiveCredentialError === undefined
+          ? {}
+          : { error: dialogs.getState().archiveCredentialError! }),
         onCancel: () => {
-          const pending = pendingArchiveCredential;
-          pendingArchiveCredential = undefined;
-          archiveCredentialError = undefined;
+          const pending = dialogs.getState().pendingArchiveCredential;
+          dialogs.clearArchiveCredential();
           pending?.resolve(false);
         },
         onConfirm: (password: string) => {
-          const pending = pendingArchiveCredential;
+          const pending = dialogs.getState().pendingArchiveCredential;
           if (pending === undefined) return;
           void client
             .cacheArchivePassword({ location: pending.location, password })
             .then(() => {
-              if (pendingArchiveCredential === pending) {
-                pendingArchiveCredential = undefined;
-                archiveCredentialError = undefined;
+              if (dialogs.getState().pendingArchiveCredential === pending) {
+                dialogs.clearArchiveCredential();
                 pending.resolve(true);
                 m.redraw();
               }
             })
             .catch((error: unknown) => {
-              archiveCredentialError =
-                error instanceof Error ? error.message : 'Unable to cache archive password';
+              dialogs.setArchiveCredentialError(
+                error instanceof Error ? error.message : 'Unable to cache archive password',
+              );
               m.redraw();
             });
         },
@@ -1497,7 +1474,8 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
         open: findFilesOpen,
         scopeLabel: findFilesRoot === undefined ? '' : pathFromUri(findFilesRoot.uri),
         ...(findFilesError === undefined ? {} : { error: findFilesError }),
-        onSearch: (params: FindFilesSearchParams) => findFilesController.startFindFilesSearch(params),
+        onSearch: (params: FindFilesSearchParams) =>
+          findFilesController.startFindFilesSearch(params),
         onCancel: () => findFilesController.closeFindFiles(),
       }),
       m(PermanentDeleteDialog, {
@@ -1599,10 +1577,10 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
           m.redraw();
         },
         requestArchivePassword: (location, invalid) => {
-          pendingArchiveCredential?.resolve(false);
-          archiveCredentialError = undefined;
+          dialogs.getState().pendingArchiveCredential?.resolve(false);
+          dialogs.clearArchiveCredential();
           return new Promise<boolean>((resolve) => {
-            pendingArchiveCredential = { location, invalid, resolve };
+            dialogs.setPendingArchiveCredential({ location, invalid, resolve });
             m.redraw();
           });
         },
@@ -1685,8 +1663,8 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
 
     onremove: () => {
       removed = true;
-      pendingArchiveCredential?.resolve(false);
-      pendingArchiveCredential = undefined;
+      dialogs.getState().pendingArchiveCredential?.resolve(false);
+      dialogs.clearArchiveCredential();
       document.removeEventListener('keydown', globalKeydownHandler);
       systemThemeQuery?.removeEventListener('change', handleSystemThemeChange);
       if (operationFrame !== undefined) cancelAnimationFrame(operationFrame);
@@ -2002,7 +1980,10 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
                 ? []
                 : menuActionsForContext(
                   registeredActions,
-                  actionCommandController.commandAvailabilityContext(contextMenu.entries, contextMenu.paneId),
+                  actionCommandController.commandAvailabilityContext(
+                    contextMenu.entries,
+                    contextMenu.paneId,
+                  ),
                 ),
             onClose: () => {
               contextMenu = undefined;
