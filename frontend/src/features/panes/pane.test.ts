@@ -1051,7 +1051,7 @@ describe('Pane tab strip', () => {
 
     root.querySelector<HTMLButtonElement>('.fm-pane-tab-favourites')?.click();
     m.redraw.sync();
-    expect(root.querySelector('.fm-cloud-locations strong')?.textContent).toBe('CLOUD');
+    expect(root.querySelector('.fm-cloud-locations strong')?.textContent).toBe('Cloud');
     root.querySelector<HTMLButtonElement>('.fm-cloud-locations [role="menuitem"]')?.click();
     await Promise.resolve();
 
@@ -1111,7 +1111,7 @@ describe('Pane tab strip', () => {
 
     root.querySelector<HTMLButtonElement>('.fm-pane-tab-favourites')?.click();
     m.redraw.sync();
-    expect(root.querySelector('.fm-network-locations strong')?.textContent).toBe('NETWORK');
+    expect(root.querySelector('.fm-network-locations strong')?.textContent).toBe('Network');
     const share = root.querySelector<HTMLButtonElement>('.fm-network-locations [role="menuitem"]');
     expect(share?.textContent).toContain('Team Files (unavailable)');
     expect(share?.disabled).toBe(true);

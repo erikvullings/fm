@@ -223,6 +223,11 @@ impl From<ConnectionError> for ApplicationError {
                 fingerprint,
                 expected_fingerprint,
             },
+            // In practice `ConnectionService::evaluate` always turns this
+            // into `Ok(ConnectionStatus::Failed)` plus a stored
+            // `last_error` message rather than letting it propagate as an
+            // `Err` - this arm exists only for match exhaustiveness.
+            ConnectionError::DialFailed(message) => Self::PlatformOperationFailed(message),
         }
     }
 }

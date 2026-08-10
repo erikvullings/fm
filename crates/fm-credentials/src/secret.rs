@@ -27,6 +27,18 @@ pub enum SecretMaterial {
         /// Passphrase protecting `key`, if any.
         passphrase: Option<Zeroizing<String>>,
     },
+    /// A private key referenced by its filesystem path rather than pasted
+    /// content, read fresh from disk at dial time - matching how `ssh`
+    /// itself uses an `IdentityFile`, and avoiding storing key bytes at rest
+    /// at all. The path is not secret (only the file's content and the
+    /// passphrase are); it is kept as a plain `String` rather than
+    /// `Zeroizing` for that reason.
+    PrivateKeyPath {
+        /// Absolute or `~`-relative path to a PEM/OpenSSH private key file.
+        path: String,
+        /// Passphrase protecting the key file, if any.
+        passphrase: Option<Zeroizing<String>>,
+    },
     /// An OAuth token pair, for example a future native OneDrive connection.
     OAuthToken {
         /// The current access token.
@@ -48,6 +60,11 @@ impl fmt::Debug for SecretMaterial {
             Self::PrivateKey { .. } => f
                 .debug_struct("PrivateKey")
                 .field("key", &REDACTED)
+                .field("passphrase", &REDACTED)
+                .finish(),
+            Self::PrivateKeyPath { path, .. } => f
+                .debug_struct("PrivateKeyPath")
+                .field("path", path)
                 .field("passphrase", &REDACTED)
                 .finish(),
             Self::OAuthToken { .. } => f
@@ -78,6 +95,16 @@ impl PartialEq for SecretMaterial {
                 key_a.as_str() == key_b.as_str()
                     && passphrase_a.as_deref() == passphrase_b.as_deref()
             }
+            (
+                Self::PrivateKeyPath {
+                    path: path_a,
+                    passphrase: passphrase_a,
+                },
+                Self::PrivateKeyPath {
+                    path: path_b,
+                    passphrase: passphrase_b,
+                },
+            ) => path_a == path_b && passphrase_a.as_deref() == passphrase_b.as_deref(),
             (
                 Self::OAuthToken {
                     access_token: access_a,
@@ -114,6 +141,16 @@ impl SecretMaterial {
         }
     }
 
+    /// Builds private-key-path secret material: a reference to a key file on
+    /// disk, resolved fresh at dial time rather than stored at rest.
+    #[must_use]
+    pub fn private_key_path(path: impl Into<String>, passphrase: Option<String>) -> Self {
+        Self::PrivateKeyPath {
+            path: path.into(),
+            passphrase: passphrase.map(Zeroizing::new),
+        }
+    }
+
     /// Builds OAuth token secret material from owned strings.
     #[must_use]
     pub fn oauth_token(access_token: impl Into<String>, refresh_token: Option<String>) -> Self {
@@ -145,6 +182,16 @@ mod tests {
         let formatted = format!("{secret:?}");
         assert!(!formatted.contains("BEGIN PRIVATE KEY"));
         assert!(!formatted.contains("swordfish"));
+    }
+
+    #[test]
+    fn debug_output_shows_the_path_but_never_the_passphrase() {
+        let secret =
+            SecretMaterial::private_key_path("~/.ssh/id_tno", Some("swordfish".to_owned()));
+        let formatted = format!("{secret:?}");
+        assert!(formatted.contains("~/.ssh/id_tno"));
+        assert!(!formatted.contains("swordfish"));
+        assert!(formatted.contains(REDACTED));
     }
 
     #[test]

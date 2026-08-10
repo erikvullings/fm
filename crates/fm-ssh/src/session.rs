@@ -5,6 +5,8 @@ use std::sync::{Arc, Mutex as StdMutex};
 use std::time::Duration;
 
 use russh::client::{self, AuthResult};
+use russh::keys::agent::AgentIdentity;
+use russh::keys::agent::client::{AgentClient, AgentStream};
 use russh::keys::{PrivateKeyWithHashAlg, PublicKey};
 use russh_sftp::client::SftpSession;
 use tokio::sync::Mutex as AsyncMutex;
@@ -252,9 +254,15 @@ async fn authenticate(
                 .map_err(|error| SshError::Session(error.to_string()))?
         }
         SshCredential::Agent => {
-            return Err(SshError::UnsupportedAuthenticationMethod(
-                "ssh-agent authentication is not implemented yet",
-            ));
+            let auth_sock = std::env::var("SSH_AUTH_SOCK").unwrap_or_else(|_| "<unset>".to_owned());
+            tracing::info!(ssh_auth_sock = %auth_sock, "connecting to the local SSH agent");
+            let mut agent = AgentClient::connect_env().await.map_err(|error| {
+                tracing::warn!(ssh_auth_sock = %auth_sock, %error, "could not reach the local SSH agent");
+                SshError::Agent(format!(
+                    "could not reach the local SSH agent (is SSH_AUTH_SOCK set and ssh-add run?): {error}"
+                ))
+            })?;
+            return authenticate_with_agent(handle, username, &mut agent).await;
         }
     };
 
@@ -263,6 +271,70 @@ async fn authenticate(
     } else {
         Err(SshError::AuthenticationFailed)
     }
+}
+
+/// Tries every plain public-key identity the connected agent offers, in the
+/// order the agent returns them, until one authenticates - matching how
+/// OpenSSH's own client tries agent identities. Agent-held certificates are
+/// skipped (a documented gap, not silently ignored: OpenSSH certificate
+/// identities are rarer than plain keys and need a distinct
+/// `authenticate_certificate_with` call this crate does not yet make).
+///
+/// Generic over the transport so tests can exercise this against an
+/// in-process agent server via [`AgentClient::connect_uds`] rather than the
+/// real environment's `SSH_AUTH_SOCK`.
+async fn authenticate_with_agent<S: AgentStream + Send + Unpin>(
+    handle: &mut client::Handle<ClientHandler>,
+    username: &str,
+    agent: &mut AgentClient<S>,
+) -> Result<(), SshError> {
+    let identities = agent
+        .request_identities()
+        .await
+        .map_err(|error| SshError::Agent(format!("could not list agent identities: {error}")))?;
+    tracing::info!(
+        identity_count = identities.len(),
+        identities = ?identities
+            .iter()
+            .map(|identity| match identity {
+                AgentIdentity::PublicKey { key, comment } => {
+                    format!("{} {} ({comment})", key.algorithm(), fingerprint_of(key))
+                }
+                AgentIdentity::Certificate { certificate, comment } => {
+                    format!(
+                        "certificate {} ({comment})",
+                        certificate.public_key().fingerprint(russh::keys::HashAlg::Sha256)
+                    )
+                }
+            })
+            .collect::<Vec<_>>(),
+        "SSH agent reported identities",
+    );
+    let public_keys: Vec<PublicKey> = identities
+        .into_iter()
+        .filter_map(|identity| match identity {
+            AgentIdentity::PublicKey { key, .. } => Some(key),
+            AgentIdentity::Certificate { .. } => None,
+        })
+        .collect();
+    if public_keys.is_empty() {
+        return Err(SshError::Agent(
+            "the SSH agent has no usable public-key identities (try `ssh-add -l`)".to_owned(),
+        ));
+    }
+
+    for key in &public_keys {
+        let fingerprint = fingerprint_of(key);
+        let result = handle
+            .authenticate_publickey_with(username, key.clone(), None, agent)
+            .await
+            .map_err(|error| SshError::Session(error.to_string()))?;
+        tracing::info!(%fingerprint, success = matches!(result, AuthResult::Success), "tried agent identity");
+        if matches!(result, AuthResult::Success) {
+            return Ok(());
+        }
+    }
+    Err(SshError::AuthenticationFailed)
 }
 
 struct ClientHandler {
@@ -293,5 +365,129 @@ impl client::Handler for ClientHandler {
         let trusted = matches!(verification, HostKeyVerification::Trusted { .. });
         *self.outcome.lock().expect("host-key outcome lock poisoned") = Some(verification);
         Ok(trusted)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    //! Exercises real `ssh-agent` wire-protocol authentication (spec §6.3)
+    //! against an in-process agent server, matching this crate's fixture
+    //! philosophy (`fixture.rs`'s doc comment): no external `ssh-agent`
+    //! process, works identically in a sandboxed CI environment.
+
+    use std::sync::Arc;
+
+    use russh::keys::agent::client::AgentClient;
+    use russh::keys::agent::server;
+    use tokio::net::{UnixListener, UnixStream};
+
+    use super::*;
+    use crate::fixture::{FIXTURE_USERNAME, SshFixture};
+    use crate::known_hosts::InMemoryKnownHostsStore;
+
+    /// Starts an in-process agent server on an ephemeral Unix socket,
+    /// pre-loaded with `identity`, and returns a client already connected to
+    /// it. The server task is leaked for the test's lifetime (process exit
+    /// cleans up the socket file along with the temp directory).
+    async fn agent_with_identity(identity: &russh::keys::PrivateKey) -> AgentClient<UnixStream> {
+        let socket_dir = tempfile::tempdir().expect("creating a temp dir for the agent socket");
+        let socket_path = socket_dir.path().join("agent.sock");
+        let listener =
+            UnixListener::bind(&socket_path).expect("binding the in-process agent socket");
+
+        tokio::spawn(async move {
+            // Keep the temp dir alive for as long as the server runs.
+            let _socket_dir = socket_dir;
+            let stream = Box::pin(futures::stream::unfold(listener, |listener| async move {
+                let accepted = listener.accept().await.map(|(stream, _)| stream);
+                Some((accepted, listener))
+            }));
+            let _ = server::serve(stream, ()).await;
+        });
+
+        // Give the spawned server a moment to start listening before the
+        // first connect attempt.
+        tokio::task::yield_now().await;
+
+        let mut client = AgentClient::connect_uds(&socket_path)
+            .await
+            .expect("connecting to the in-process agent must succeed");
+        client
+            .add_identity(identity, &[])
+            .await
+            .expect("adding the test identity to the in-process agent must succeed");
+        client
+    }
+
+    async fn trusted_handle(fixture: &SshFixture) -> client::Handle<ClientHandler> {
+        let known_hosts = Arc::new(InMemoryKnownHostsStore::new());
+        known_hosts
+            .accept("conn-1", fixture.host_key_fingerprint.clone())
+            .await
+            .expect("seeding the trusted fingerprint must succeed");
+        let target = crate::types::SshConnectTarget {
+            host: fixture.addr.ip().to_string(),
+            port: fixture.addr.port(),
+            username: FIXTURE_USERNAME.to_owned(),
+        };
+        establish_transport(&target, None, known_hosts, "conn-1")
+            .await
+            .expect("establishing the transport against the trusted fixture must succeed")
+            .handle
+    }
+
+    #[tokio::test]
+    async fn agent_authentication_succeeds_with_the_fixture_s_authorized_key() {
+        let fixture = SshFixture::start().await;
+        let mut agent = agent_with_identity(&fixture.authorized_client_key).await;
+        let mut handle = trusted_handle(&fixture).await;
+
+        authenticate_with_agent(&mut handle, FIXTURE_USERNAME, &mut agent)
+            .await
+            .expect("the agent's authorized identity must authenticate");
+    }
+
+    #[tokio::test]
+    async fn agent_authentication_fails_when_the_agent_only_holds_an_unauthorized_key() {
+        let fixture = SshFixture::start().await;
+        let unauthorized_key =
+            russh::keys::PrivateKey::random(&mut rand::rng(), russh::keys::Algorithm::Ed25519)
+                .expect("generating an unauthorized test key must succeed");
+        let mut agent = agent_with_identity(&unauthorized_key).await;
+        let mut handle = trusted_handle(&fixture).await;
+
+        let error = authenticate_with_agent(&mut handle, FIXTURE_USERNAME, &mut agent)
+            .await
+            .expect_err("an identity the server never authorized must be rejected");
+
+        assert_eq!(error, SshError::AuthenticationFailed);
+    }
+
+    #[tokio::test]
+    async fn agent_authentication_reports_a_typed_error_when_the_agent_has_no_identities() {
+        let fixture = SshFixture::start().await;
+        let socket_dir = tempfile::tempdir().expect("creating a temp dir for the agent socket");
+        let socket_path = socket_dir.path().join("empty-agent.sock");
+        let listener =
+            UnixListener::bind(&socket_path).expect("binding the in-process agent socket");
+        tokio::spawn(async move {
+            let _socket_dir = socket_dir;
+            let stream = Box::pin(futures::stream::unfold(listener, |listener| async move {
+                let accepted = listener.accept().await.map(|(stream, _)| stream);
+                Some((accepted, listener))
+            }));
+            let _ = server::serve(stream, ()).await;
+        });
+        tokio::task::yield_now().await;
+        let mut agent = AgentClient::connect_uds(&socket_path)
+            .await
+            .expect("connecting to the empty in-process agent must succeed");
+        let mut handle = trusted_handle(&fixture).await;
+
+        let error = authenticate_with_agent(&mut handle, FIXTURE_USERNAME, &mut agent)
+            .await
+            .expect_err("an agent with no identities must not silently succeed");
+
+        assert!(matches!(error, SshError::Agent(_)), "got {error:?}");
     }
 }

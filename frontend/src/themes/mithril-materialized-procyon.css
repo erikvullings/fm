@@ -52,7 +52,7 @@
  * below the input. `order` visually promotes it above the input without
  * touching DOM order, keeping any mm sibling-selector behavior intact.
  */
-.fm-app-shell .input-field>label {
+.fm-app-shell .input-field > label {
   order: -1;
   position: static;
   display: block;
@@ -72,7 +72,7 @@
  * `translateY(-14px) scale(0.8)` on top of the static layout above and
  * making it overlap the input's own text.
  */
-.fm-app-shell .input-field>label.active {
+.fm-app-shell .input-field > label.active {
   transform: none;
 }
 
@@ -116,6 +116,47 @@
   line-height: calc(var(--fm-row-height) - 2px);
 }
 
+.fm-app-shell .select-wrapper input.select-dropdown {
+  padding-right: 1.35rem;
+}
+
+.fm-app-shell .select-wrapper svg.caret {
+  position: absolute;
+  top: 50%;
+  right: 0.25rem;
+  width: 0.8rem;
+  height: 0.8rem;
+  margin: 0;
+  transform: translateY(-50%);
+  fill: var(--fm-text-muted);
+  pointer-events: none;
+  z-index: 2;
+}
+
+.fm-app-shell .select-wrapper input.select-dropdown:focus + svg.caret {
+  transform: translateY(-50%) rotate(180deg);
+}
+
+/*
+ * mm's `disabled` prop on Select blocks opening/keyboard interaction and
+ * sets `tabindex="-1"` on `.select-wrapper`, but never sets the underlying
+ * trigger `<input>`'s `disabled` attribute - so there is no `:disabled` to
+ * hook a look into. Style the `tabindex` signal it does set instead.
+ */
+.fm-app-shell .select-wrapper[tabindex="-1"] {
+  cursor: not-allowed;
+}
+
+.fm-app-shell .select-wrapper[tabindex="-1"] input.select-dropdown {
+  background: var(--fm-hover);
+  color: var(--fm-text-muted);
+  cursor: not-allowed;
+}
+
+.fm-app-shell .select-wrapper[tabindex="-1"] svg.caret {
+  opacity: 0.4;
+}
+
 /* mm's own `.switch, .switch * { margin: 12px 0 17px 0; }` inflates every switch descendant. */
 .fm-app-shell .switch,
 .fm-app-shell .switch * {
@@ -151,7 +192,7 @@
   top: -1px;
 }
 
-.fm-app-shell .input-field>label:not(.label-icon).switch-label.active {
+.fm-app-shell .input-field > label:not(.label-icon).switch-label.active {
   transform: none;
 }
 
@@ -197,7 +238,7 @@
   background: var(--fm-surface-elevated) !important;
 }
 
-.fm-app-shell .modal.fm-find-files-modal>button.modal-close {
+.fm-app-shell .modal.fm-find-files-modal > button.modal-close {
   top: 0.25rem !important;
   right: 0.25rem !important;
   min-width: var(--fm-row-height) !important;
@@ -238,7 +279,7 @@
   min-height: var(--fm-row-height);
 }
 
-.fm-app-shell .dropdown-content li>span {
+.fm-app-shell .dropdown-content li > span {
   padding: 0.25rem 0.5rem;
   color: var(--fm-text);
   font-size: inherit;
@@ -263,9 +304,9 @@
   background-image: none !important;
 }
 
-.fm-app-shell .select-wrapper .dropdown-content li:hover:not(.disabled)>span,
-.fm-app-shell .select-wrapper .dropdown-content li.selected>span,
-.fm-app-shell .select-wrapper .dropdown-content li.active>span {
+.fm-app-shell .select-wrapper .dropdown-content li:hover:not(.disabled) > span,
+.fm-app-shell .select-wrapper .dropdown-content li.selected > span,
+.fm-app-shell .select-wrapper .dropdown-content li.active > span {
   background-color: transparent !important;
 }
 
@@ -302,7 +343,7 @@
 }
 
 /* Materialize's 20px grid gutters and floating labels are too loose for settings. */
-.fm-app-shell .fm-settings-editor-body>.row {
+.fm-app-shell .fm-settings-editor-body > .row {
   margin-bottom: 0.4rem;
 }
 
@@ -312,7 +353,7 @@
   line-height: 1.2;
 }
 
-.fm-app-shell .fm-settings-editor-body>.row:first-child .fm-settings-section-heading {
+.fm-app-shell .fm-settings-editor-body > .row:first-child .fm-settings-section-heading {
   margin-top: 0.1rem;
 }
 
@@ -321,13 +362,13 @@
   line-height: 1.2;
 }
 
-.fm-app-shell .fm-settings-editor-heading>button[aria-label="Close settings"] {
+.fm-app-shell .fm-settings-editor-heading > button[aria-label="Close settings"] {
   min-width: 1.25rem;
   min-height: 1.25rem;
   padding: 0.15rem;
 }
 
-.fm-app-shell .fm-settings-editor-heading>button[aria-label="Close settings"] svg {
+.fm-app-shell .fm-settings-editor-heading > button[aria-label="Close settings"] svg {
   width: 0.75rem;
   height: 0.75rem;
 }

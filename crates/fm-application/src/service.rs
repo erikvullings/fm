@@ -2043,7 +2043,8 @@ impl FileManagerService {
         let mut dtos = Vec::with_capacity(profiles.len());
         for profile in profiles {
             let status = self.connections.status(profile.id).await?;
-            dtos.push(connection_dto::connection_dto(profile, status));
+            let last_error = self.connections.last_error(profile.id).await?;
+            dtos.push(connection_dto::connection_dto(profile, status, last_error));
         }
         Ok(dtos)
     }
@@ -2054,7 +2055,8 @@ impl FileManagerService {
         let connection_id: ConnectionId = id.into();
         let profile = self.connections.get(connection_id).await?;
         let status = self.connections.status(connection_id).await?;
-        Ok(connection_dto::connection_dto(profile, status))
+        let last_error = self.connections.last_error(connection_id).await?;
+        Ok(connection_dto::connection_dto(profile, status, last_error))
     }
 
     /// Creates and persists a new connection profile (spec §16
@@ -2071,7 +2073,8 @@ impl FileManagerService {
         };
         let profile = self.connections.create(draft).await?;
         let status = self.connections.status(profile.id).await?;
-        Ok(connection_dto::connection_dto(profile, status))
+        let last_error = self.connections.last_error(profile.id).await?;
+        Ok(connection_dto::connection_dto(profile, status, last_error))
     }
 
     /// Updates an existing connection profile, optionally replacing its
@@ -2091,7 +2094,8 @@ impl FileManagerService {
         };
         let profile = self.connections.update(connection_id, draft).await?;
         let status = self.connections.status(connection_id).await?;
-        Ok(connection_dto::connection_dto(profile, status))
+        let last_error = self.connections.last_error(connection_id).await?;
+        Ok(connection_dto::connection_dto(profile, status, last_error))
     }
 
     /// Deletes a connection profile and its stored credential, if any (spec
@@ -2109,7 +2113,8 @@ impl FileManagerService {
         let connection_id: ConnectionId = id.into();
         let status = self.connections.connect(connection_id).await?;
         let profile = self.connections.get(connection_id).await?;
-        Ok(connection_dto::connection_dto(profile, status))
+        let last_error = self.connections.last_error(connection_id).await?;
+        Ok(connection_dto::connection_dto(profile, status, last_error))
     }
 
     /// Marks a connection as disconnected (spec §16
@@ -2118,7 +2123,8 @@ impl FileManagerService {
         let connection_id: ConnectionId = id.into();
         let status = self.connections.disconnect(connection_id).await?;
         let profile = self.connections.get(connection_id).await?;
-        Ok(connection_dto::connection_dto(profile, status))
+        let last_error = self.connections.last_error(connection_id).await?;
+        Ok(connection_dto::connection_dto(profile, status, last_error))
     }
 
     /// Checks whether a connection's configuration and credential are
@@ -2130,7 +2136,8 @@ impl FileManagerService {
         let connection_id: ConnectionId = id.into();
         let status = self.connections.test(connection_id).await?;
         let profile = self.connections.get(connection_id).await?;
-        Ok(connection_dto::connection_dto(profile, status))
+        let last_error = self.connections.last_error(connection_id).await?;
+        Ok(connection_dto::connection_dto(profile, status, last_error))
     }
 
     /// Probes an SSH connection's currently presented host key without

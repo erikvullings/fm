@@ -567,6 +567,13 @@
             "$ref": "#/components/schemas/ConnectionKindDto",
             "description": "Protocol/provider family."
           },
+          "lastError": {
+            "description": "The dialer's failure message from the most recent `connect`/`test`\nthat ended in `status: \"failed\"` (task 0104) - `None` whenever\n`status` is anything else, or the connection has never failed that\nway. Never a secret: dialer failure messages are sanitized connection\ndiagnostics (unreachable host, rejected credential), not credential\nmaterial itself.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "name": {
             "description": "Display name.",
             "type": "string"
@@ -652,6 +659,33 @@
             },
             "required": [
               "key",
+              "kind"
+            ],
+            "type": "object"
+          },
+          {
+            "description": "A private key referenced by its filesystem path on the host running\nthe backend (the local machine for Tauri, or the fm-server host for\nbrowser mode - always a local read, never sent from the browser),\nread fresh from disk at dial time rather than stored at rest.",
+            "properties": {
+              "kind": {
+                "enum": [
+                  "privateKeyPath"
+                ],
+                "type": "string"
+              },
+              "passphrase": {
+                "description": "Passphrase protecting the key file, if any.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "path": {
+                "description": "Absolute or `~`-relative path to a PEM/OpenSSH private key file.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "path",
               "kind"
             ],
             "type": "object"

@@ -5,6 +5,7 @@ import type {
   ConnectionId,
   ConnectionStatus,
   CreateConnectionRequest,
+  HostKeyProbe,
   Location,
   UpdateConnectionRequest,
 } from '../../models';
@@ -192,4 +193,30 @@ export function disconnectConnection(
 /** Checks whether a connection's configuration/credential are currently usable. */
 export function testConnection(client: FileManagerClient, id: ConnectionId): Promise<Connection> {
   return client.testConnection(id);
+}
+
+/**
+ * Probes an SSH connection's currently presented host key without
+ * authenticating (task 0104, spec §6.4). Call this when `connect`/`test`
+ * report a `hostKeyUnverified`/`hostKeyMismatch` status, to fetch the
+ * fingerprint(s) to show the user before deciding whether to accept it.
+ */
+export function probeSshHostKey(
+  client: FileManagerClient,
+  id: ConnectionId,
+): Promise<HostKeyProbe> {
+  return client.probeSshHostKey(id);
+}
+
+/**
+ * Accepts (persists) a host-key fingerprint for an SSH connection (task
+ * 0104, spec §6.4). Only call this with a fingerprint the user has just
+ * explicitly confirmed - never silently, even on a first connection.
+ */
+export function acceptSshHostKey(
+  client: FileManagerClient,
+  id: ConnectionId,
+  fingerprint: string,
+): Promise<void> {
+  return client.acceptSshHostKey(id, fingerprint);
 }

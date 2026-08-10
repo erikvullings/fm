@@ -205,6 +205,9 @@ pub(crate) fn secret_material_from_dto(secret: ConnectionSecretInputDto) -> Secr
         ConnectionSecretInputDto::PrivateKey { key, passphrase } => {
             SecretMaterial::private_key(key, passphrase)
         }
+        ConnectionSecretInputDto::PrivateKeyPath { path, passphrase } => {
+            SecretMaterial::private_key_path(path, passphrase)
+        }
         ConnectionSecretInputDto::OAuthToken {
             access_token,
             refresh_token,
@@ -214,10 +217,13 @@ pub(crate) fn secret_material_from_dto(secret: ConnectionSecretInputDto) -> Secr
 
 /// Builds the response DTO for a profile, paired with its separately
 /// tracked runtime [`ConnectionStatus`] (never persisted on the profile
-/// itself).
+/// itself) and the dialer's last failure message, if any (task 0104 -
+/// `None` whenever `status` isn't `Failed`, see
+/// [`fm_connections::ConnectionService::last_error`]).
 pub(crate) fn connection_dto(
     profile: ConnectionProfile,
     status: ConnectionStatus,
+    last_error: Option<String>,
 ) -> ConnectionDto {
     ConnectionDto {
         id: profile.id.into_inner(),
@@ -226,6 +232,7 @@ pub(crate) fn connection_dto(
         configuration: connection_configuration_to_dto(&profile.configuration),
         has_credential: profile.credential_ref.is_some(),
         status: connection_status_to_dto(status),
+        last_error,
         created_at: profile.created_at,
         updated_at: profile.updated_at,
     }
@@ -276,7 +283,7 @@ mod tests {
             updated_at: now,
         };
 
-        let dto = connection_dto(profile, ConnectionStatus::Connected);
+        let dto = connection_dto(profile, ConnectionStatus::Connected, None);
 
         assert!(dto.has_credential);
         assert_eq!(dto.status, ConnectionStatusDto::Connected);
@@ -301,6 +308,13 @@ mod tests {
                 passphrase: Some("pw".to_owned()),
             }),
             SecretMaterial::private_key("key-bytes", Some("pw".to_owned()))
+        );
+        assert_eq!(
+            secret_material_from_dto(ConnectionSecretInputDto::PrivateKeyPath {
+                path: "~/.ssh/id_tno".to_owned(),
+                passphrase: Some("pw".to_owned()),
+            }),
+            SecretMaterial::private_key_path("~/.ssh/id_tno", Some("pw".to_owned()))
         );
         assert_eq!(
             secret_material_from_dto(ConnectionSecretInputDto::OAuthToken {

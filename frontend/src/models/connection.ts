@@ -6,6 +6,7 @@ import type { ConnectionStatusDto } from '../api/generated/models/connectionStat
 import type { CreateConnectionRequestDto } from '../api/generated/models/createConnectionRequestDto';
 import type { FtpConnectionConfigurationDto } from '../api/generated/models/ftpConnectionConfigurationDto';
 import type { HostKeyPolicyDto } from '../api/generated/models/hostKeyPolicyDto';
+import type { HostKeyProbeDto } from '../api/generated/models/hostKeyProbeDto';
 import type { OneDriveConnectionConfigurationDto } from '../api/generated/models/oneDriveConnectionConfigurationDto';
 import type { S3ConnectionConfigurationDto } from '../api/generated/models/s3ConnectionConfigurationDto';
 import type { SmbConnectionConfigurationDto } from '../api/generated/models/smbConnectionConfigurationDto';
@@ -31,6 +32,13 @@ export type SshAuthenticationMethod = SshAuthenticationMethodDto;
 
 /** SSH host-key verification policy (spec §6.4). */
 export type HostKeyPolicy = HostKeyPolicyDto;
+
+/**
+ * Result of probing an SSH connection's currently presented host key without
+ * authenticating (spec §6.4, task 0104): whether it is already trusted, has
+ * never been seen before, or has changed since it was last accepted.
+ */
+export type HostKeyProbe = HostKeyProbeDto;
 
 /** SSH connection configuration (spec §6.3). */
 export type SshConnectionConfiguration = SshConnectionConfigurationDto;

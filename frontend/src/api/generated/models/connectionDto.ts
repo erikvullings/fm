@@ -26,6 +26,16 @@ export interface ConnectionDto {
   id: string;
   /** Protocol/provider family. */
   kind: ConnectionKindDto;
+  /**
+     * The dialer's failure message from the most recent `connect`/`test`
+     * that ended in `status: "failed"` (task 0104) - `None` whenever
+     * `status` is anything else, or the connection has never failed that
+     * way. Never a secret: dialer failure messages are sanitized connection
+     * diagnostics (unreachable host, rejected credential), not credential
+     * material itself.
+     * @nullable
+     */
+  lastError?: string | null;
   /** Display name. */
   name: string;
   /** Current runtime status. */

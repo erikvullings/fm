@@ -51,11 +51,16 @@
   display: flex;
   align-items: stretch;
   height: var(--fm-header-height);
-  overflow-x: auto;
+  overflow-x: hidden;
   overflow-y: hidden;
   border-bottom: 1px solid var(--fm-border);
   background: var(--fm-surface-elevated);
   font-size: 0.92em;
+  scrollbar-width: none;
+}
+
+.fm-pane-tabs::-webkit-scrollbar {
+  display: none;
 }
 
 .fm-breadcrumb-segment {
@@ -237,6 +242,34 @@
   box-shadow: 0 0.5rem 1.5rem rgb(0 0 0 / 25%);
 }
 
+/* A slim header row, not a full reserved line: the close button floats to
+   its right edge within a compact row rather than pushing the whole menu's
+   content down. */
+.fm-favourites-menu-header {
+  display: flex;
+  justify-content: flex-end;
+  margin: -0.25rem -0.25rem 0.1rem;
+}
+
+.fm-favourites-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  border: 0;
+  border-radius: var(--fm-radius);
+  background: transparent;
+  color: var(--fm-text-muted);
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.fm-favourites-close:hover {
+  background: var(--fm-hover);
+  color: var(--fm-text);
+}
+
 .fm-favourites-add,
 .fm-favourites-item,
 .fm-favourites-recents {
@@ -288,6 +321,36 @@
   line-height: 1;
 }
 
+.fm-favourites-menu button.fm-manage-connections {
+  margin: 0.25rem -0.5rem -0.5rem;
+  border-top: 1px solid var(--fm-border);
+  padding: 0.5rem 0.75rem;
+  text-align: right;
+}
+
+/* Beats `.fm-favourites-recents > button`'s `display: block` (same specificity
+   family, defined later) by matching on both the parent class and the
+   element's own class. */
+.fm-favourites-recents > button.fm-server-item {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  text-align: left;
+}
+
+.fm-server-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fm-server-status {
+  flex: 0 0 auto;
+  color: var(--fm-text-muted);
+}
+
 .fm-favourites-item > button:first-child {
   flex: 1;
   min-width: 0;
@@ -304,6 +367,31 @@
 .fm-favourites-recents > strong {
   color: var(--fm-text);
   font-size: 0.9em;
+}
+
+.fm-hostkey-prompt {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0.25rem 0;
+  padding: 0.5rem;
+  border: 1px solid var(--fm-border);
+  border-radius: var(--fm-radius);
+  background: var(--fm-surface);
+  font-size: 0.9em;
+}
+
+.fm-hostkey-prompt code {
+  word-break: break-all;
+}
+
+.fm-hostkey-warning {
+  color: var(--fm-warning);
+  font-weight: 600;
+}
+
+.fm-hostkey-actions {
+  display: flex;
+  gap: 0.25rem;
 }
 
 .fm-favourites-item > button:first-child {

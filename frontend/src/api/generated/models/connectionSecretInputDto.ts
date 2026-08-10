@@ -26,6 +26,15 @@ export type ConnectionSecretInputDto = {
      */
   passphrase?: string | null;
 } | {
+  kind: 'privateKeyPath';
+  /**
+     * Passphrase protecting the key file, if any.
+     * @nullable
+     */
+  passphrase?: string | null;
+  /** Absolute or `~`-relative path to a PEM/OpenSSH private key file. */
+  path: string;
+} | {
   /** The current access token. */
   accessToken: string;
   kind: 'oAuthToken';

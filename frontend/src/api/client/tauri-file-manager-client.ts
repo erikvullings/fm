@@ -16,6 +16,7 @@ import type {
   EntryMetadata,
   EntryMetadataRequest,
   FileRangeChunk,
+  HostKeyProbe,
   InvokeActionRequest,
   ListDirectoryRequest,
   LoadEditableFileRequest,
@@ -331,5 +332,17 @@ export class TauriFileManagerClient implements FileManagerClient {
 
   testConnection(connectionId: ConnectionId, _signal?: AbortSignal): Promise<Connection> {
     return invoke<Connection>('test_connection', { connectionId });
+  }
+
+  probeSshHostKey(connectionId: ConnectionId, _signal?: AbortSignal): Promise<HostKeyProbe> {
+    return invoke<HostKeyProbe>('probe_ssh_host_key', { connectionId });
+  }
+
+  async acceptSshHostKey(
+    connectionId: ConnectionId,
+    fingerprint: string,
+    _signal?: AbortSignal,
+  ): Promise<void> {
+    await invoke('accept_ssh_host_key', { connectionId, request: { fingerprint } });
   }
 }

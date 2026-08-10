@@ -9,6 +9,7 @@
 //! wire an SSH dialer into `ConnectionService`), so the translation lives
 //! here instead.
 
+use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::Arc;
 
@@ -25,33 +26,73 @@ use fm_ssh::{
 };
 use fm_vfs::VfsError;
 use fm_vfs_sftp::SshConnectionResolver;
+use zeroize::Zeroizing;
+
+/// Expands a leading `~`/`~/` to the current user's home directory, matching
+/// how a shell (and `ssh`'s own `IdentityFile` handling) expands paths. Any
+/// other path is returned unchanged.
+fn expand_home(path: &str) -> PathBuf {
+    let rest = match path.strip_prefix("~/") {
+        Some(rest) => Some(rest),
+        None if path == "~" => Some(""),
+        None => None,
+    };
+    match rest {
+        Some(rest) => dirs::home_dir()
+            .map(|home| home.join(rest))
+            .unwrap_or_else(|| PathBuf::from(path)),
+        None => PathBuf::from(path),
+    }
+}
 
 /// Translates a resolved SSH configuration + credential into `fm-ssh`'s
 /// connection-agnostic parameters.
 ///
-/// `Err(())` means the resolved credential's shape did not match the
-/// configured authentication method (or was missing when required) - each
-/// caller maps that into its own domain's "not usable" outcome
-/// ([`ConnectionError::Invalid`] for the dialer,
-/// [`VfsError::CredentialRequired`] for the VFS resolver).
-fn ssh_connection_parameters(
+/// A [`SecretMaterial::PrivateKeyPath`] is read fresh from disk here (this
+/// is always a local read on whichever host runs the backend - the local
+/// machine for Tauri, or the fm-server host for browser mode, matching how
+/// `ssh` itself reads an `IdentityFile`; the browser never sends key bytes).
+///
+/// `Err` carries a human-readable reason the credential could not be
+/// resolved into usable SSH parameters (a shape mismatch, a missing
+/// credential, or a key file that could not be read) - each caller maps that
+/// into its own domain's "not usable" outcome
+/// ([`ConnectionError::DialFailed`] for the dialer,
+/// [`VfsError::Io`] for the VFS resolver).
+async fn ssh_connection_parameters(
     configuration: &SshConnectionConfiguration,
     credential: Option<&ResolvedCredential>,
-) -> Result<SshConnectionParameters, ()> {
+) -> Result<SshConnectionParameters, String> {
     let ssh_credential = match configuration.authentication {
         SshAuthenticationMethod::Agent => SshCredential::Agent,
         SshAuthenticationMethod::Password => match credential.map(|resolved| &resolved.secret) {
             Some(SecretMaterial::Password { password }) => {
                 SshCredential::Password(password.clone())
             }
-            _ => return Err(()),
+            _ => {
+                return Err(
+                    "password authentication requires a stored password credential".to_owned(),
+                );
+            }
         },
         SshAuthenticationMethod::PrivateKey => match credential.map(|resolved| &resolved.secret) {
             Some(SecretMaterial::PrivateKey { key, passphrase }) => SshCredential::PrivateKey {
                 key: key.clone(),
                 passphrase: passphrase.clone(),
             },
-            _ => return Err(()),
+            Some(SecretMaterial::PrivateKeyPath { path, passphrase }) => {
+                let resolved_path = expand_home(path);
+                let key = read_private_key_file(&resolved_path).await?;
+                SshCredential::PrivateKey {
+                    key,
+                    passphrase: passphrase.clone(),
+                }
+            }
+            _ => {
+                return Err(
+                    "private-key authentication requires a stored key or key-file path".to_owned(),
+                );
+            }
         },
     };
     Ok(SshConnectionParameters {
@@ -69,6 +110,20 @@ fn ssh_connection_parameters(
     })
 }
 
+/// Reads a private key file from disk, matching `ssh`'s own `IdentityFile`
+/// behavior: read fresh on every dial, never cached or stored at rest.
+async fn read_private_key_file(path: &Path) -> Result<Zeroizing<String>, String> {
+    tokio::fs::read_to_string(path)
+        .await
+        .map(Zeroizing::new)
+        .map_err(|error| {
+            format!(
+                "could not read private key file {}: {error}",
+                path.display()
+            )
+        })
+}
+
 /// Maps an `fm-ssh` failure onto the matching [`ConnectionError`], keeping
 /// host-key states distinguishable from a generic dial failure (spec §6.4,
 /// task 0104).
@@ -84,7 +139,7 @@ fn map_ssh_error(error: SshError) -> ConnectionError {
             fingerprint,
             expected_fingerprint,
         },
-        other => ConnectionError::Io(other.to_string()),
+        other => ConnectionError::DialFailed(other.to_string()),
     }
 }
 
@@ -117,9 +172,9 @@ impl ConnectionDialer for SshDialer {
         let ConnectionConfiguration::Ssh(configuration) = &profile.configuration else {
             return Err(ConnectionError::Invalid(vec![]));
         };
-        let Ok(params) = ssh_connection_parameters(configuration, credential) else {
-            return Err(ConnectionError::Invalid(vec![]));
-        };
+        let params = ssh_connection_parameters(configuration, credential)
+            .await
+            .map_err(ConnectionError::DialFailed)?;
         self.connections
             .verify_connectivity(&profile.id.to_string(), &params)
             .await
@@ -182,6 +237,7 @@ impl SshConnectionResolver for SshResolver {
             None => None,
         };
         ssh_connection_parameters(configuration, credential.as_ref())
-            .map_err(|()| VfsError::CredentialRequired)
+            .await
+            .map_err(|message| VfsError::Io { message })
     }
 }

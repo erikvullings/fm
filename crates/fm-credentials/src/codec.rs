@@ -22,6 +22,10 @@ enum EncodedSecret {
         key: String,
         passphrase: Option<String>,
     },
+    PrivateKeyPath {
+        path: String,
+        passphrase: Option<String>,
+    },
     OAuthToken {
         access_token: String,
         refresh_token: Option<String>,
@@ -36,6 +40,10 @@ impl From<&SecretMaterial> for EncodedSecret {
             },
             SecretMaterial::PrivateKey { key, passphrase } => Self::PrivateKey {
                 key: key.to_string(),
+                passphrase: passphrase.as_ref().map(|value| value.as_str().to_owned()),
+            },
+            SecretMaterial::PrivateKeyPath { path, passphrase } => Self::PrivateKeyPath {
+                path: path.clone(),
                 passphrase: passphrase.as_ref().map(|value| value.as_str().to_owned()),
             },
             SecretMaterial::OAuthToken {
@@ -56,6 +64,9 @@ impl From<EncodedSecret> for SecretMaterial {
         match value {
             EncodedSecret::Password { password } => Self::password(password),
             EncodedSecret::PrivateKey { key, passphrase } => Self::private_key(key, passphrase),
+            EncodedSecret::PrivateKeyPath { path, passphrase } => {
+                Self::private_key_path(path, passphrase)
+            }
             EncodedSecret::OAuthToken {
                 access_token,
                 refresh_token,
@@ -106,6 +117,21 @@ mod tests {
     #[test]
     fn private_key_without_passphrase_round_trips() {
         let secret = SecretMaterial::private_key("key-bytes", None);
+        let decoded = decode(&encode(&secret)).expect("decode must succeed");
+        assert_eq!(decoded, secret);
+    }
+
+    #[test]
+    fn private_key_path_with_passphrase_round_trips() {
+        let secret =
+            SecretMaterial::private_key_path("~/.ssh/id_tno", Some("passphrase".to_owned()));
+        let decoded = decode(&encode(&secret)).expect("decode must succeed");
+        assert_eq!(decoded, secret);
+    }
+
+    #[test]
+    fn private_key_path_without_passphrase_round_trips() {
+        let secret = SecretMaterial::private_key_path("~/.ssh/id_tno", None);
         let decoded = decode(&encode(&secret)).expect("decode must succeed");
         assert_eq!(decoded, secret);
     }

@@ -392,3 +392,105 @@ async fn accept_ssh_host_key_rejects_a_stale_fingerprint_that_no_longer_matches(
         fm_application::ApplicationError::InvalidRequest(_)
     ));
 }
+
+/// A `PrivateKeyPath` secret is read fresh from disk at dial time (matching
+/// `ssh`'s own `IdentityFile` handling) rather than stored at rest - this
+/// connects using only a path to the fixture's authorized key file, never
+/// the key's own bytes.
+#[tokio::test]
+async fn private_key_path_authentication_reads_the_key_file_and_connects() {
+    let root = tempfile::tempdir().expect("temp workspace root");
+    let service = service(&root);
+    let fixture = SshFixture::start().await;
+
+    let key_dir = tempfile::tempdir().expect("temp dir for the key file");
+    let key_path = key_dir.path().join("id_test");
+    let key_text = fixture
+        .authorized_client_key
+        .to_openssh(russh::keys::ssh_key::LineEnding::LF)
+        .expect("serializing the fixture key must succeed");
+    fs::write(&key_path, key_text.as_bytes()).expect("writing the key file must succeed");
+
+    let created = service
+        .create_connection(CreateConnectionRequestDto {
+            name: "Fixture Server (key path)".to_owned(),
+            kind: ConnectionKindDto::Ssh,
+            configuration: ConnectionConfigurationDto::Ssh(SshConnectionConfigurationDto {
+                host: fixture.addr.ip().to_string(),
+                port: fixture.addr.port(),
+                username: FIXTURE_USERNAME.to_owned(),
+                authentication: SshAuthenticationMethodDto::PrivateKey,
+                host_key_policy: HostKeyPolicyDto::PromptOnFirstUse,
+                keepalive_seconds: None,
+            }),
+            secret: Some(ConnectionSecretInputDto::PrivateKeyPath {
+                path: key_path.to_string_lossy().into_owned(),
+                passphrase: None,
+            }),
+        })
+        .await
+        .expect("create_connection must succeed");
+
+    let attempted = service
+        .connect_connection(created.id)
+        .await
+        .expect("connect must not itself error, only report a distinct status");
+    assert_eq!(attempted.status, ConnectionStatusDto::HostKeyUnverified);
+
+    service
+        .accept_ssh_host_key(created.id, fixture.host_key_fingerprint.clone())
+        .await
+        .expect("accept must succeed");
+
+    let connected = service
+        .connect_connection(created.id)
+        .await
+        .expect("connect must succeed once the host key is trusted");
+    assert_eq!(connected.status, ConnectionStatusDto::Connected);
+}
+
+/// A `PrivateKeyPath` pointing at a file that does not exist must not
+/// silently report a bare `Failed` - the specific reason (spec-required
+/// `lastError` visibility, this task's own follow-up work) must mention the
+/// path so a user can actually act on it.
+#[tokio::test]
+async fn private_key_path_authentication_reports_the_missing_file_in_last_error() {
+    let root = tempfile::tempdir().expect("temp workspace root");
+    let service = service(&root);
+    let fixture = SshFixture::start().await;
+    let key_dir = tempfile::tempdir().expect("temp dir for the (absent) key file");
+    let missing_path = key_dir.path().join("does-not-exist");
+
+    let created = service
+        .create_connection(CreateConnectionRequestDto {
+            name: "Fixture Server (missing key path)".to_owned(),
+            kind: ConnectionKindDto::Ssh,
+            configuration: ConnectionConfigurationDto::Ssh(SshConnectionConfigurationDto {
+                host: fixture.addr.ip().to_string(),
+                port: fixture.addr.port(),
+                username: FIXTURE_USERNAME.to_owned(),
+                authentication: SshAuthenticationMethodDto::PrivateKey,
+                host_key_policy: HostKeyPolicyDto::PromptOnFirstUse,
+                keepalive_seconds: None,
+            }),
+            secret: Some(ConnectionSecretInputDto::PrivateKeyPath {
+                path: missing_path.to_string_lossy().into_owned(),
+                passphrase: None,
+            }),
+        })
+        .await
+        .expect("create_connection must succeed");
+
+    let attempted = service
+        .test_connection(created.id)
+        .await
+        .expect("test must not itself error, only report a distinct status");
+    assert_eq!(attempted.status, ConnectionStatusDto::Failed);
+    let last_error = attempted
+        .last_error
+        .expect("a failed private-key-path attempt must explain why");
+    assert!(
+        last_error.contains(&missing_path.to_string_lossy().into_owned()),
+        "expected the missing path in the error, got: {last_error}"
+    );
+}

@@ -56,10 +56,17 @@ pub enum SshError {
     /// Authentication was attempted but rejected by the server.
     #[error("authentication failed")]
     AuthenticationFailed,
-    /// The configured authentication method is not implemented yet (for
-    /// example SSH agent forwarding).
+    /// The configured authentication method is not implemented yet.
     #[error("authentication method not supported: {0}")]
     UnsupportedAuthenticationMethod(&'static str),
+    /// SSH-agent authentication could not reach or use the local agent - for
+    /// example `SSH_AUTH_SOCK` is unset, the socket is unreachable, or the
+    /// agent holds no usable public-key identities. Distinguished from
+    /// [`SshError::AuthenticationFailed`] (a reachable agent whose keys the
+    /// server rejected) so a caller can tell "no agent available" apart from
+    /// "wrong key".
+    #[error("ssh-agent error: {0}")]
+    Agent(String),
     /// A supplied private key could not be parsed or its passphrase was
     /// rejected.
     #[error("invalid private key: {0}")]

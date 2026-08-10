@@ -13,6 +13,7 @@ import type {
   EntryMetadata,
   EntryMetadataRequest,
   FileRangeChunk,
+  HostKeyProbe,
   InvokeActionRequest,
   ListDirectoryRequest,
   LoadEditableFileRequest,
@@ -200,4 +201,25 @@ export interface FileManagerClient {
   disconnectConnection(connectionId: ConnectionId, signal?: AbortSignal): Promise<Connection>;
 
   testConnection(connectionId: ConnectionId, signal?: AbortSignal): Promise<Connection>;
+
+  /**
+   * Probes an SSH connection's currently presented host key without
+   * authenticating (task 0104, spec §6.4) - lets a caller decide whether to
+   * accept a never-seen or changed key before `connect`/`test` report
+   * `hostKeyUnverified`/`hostKeyMismatch` via the connection's `status`.
+   */
+  probeSshHostKey(connectionId: ConnectionId, signal?: AbortSignal): Promise<HostKeyProbe>;
+
+  /**
+   * Accepts (persists) a host-key fingerprint for an SSH connection (task
+   * 0104, spec §6.4). Never call this with a fingerprint the caller has not
+   * shown the user for confirmation - the backend re-probes the host before
+   * persisting, but this is the only path that ever writes to the
+   * known-hosts store.
+   */
+  acceptSshHostKey(
+    connectionId: ConnectionId,
+    fingerprint: string,
+    signal?: AbortSignal,
+  ): Promise<void>;
 }

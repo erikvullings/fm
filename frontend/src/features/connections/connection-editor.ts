@@ -1,5 +1,15 @@
 import m, { type FactoryComponent } from 'mithril';
-import { FlatButton, ModalPanel, NumberInput, Select, TextInput } from 'mithril-materialized';
+import {
+  FlatButton,
+  ModalPanel,
+  NumberInput,
+  PasswordInput,
+  Select,
+  Switch,
+  TextInput,
+} from 'mithril-materialized';
+
+import './connection-editor.css';
 
 import type {
   Connection,
@@ -9,6 +19,7 @@ import type {
   ConnectionSecretInput,
   CreateConnectionRequest,
   HostKeyPolicy,
+  HostKeyProbe,
   SshAuthenticationMethod,
   UpdateConnectionRequest,
 } from '../../models';
@@ -26,10 +37,28 @@ export interface ConnectionsManagerAttrs {
   readonly onCreate: (request: CreateConnectionRequest) => Promise<void>;
   readonly onUpdate: (id: ConnectionId, request: UpdateConnectionRequest) => Promise<void>;
   readonly onDelete: (id: ConnectionId) => Promise<void>;
-  readonly onConnect: (id: ConnectionId) => Promise<void>;
-  readonly onDisconnect: (id: ConnectionId) => Promise<void>;
-  readonly onTest: (id: ConnectionId) => Promise<void>;
+  readonly onConnect: (id: ConnectionId) => Promise<Connection>;
+  readonly onDisconnect: (id: ConnectionId) => Promise<Connection>;
+  readonly onTest: (id: ConnectionId) => Promise<Connection>;
+  /** Probes an SSH connection's presented host key (task 0104, spec §6.4). */
+  readonly onProbeHostKey: (id: ConnectionId) => Promise<HostKeyProbe>;
+  /** Accepts and persists a host-key fingerprint the user has just confirmed. */
+  readonly onAcceptHostKey: (id: ConnectionId, fingerprint: string) => Promise<void>;
 }
+
+/**
+ * Host/username/secret fields are technical identifiers, not prose: the
+ * browser's autocorrect/autocapitalize/spell-check would otherwise silently
+ * mangle values like `erik` -> `Erik` or flag `sftp.example.test` as
+ * misspelled while the user is typing. `InputAttrs` extends Mithril's
+ * `Attributes`, so these pass straight through to the underlying `<input>`.
+ */
+const TECHNICAL_TEXT_ATTRS = {
+  autocomplete: 'off',
+  autocapitalize: 'off',
+  autocorrect: 'off',
+  spellcheck: false,
+} as const;
 
 type ViewMode =
   | { readonly kind: 'list' }
@@ -39,6 +68,11 @@ interface FormState {
   name: string;
   configuration: ConnectionConfiguration;
   secretPassword: string;
+  /** Whether the private-key field below is a filesystem path (the default,
+   * matching how `ssh`'s own `IdentityFile` works and read fresh on every
+   * dial - see `fm-application`'s `ssh.rs`) or pasted key content. */
+  secretKeyMode: 'path' | 'paste';
+  secretKeyPath: string;
   secretKey: string;
   secretPassphrase: string;
 }
@@ -101,6 +135,8 @@ function emptyForm(): FormState {
     name: '',
     configuration: defaultSshConfiguration(),
     secretPassword: '',
+    secretKeyMode: 'path',
+    secretKeyPath: '',
     secretKey: '',
     secretPassphrase: '',
   };
@@ -113,6 +149,8 @@ function formFromConnection(connection: Connection): FormState {
     // stored connection (task 0103's explicit requirement).
     configuration: connection.configuration,
     secretPassword: '',
+    secretKeyMode: 'path',
+    secretKeyPath: '',
     secretKey: '',
     secretPassphrase: '',
   };
@@ -127,6 +165,15 @@ function secretInputFrom(form: FormState): ConnectionSecretInput | undefined {
         ? undefined
         : { kind: 'password', password: form.secretPassword };
     case 'privateKey':
+      if (form.secretKeyMode === 'path') {
+        return form.secretKeyPath.trim().length === 0
+          ? undefined
+          : {
+              kind: 'privateKeyPath',
+              path: form.secretKeyPath.trim(),
+              passphrase: form.secretPassphrase.length === 0 ? null : form.secretPassphrase,
+            };
+      }
       return form.secretKey.length === 0
         ? undefined
         : {
@@ -144,6 +191,7 @@ function secretInputFrom(form: FormState): ConnectionSecretInput | undefined {
 /** Clears secret fields from in-memory form state, e.g. immediately after a successful save. */
 function clearSecretFields(form: FormState): void {
   form.secretPassword = '';
+  form.secretKeyPath = '';
   form.secretKey = '';
   form.secretPassphrase = '';
 }
@@ -152,6 +200,13 @@ function statusActionLabel(status: Connection['status']): string {
   return status === 'connected' || status === 'connecting' || status === 'reconnecting'
     ? 'Disconnect'
     : 'Connect';
+}
+
+interface HostKeyPrompt {
+  readonly connectionId: ConnectionId;
+  readonly probe: HostKeyProbe;
+  /** Which action to retry automatically once the fingerprint is accepted. */
+  readonly retry: 'connect' | 'test';
 }
 
 /**
@@ -168,6 +223,8 @@ export const ConnectionsManager: FactoryComponent<ConnectionsManagerAttrs> = () 
   let form: FormState = emptyForm();
   let busy = false;
   let error: string | undefined;
+  let hostKeyPrompt: HostKeyPrompt | undefined;
+  let hostKeyBusy = false;
 
   function openCreateForm(): void {
     mode = { kind: 'form' };
@@ -246,15 +303,43 @@ export const ConnectionsManager: FactoryComponent<ConnectionsManagerAttrs> = () 
     );
   }
 
+  /**
+   * A `connect`/`test` attempt against a host whose key was never accepted
+   * (or has changed) does not throw - it comes back with a distinct
+   * `hostKeyUnverified`/`hostKeyMismatch` status instead (spec §6.4's
+   * mandatory explicit confirmation, never a silent accept or a silent
+   * failure). Detect that here and fetch the fingerprint to show the user,
+   * rather than treating the call as having simply "done nothing".
+   */
+  function checkForPendingHostKeyConfirmation(
+    attrs: ConnectionsManagerAttrs,
+    updated: Connection,
+    retry: 'connect' | 'test',
+  ): void {
+    if (updated.status !== 'hostKeyUnverified' && updated.status !== 'hostKeyMismatch') return;
+    attrs.onProbeHostKey(updated.id).then(
+      (probe) => {
+        hostKeyPrompt = { connectionId: updated.id, probe, retry };
+        m.redraw();
+      },
+      (caught: unknown) => {
+        error = errorMessage(caught, 'Failed to check the host key.');
+        m.redraw();
+      },
+    );
+  }
+
   function handleToggleConnection(attrs: ConnectionsManagerAttrs, connection: Connection): void {
     busy = true;
+    error = undefined;
     const action =
       statusActionLabel(connection.status) === 'Disconnect'
         ? attrs.onDisconnect(connection.id)
         : attrs.onConnect(connection.id);
     action.then(
-      () => {
+      (updated) => {
         busy = false;
+        checkForPendingHostKeyConfirmation(attrs, updated, 'connect');
         m.redraw();
       },
       (caught: unknown) => {
@@ -267,9 +352,11 @@ export const ConnectionsManager: FactoryComponent<ConnectionsManagerAttrs> = () 
 
   function handleTest(attrs: ConnectionsManagerAttrs, connection: Connection): void {
     busy = true;
+    error = undefined;
     attrs.onTest(connection.id).then(
-      () => {
+      (updated) => {
         busy = false;
+        checkForPendingHostKeyConfirmation(attrs, updated, 'test');
         m.redraw();
       },
       (caught: unknown) => {
@@ -278,6 +365,84 @@ export const ConnectionsManager: FactoryComponent<ConnectionsManagerAttrs> = () 
         m.redraw();
       },
     );
+  }
+
+  /**
+   * Persists the fingerprint the user just confirmed, then automatically
+   * retries the connect/test attempt that surfaced the prompt - the user
+   * should not have to click Connect/Test a second time after trusting a
+   * host key.
+   */
+  function handleAcceptHostKey(attrs: ConnectionsManagerAttrs): void {
+    if (hostKeyPrompt === undefined) return;
+    const { connectionId, probe, retry } = hostKeyPrompt;
+    hostKeyBusy = true;
+    attrs.onAcceptHostKey(connectionId, probe.fingerprint).then(
+      () => {
+        hostKeyBusy = false;
+        hostKeyPrompt = undefined;
+        m.redraw();
+        const retryAction =
+          retry === 'connect' ? attrs.onConnect(connectionId) : attrs.onTest(connectionId);
+        retryAction.then(
+          () => m.redraw(),
+          (caught: unknown) => {
+            error = errorMessage(caught, 'Host key accepted, but the connection attempt failed.');
+            m.redraw();
+          },
+        );
+      },
+      (caught: unknown) => {
+        hostKeyBusy = false;
+        error = errorMessage(caught, 'Failed to accept the host key.');
+        m.redraw();
+      },
+    );
+  }
+
+  /** Dismisses the prompt without accepting anything - the connection stays unverified. */
+  function handleCancelHostKey(): void {
+    hostKeyPrompt = undefined;
+    m.redraw();
+  }
+
+  function renderHostKeyPrompt(attrs: ConnectionsManagerAttrs, connection: Connection) {
+    if (hostKeyPrompt === undefined || hostKeyPrompt.connectionId !== connection.id)
+      return undefined;
+    const { probe } = hostKeyPrompt;
+    const isMismatch = probe.status === 'mismatch';
+    return m('.fm-hostkey-prompt', { role: 'alertdialog' }, [
+      isMismatch
+        ? m('p.fm-hostkey-warning', [
+            '⚠ The host key for ',
+            m('strong', connection.name),
+            ' has changed since it was last accepted. This can mean the server was reinstalled, or that the connection is being intercepted.',
+          ])
+        : m('p', [
+            'This is the first connection to ',
+            m('strong', connection.name),
+            '. Verify the fingerprint below out-of-band (e.g. with the server administrator) before trusting it.',
+          ]),
+      m('p.fm-hostkey-fingerprint', ['Presented: ', m('code', probe.fingerprint)]),
+      isMismatch
+        ? m('p.fm-hostkey-fingerprint', [
+            'Previously accepted: ',
+            m('code', probe.expectedFingerprint),
+          ])
+        : undefined,
+      m('.fm-hostkey-actions', [
+        m(FlatButton, {
+          label: isMismatch ? 'Trust the new key anyway' : 'Trust this host key',
+          disabled: hostKeyBusy,
+          onclick: () => handleAcceptHostKey(attrs),
+        }),
+        m(FlatButton, {
+          label: 'Cancel',
+          disabled: hostKeyBusy,
+          onclick: handleCancelHostKey,
+        }),
+      ]),
+    ]);
   }
 
   function renderList(attrs: ConnectionsManagerAttrs) {
@@ -298,6 +463,7 @@ export const ConnectionsManager: FactoryComponent<ConnectionsManagerAttrs> = () 
                 ),
                 m('span.fm-connections-name', connection.name),
                 m('span.fm-connections-kind', connection.kind),
+                m('span.fm-connections-status-label', connectionStatusLabel(connection.status)),
                 m('.fm-connections-actions', [
                   m(FlatButton, {
                     label: statusActionLabel(connection.status),
@@ -320,6 +486,10 @@ export const ConnectionsManager: FactoryComponent<ConnectionsManagerAttrs> = () 
                     onclick: () => handleDelete(attrs, connection),
                   }),
                 ]),
+                connection.status === 'failed' && connection.lastError != null
+                  ? m('.fm-field-error.fm-connections-row-error', connection.lastError)
+                  : undefined,
+                renderHostKeyPrompt(attrs, connection),
               ]),
             ),
           ),
@@ -339,7 +509,8 @@ export const ConnectionsManager: FactoryComponent<ConnectionsManagerAttrs> = () 
           className: 'col s8',
           label: 'Host',
           value: configuration.host,
-          onchange: (value: string) => updateConfiguration({ host: value }),
+          oninput: (value: string) => updateConfiguration({ host: value }),
+          ...TECHNICAL_TEXT_ATTRS,
         }),
         m(NumberInput, {
           className: 'col s4',
@@ -355,7 +526,8 @@ export const ConnectionsManager: FactoryComponent<ConnectionsManagerAttrs> = () 
           className: 'col s12',
           label: 'Username',
           value: configuration.username,
-          onchange: (value: string) => updateConfiguration({ username: value }),
+          oninput: (value: string) => updateConfiguration({ username: value }),
+          ...TECHNICAL_TEXT_ATTRS,
         }),
       ]),
       m('.row', [
@@ -382,39 +554,75 @@ export const ConnectionsManager: FactoryComponent<ConnectionsManagerAttrs> = () 
       ]),
       configuration.authentication === 'password'
         ? m('.row', [
-            m(TextInput, {
+            m(PasswordInput, {
               className: 'col s12',
               label: 'Password',
-              type: 'password',
               value: form.secretPassword,
               placeholder: 'Leave blank to keep the stored password',
               oninput: (value: string) => {
                 form.secretPassword = value;
               },
+              ...TECHNICAL_TEXT_ATTRS,
             }),
           ])
         : undefined,
       configuration.authentication === 'privateKey'
-        ? m('.row', [
-            m(TextInput, {
-              className: 'col s12',
-              label: 'Private key',
-              placeholder: 'Leave blank to keep the stored key',
-              value: form.secretKey,
-              oninput: (value: string) => {
-                form.secretKey = value;
-              },
-            }),
-            m(TextInput, {
-              className: 'col s12',
-              label: 'Passphrase (optional)',
-              type: 'password',
-              value: form.secretPassphrase,
-              oninput: (value: string) => {
-                form.secretPassphrase = value;
-              },
-            }),
-          ])
+        ? [
+            m('.row', [
+              m(Switch, {
+                className: 'col s12',
+                label: 'Provide the key as',
+                left: 'File path',
+                right: 'Pasted content',
+                checked: form.secretKeyMode === 'paste',
+                onchange: (checked: boolean) => {
+                  form.secretKeyMode = checked ? 'paste' : 'path';
+                },
+              }),
+            ]),
+            form.secretKeyMode === 'path'
+              ? m('.row', [
+                  m(TextInput, {
+                    className: 'col s12',
+                    label: 'Private key file path',
+                    // Read fresh from disk on every connect/test, like ssh's own
+                    // `IdentityFile` - never stored, matching `fm-application`'s
+                    // `ssh.rs`. A relative `~/...` path is expanded on whichever
+                    // host runs the backend (this machine for the desktop app,
+                    // the fm-server host for browser mode).
+                    helperText: 'Read from disk each time, like ssh - never stored.',
+                    placeholder: '~/.ssh/id_ed25519 - leave blank to keep the stored key',
+                    value: form.secretKeyPath,
+                    oninput: (value: string) => {
+                      form.secretKeyPath = value;
+                    },
+                    ...TECHNICAL_TEXT_ATTRS,
+                  }),
+                ])
+              : m('.row', [
+                  m(TextInput, {
+                    className: 'col s12',
+                    label: 'Private key content',
+                    placeholder: 'Leave blank to keep the stored key',
+                    value: form.secretKey,
+                    oninput: (value: string) => {
+                      form.secretKey = value;
+                    },
+                    ...TECHNICAL_TEXT_ATTRS,
+                  }),
+                ]),
+            m('.row', [
+              m(PasswordInput, {
+                className: 'col s12',
+                label: 'Passphrase (optional)',
+                value: form.secretPassphrase,
+                oninput: (value: string) => {
+                  form.secretPassphrase = value;
+                },
+                ...TECHNICAL_TEXT_ATTRS,
+              }),
+            ]),
+          ]
         : undefined,
     ];
   }
@@ -428,7 +636,8 @@ export const ConnectionsManager: FactoryComponent<ConnectionsManagerAttrs> = () 
             className: 'col s8',
             label: 'Host',
             value: configuration.host,
-            onchange: (value: string) => updateConfiguration({ host: value }),
+            oninput: (value: string) => updateConfiguration({ host: value }),
+            ...TECHNICAL_TEXT_ATTRS,
           }),
           m(NumberInput, {
             className: 'col s4',
@@ -442,7 +651,8 @@ export const ConnectionsManager: FactoryComponent<ConnectionsManagerAttrs> = () 
             className: 'col s12',
             label: 'Username',
             value: configuration.username,
-            onchange: (value: string) => updateConfiguration({ username: value }),
+            oninput: (value: string) => updateConfiguration({ username: value }),
+            ...TECHNICAL_TEXT_ATTRS,
           }),
         ]);
       case 'oneDrive':
@@ -451,8 +661,9 @@ export const ConnectionsManager: FactoryComponent<ConnectionsManagerAttrs> = () 
             className: 'col s12',
             label: 'Account (optional)',
             value: configuration.accountHint ?? '',
-            onchange: (value: string) =>
+            oninput: (value: string) =>
               updateConfiguration({ accountHint: value.length === 0 ? null : value }),
+            ...TECHNICAL_TEXT_ATTRS,
           }),
         ]);
       case 'webDav':
@@ -461,7 +672,8 @@ export const ConnectionsManager: FactoryComponent<ConnectionsManagerAttrs> = () 
             className: 'col s12',
             label: 'Base URL',
             value: configuration.baseUrl,
-            onchange: (value: string) => updateConfiguration({ baseUrl: value }),
+            oninput: (value: string) => updateConfiguration({ baseUrl: value }),
+            ...TECHNICAL_TEXT_ATTRS,
           }),
         ]);
       case 's3':
@@ -470,21 +682,24 @@ export const ConnectionsManager: FactoryComponent<ConnectionsManagerAttrs> = () 
             className: 'col s6',
             label: 'Bucket',
             value: configuration.bucket,
-            onchange: (value: string) => updateConfiguration({ bucket: value }),
+            oninput: (value: string) => updateConfiguration({ bucket: value }),
+            ...TECHNICAL_TEXT_ATTRS,
           }),
           m(TextInput, {
             className: 'col s6',
             label: 'Region (optional)',
             value: configuration.region ?? '',
-            onchange: (value: string) =>
+            oninput: (value: string) =>
               updateConfiguration({ region: value.length === 0 ? null : value }),
+            ...TECHNICAL_TEXT_ATTRS,
           }),
           m(TextInput, {
             className: 'col s12',
             label: 'Endpoint (optional)',
             value: configuration.endpoint ?? '',
-            onchange: (value: string) =>
+            oninput: (value: string) =>
               updateConfiguration({ endpoint: value.length === 0 ? null : value }),
+            ...TECHNICAL_TEXT_ATTRS,
           }),
         ]);
       case 'smb':
@@ -493,13 +708,15 @@ export const ConnectionsManager: FactoryComponent<ConnectionsManagerAttrs> = () 
             className: 'col s6',
             label: 'Server',
             value: configuration.server,
-            onchange: (value: string) => updateConfiguration({ server: value }),
+            oninput: (value: string) => updateConfiguration({ server: value }),
+            ...TECHNICAL_TEXT_ATTRS,
           }),
           m(TextInput, {
             className: 'col s6',
             label: 'Share',
             value: configuration.share,
-            onchange: (value: string) => updateConfiguration({ share: value }),
+            oninput: (value: string) => updateConfiguration({ share: value }),
+            ...TECHNICAL_TEXT_ATTRS,
           }),
         ]);
       default:
@@ -514,7 +731,7 @@ export const ConnectionsManager: FactoryComponent<ConnectionsManagerAttrs> = () 
           className: 'col s12',
           label: 'Name',
           value: form.name,
-          onchange: (value: string) => {
+          oninput: (value: string) => {
             form.name = value;
           },
         }),
@@ -523,6 +740,11 @@ export const ConnectionsManager: FactoryComponent<ConnectionsManagerAttrs> = () 
         m(Select<ConnectionKind>, {
           className: 'col s12',
           label: 'Kind',
+          // The protocol can't change after creation. `mithril-materialized`'s
+          // `disabled` already blocks opening/keyboard interaction and sets
+          // `tabindex="-1"` on `.select-wrapper` - it just never sets the
+          // underlying `disabled` HTML attribute, so `mithril-materialized-procyon.css`
+          // styles that `tabindex` signal directly instead of `:disabled`.
           disabled: editingId !== undefined,
           options: kindOptions(),
           checkedId: form.configuration.kind,

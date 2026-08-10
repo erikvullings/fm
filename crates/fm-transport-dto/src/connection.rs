@@ -195,6 +195,17 @@ pub enum ConnectionSecretInputDto {
         /// Passphrase protecting `key`, if any.
         passphrase: Option<String>,
     },
+    /// A private key referenced by its filesystem path on the host running
+    /// the backend (the local machine for Tauri, or the fm-server host for
+    /// browser mode - always a local read, never sent from the browser),
+    /// read fresh from disk at dial time rather than stored at rest.
+    #[serde(rename_all = "camelCase")]
+    PrivateKeyPath {
+        /// Absolute or `~`-relative path to a PEM/OpenSSH private key file.
+        path: String,
+        /// Passphrase protecting the key file, if any.
+        passphrase: Option<String>,
+    },
     /// An OAuth token pair.
     #[serde(rename_all = "camelCase")]
     OAuthToken {
@@ -215,6 +226,11 @@ impl fmt::Debug for ConnectionSecretInputDto {
             Self::PrivateKey { .. } => f
                 .debug_struct("PrivateKey")
                 .field("key", &"<redacted>")
+                .field("passphrase", &"<redacted>")
+                .finish(),
+            Self::PrivateKeyPath { path, .. } => f
+                .debug_struct("PrivateKeyPath")
+                .field("path", path)
                 .field("passphrase", &"<redacted>")
                 .finish(),
             Self::OAuthToken { .. } => f
@@ -246,6 +262,13 @@ pub struct ConnectionDto {
     pub has_credential: bool,
     /// Current runtime status.
     pub status: ConnectionStatusDto,
+    /// The dialer's failure message from the most recent `connect`/`test`
+    /// that ended in `status: "failed"` (task 0104) - `None` whenever
+    /// `status` is anything else, or the connection has never failed that
+    /// way. Never a secret: dialer failure messages are sanitized connection
+    /// diagnostics (unreachable host, rejected credential), not credential
+    /// material itself.
+    pub last_error: Option<String>,
     /// When this connection was first created.
     pub created_at: DateTime<Utc>,
     /// When this connection was last persisted.
@@ -348,6 +371,7 @@ mod tests {
             configuration: sample_ssh_configuration(),
             has_credential: true,
             status: ConnectionStatusDto::Disconnected,
+            last_error: None,
             created_at: now,
             updated_at: now,
         }
@@ -372,6 +396,23 @@ mod tests {
     }
 
     #[test]
+    fn connection_dto_serializes_a_failure_message_under_last_error() {
+        let dto = ConnectionDto {
+            status: ConnectionStatusDto::Failed,
+            last_error: Some(
+                "failed to connect to spark-301b:22: name resolution failed".to_owned(),
+            ),
+            ..sample_dto()
+        };
+        let value = serde_json::to_value(&dto).expect("serialization must succeed");
+        assert_eq!(value["status"], "failed");
+        assert_eq!(
+            value["lastError"],
+            "failed to connect to spark-301b:22: name resolution failed"
+        );
+    }
+
+    #[test]
     fn secret_input_debug_output_never_contains_the_password() {
         let input = ConnectionSecretInputDto::Password {
             password: "hunter2".to_owned(),
@@ -390,6 +431,29 @@ mod tests {
         let formatted = format!("{input:?}");
         assert!(!formatted.contains("BEGIN PRIVATE KEY"));
         assert!(!formatted.contains("swordfish"));
+    }
+
+    #[test]
+    fn secret_input_debug_output_shows_the_path_but_never_the_passphrase() {
+        let input = ConnectionSecretInputDto::PrivateKeyPath {
+            path: "~/.ssh/id_tno".to_owned(),
+            passphrase: Some("swordfish".to_owned()),
+        };
+        let formatted = format!("{input:?}");
+        assert!(formatted.contains("~/.ssh/id_tno"));
+        assert!(!formatted.contains("swordfish"));
+        assert!(formatted.contains("<redacted>"));
+    }
+
+    #[test]
+    fn private_key_path_secret_input_serializes_with_a_kind_tag_and_camel_case_fields() {
+        let input = ConnectionSecretInputDto::PrivateKeyPath {
+            path: "~/.ssh/id_tno".to_owned(),
+            passphrase: None,
+        };
+        let value = serde_json::to_value(input).expect("serialization must succeed");
+        assert_eq!(value["kind"], "privateKeyPath");
+        assert_eq!(value["path"], "~/.ssh/id_tno");
     }
 
     #[test]

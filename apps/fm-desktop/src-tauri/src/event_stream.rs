@@ -173,7 +173,16 @@ mod tests {
         for label in ["main", "main", "other"] {
             registry.subscribe(bus.clone(), label.into(), Channel::new(|_| Ok(())));
         }
-        tokio::task::yield_now().await;
+        // A single `yield_now` only guarantees one scheduler round, not that all three spawned
+        // subscription tasks have registered - under load (e.g. the full workspace suite running
+        // many test binaries concurrently) that can flake. Poll instead, matching the sibling test
+        // above.
+        for _ in 0..100 {
+            if bus.subscriber_count() == 3 {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
         assert_eq!(bus.subscriber_count(), 3);
 
         registry.unsubscribe_window("main");

@@ -34,11 +34,13 @@ import {
 import { ContextMenu as DirectoryContextMenu } from '../features/commands/context-menu';
 import { ConnectionsManager } from '../features/connections/connection-editor';
 import {
+  acceptSshHostKey as acceptSshHostKeyRequest,
   connectConnection as connectConnectionRequest,
   createConnection as createConnectionRequest,
   deleteConnection as deleteConnectionRequest,
   disconnectConnection as disconnectConnectionRequest,
   loadConnections,
+  probeSshHostKey as probeSshHostKeyRequest,
   testConnection as testConnectionRequest,
   updateConnection as updateConnectionRequest,
   upsertConnection,
@@ -3324,15 +3326,21 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
             onConnect: async (id) => {
               const updated = await connectConnectionRequest(attrs.client, id);
               connections = upsertConnection(connections, updated);
+              return updated;
             },
             onDisconnect: async (id) => {
               const updated = await disconnectConnectionRequest(attrs.client, id);
               connections = upsertConnection(connections, updated);
+              return updated;
             },
             onTest: async (id) => {
               const updated = await testConnectionRequest(attrs.client, id);
               connections = upsertConnection(connections, updated);
+              return updated;
             },
+            onProbeHostKey: (id) => probeSshHostKeyRequest(attrs.client, id),
+            onAcceptHostKey: (id, fingerprint) =>
+              acceptSshHostKeyRequest(attrs.client, id, fingerprint),
           }),
           m(FindFilesDialog, {
             open: findFilesOpen,

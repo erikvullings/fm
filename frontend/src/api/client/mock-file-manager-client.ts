@@ -17,6 +17,7 @@ import type {
   EntryMetadataRequest,
   EntrySummary,
   FileRangeChunk,
+  HostKeyProbe,
   InvokeActionRequest,
   ListDirectoryRequest,
   LoadEditableFileRequest,
@@ -107,7 +108,9 @@ export type MockClientMethod =
   | 'deleteConnection'
   | 'connectConnection'
   | 'disconnectConnection'
-  | 'testConnection';
+  | 'testConnection'
+  | 'probeSshHostKey'
+  | 'acceptSshHostKey';
 
 export interface MockFileManagerClientOptions {
   pageSize?: number;
@@ -1082,6 +1085,29 @@ export class MockFileManagerClient implements FileManagerClient {
     return this.perform('testConnection', signal, () => {
       const connection = this.requireConnection(connectionId);
       return structuredClone({ ...connection, status: evaluateMockConnectionStatus(connection) });
+    });
+  }
+
+  /**
+   * Mock mode never performs a real network dial, so there is no host key to
+   * present - every connection reports as already trusted, matching
+   * `evaluateMockConnectionStatus` never producing `hostKeyUnverified`/
+   * `hostKeyMismatch`.
+   */
+  probeSshHostKey(connectionId: ConnectionId, signal?: AbortSignal): Promise<HostKeyProbe> {
+    return this.perform('probeSshHostKey', signal, () => {
+      this.requireConnection(connectionId);
+      return { status: 'trusted', fingerprint: 'SHA256:mock-fingerprint' };
+    });
+  }
+
+  acceptSshHostKey(
+    connectionId: ConnectionId,
+    _fingerprint: string,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    return this.perform('acceptSshHostKey', signal, () => {
+      this.requireConnection(connectionId);
     });
   }
 

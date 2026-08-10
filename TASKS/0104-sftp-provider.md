@@ -218,3 +218,131 @@ Add SSH-based file management via SFTP as a new `FileSystemProvider`. The produc
   (4 new: distinct host-key-status labels, `isBrowsable` true/false, `sftpRootLocation`); `biome check`
   clean for every file this task touched (generated API files are biome-ignored by design, matching
   `AGENTS.md`'s "never hand-edited" convention).
+- 2026-08-09: Follow-up fixes from live user testing. (1) **SSH agent authentication implemented**
+  (previously a documented gap): `fm-ssh::session::authenticate_with_agent` connects to the local agent
+  via `russh::keys::agent::client::AgentClient::connect_env()` (respects `SSH_AUTH_SOCK`, matching plain
+  `ssh`'s own behavior) and tries every plain public-key identity in order via
+  `authenticate_publickey_with`, matching OpenSSH's own client behavior; agent-held certificates are
+  skipped (a new, smaller documented gap). Verified against a real, hermetic in-process agent server
+  (`russh::keys::agent::server::serve` over an ephemeral Unix socket, no external `ssh-agent` process,
+  matching `fixture.rs`'s existing hermeticity philosophy): 3 new tests in `fm-ssh/src/session.rs`
+  (success with the fixture's authorized key, rejection of a non-matching identity, a typed
+  `SshError::Agent` when the agent holds no identities), plus the existing
+  `agent_authentication_reports_an_explicit_unsupported_error` integration test rewritten to assert
+  against the real environment's agent instead of the old stub. `cargo test -p fm-ssh` → 36 passed (16
+  unit + 20 integration). (2) **Dial failure messages were being discarded**: `ConnectionService::evaluate`
+  mapped every non-host-key dialer error to a bare `ConnectionStatus::Failed` with no way for a caller to
+  see why. Added `ConnectionService::last_error`/`last_error_messages` tracking (set on generic dial
+  failure, cleared on any other outcome or explicit disconnect), a new `ConnectionError::DialFailed`
+  variant (replacing a misleading reuse of `ConnectionError::Io`), and a `lastError: Option<String>`
+  field on `ConnectionDto`, threaded through every REST/Tauri connection endpoint. `cargo test -p
+  fm-connections` → 53 passed (existing suite, no behavior regressions); `cargo test -p fm-transport-dto`
+  → 72 passed (1 new: `lastError` serializes correctly under `status: "failed"`). (3) Frontend: fixed a
+  Mithril "vnodes must either all have keys or none have keys" crash in the `SERVERS` favourites-menu
+  group (an unkeyed label sibling to keyed rows), switched every connection-editor text field from
+  `onchange` to `oninput` (the `TextInput`/`PasswordInput` controlled-mode contract requires `oninput`;
+  `onchange`-only meant any unrelated redraw - frequent here via the SSE stream - silently reverted
+  in-progress typing, which is what actually caused "settings not kept"/a name rendering as `Osparkssh`),
+  swapped the password/passphrase fields from `TextInput` (which silently ignored an unsupported `type`
+  prop) to the real `PasswordInput` component, disabled browser autocapitalize/autocorrect/spellcheck on
+  host/username/secret fields, and added a proper `connection-editor.css` (the connections list had no
+  styling at all before this) plus an inline `lastError` display so a failed Test/Connect is visible
+  without hovering a status dot. Full-suite regressions checked: `cargo test --workspace` → 100% pass,
+  `cargo clippy --workspace --all-targets -- -D warnings` clean, `cargo fmt --all --check` clean; `pnpm
+  exec vitest run` retains only the same pre-existing baseline failures (confirmed by name, not just
+  count); `pnpm exec tsc --noEmit` retains only the same pre-existing baseline errors; verified live
+  end-to-end in a real browser against a real backend (typed values survive redraws, password masking,
+  no autocapitalize, the `SERVERS` group renders without the fragment-key crash, and a real dial failure
+  against an unreachable host now shows a specific inline error message instead of nothing). Known
+  remaining gaps, still not silently glossed over: agent-held certificate identities are skipped; no
+  frontend UI surfaces `lastError` for the `authenticationRequired`/host-key statuses (only `failed`,
+  since those two already have a self-explanatory status label); jump hosts and resumable transfers
+  remain out of scope per the original task notes above.
+- 2026-08-09: Second follow-up round. (1) Favourites-menu polish per live feedback: the `SERVERS` status
+  glyph moved to the right of the name (found and fixed a second instance of the same root cause as the
+  earlier `Osparkssh` bug - `.fm-favourites-recents > button`'s `display: block` was silently overriding
+  `.fm-server-item`'s `display: flex` at equal specificity, collapsing the flex layout so the glyph ran
+  into the text; fixed by matching that selector's specificity exactly); the favourites-popover close
+  button now sits in a compact header row (`.fm-favourites-menu-header`, `justify-content: flex-end`)
+  instead of reserving a full padded line; `CLOUD`/`NETWORK`/`SERVERS` labels changed to `Cloud`/
+  `Network`/`Servers` to match `Favorites`/`Recent locations`' case and size (they already shared the
+  same `font-size` rule - the size difference was purely the all-caps text reading larger); `Manage
+  connections…` moved to the end of the menu, right-aligned, with its `border-top` separator now
+  actually rendering (was defined earlier in the file than a same-specificity rule that reset `border`,
+  so cascade order silently discarded it - reordered instead of using `!important`). Also fixed a real,
+  **pre-existing** bug unrelated to any of this task's own changes, confirmed still present with every
+  change from this and the prior two follow-up rounds stashed: `pane.ts`'s `addCurrentFavourite` called
+  `attrs.onAddFavourite(...)` (optional) without a null check, a genuine `tsc` error once surfaced.
+  (2) SSH agent authentication reportedly still fails for the user (`the SSH agent has no usable
+  public-key identities`) even when run from the exact terminal session where interactive `ssh`/`ssh-add`
+  succeed - ruling out the `SSH_AUTH_SOCK`-environment-mismatch theory from the first follow-up round.
+  Root cause not yet confirmed. Instrumented `fm-ssh::session::authenticate_with_agent` and its
+  `SshCredential::Agent` call site with `tracing::info!`/`warn!` diagnostics (the resolved
+  `SSH_AUTH_SOCK` path, every identity the agent reports with algorithm/fingerprint/comment - never key
+  material - and the per-identity auth attempt outcome) so the next live test produces an unambiguous
+  answer instead of another guess; added `tracing` as an `fm-ssh` dependency for this. (3) While
+  re-verifying, found and fixed a genuinely pre-existing, unrelated test flake in
+  `apps/fm-desktop/src-tauri/src/event_stream.rs`'s
+  `window_teardown_aborts_all_of_its_subscription_tasks_only`: it relied on a single `tokio::task::yield_now()`
+  to assume three concurrently spawned subscription tasks had all registered, which only reliably holds
+  with little scheduler contention - reproducible under the full workspace suite's parallel test-binary
+  load, passed standalone. Replaced with a bounded poll loop matching the established pattern already
+  used by the sibling test in the same file; confirmed via two consecutive full `cargo test --workspace`
+  runs after the fix, no failures. Full-suite regressions re-checked after all of the above: `cargo test
+  --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo fmt --all --check` all
+  clean; `cargo test -p fm-ssh` → 36 passed; frontend `pnpm exec vitest run` → 728 passed / 2 (of the
+  same 3 pre-existing baseline) failed - the third simply didn't trigger this run, not a regression;
+  `pnpm exec tsc --noEmit` retains only the same 3 pre-existing baseline errors. Verified the favourites-menu
+  changes live via Puppeteer against the user's actual running `fm-server` (not a locally-started one -
+  confirmed by a bind-conflict when this session tried to start its own), including precise element
+  screenshots since a full-window screenshot at that resolution made the bottom-anchored button too small
+  to visually confirm by eye alone.
+- 2026-08-10: Third follow-up round. (1) **Root-caused the SSH agent mystery**: instrumented logging from
+  the prior round proved the agent genuinely reports zero identities (`identity_count=0`) even from the
+  user's own terminal session where interactive `ssh`/`ssh-add -l` behave as if a key were loaded - the
+  user's `~/.ssh/id_tno` is passphrase-encrypted (confirmed via its `bcrypt`/`aes256-ctr` OpenSSH-v1 header)
+  and the system has no `UseKeychain`/`AddKeysToAgent` `ssh_config` defaults, so `ssh` is most likely
+  decrypting it directly from disk via a Keychain-cached passphrase on each connection, never actually
+  registering it with the agent. No code change from this - it's a genuine environment fact, not a bug -
+  but it directly motivated (2). (2) **Added `SecretMaterial`/`ConnectionSecretInputDto::PrivateKeyPath`**
+  end to end (`fm-credentials::SecretMaterial` + `codec.rs`, `fm-transport-dto::ConnectionSecretInputDto`,
+  `fm-application::connection_dto::secret_material_from_dto`, OpenAPI/Orval regenerated): a private key
+  referenced by filesystem path rather than pasted content, read fresh from disk in
+  `fm-application::ssh::ssh_connection_parameters` at *dial time* (via `read_private_key_file`, with a
+  `~`/`~/`-expansion helper matching shell/`ssh` conventions) rather than stored at rest - deliberately
+  mirroring `ssh`'s own `IdentityFile` behavior per the user's explicit ask, and meaning Keychain only ever
+  holds a path + passphrase, never key bytes. Reworked `ssh_connection_parameters`'s error type from a bare
+  `Result<_, ()>` (which discarded all detail - the dialer previously always mapped failure to
+  `ConnectionError::Invalid(vec![])`, an *empty* validation-error list) to `Result<_, String>`, now surfaced
+  through the `lastError` mechanism from the second follow-up round via a new `ConnectionError::DialFailed`
+  variant on the dialer path and `VfsError::Io{message}` on the VFS-resolver path - both a credential-shape
+  mismatch and an unreadable key file now report a real, specific reason instead of silence or an empty
+  list. 2 new integration tests in `fm-application/tests/ssh_sftp_operations.rs` cover the full path
+  end-to-end against the real fixture SSH server: a real key file on disk successfully authenticating (no
+  key bytes ever touch the credential store) and a missing path reporting its exact path in `lastError`.
+  Frontend: `connection-editor.ts` gained a `Switch` (`Provide the key as: File path | Pasted content`,
+  defaulting to path per the user's stated preference) toggling between the new path input (with a helper
+  text explaining the "read fresh, never stored" behavior) and the original paste field; both hosts read
+  the path server-side (Tauri: the local machine; browser mode: the fm-server host - the browser itself
+  never touches key bytes either way, addressing the user's "even for the browser" question directly).
+  (3) Fixed the *actual* root cause of the "select no longer opens" report from live user testing: the
+  `Kind` select was rendered with mithril-materialized's `disabled` prop, which blocks the dropdown from
+  opening and sets `tabindex="-1"` on `.select-wrapper`, but - confirmed by reading the library's own
+  bundled source (`node_modules/mithril-materialized/dist/index.esm.js`) - never sets the underlying
+  trigger `<input>`'s HTML `disabled` attribute, so nothing looked disabled while behaving as if it were.
+  First attempt replaced it with static text; the user preferred keeping it a real (visually) disabled
+  `Select`, so it was reverted and `mithril-materialized-procyon.css` gained rules keyed off the
+  `[tabindex="-1"]` signal the library does set, instead of a `:disabled` selector that would never match.
+  Also tightened `.fm-connection-form .row` margins (Materialize's un-overridden 20px default stacked
+  across 5+ rows in a narrow modal, misread as "misaligned" - the `.row`/`.col` grid math itself was
+  already correct). Full-suite regressions re-checked after all of the above: `cargo test --workspace`,
+  `cargo clippy --workspace --all-targets -- -D warnings`, `cargo fmt --all --check` all clean; `cargo test
+  -p fm-credentials` → 22 passed (2 new), `cargo test -p fm-transport-dto` → 74 passed (2 new), `cargo test
+  -p fm-application --test ssh_sftp_operations` → 8 passed (2 new); frontend `pnpm exec vitest run` → 728
+  passed / 2 (of the same pre-existing baseline set) failed; `pnpm exec tsc --noEmit` retains only the same
+  pre-existing baseline errors; `biome check` clean for every file touched. Verified the disabled-select
+  styling, the path/paste toggle (both directions), and the tightened form spacing live via Puppeteer
+  against a freshly rebuilt `fm-server`, including full-page and cropped screenshots. Known gap, not
+  silently glossed over: the private-key-path feature was verified against the real fixture SSH server's
+  own throwaway key, not the user's actual `spark-301b`/`id_tno` - that end-to-end confirmation is still
+  the user's to do, since it needs their real passphrase.

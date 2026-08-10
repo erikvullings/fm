@@ -14,6 +14,7 @@ import type {
   EntryMetadataRequest,
   Location as FileLocation,
   FileRangeChunk,
+  HostKeyProbe,
   InvokeActionRequest,
   ListDirectoryRequest,
   LoadEditableFileRequest,
@@ -82,6 +83,8 @@ import {
   startSearch as requestSearchStart,
   getSettings as requestSettings,
   updateSettings as requestSettingsUpdate,
+  acceptSshHostKey as requestSshHostKeyAcceptance,
+  probeSshHostKey as requestSshHostKeyProbe,
   getSystemLocations as requestSystemLocations,
   getWorkspace as requestWorkspace,
   applyWorkspaceCommand as requestWorkspaceCommand,
@@ -646,6 +649,30 @@ export class HttpFileManagerClient implements FileManagerClient {
     if (response.status !== 200)
       throw new Error(`Unexpected testConnection response status: ${response.status}`);
     return response.data;
+  }
+
+  async probeSshHostKey(connectionId: ConnectionId, signal?: AbortSignal): Promise<HostKeyProbe> {
+    const response = await requestSshHostKeyProbe(
+      connectionId,
+      signal === undefined ? undefined : { signal },
+    );
+    if (response.status !== 200)
+      throw new Error(`Unexpected probeSshHostKey response status: ${response.status}`);
+    return response.data;
+  }
+
+  async acceptSshHostKey(
+    connectionId: ConnectionId,
+    fingerprint: string,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    const response = await requestSshHostKeyAcceptance(
+      connectionId,
+      { fingerprint },
+      signal === undefined ? undefined : { signal },
+    );
+    if (response.status !== 204)
+      throw new Error(`Unexpected acceptSshHostKey response status: ${response.status}`);
   }
 }
 

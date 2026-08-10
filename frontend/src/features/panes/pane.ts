@@ -351,7 +351,7 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
   function addCurrentFavourite(attrs: PaneAttrs): void {
     if (!canAddCurrentFavourite(attrs) || attrs.location === undefined) return;
     const label = favouriteLabel.trim() || defaultFavouriteLabel(attrs.path);
-    void attrs.onAddFavourite(label, attrs.location);
+    void attrs.onAddFavourite?.(label, attrs.location);
     favouriteLabel = '';
   }
 
@@ -859,244 +859,255 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
               canAddCurrentFavourite(attrs) ? heartPlusIcon() : heartIcon(),
             ),
           ]),
-          favouritesOpen
-            ? [
-                m('.fm-favourites-menu-backdrop', { onclick: () => closeFavourites() }),
-                m(
-                  '.fm-favourites-menu',
-                  {
-                    role: 'menu',
-                    tabindex: -1,
-                    'aria-label': 'Favourites',
-                    oncreate: ({ dom }: VnodeDOM) => focusFirstFavouritesItem(dom as HTMLElement),
-                    onclick: (event: MouseEvent) => event.stopPropagation(),
-                    ondblclick: (event: MouseEvent) => event.stopPropagation(),
-                    onkeydown: (event: KeyboardEvent) => {
-                      event.stopPropagation();
-                      if (event.key === 'Escape') {
-                        event.preventDefault();
+          favouritesOpen && [
+            m('.fm-favourites-menu-backdrop', { onclick: () => closeFavourites() }),
+            m(
+              '.fm-favourites-menu',
+              {
+                role: 'menu',
+                tabindex: -1,
+                'aria-label': 'Favourites',
+                oncreate: ({ dom }: VnodeDOM) => focusFirstFavouritesItem(dom as HTMLElement),
+                onclick: (event: MouseEvent) => event.stopPropagation(),
+                ondblclick: (event: MouseEvent) => event.stopPropagation(),
+                onkeydown: (event: KeyboardEvent) => {
+                  event.stopPropagation();
+                  if (event.key === 'Escape') {
+                    event.preventDefault();
+                    closeFavourites();
+                    m.redraw();
+                  } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+                    event.preventDefault();
+                    moveFavouritesFocus(
+                      event.currentTarget as HTMLElement,
+                      event.key === 'ArrowDown' ? 1 : -1,
+                    );
+                  }
+                },
+              },
+              [
+                m('.fm-favourites-menu-header', [
+                  m(
+                    'button.fm-favourites-close',
+                    {
+                      type: 'button',
+                      'aria-label': 'Close favourites menu',
+                      onclick: () => {
                         closeFavourites();
                         m.redraw();
-                      } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-                        event.preventDefault();
-                        moveFavouritesFocus(
-                          event.currentTarget as HTMLElement,
-                          event.key === 'ArrowDown' ? 1 : -1,
-                        );
-                      }
+                      },
                     },
-                  },
-                  [
-                    (attrs.systemLocations?.some(({ kind }) => kind === 'cloud') ?? false) &&
-                      m('.fm-favourites-recents.fm-cloud-locations', [
-                        m('strong', 'CLOUD'),
-                        ...(attrs.systemLocations ?? [])
-                          .filter(({ kind }) => kind === 'cloud')
-                          .map((systemLocation) =>
-                            m(
-                              'button',
-                              {
-                                type: 'button',
-                                role: 'menuitem',
-                                title: systemLocation.location.uri,
-                                onclick: () =>
-                                  void navigateFavourite(systemLocation.location, attrs),
-                                disabled: attrs.unavailableLocations?.has(
-                                  locationKey(systemLocation.location),
-                                ),
-                              },
-                              attrs.unavailableLocations?.has(locationKey(systemLocation.location))
-                                ? `${systemLocation.name} (unavailable)`
-                                : systemLocation.name,
-                            ),
-                          ),
-                      ]),
-                    (attrs.systemLocations?.some(({ kind }) => kind === 'network') ?? false) &&
-                      m('.fm-favourites-recents.fm-network-locations', [
-                        m('strong', 'NETWORK'),
-                        ...(attrs.systemLocations ?? [])
-                          .filter(({ kind }) => kind === 'network')
-                          .map((systemLocation) =>
-                            m(
-                              'button',
-                              {
-                                type: 'button',
-                                role: 'menuitem',
-                                title: systemLocation.location.uri,
-                                onclick: () =>
-                                  void navigateFavourite(systemLocation.location, attrs),
-                                disabled: attrs.unavailableLocations?.has(
-                                  locationKey(systemLocation.location),
-                                ),
-                              },
-                              attrs.unavailableLocations?.has(locationKey(systemLocation.location))
-                                ? `${systemLocation.name} (unavailable)`
-                                : systemLocation.readOnly === true
-                                  ? `${systemLocation.name} (read-only)`
-                                  : systemLocation.name,
-                            ),
-                          ),
-                      ]),
-                    (attrs.connections?.length ?? 0) > 0 &&
-                      m('.fm-favourites-recents.fm-servers-locations', [
-                        m('strong', 'SERVERS'),
-                        ...(attrs.connections ?? []).map((connection) =>
-                          m(
-                            'button.fm-server-item',
-                            {
-                              key: connection.id,
-                              type: 'button',
-                              role: 'menuitem',
-                              title: isBrowsable(connection)
-                                ? `${connectionStatusLabel(connection.status)} — open ${connection.name}`
-                                : connectionStatusLabel(connection.status),
-                              disabled: !isBrowsable(connection),
-                              onclick: isBrowsable(connection)
-                                ? () =>
-                                    void navigateFavourite(sftpRootLocation(connection.id), attrs)
-                                : undefined,
-                            },
-                            [
-                              m('span.fm-server-status', connectionStatusGlyph(connection.status)),
-                              m('span.fm-server-name', connection.name),
-                            ],
-                          ),
-                        ),
-                      ]),
-                    attrs.onManageConnections === undefined
-                      ? undefined
-                      : m(
-                          'button.fm-manage-connections',
+                    '×',
+                  ),
+                ]),
+                (attrs.systemLocations?.some(({ kind }) => kind === 'cloud') ?? false) &&
+                  m('.fm-favourites-recents.fm-cloud-locations', [
+                    m('strong', 'Cloud'),
+                    ...(attrs.systemLocations ?? [])
+                      .filter(({ kind }) => kind === 'cloud')
+                      .map((systemLocation) =>
+                        m(
+                          'button',
                           {
                             type: 'button',
                             role: 'menuitem',
-                            onclick: () => {
-                              closeFavourites();
-                              attrs.onManageConnections?.();
-                            },
-                          },
-                          'Manage connections…',
-                        ),
-                    attrs.systemLocationsError === undefined
-                      ? undefined
-                      : m('.fm-path-error.fm-cloud-locations-error', { role: 'status' }, [
-                          'System locations unavailable. ',
-                          m(
-                            'button',
-                            {
-                              type: 'button',
-                              onclick: () => void attrs.onRetrySystemLocations?.(),
-                            },
-                            'Retry',
-                          ),
-                        ]),
-                    canAddCurrentFavourite(attrs)
-                      ? m(
-                          'form.fm-favourites-add',
-                          {
-                            onsubmit: (event: SubmitEvent) => {
-                              event.preventDefault();
-                              addCurrentFavourite(attrs);
-                            },
-                          },
-                          [
-                            m('input[type=text]', {
-                              value: favouriteLabel,
-                              placeholder: 'Favourite name',
-                              'aria-label': 'Favourite name',
-                              oninput: (event: InputEvent) => {
-                                favouriteLabel = (event.currentTarget as HTMLInputElement).value;
-                              },
-                            }),
-                            m(
-                              IconButton,
-                              {
-                                className: 'fm-favourites-add-button',
-                                'aria-label': 'Add current location',
-                                'data-tooltip': 'Add current location',
-                                onclick: () => addCurrentFavourite(attrs),
-                              },
-                              plusIcon(),
+                            title: systemLocation.location.uri,
+                            onclick: () => void navigateFavourite(systemLocation.location, attrs),
+                            disabled: attrs.unavailableLocations?.has(
+                              locationKey(systemLocation.location),
                             ),
-                          ],
-                        )
-                      : undefined,
-                    (attrs.favouriteLocations?.length ?? 0) > 0 &&
-                      m('.fm-favourites-recents', [
-                        m('strong', 'Favorites'),
-                        ...(attrs.favouriteLocations ?? []).map((favourite, index) =>
-                          m('.fm-favourites-item', [
-                            m(
+                          },
+                          attrs.unavailableLocations?.has(locationKey(systemLocation.location))
+                            ? `${systemLocation.name} (unavailable)`
+                            : systemLocation.name,
+                        ),
+                      ),
+                  ]),
+                (attrs.systemLocations?.some(({ kind }) => kind === 'network') ?? false) &&
+                  m('.fm-favourites-recents.fm-network-locations', [
+                    m('strong', 'Network'),
+                    ...(attrs.systemLocations ?? [])
+                      .filter(({ kind }) => kind === 'network')
+                      .map((systemLocation) =>
+                        m(
+                          'button',
+                          {
+                            type: 'button',
+                            role: 'menuitem',
+                            title: systemLocation.location.uri,
+                            onclick: () => void navigateFavourite(systemLocation.location, attrs),
+                            disabled: attrs.unavailableLocations?.has(
+                              locationKey(systemLocation.location),
+                            ),
+                          },
+                          attrs.unavailableLocations?.has(locationKey(systemLocation.location))
+                            ? `${systemLocation.name} (unavailable)`
+                            : systemLocation.readOnly === true
+                              ? `${systemLocation.name} (read-only)`
+                              : systemLocation.name,
+                        ),
+                      ),
+                  ]),
+                (attrs.connections?.length ?? 0) > 0 &&
+                  m('.fm-favourites-recents.fm-servers-locations', [
+                    // Every vnode in this array must carry a key, or none may
+                    // (Mithril throws otherwise): the label needs one too since
+                    // its siblings below are keyed by connection id.
+                    m('strong', { key: '__servers_label__' }, 'Servers'),
+                    ...(attrs.connections ?? []).map((connection) =>
+                      m(
+                        'button.fm-server-item',
+                        {
+                          key: connection.id,
+                          type: 'button',
+                          role: 'menuitem',
+                          title: isBrowsable(connection)
+                            ? `${connectionStatusLabel(connection.status)} — open ${connection.name}`
+                            : connectionStatusLabel(connection.status),
+                          disabled: !isBrowsable(connection),
+                          onclick: isBrowsable(connection)
+                            ? () => void navigateFavourite(sftpRootLocation(connection.id), attrs)
+                            : undefined,
+                        },
+                        [
+                          m('span.fm-server-name', connection.name),
+                          m('span.fm-server-status', connectionStatusGlyph(connection.status)),
+                        ],
+                      ),
+                    ),
+                  ]),
+                attrs.systemLocationsError === undefined
+                  ? undefined
+                  : m('.fm-path-error.fm-cloud-locations-error', { role: 'status' }, [
+                      'System locations unavailable. ',
+                      m(
+                        'button',
+                        {
+                          type: 'button',
+                          onclick: () => void attrs.onRetrySystemLocations?.(),
+                        },
+                        'Retry',
+                      ),
+                    ]),
+                canAddCurrentFavourite(attrs)
+                  ? m(
+                      'form.fm-favourites-add',
+                      {
+                        onsubmit: (event: SubmitEvent) => {
+                          event.preventDefault();
+                          addCurrentFavourite(attrs);
+                        },
+                      },
+                      [
+                        m('input[type=text]', {
+                          value: favouriteLabel,
+                          placeholder: 'Favourite name',
+                          'aria-label': 'Favourite name',
+                          oninput: (event: InputEvent) => {
+                            favouriteLabel = (event.currentTarget as HTMLInputElement).value;
+                          },
+                        }),
+                        m(
+                          IconButton,
+                          {
+                            className: 'fm-favourites-add-button',
+                            'aria-label': 'Add current location',
+                            'data-tooltip': 'Add current location',
+                            onclick: () => addCurrentFavourite(attrs),
+                          },
+                          plusIcon(),
+                        ),
+                      ],
+                    )
+                  : undefined,
+                (attrs.favouriteLocations?.length ?? 0) > 0 &&
+                  m('.fm-favourites-recents', [
+                    m('strong', 'Favorites'),
+                    ...(attrs.favouriteLocations ?? []).map((favourite, index) =>
+                      m('.fm-favourites-item', [
+                        m(
+                          'button',
+                          {
+                            type: 'button',
+                            role: 'menuitem',
+                            onclick: () => void navigateFavourite(favourite.location, attrs),
+                            disabled: attrs.unavailableLocations?.has(
+                              locationKey(favourite.location),
+                            ),
+                          },
+                          attrs.unavailableLocations?.has(locationKey(favourite.location))
+                            ? `${favourite.label} (unavailable)`
+                            : favourite.label,
+                        ),
+                        attrs.onReorderFavourites === undefined
+                          ? undefined
+                          : m(
                               'button',
                               {
                                 type: 'button',
-                                role: 'menuitem',
-                                onclick: () => void navigateFavourite(favourite.location, attrs),
-                                disabled: attrs.unavailableLocations?.has(
-                                  locationKey(favourite.location),
-                                ),
+                                disabled: index === 0,
+                                'aria-label': `Move ${favourite.label} up`,
+                                onclick: () => void attrs.onReorderFavourites?.(index, index - 1),
                               },
-                              attrs.unavailableLocations?.has(locationKey(favourite.location))
-                                ? `${favourite.label} (unavailable)`
-                                : favourite.label,
+                              '↑',
                             ),
-                            attrs.onReorderFavourites === undefined
-                              ? undefined
-                              : m(
-                                  'button',
-                                  {
-                                    type: 'button',
-                                    disabled: index === 0,
-                                    'aria-label': `Move ${favourite.label} up`,
-                                    onclick: () =>
-                                      void attrs.onReorderFavourites?.(index, index - 1),
-                                  },
-                                  '↑',
-                                ),
-                            attrs.onDeleteFavourite === undefined
-                              ? undefined
-                              : m(
-                                  'button',
-                                  {
-                                    type: 'button',
-                                    'aria-label': `Remove ${favourite.label}`,
-                                    onclick: () =>
-                                      void attrs.onDeleteFavourite?.(favourite.location),
-                                  },
-                                  '×',
-                                ),
-                          ]),
-                        ),
+                        attrs.onDeleteFavourite === undefined
+                          ? undefined
+                          : m(
+                              'button',
+                              {
+                                type: 'button',
+                                'aria-label': `Remove ${favourite.label}`,
+                                onclick: () => void attrs.onDeleteFavourite?.(favourite.location),
+                              },
+                              '×',
+                            ),
                       ]),
-                    (attrs.recentLocations?.length ?? 0) > 0 &&
-                      m('.fm-favourites-recents', [
-                        m('strong', 'Recent locations'),
-                        ...(attrs.recentLocations ?? []).map((location) =>
-                          m(
-                            'button',
-                            {
-                              type: 'button',
-                              role: 'menuitem',
-                              title: location.uri,
-                              onclick: () => void navigateFavourite(location, attrs),
-                              disabled: attrs.unavailableLocations?.has(locationKey(location)),
-                            },
-                            attrs.unavailableLocations?.has(locationKey(location))
-                              ? `${truncateLocationForDisplay(location.uri)} (unavailable)`
-                              : truncateLocationForDisplay(location.uri),
-                          ),
-                        ),
-                      ]),
-                    favouriteError === undefined
-                      ? undefined
-                      : m('.fm-path-error', { role: 'alert' }, favouriteError),
-                  ],
-                ),
-              ]
-            : // A text vnode keeps this sibling slot present without becoming a grid item. Mithril
-              // otherwise treats the conditional `undefined` as a fragment hole beside keyed tab
-              // descendants during redraw.
-              '',
+                    ),
+                  ]),
+                (attrs.recentLocations?.length ?? 0) > 0 &&
+                  m('.fm-favourites-recents', [
+                    m('strong', 'Recent locations'),
+                    ...(attrs.recentLocations ?? []).map((location) =>
+                      m(
+                        'button',
+                        {
+                          type: 'button',
+                          role: 'menuitem',
+                          title: location.uri,
+                          onclick: () => void navigateFavourite(location, attrs),
+                          disabled: attrs.unavailableLocations?.has(locationKey(location)),
+                        },
+                        attrs.unavailableLocations?.has(locationKey(location))
+                          ? `${truncateLocationForDisplay(location.uri)} (unavailable)`
+                          : truncateLocationForDisplay(location.uri),
+                      ),
+                    ),
+                  ]),
+                favouriteError === undefined
+                  ? undefined
+                  : m('.fm-path-error', { role: 'alert' }, favouriteError),
+                attrs.onManageConnections === undefined
+                  ? undefined
+                  : m(
+                      'button.fm-manage-connections',
+                      {
+                        type: 'button',
+                        role: 'menuitem',
+                        onclick: () => {
+                          closeFavourites();
+                          attrs.onManageConnections?.();
+                        },
+                      },
+                      'Manage connections…',
+                    ),
+              ],
+            ),
+          ],
+          // : // A text vnode keeps this sibling slot present without becoming a grid item. Mithril
+          //   // otherwise treats the conditional `undefined` as a fragment hole beside keyed tab
+          //   // descendants during redraw.
+          //   '',
           attrs.filterOpen
             ? m(QuickFilterInput, {
                 query: attrs.filterQuery,

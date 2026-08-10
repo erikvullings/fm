@@ -315,21 +315,29 @@ async fn private_key_authentication_rejects_an_unauthorized_key() {
 }
 
 #[tokio::test]
-async fn agent_authentication_reports_an_explicit_unsupported_error() {
+async fn agent_authentication_through_the_public_api_never_silently_succeeds_without_a_matching_identity()
+ {
     let fixture = SshFixture::start().await;
     let known_hosts = trusted_store(&fixture).await;
 
+    // `SshCredential::Agent` connects through the real environment's
+    // `SSH_AUTH_SOCK` (see `session::tests` in `session.rs` for hermetic,
+    // in-process coverage of the actual authentication logic against every
+    // outcome: success, no identities, and a non-matching identity). The
+    // fixture's authorized key was never registered with whatever agent (if
+    // any) is reachable in this environment, so success is never valid here,
+    // regardless of what that environment happens to hold.
     let error = SshSession::connect(
         &params(&fixture, SshCredential::Agent),
         known_hosts,
         "conn-1",
     )
     .await
-    .expect_err("agent auth is not implemented yet");
-    assert!(matches!(
-        error,
-        SshError::UnsupportedAuthenticationMethod(_)
-    ));
+    .expect_err("the fixture's key was never added to the real environment's agent");
+    assert!(
+        matches!(error, SshError::Agent(_) | SshError::AuthenticationFailed),
+        "got {error:?}"
+    );
 }
 
 #[tokio::test]

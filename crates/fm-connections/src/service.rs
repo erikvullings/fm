@@ -73,6 +73,11 @@ pub struct ConnectionService<R> {
     credential_store: Arc<dyn CredentialStore>,
     events: EventBus,
     statuses: Mutex<HashMap<ConnectionId, ConnectionStatus>>,
+    /// The dialer's failure message from the most recent `connect`/`test`
+    /// that ended in [`ConnectionStatus::Failed`], so a caller (and
+    /// ultimately the user) can see *why* rather than just that it failed.
+    /// Cleared whenever a later attempt reaches any other status.
+    last_error_messages: Mutex<HashMap<ConnectionId, String>>,
     dialers: HashMap<ConnectionKind, Arc<dyn ConnectionDialer>>,
 }
 
@@ -92,6 +97,7 @@ where
             credential_store,
             events,
             statuses: Mutex::new(HashMap::new()),
+            last_error_messages: Mutex::new(HashMap::new()),
             dialers: HashMap::new(),
         }
     }
@@ -226,6 +232,20 @@ where
         Ok(self.tracked_status(id))
     }
 
+    /// Returns the dialer's failure message from the most recent
+    /// `connect`/`test` that ended in [`ConnectionStatus::Failed`], or
+    /// `None` if the connection has never failed that way (or a later
+    /// attempt reached a different status since).
+    pub async fn last_error(&self, id: ConnectionId) -> Result<Option<String>, ConnectionError> {
+        self.get(id).await?;
+        Ok(self
+            .last_error_messages
+            .lock()
+            .expect("last-error lock poisoned")
+            .get(&id)
+            .cloned())
+    }
+
     /// Checks whether this connection's configuration and referenced
     /// credential are currently usable, without changing its tracked status
     /// or publishing an event - see this module's documentation for what
@@ -256,8 +276,23 @@ where
     /// `connection.statusChanged`.
     pub async fn disconnect(&self, id: ConnectionId) -> Result<ConnectionStatus, ConnectionError> {
         self.get(id).await?;
+        self.clear_last_error(id);
         self.set_status_and_publish(id, ConnectionStatus::Disconnected);
         Ok(ConnectionStatus::Disconnected)
+    }
+
+    fn clear_last_error(&self, id: ConnectionId) {
+        self.last_error_messages
+            .lock()
+            .expect("last-error lock poisoned")
+            .remove(&id);
+    }
+
+    fn set_last_error(&self, id: ConnectionId, message: String) {
+        self.last_error_messages
+            .lock()
+            .expect("last-error lock poisoned")
+            .insert(id, message);
     }
 
     fn tracked_status(&self, id: ConnectionId) -> ConnectionStatus {
@@ -284,6 +319,11 @@ where
         &self,
         profile: &ConnectionProfile,
     ) -> Result<ConnectionStatus, ConnectionError> {
+        // Every call is a fresh attempt: clear any stale message from a
+        // previous failure up front, and only the generic-failure branch
+        // below repopulates it.
+        self.clear_last_error(profile.id);
+
         let validation_errors = profile.validate();
         if !validation_errors.is_empty() {
             return Err(ConnectionError::Invalid(validation_errors));
@@ -319,7 +359,10 @@ where
                 Err(ConnectionError::HostKeyMismatch { .. }) => {
                     Ok(ConnectionStatus::HostKeyMismatch)
                 }
-                Err(_) => Ok(ConnectionStatus::Failed),
+                Err(other) => {
+                    self.set_last_error(profile.id, other.to_string());
+                    Ok(ConnectionStatus::Failed)
+                }
             };
         }
 

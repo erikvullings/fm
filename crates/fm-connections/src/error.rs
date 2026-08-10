@@ -114,6 +114,14 @@ pub enum ConnectionError {
         /// `SHA256:<base64>` fingerprint previously accepted and stored.
         expected_fingerprint: String,
     },
+    /// A [`crate::ConnectionDialer`] reported a failure other than the two
+    /// host-key states above - a wrong password, an unreachable host, a
+    /// rejected key, an unusable SSH-agent identity, and so on. Carries the
+    /// dialer's own message verbatim so [`ConnectionService::evaluate`] can
+    /// surface *why* a `connect`/`test` reported
+    /// [`crate::ConnectionStatus::Failed`] instead of just that it did.
+    #[error("{0}")]
+    DialFailed(String),
 }
 
 #[cfg(test)]
