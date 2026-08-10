@@ -1114,6 +1114,30 @@ describe('Pane tab strip', () => {
     expect(onNavigateLocation).toHaveBeenCalledWith(location);
   });
 
+  it('renders the favourites close button as an overlay, not a dedicated menu row', () => {
+    mount(
+      attrs({
+        systemLocations: [
+          {
+            name: 'Example Drive',
+            kind: 'cloud',
+            location: { providerId: 'local', uri: 'file:///Users/example/Cloud' },
+          },
+        ],
+      }),
+    );
+
+    root.querySelector<HTMLButtonElement>('.fm-pane-tab-favourites')?.click();
+    m.redraw.sync();
+
+    const menu = root.querySelector<HTMLElement>('.fm-favourites-menu');
+    const closeButton = root.querySelector<HTMLButtonElement>('.fm-favourites-close');
+    expect(menu).not.toBeNull();
+    expect(closeButton).not.toBeNull();
+    expect(root.querySelector('.fm-favourites-menu-header')).toBeNull();
+    expect(closeButton?.parentElement).toBe(menu);
+  });
+
   it.each(['Enter', 'double-click'] as const)(
     'keeps %s on a discovered location inside the favourites menu',
     async (activation) => {

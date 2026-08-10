@@ -5,8 +5,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createFileManagerClient } from '../api/client/create-client';
 import { MockFileManagerClient } from '../api/client/mock-file-manager-client';
 import { ApiError } from '../api/fetch-mutator';
-import type { Location } from '../models';
+import type { Location, Operation } from '../models';
 import { AppShell, locationForPath, respectSystemLocationReadOnly } from './app-shell';
+
+const DISMISSED_OPERATIONS_STORAGE_KEY = 'fm.dismissedOperationIds';
 
 describe('respectSystemLocationReadOnly', () => {
   it('makes a detected read-only network mount non-writable', () => {
@@ -57,7 +59,7 @@ describe('locationForPath', () => {
 let root: HTMLElement;
 
 class TestEventSource extends EventTarget {
-  close(): void {}
+  close(): void { }
 }
 
 function mountShell(runtime: 'http' | 'tauri' | 'mock' = 'http'): void {
@@ -102,6 +104,7 @@ async function openWorkspaceSwitcher(container: HTMLElement = root): Promise<voi
 
 beforeEach(() => {
   vi.stubGlobal('EventSource', TestEventSource);
+  globalThis.localStorage?.removeItem(DISMISSED_OPERATIONS_STORAGE_KEY);
   root = document.createElement('div');
   document.body.appendChild(root);
 });
@@ -110,6 +113,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
   m.mount(root, null);
   root.remove();
+  globalThis.localStorage?.removeItem(DISMISSED_OPERATIONS_STORAGE_KEY);
   document.documentElement.removeAttribute('data-theme');
 });
 
@@ -959,9 +963,9 @@ describe('AppShell', () => {
     });
     let nativeDropListener:
       | ((drop: {
-          locations: readonly Location[];
-          position: { readonly x: number; readonly y: number };
-        }) => void)
+        locations: readonly Location[];
+        position: { readonly x: number; readonly y: number };
+      }) => void)
       | undefined;
     vi.spyOn(client, 'subscribeNativeFileDrops').mockImplementation(async (listener) => {
       nativeDropListener = listener;
@@ -1032,6 +1036,32 @@ describe('AppShell', () => {
 
     await vi.waitFor(() => expect(root.textContent).toContain('1 / 2 items'));
     expect(listOperations).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps manually dismissed failed operations hidden after remount', async () => {
+    const client = new MockFileManagerClient();
+    const failed: Operation = {
+      id: 'failed-copy-1',
+      kind: 'copy',
+      state: 'failed',
+      sources: [],
+      progress: { completedItems: 0, completedBytes: 0 },
+      conflictPolicy: 'ask',
+      createdAt: '2026-08-10T12:00:00.000Z',
+    };
+    vi.spyOn(client, 'listOperations').mockResolvedValue([failed]);
+
+    m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
+    await vi.waitFor(() => expect(root.textContent).toContain('copy · failed'));
+
+    root.querySelector<HTMLButtonElement>('[data-operation-id="failed-copy-1"] [data-action="dismiss"]')?.click();
+    m.redraw.sync();
+    expect(root.textContent).not.toContain('copy · failed');
+
+    m.mount(root, null);
+    m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
+    await vi.waitFor(() => expect(root.textContent).toContain('Documents'));
+    expect(root.textContent).not.toContain('copy · failed');
   });
 
   it('acknowledges cancel immediately while the backend request is still pending', async () => {
@@ -1447,7 +1477,7 @@ describe('AppShell', () => {
     const install = vi.spyOn(pluginIconTheme, 'installPluginIconTheme').mockResolvedValue();
     const restore = vi
       .spyOn(pluginIconTheme, 'restoreDefaultIconTheme')
-      .mockImplementation(() => {});
+      .mockImplementation(() => { });
 
     m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
     await vi.waitFor(() => expect(install).toHaveBeenCalledTimes(1));

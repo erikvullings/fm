@@ -239,6 +239,7 @@
   z-index: 5;
   top: calc(var(--fm-row-height) + 0.25rem);
   right: 0.25rem;
+  isolation: isolate;
   display: grid;
   min-width: 18rem;
   max-width: min(28rem, 90vw);
@@ -249,16 +250,11 @@
   box-shadow: 0 0.5rem 1.5rem rgb(0 0 0 / 25%);
 }
 
-/* A slim header row, not a full reserved line: the close button floats to
-   its right edge within a compact row rather than pushing the whole menu's
-   content down. */
-.fm-favourites-menu-header {
-  display: flex;
-  justify-content: flex-end;
-  margin: -0.25rem -0.25rem 0.1rem;
-}
-
 .fm-favourites-close {
+  position: absolute;
+  top: 0.25rem;
+  right: 0.25rem;
+  z-index: 1;
   display: flex;
   align-items: center;
   justify-content: center;

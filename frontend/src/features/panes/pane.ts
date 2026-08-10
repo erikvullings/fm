@@ -897,20 +897,18 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
                 },
               },
               [
-                m('.fm-favourites-menu-header', [
-                  m(
-                    'button.fm-favourites-close.right',
-                    {
-                      type: 'button',
-                      'aria-label': 'Close favourites menu',
-                      onclick: () => {
-                        closeFavourites();
-                        m.redraw();
-                      },
+                m(
+                  'button.fm-favourites-close',
+                  {
+                    type: 'button',
+                    'aria-label': 'Close favourites menu',
+                    onclick: () => {
+                      closeFavourites();
+                      m.redraw();
                     },
-                    '×',
-                  ),
-                ]),
+                  },
+                  '×',
+                ),
                 (attrs.systemLocations?.some(({ kind }) => kind === 'cloud') ?? false) &&
                 m('.fm-favourites-recents.fm-cloud-locations', [
                   m('strong', 'Cloud'),

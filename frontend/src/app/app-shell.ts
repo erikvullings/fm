@@ -219,10 +219,33 @@ export function respectSystemLocationReadOnly(
  * Delay before a terminal, non-`failed` operation (completed, cancelled or
  * interrupted) auto-dismisses itself. Only failures require the user to
  * dismiss manually; everything else would otherwise pile up in the operation
- * centre forever, since dismissal is not persisted and every app restart
- * reloads the full backend history.
+ * centre forever.
  */
 const AUTO_DISMISS_DELAY_MS = 5_000;
+
+const DISMISSED_OPERATIONS_STORAGE_KEY = 'fm.dismissedOperationIds';
+const MAX_DISMISSED_OPERATIONS = 500;
+
+function loadDismissedOperationIds(): Set<OperationId> {
+  try {
+    const raw = globalThis.localStorage?.getItem(DISMISSED_OPERATIONS_STORAGE_KEY);
+    if (raw === null) return new Set();
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return new Set();
+    return new Set(parsed.filter((value): value is OperationId => typeof value === 'string'));
+  } catch {
+    return new Set();
+  }
+}
+
+function persistDismissedOperationIds(ids: ReadonlySet<OperationId>): void {
+  try {
+    const recent = [...ids].slice(-MAX_DISMISSED_OPERATIONS);
+    globalThis.localStorage?.setItem(DISMISSED_OPERATIONS_STORAGE_KEY, JSON.stringify(recent));
+  } catch {
+    // localStorage can be unavailable in some runtimes; in-memory dismissal still works.
+  }
+}
 
 /** States that auto-dismiss; `failed` is intentionally excluded. */
 function isAutoDismissibleState(state: OperationState): boolean {
@@ -431,7 +454,18 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
   let pendingOperationEvents: BackendEvent[] = [];
   let operationFrame: number | undefined;
   const autoDismissTimers = new Map<OperationId, ReturnType<typeof setTimeout>>();
+  const dismissedOperationIds = loadDismissedOperationIds();
   let removed = false;
+
+  function rememberDismissedOperation(operationId: OperationId): void {
+    dismissedOperationIds.add(operationId);
+    persistDismissedOperationIds(dismissedOperationIds);
+  }
+
+  function clearDismissedOperation(operationId: OperationId): void {
+    if (!dismissedOperationIds.delete(operationId)) return;
+    persistDismissedOperationIds(dismissedOperationIds);
+  }
 
   /** (Re)schedules an operation to auto-dismiss unless it's manually dismissed first. */
   function scheduleAutoDismiss(operationId: OperationId, delayMs: number): void {
@@ -1986,6 +2020,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
             if (current === undefined) continue;
             const previousState = previous.byId[id]?.state;
             if (previousState === current.state) continue;
+            clearDismissedOperation(id);
             if (current.state === 'completed' || current.state === 'completedWithWarnings') {
               panesNeedRefresh = true;
             }
@@ -1994,6 +2029,11 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
               next = dismissOperation(next, id);
             } else {
               scheduleAutoDismiss(id, AUTO_DISMISS_DELAY_MS);
+            }
+          }
+          for (const dismissedId of dismissedOperationIds) {
+            if (next.byId[dismissedId] !== undefined) {
+              next = dismissOperation(next, dismissedId);
             }
           }
           operations = next;
@@ -2825,7 +2865,11 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
             // run, so an auto-dismissible one (completed/cancelled/interrupted) would
             // only flash and vanish a few seconds later for no reason. Only surface
             // ones that still need attention (failed) or are still genuinely active.
-            const relevant = listed.filter((operation) => !isAutoDismissibleState(operation.state));
+            const relevant = listed.filter(
+              (operation) =>
+                !isAutoDismissibleState(operation.state) &&
+                !dismissedOperationIds.has(operation.id),
+            );
             operations = createOperationsState(relevant);
             m.redraw();
           }
@@ -3185,6 +3229,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
             },
             onDismiss: (operationId) => {
               cancelAutoDismiss(operationId);
+              rememberDismissedOperation(operationId);
               operations = dismissOperation(operations, operationId);
             },
           }),
