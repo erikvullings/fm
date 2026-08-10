@@ -1,4 +1,3 @@
-import { getCurrentWindow } from '@tauri-apps/api/window';
 import m, { type FactoryComponent } from 'mithril';
 import { IconButton, type Theme, ThemeManager, toast } from 'mithril-materialized';
 
@@ -46,7 +45,7 @@ import {
   withoutConnection,
 } from '../features/connections/connections-model';
 import { SAMPLE_FILE_AGE_COLUMN } from '../features/directory-table/directory-table';
-import { NativeIconLoader } from '../features/directory-table/native-icon-loader';
+import type { NativeIconLoader } from '../features/directory-table/native-icon-loader';
 import {
   operationForDrop,
   resolveDropTarget,
@@ -120,28 +119,29 @@ import {
 } from '../features/selection/selection';
 import { SettingsEditor } from '../features/settings/settings-editor';
 import {
+  createSettingsController,
+  type SettingsController,
+  type SettingsControllerContext,
+} from '../features/settings/settings-controller';
+import {
   type SortColumn,
   type SortModel,
   sortEntries,
   sortEntriesResponsive,
 } from '../features/sorting/sorting';
-import {
-  dispatchWorkspaceCommand,
-} from '../features/workspace/dispatch-workspace-command';
-import {
-  pathFromUri,
-  WorkspaceLayoutView,
-  type WorkspacePaneContent,
-} from '../features/workspace/workspace-layout';
-import {
-  sortWorkspaceSummaries,
-} from '../features/workspace/workspace-manager';
-import { WorkspaceSwitcher } from '../features/workspace/workspace-switcher';
+import { dispatchWorkspaceCommand } from '../features/workspace/dispatch-workspace-command';
 import {
   createWorkspaceController,
   type WorkspaceController,
   type WorkspaceControllerContext,
 } from '../features/workspace/workspace-controller';
+import {
+  pathFromUri,
+  WorkspaceLayoutView,
+  type WorkspacePaneContent,
+} from '../features/workspace/workspace-layout';
+import { sortWorkspaceSummaries } from '../features/workspace/workspace-manager';
+import { WorkspaceSwitcher } from '../features/workspace/workspace-switcher';
 import {
   dispatchKeybinding,
   footerFunctionKeyBindings,
@@ -184,7 +184,6 @@ import {
   deleteQuickFilterDraftPatch,
   setQuickFilterDraftPatch,
 } from '../state';
-import { installPluginIconTheme, restoreDefaultIconTheme } from '../themes/plugin-icon-theme';
 import type { RuntimeKind } from '../utilities/runtime';
 
 /** Attributes of the application shell. */
@@ -487,162 +486,22 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
    * preview, a successful save, and reverting on cancel.
    */
   function applyAppearance(settings: Settings): void {
-    theme = settings.theme;
-    loadedEntryFormatSettings = {
-      dateFormat: settings.dateFormat,
-      sizeFormat: settings.sizeFormat,
-      locale: navigator.language,
-    };
-    document.documentElement.style.setProperty('--fm-font-size', `${settings.fontSize}px`);
-    document.documentElement.style.setProperty('--fm-row-height', `${settings.rowHeight}px`);
-    ThemeManager.setTheme(theme);
-    applyIconTheme(settings.iconTheme);
-    syncTauriWindowBackground();
+    settingsController.applyAppearance(settings);
   }
 
-  /**
-   * Hidden-file visibility is filtered server-side (unlike sort/quick-filter, which only
-   * reorder/hide already-fetched entries client-side), so entries that were never fetched while
-   * hidden files were off can't just be re-shown locally — every open tab's `showHidden` needs an
-   * `updateView` patch, and every pane needs its active tab re-fetched, or toggling the setting
-   * and saving would silently do nothing.
-   */
   async function applyShowHiddenFilesToAllTabs(
     client: FileManagerClient,
     showHidden: boolean,
   ): Promise<void> {
-    if (workspace === undefined) return;
-    for (const paneId of workspace.paneOrder) {
-      for (const tabId of workspace.panesById[paneId]?.tabOrder ?? []) {
-        const current = workspace;
-        const tab = current?.panesById[paneId]?.tabsById[tabId];
-        if (current === undefined || tab === undefined || tab.view.showHidden === showHidden) {
-          continue;
-        }
-        try {
-          await dispatchWorkspaceCommand(
-            client,
-            {
-              type: 'updateView',
-              workspaceId: current.id,
-              paneId,
-              tabId,
-              patch: { showHidden },
-              expectedRevision: current.revision,
-            },
-            replaceWorkspace,
-          );
-        } catch {
-          continue;
-        }
-        if (activeTabKey(paneId) !== tabKey(paneId, tabId))
-          directories.delete(tabKey(paneId, tabId));
-      }
-    }
-    for (const paneId of workspace.paneOrder) void navigation.load(paneId);
+    await settingsController.applyShowHiddenFilesToAllTabs(client, showHidden);
   }
 
-  /**
-   * New tabs always start from the pane's fixed `default_view` (the backend has no per-user
-   * "default view" concept, and `applyShowHiddenFilesToAllTabs` above only ever patches tabs that
-   * already existed at save time) — so every freshly opened tab silently reverts to hiding
-   * dotfiles unless explicitly patched here to match the current setting.
-   */
-  async function applyCurrentShowHiddenSetting(
-    client: FileManagerClient,
-    workspaceId: WorkspaceId,
-    paneId: PaneId,
-    tabId: TabId,
-    expectedRevision: number,
-  ): Promise<void> {
-    if (currentSettings?.showHiddenFiles !== true) return;
-    try {
-      await dispatchWorkspaceCommand(
-        client,
-        {
-          type: 'updateView',
-          workspaceId,
-          paneId,
-          tabId,
-          patch: { showHidden: true },
-          expectedRevision,
-        },
-        replaceWorkspace,
-      );
-    } catch {
-      // Best-effort: the tab still works, just without hidden files until manually toggled.
-    }
-  }
-
-  /**
-   * Closes the settings disclosure (Save/Cancel/close-button/outside-click all route through
-   * here). Reverts any unsaved live preview back to `currentSettings` directly, rather than
-   * relying on the `<details>` element's `toggle` event to fire for a scripted close — some DOM
-   * implementations only dispatch it for user-driven summary clicks (see the `ontoggle` listener
-   * below, which covers that path).
-   */
   function closeSettingsDialog(): void {
-    settingsDialogOpen = false;
-    if (currentSettings !== undefined) applyAppearance(currentSettings);
-    if (settingsDisclosureElement !== undefined) settingsDisclosureElement.open = false;
-    m.redraw();
+    settingsController.closeSettingsDialog();
   }
 
-  /**
-   * Installs `themeId`'s icons into `entryIconRegistry` (task 0095): `'generic'` restores the
-   * built-in defaults with no lookup; any other id is resolved against the already-discovered
-   * `plugins` list and fetched/sanitized via {@link installPluginIconTheme}. A theme whose plugin
-   * isn't discovered yet, doesn't declare an icon theme, or is currently disabled falls back to
-   * the defaults. Unlike the plugin-lookup/enabled check (re-run on every call, since the same
-   * `themeId` can flip between available and unavailable as its plugin is enabled/disabled without
-   * `themeId` itself ever changing), the actual (re)install is skipped once `themeId` is already
-   * installed, to avoid redundant asset fetches.
-   */
   function applyIconTheme(themeId: string): void {
-    if (themeId === 'generic') {
-      if (installedIconThemeId !== themeId) {
-        restoreDefaultIconTheme();
-        installedIconThemeId = themeId;
-      }
-      return;
-    }
-    const plugin = plugins.find((candidate) => candidate.id === themeId);
-    if (plugin?.iconTheme === undefined || !plugin.enabled) {
-      if (installedIconThemeId !== undefined) restoreDefaultIconTheme();
-      installedIconThemeId = undefined;
-      return;
-    }
-    if (themeId === installedIconThemeId) return;
-    installedIconThemeId = themeId;
-    void installPluginIconTheme(attrsClient, plugin.id, plugin.iconTheme).then(
-      () => m.redraw(),
-      () => {
-        // The plugin was disabled (or its assets became unreadable) between the check above and
-        // the fetch resolving; fall back rather than leaving stale/partial icons installed.
-        restoreDefaultIconTheme();
-        installedIconThemeId = undefined;
-        m.redraw();
-      },
-    );
-  }
-
-  /**
-   * Keeps the native Tauri window frame (background + title bar chrome) in
-   * step with the resolved theme (light/dark/auto) so it never mismatches the
-   * toolbar's own --fm-surface-elevated, e.g. on launch or when the OS
-   * appearance changes. `setTheme` drives the title bar's own light/dark
-   * rendering, which `setBackgroundColor` alone doesn't affect on macOS.
-   */
-  function syncTauriWindowBackground(): void {
-    if (runtimeKind !== 'tauri') return;
-    const resolved = getComputedStyle(document.documentElement)
-      .getPropertyValue('--fm-surface-elevated')
-      .trim();
-    if (resolved.length === 0) return;
-    const window = getCurrentWindow();
-    void window.setBackgroundColor(resolved);
-    // 'auto' -> null lets the OS decide, matching the CSS `@media` fallback.
-    void window.setTheme(theme === 'auto' ? null : theme);
+    settingsController.applyIconTheme(themeId);
   }
 
   const systemThemeQuery: MediaQueryList | undefined =
@@ -650,18 +509,11 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       ? window.matchMedia('(prefers-color-scheme: dark)')
       : undefined;
   function handleSystemThemeChange(): void {
-    if (theme === 'auto') syncTauriWindowBackground();
+    if (theme === 'auto') settingsController.syncTauriWindowBackground();
   }
 
   async function loadSettings(client: FileManagerClient): Promise<void> {
-    try {
-      const settings = await client.getSettings();
-      currentSettings = settings;
-      applyAppearance(settings);
-      m.redraw();
-    } catch {
-      // A transport failure leaves the application usable with defaults.
-    }
+    await settingsController.loadSettings(client);
   }
 
   function effectiveSort(sort: readonly SortDescriptor[]): readonly SortDescriptor[] {
@@ -1817,6 +1669,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
   let opsController: OperationsController;
   let workspaceController: WorkspaceController;
   let tabController: TabController;
+  let settingsController: SettingsController;
 
   const workspaceControllerContext: WorkspaceControllerContext = {
     getWorkspace: () => workspace,
@@ -1897,14 +1750,47 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     },
     getNavigation: () => navigation,
     redraw: () => m.redraw(),
-    applyCurrentShowHiddenSetting,
+    applyCurrentShowHiddenSetting: (client, workspaceId, paneId, tabId, rev) =>
+      settingsController.applyCurrentShowHiddenSetting(client, workspaceId, paneId, tabId, rev),
     clearTabState,
     getCloseTabConfirmation: () => closeTabConfirmation,
     setCloseTabConfirmation: (conf) => {
       closeTabConfirmation = conf;
     },
-    hasCachedSnapshot: (paneId, tabId) => 
+    hasCachedSnapshot: (paneId, tabId) =>
       directories.get(tabKey(paneId, tabId))?.state.type === 'loaded',
+  };
+
+  const settingsControllerContext: SettingsControllerContext = {
+    setTheme: (t) => {
+      theme = t;
+    },
+    setLoadedEntryFormatSettings: (s) => {
+      loadedEntryFormatSettings = s;
+    },
+    getSettingsDialogOpen: () => settingsDialogOpen,
+    setSettingsDialogOpen: (open) => {
+      settingsDialogOpen = open;
+    },
+    getSettingsDisclosureElement: () => settingsDisclosureElement,
+    getCurrentSettings: () => currentSettings,
+    setCurrentSettings: (s) => {
+      currentSettings = s;
+    },
+    getPlugins: () => plugins,
+    getInstalledIconThemeId: () => installedIconThemeId,
+    setInstalledIconThemeId: (id) => {
+      installedIconThemeId = id;
+    },
+    getRuntimeKind: () => runtimeKind,
+    getWorkspace: () => workspace,
+    setWorkspace: (ws) => {
+      workspace = ws;
+    },
+    getDirectories: () => directories,
+    getNavigation: () => navigation,
+    getClient: () => attrsClient,
+    redraw: () => m.redraw(),
   };
 
   function replaceWorkspace(next: WorkspaceProjection): void {
@@ -2433,6 +2319,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       opsController = createOperationsController(attrs.client);
       workspaceController = createWorkspaceController(attrs.client, workspaceControllerContext);
       tabController = createTabController(attrs.client, tabControllerContext);
+      settingsController = createSettingsController(settingsControllerContext);
       keybindingRuntime = attrs.runtime === 'http' ? 'browser' : 'desktop';
       runtimeKind = attrs.runtime;
       document.addEventListener('keydown', handleGlobalKeydown);
@@ -2711,7 +2598,8 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
                     onCreate: () => workspaceController.createWorkspaceAction(),
                     onRename: (workspaceId, name) =>
                       workspaceController.renameWorkspaceAction(workspaceId, name),
-                    onDelete: (workspaceId) => workspaceController.deleteWorkspaceAction(workspaceId),
+                    onDelete: (workspaceId) =>
+                      workspaceController.deleteWorkspaceAction(workspaceId),
                   }),
                 ]),
               ],

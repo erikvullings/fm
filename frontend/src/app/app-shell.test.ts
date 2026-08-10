@@ -656,9 +656,10 @@ describe('AppShell', () => {
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'F3', bubbles: true }));
 
     await vi.waitFor(() => expect(root.querySelector('.fm-file-viewer')).not.toBeNull());
-    await vi.waitFor(() =>
-      expect(root.querySelector('.cm-content')?.textContent).toContain('ERROR'),
-    );
+    // Assert the search bar is pre-populated with the content-search query
+    const searchInput = root.querySelector<HTMLInputElement>('.fm-file-viewer input[type="text"]');
+    expect(searchInput).not.toBeNull();
+    expect(searchInput?.value).toBe('ERROR');
   });
 
   it('closes the Lister viewer via its close button', async () => {
