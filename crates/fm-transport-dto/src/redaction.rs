@@ -40,31 +40,33 @@ pub fn redact(input: &str) -> String {
     // Bearer tokens: "Bearer <long-string>"
     result = Regex::new(r"Bearer\s+[\w\-\.]+")
         .ok()
-        .and_then(|re| Some(re.replace_all(&result, "Bearer [REDACTED]").into_owned()))
+        .map(|re| re.replace_all(&result, "Bearer [REDACTED]").into_owned())
         .unwrap_or(result);
 
     // API keys: "sk-...", "apikey: ..." patterns
     result = Regex::new(r"(?i)(apikey|api_key|secret_key|private_key|access_key|sk_live_|pk_live_|sk-|pk-|sk_)[\s:=]*[\w\-\._]{4,}")
         .ok()
-        .and_then(|re| Some(re.replace_all(&result, "$1 [REDACTED]").into_owned()))
+        .map(|re| re.replace_all(&result, "$1 [REDACTED]").into_owned())
         .unwrap_or(result);
 
     // Session tokens: "token: ...", "session: ..." patterns
-    result = Regex::new(r"(?i)(token|session|sessionid|session_id|auth|x-auth-token)\s*[:=]\s*[\w\-\._]+")
-        .ok()
-        .and_then(|re| Some(re.replace_all(&result, "$1 [REDACTED]").into_owned()))
-        .unwrap_or(result);
+    result = Regex::new(
+        r"(?i)(token|session|sessionid|session_id|auth|x-auth-token)\s*[:=]\s*[\w\-\._]+",
+    )
+    .ok()
+    .map(|re| re.replace_all(&result, "$1 [REDACTED]").into_owned())
+    .unwrap_or(result);
 
     // Password fields: "password: ..." patterns
     result = Regex::new(r#"(?i)(password|passwd|pwd)\s*[:=]\s*["']?[^"'\s,}:]+["']?"#)
         .ok()
-        .and_then(|re| Some(re.replace_all(&result, "$1 [REDACTED]").into_owned()))
+        .map(|re| re.replace_all(&result, "$1 [REDACTED]").into_owned())
         .unwrap_or(result);
 
     // HMAC and hash tokens: 32+ character hex strings (SHA256, etc)
     result = Regex::new(r"(?i)(x-hmac|hmac|sha256|hash)\s*[:=]\s*[a-fA-F0-9]{32,}")
         .ok()
-        .and_then(|re| Some(re.replace_all(&result, "$1 [REDACTED]").into_owned()))
+        .map(|re| re.replace_all(&result, "$1 [REDACTED]").into_owned())
         .unwrap_or(result);
 
     // Absolute paths: replace with last 3 segments
@@ -93,33 +95,36 @@ pub fn redact_absolute_paths(input: &str) -> String {
 
     while i < bytes.len() {
         // Look for absolute path starting with /
-        if i == 0 || bytes[i - 1] == b' ' || bytes[i - 1] == b'\n' || bytes[i - 1] == b'\t' {
-            if bytes[i] == b'/' {
-                // Found potential start of absolute path
-                let start = i;
-                let mut slash_count = 0;
-                let mut end = i;
+        if (i == 0 || bytes[i - 1] == b' ' || bytes[i - 1] == b'\n' || bytes[i - 1] == b'\t')
+            && bytes[i] == b'/'
+        {
+            // Found potential start of absolute path
+            let start = i;
+            let mut slash_count = 0;
+            let mut end = i;
 
-                // Count slashes and find end of path
-                while end < bytes.len() {
-                    if bytes[end] == b'/' {
-                        slash_count += 1;
-                        end += 1;
-                    } else if (bytes[end] as char).is_alphanumeric() || bytes[end] == b'_' 
-                        || bytes[end] == b'-' || bytes[end] == b'.' {
-                        end += 1;
-                    } else {
-                        break;
-                    }
+            // Count slashes and find end of path
+            while end < bytes.len() {
+                if bytes[end] == b'/' {
+                    slash_count += 1;
+                    end += 1;
+                } else if (bytes[end] as char).is_alphanumeric()
+                    || bytes[end] == b'_'
+                    || bytes[end] == b'-'
+                    || bytes[end] == b'.'
+                {
+                    end += 1;
+                } else {
+                    break;
                 }
+            }
 
-                if slash_count >= 2 && end > start + 3 {
-                    // This looks like an absolute path with at least 2 segments
-                    let path = &input[start..end];
-                    result.push_str(&truncate_path(path));
-                    i = end;
-                    continue;
-                }
+            if slash_count >= 2 && end > start + 3 {
+                // This looks like an absolute path with at least 2 segments
+                let path = &input[start..end];
+                result.push_str(&truncate_path(path));
+                i = end;
+                continue;
             }
         }
         result.push(bytes[i] as char);
@@ -264,11 +269,14 @@ mod tests {
     #[test]
     fn test_redact_absolute_paths_unix() {
         let test_cases = vec![
-            ("/Users/alice/Documents/project/file.txt", "...Documents/project/file.txt"),
+            (
+                "/Users/alice/Documents/project/file.txt",
+                "...Documents/project/file.txt",
+            ),
             ("/var/log/system/events/app.log", "...system/events/app.log"),
             ("/home/bob/work/src/main.rs", "...work/src/main.rs"),
             ("Documents/project/file.txt", "Documents/project/file.txt"), // relative, unchanged
-            ("./relative/path.txt", "./relative/path.txt"), // relative, unchanged
+            ("./relative/path.txt", "./relative/path.txt"),               // relative, unchanged
         ];
 
         for (input, expected) in test_cases {
@@ -284,7 +292,10 @@ mod tests {
     #[test]
     fn test_redact_absolute_paths_windows() {
         let test_cases = vec![
-            ("C:\\Users\\alice\\Documents\\project\\file.txt", "...file.txt"),
+            (
+                "C:\\Users\\alice\\Documents\\project\\file.txt",
+                "...file.txt",
+            ),
             ("D:\\work\\src\\main.rs", "...main.rs"),
             ("E:\\logs\\app\\debug\\events.log", "...events.log"),
         ];
@@ -334,7 +345,8 @@ mod tests {
 
     #[test]
     fn test_redact_real_world_hmac_token() {
-        let input = "X-HMAC-SHA256: 5d41402abc4b2a76b9719d911017c592a2f2a51bab4a0e50dcb2937ca8e27eb7d";
+        let input =
+            "X-HMAC-SHA256: 5d41402abc4b2a76b9719d911017c592a2f2a51bab4a0e50dcb2937ca8e27eb7d";
         let redacted = redact(input);
         assert!(redacted.contains("X-HMAC"));
         // The hash should be redacted (show [REDACTED])
@@ -360,4 +372,3 @@ mod tests {
         assert!(redacted.contains("access denied"));
     }
 }
-

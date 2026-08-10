@@ -115,7 +115,7 @@ mod tests {
         std::os::windows::fs::symlink_file(&outside, &symlink).unwrap();
 
         // The symlink's target is outside the allowed root, so access should be denied.
-        let result = validate_within_accessible_roots(&symlink, &[allowed.clone()]);
+        let result = validate_within_accessible_roots(&symlink, std::slice::from_ref(&allowed));
         assert!(matches!(
             result,
             Err(AccessibleRootsError::OutsideRoots { .. })
@@ -134,7 +134,8 @@ mod tests {
         // Construct a path like allowed/../outside, which canonicalization should resolve.
         let traversal_path = allowed.join("..").join("outside.txt");
 
-        let result = validate_within_accessible_roots(&traversal_path, &[allowed.clone()]);
+        let result =
+            validate_within_accessible_roots(&traversal_path, std::slice::from_ref(&allowed));
         assert!(matches!(
             result,
             Err(AccessibleRootsError::OutsideRoots { .. })
@@ -171,7 +172,7 @@ mod tests {
         let safe_path = allowed.join(".").join("file.txt");
         std::fs::write(&safe_path, b"test").unwrap();
 
-        let result = validate_within_accessible_roots(&safe_path, &[allowed.clone()]);
+        let result = validate_within_accessible_roots(&safe_path, std::slice::from_ref(&allowed));
         assert!(result.is_ok());
     }
 }

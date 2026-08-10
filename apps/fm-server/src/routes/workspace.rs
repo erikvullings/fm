@@ -187,6 +187,7 @@ pub(crate) async fn apply_workspace_command(
 
     let started = Instant::now();
     let command_kind = workspace_command_kind(&command);
+    tracing::Span::current().record("workspace_id", workspace_id.to_string().as_str());
     info!(
         request_id = %request_id,
         workspace_id = %workspace_id,

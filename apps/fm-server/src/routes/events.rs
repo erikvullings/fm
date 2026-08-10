@@ -57,14 +57,16 @@ pub(crate) async fn get_events(
         tokio::time::Instant::now() + KEEP_ALIVE_INTERVAL,
         KEEP_ALIVE_INTERVAL,
     );
+    let connection_state = state.connection_state.clone();
     let events = stream::unfold(
-        (subscription, session_end, keep_alive),
-        |(mut subscription, session_end, mut keep_alive)| async move {
+        (subscription, session_end, keep_alive, connection_state),
+        |(mut subscription, session_end, mut keep_alive, connection_state)| async move {
             let item = tokio::select! {
                 () = session_end.cancelled() => return None,
                 _ = keep_alive.tick() => Ok(keep_alive_event()),
                 received = subscription.recv() => match received {
                     Ok(SubscriptionEvent::Event(envelope)) => {
+                        connection_state.record_event();
                         let name = envelope.payload.event_name();
                         let id = envelope.event_id.to_string();
                         serialize_event_envelope(&envelope)
@@ -83,7 +85,10 @@ pub(crate) async fn get_events(
                     Err(_) => return None,
                 }
             };
-            Some((item, (subscription, session_end, keep_alive)))
+            Some((
+                item,
+                (subscription, session_end, keep_alive, connection_state),
+            ))
         },
     );
     Sse::new(events).into_response()

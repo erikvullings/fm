@@ -1,7 +1,8 @@
 /** Tests for diagnostics view component. */
 
-import { describe, it, expect, vi } from "vitest";
-import { diagnosticsFromDto, DiagnosticsView } from "./diagnostics";
+import { describe, it, expect } from "vitest";
+import type { DiagnosticsView } from "./diagnostics";
+import { diagnosticsFromDto } from "./diagnostics";
 
 describe("Diagnostics", () => {
   describe("diagnosticsFromDto", () => {
@@ -67,7 +68,7 @@ describe("Diagnostics", () => {
       expect(result.connectionState.connected).toBe(true);
       expect(result.connectionState.eventsReceived).toBe(42);
       expect(result.loadedPlugins).toHaveLength(1);
-      expect(result.loadedPlugins[0].name).toBe("Test Plugin");
+      expect(result.loadedPlugins[0]?.name).toBe("Test Plugin");
       expect(result.recentErrors).toHaveLength(1);
       expect(result.operationQueueStatus.queuedCount).toBe(1);
     });

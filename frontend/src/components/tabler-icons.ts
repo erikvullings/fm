@@ -128,3 +128,9 @@ export const linkIcon = trustedStrokeIcon(
     '<path d="M13 18l-.397 .534a5.068 5.068 0 0 1 -7.127 0a4.972 4.972 0 0 1 0 -7.071l.523 -.461" />',
   'fm-icon-link',
 );
+
+/** "activity" — diagnostics / system health indicator. */
+export const activityIcon = trustedStrokeIcon(
+  '<path d="M3 12h3l3 -8l3 16l3 -8h3" />',
+  'fm-icon-activity',
+);

@@ -37,10 +37,14 @@ fm-domain.workspace = true
 fm-events.workspace = true
 fm-platform.workspace = true
 fm-transport-dto.workspace = true
+dirs.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tauri.workspace = true
 tokio.workspace = true
+tracing.workspace = true
+tracing-appender.workspace = true
+tracing-subscriber.workspace = true
 uuid.workspace = true
 thiserror.workspace = true
 

@@ -10,6 +10,8 @@ use clap::{Parser, Subcommand};
 use fm_server::config::ServerConfig;
 use tokio::net::TcpListener;
 use tracing_subscriber::EnvFilter;
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::util::SubscriberInitExt;
 
 /// Command line and environment configuration for the Axum host.
 #[derive(Parser, Debug)]
@@ -101,14 +103,7 @@ async fn main() {
         return;
     }
 
-    tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| {
-            // notify's poll backend logs a WARN for every transient walkdir race (e.g. a file
-            // disappearing between listing and stat, such as macOS's `.VolumeIcon.icns`); these
-            // are expected and not actionable, so keep that target quiet by default.
-            EnvFilter::new("info,notify::poll=error")
-        }))
-        .init();
+    init_tracing();
 
     let config: ServerConfig = cli.into();
     let router = fm_server::build_router(&config);
@@ -150,4 +145,47 @@ async fn main() {
     axum::serve(listener, router)
         .await
         .expect("fm-server exited unexpectedly");
+}
+
+/// Initialises structured tracing.
+///
+/// - `RUST_LOG` controls the level filter (default: `info,notify::poll=error`).
+/// - `FM_LOG_FORMAT` controls the output format: `compact` (default), `pretty`, or `json`.
+/// - `FM_LOG_FILE` redirects output to a rolling daily log file at the given path prefix (spec §30).
+fn init_tracing() {
+    let filter = EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| EnvFilter::new("info,notify::poll=error"));
+
+    let format = std::env::var("FM_LOG_FORMAT").unwrap_or_default();
+    let log_file = std::env::var("FM_LOG_FILE").ok();
+
+    match log_file {
+        Some(path) => {
+            let dir = std::path::Path::new(&path)
+                .parent()
+                .unwrap_or(std::path::Path::new("."));
+            let prefix = std::path::Path::new(&path)
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("fm-server");
+            let file_appender = tracing_appender::rolling::daily(dir, prefix);
+            let (non_blocking, _guard) = tracing_appender::non_blocking(file_appender);
+            // _guard must live for the program's lifetime; leak it intentionally.
+            std::mem::forget(_guard);
+            tracing_subscriber::registry()
+                .with(filter)
+                .with(tracing_subscriber::fmt::layer().with_writer(non_blocking))
+                .init();
+        }
+        None => match format.as_str() {
+            "pretty" => tracing_subscriber::registry()
+                .with(filter)
+                .with(tracing_subscriber::fmt::layer().pretty())
+                .init(),
+            _ => tracing_subscriber::registry()
+                .with(filter)
+                .with(tracing_subscriber::fmt::layer().compact())
+                .init(),
+        },
+    }
 }

@@ -57,10 +57,10 @@ fn traverse_tree(path: &std::path::Path) -> usize {
         if let Ok(entries) = fs::read_dir(path) {
             for entry in entries.flatten() {
                 *count += 1;
-                if let Ok(metadata) = entry.metadata() {
-                    if metadata.is_dir() {
-                        recurse(&entry.path(), count);
-                    }
+                if let Ok(metadata) = entry.metadata()
+                    && metadata.is_dir()
+                {
+                    recurse(&entry.path(), count);
                 }
             }
         }

@@ -40,6 +40,7 @@ pub(crate) async fn enable_plugin(
     Extension(request_id): Extension<RequestId>,
     Path(plugin_id): Path<String>,
 ) -> Result<StatusCode, ApiError> {
+    tracing::Span::current().record("plugin_id", plugin_id.as_str());
     state
         .service
         .set_plugin_enabled(plugin_id, true)
@@ -53,6 +54,7 @@ pub(crate) async fn disable_plugin(
     Extension(request_id): Extension<RequestId>,
     Path(plugin_id): Path<String>,
 ) -> Result<StatusCode, ApiError> {
+    tracing::Span::current().record("plugin_id", plugin_id.as_str());
     state
         .service
         .set_plugin_enabled(plugin_id, false)

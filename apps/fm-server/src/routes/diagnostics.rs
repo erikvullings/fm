@@ -1,9 +1,8 @@
 //! `GET /api/v1/diagnostics` - Diagnostics view for troubleshooting (spec §30).
 
-use axum::{extract::State, Json};
+use axum::{Json, extract::State};
 use fm_transport_dto::{
-    ConnectionStateDto, DiagnosticErrorDto, DiagnosticsDto, OperationQueueStatusDto,
-    PluginStatusDto,
+    ConnectionStateDto, DiagnosticsDto, OperationQueueStatusDto, PluginStatusDto,
 };
 
 /// Provides comprehensive diagnostics information for troubleshooting and bug reports.
@@ -45,18 +44,23 @@ pub(crate) async fn get_diagnostics(
         total_pending_size: 0,
     };
 
-    // Build connection state (SSE state)
-    // TODO: Track actual SSE connection state in AppState
+    // Get connection state from AppState
+    let (connected, last_event_received, uptime_seconds, events_received) =
+        state.connection_state.snapshot();
     let connection_state = ConnectionStateDto {
-        connected: true,
-        last_event_received: None,
-        uptime_seconds: 0, // TODO: track app uptime
-        events_received: 0, // TODO: count events
-        status_message: "Connected".to_string(),
+        connected,
+        last_event_received,
+        uptime_seconds,
+        events_received,
+        status_message: if connected {
+            "Connected".to_string()
+        } else {
+            "Disconnected".to_string()
+        },
     };
 
-    // Placeholder recent errors (TODO: implement error buffer in application state)
-    let recent_errors: Vec<DiagnosticErrorDto> = vec![];
+    // Get recent errors from error buffer
+    let recent_errors = state.error_buffer.get_all();
 
     // Convert platform to string representation
     let platform_str = match runtime_capabilities.platform {
@@ -78,5 +82,3 @@ pub(crate) async fn get_diagnostics(
         operation_queue_status,
     })
 }
-
-

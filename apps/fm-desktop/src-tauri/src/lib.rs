@@ -15,6 +15,9 @@ use fm_application::FileManagerService;
 use fm_events::EventBus;
 use fm_transport_dto::RuntimeKindDto;
 use tauri::Manager;
+use tracing_subscriber::EnvFilter;
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::util::SubscriberInitExt;
 
 /// State injected into every Tauri command (spec §7: commands only call the
 /// service).
@@ -38,6 +41,7 @@ fn build_context<R: tauri::Runtime>() -> tauri::Context<R> {
 /// No Axum server is started in-process to reuse HTTP (spec §11) — the
 /// Tauri commands in [`commands`] call `FileManagerService` directly.
 pub fn run() {
+    init_tracing();
     tauri::Builder::default()
         .manage(AppState {
             service: Arc::new(
@@ -116,6 +120,55 @@ pub fn run() {
         ])
         .run(build_context())
         .expect("error while running the Tauri application");
+}
+
+/// Initialises structured tracing for the desktop host (spec §30).
+///
+/// - `RUST_LOG` controls level filter (default: `info`).
+/// - `FM_LOG_FORMAT` controls output format: `compact` (default) or `pretty`.
+/// - `FM_LOG_FILE` writes a rolling daily log to the given path prefix (desktop mode).
+fn init_tracing() {
+    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
+
+    let format = std::env::var("FM_LOG_FORMAT").unwrap_or_default();
+    let log_file = std::env::var("FM_LOG_FILE").ok().or_else(|| {
+        // Default desktop log location: OS data dir / fm / fm-desktop.log
+        dirs::data_dir().map(|d| {
+            d.join("fm")
+                .join("fm-desktop.log")
+                .to_string_lossy()
+                .into_owned()
+        })
+    });
+
+    match log_file {
+        Some(path) => {
+            let dir = std::path::Path::new(&path)
+                .parent()
+                .unwrap_or(std::path::Path::new("."));
+            let prefix = std::path::Path::new(&path)
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("fm-desktop");
+            let file_appender = tracing_appender::rolling::daily(dir, prefix);
+            let (non_blocking, _guard) = tracing_appender::non_blocking(file_appender);
+            std::mem::forget(_guard);
+            tracing_subscriber::registry()
+                .with(filter)
+                .with(tracing_subscriber::fmt::layer().with_writer(non_blocking))
+                .init();
+        }
+        None => match format.as_str() {
+            "pretty" => tracing_subscriber::registry()
+                .with(filter)
+                .with(tracing_subscriber::fmt::layer().pretty())
+                .init(),
+            _ => tracing_subscriber::registry()
+                .with(filter)
+                .with(tracing_subscriber::fmt::layer().compact())
+                .init(),
+        },
+    }
 }
 
 #[cfg(test)]

@@ -37,13 +37,13 @@ pub use connection::{
     SmbConnectionConfigurationDto, SshAuthenticationMethodDto, SshConnectionConfigurationDto,
     UpdateConnectionRequestDto, WebDavConnectionConfigurationDto,
 };
-pub use entry::{
-    ArchiveInfoDto, EntryKindDto, EntryMetadataDto, EntrySummaryDto, ImageDimensionsDto,
-    MediaMetadataDto, OwnershipInfoDto, PermissionsInfoDto,
-};
 pub use diagnostics::{
     ConnectionStateDto, DiagnosticErrorDto, DiagnosticsDto, OperationQueueStatusDto,
     PluginStatusDto,
+};
+pub use entry::{
+    ArchiveInfoDto, EntryKindDto, EntryMetadataDto, EntrySummaryDto, ImageDimensionsDto,
+    MediaMetadataDto, OwnershipInfoDto, PermissionsInfoDto,
 };
 pub use error::{ApplicationErrorCode, ApplicationErrorDto};
 pub use files::{

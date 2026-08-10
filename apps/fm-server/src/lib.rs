@@ -181,6 +181,8 @@ pub fn build_router_with_service_and_session(
         service,
         cors_allowed_origins: Arc::from(config.cors_allowed_origins.clone()),
         session_end: session.cancellation,
+        error_buffer: state::ErrorBuffer::new(),
+        connection_state: state::ConnectionState::new(),
     };
 
     let (router, api) = api_router().split_for_parts();
@@ -206,7 +208,9 @@ pub fn build_router_with_service_and_session(
 
 /// Builds a `tracing` span for each request, carrying the correlation id set
 /// by [`MakeRequestUuid`] and the request duration/status recorded by
-/// `TraceLayer`'s default callbacks (spec §30).
+/// `TraceLayer`'s default callbacks (spec §30). Additional context fields
+/// (operation_id, workspace_id, plugin_id, provider_id) may be recorded by
+/// handlers as they become known during request processing.
 fn trace_span(request: &axum::http::Request<axum::body::Body>) -> tracing::Span {
     let request_id = request
         .extensions()
@@ -219,6 +223,12 @@ fn trace_span(request: &axum::http::Request<axum::body::Body>) -> tracing::Span 
         method = %request.method(),
         uri = %request.uri(),
         request_id,
+        operation_id = tracing::field::Empty,
+        workspace_id = tracing::field::Empty,
+        plugin_id = tracing::field::Empty,
+        provider_id = tracing::field::Empty,
+        duration_ms = tracing::field::Empty,
+        result = tracing::field::Empty,
     )
 }
 

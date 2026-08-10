@@ -128,23 +128,19 @@ mod tests {
                 events_received: 42,
                 status_message: "Connected".to_string(),
             },
-            loaded_plugins: vec![
-                PluginStatusDto {
-                    plugin_id: "plugin-1".to_string(),
-                    name: "Test Plugin".to_string(),
-                    enabled: true,
-                    version: "1.0.0".to_string(),
-                    error_count: 0,
-                },
-            ],
-            recent_errors: vec![
-                DiagnosticErrorDto {
-                    timestamp: "2026-08-10T12:34:50Z".to_string(),
-                    message: "Sample error message".to_string(),
-                    code: "TEST_ERROR".to_string(),
-                    context: Some("op-123".to_string()),
-                },
-            ],
+            loaded_plugins: vec![PluginStatusDto {
+                plugin_id: "plugin-1".to_string(),
+                name: "Test Plugin".to_string(),
+                enabled: true,
+                version: "1.0.0".to_string(),
+                error_count: 0,
+            }],
+            recent_errors: vec![DiagnosticErrorDto {
+                timestamp: "2026-08-10T12:34:50Z".to_string(),
+                message: "Sample error message".to_string(),
+                code: "TEST_ERROR".to_string(),
+                context: Some("op-123".to_string()),
+            }],
             operation_queue_status: OperationQueueStatusDto {
                 queued_count: 1,
                 running_count: 1,

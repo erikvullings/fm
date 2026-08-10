@@ -33,6 +33,9 @@ pub(crate) async fn list_directory(
 ) -> Result<Json<DirectorySnapshotDto>, ApiError> {
     let request_id = extract_request_id(&request_id);
     let started = Instant::now();
+    tracing::Span::current()
+        .record("workspace_id", request.workspace_id.to_string().as_str())
+        .record("provider_id", request.location.provider_id.as_str());
     info!(
         request_id = %request_id,
         workspace_id = %request.workspace_id,

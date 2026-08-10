@@ -8,6 +8,7 @@ import {
   closeIcon,
   commandIcon,
   cornerLeftUpIcon,
+  activityIcon,
   layoutGridIcon,
   searchIcon,
   settingsIcon,
@@ -86,6 +87,7 @@ import {
   type SettingsControllerContext,
 } from '../features/settings/settings-controller';
 import { SettingsEditor } from '../features/settings/settings-editor';
+import { DiagnosticsViewComponent } from '../features/diagnostics/diagnostics-view';
 import {
   type SortColumn,
   type SortModel,
@@ -242,6 +244,8 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
   let currentSettings: Settings | undefined;
   let settingsDisclosureElement: HTMLDetailsElement | undefined;
   let settingsDialogOpen = false;
+  let diagnosticsDialogOpen = false;
+  let diagnosticsDisclosureElement: HTMLDetailsElement | undefined;
   let workspaceDisclosureElement: HTMLDetailsElement | undefined;
   let registeredActions: readonly ActionDescriptor[] = [];
   let systemLocations: readonly SystemLocation[] = [];
@@ -1615,6 +1619,72 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
                       workspaceController.deleteWorkspaceAction(workspaceId),
                   }),
                 ]),
+              ],
+            ),
+            m(
+              IconButton,
+              {
+                className: 'fm-diagnostics-button',
+                'aria-label': 'Diagnostics',
+                tooltip: 'Show system diagnostics',
+                onclick: () => {
+                  if (diagnosticsDisclosureElement === undefined) return;
+                  diagnosticsDisclosureElement.open = !diagnosticsDisclosureElement.open;
+                  diagnosticsDialogOpen = diagnosticsDisclosureElement.open;
+                  m.redraw();
+                },
+              },
+              activityIcon(),
+            ),
+            m(
+              'details.fm-diagnostics-disclosure',
+              {
+                oncreate: ({ dom }) => {
+                  diagnosticsDisclosureElement = dom as HTMLDetailsElement;
+                },
+                onremove: () => {
+                  diagnosticsDisclosureElement = undefined;
+                },
+              },
+              [
+                m('summary.fm-disclosure-summary-hidden'),
+                m(
+                  '.fm-diagnostics-editor',
+                  {
+                    role: 'dialog',
+                    'aria-label': 'System Diagnostics',
+                    onclick: (event: MouseEvent) => {
+                      if (event.target === event.currentTarget) {
+                        if (diagnosticsDisclosureElement !== undefined)
+                          diagnosticsDisclosureElement.open = false;
+                        diagnosticsDialogOpen = false;
+                      }
+                    },
+                  },
+                  [
+                    m('.fm-settings-editor-panel', [
+                      m('.fm-settings-editor-heading', [
+                        m('strong', 'System Diagnostics'),
+                        m(
+                          'button',
+                          {
+                            type: 'button',
+                            'aria-label': 'Close diagnostics',
+                            onclick: () => {
+                              if (diagnosticsDisclosureElement !== undefined)
+                                diagnosticsDisclosureElement.open = false;
+                              diagnosticsDialogOpen = false;
+                            },
+                          },
+                          closeIcon(),
+                        ),
+                      ]),
+                      diagnosticsDialogOpen
+                        ? m(DiagnosticsViewComponent)
+                        : undefined,
+                    ]),
+                  ],
+                ),
               ],
             ),
             m(

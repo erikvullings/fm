@@ -39,8 +39,10 @@ mod security_tests {
         std::fs::write(&safe_file, b"content").unwrap();
 
         // Accessing the file should work
-        let result =
-            accessible_roots::validate_within_accessible_roots(&safe_file, &[allowed.clone()]);
+        let result = accessible_roots::validate_within_accessible_roots(
+            &safe_file,
+            std::slice::from_ref(&allowed),
+        );
         assert!(result.is_ok());
 
         // Attempting traversal should fail

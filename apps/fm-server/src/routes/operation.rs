@@ -66,7 +66,7 @@ pub(crate) async fn start_operation(
 ) -> Result<(StatusCode, Json<OperationDto>), ApiError> {
     let correlation_id = extract_request_id(&request_id);
     let started = Instant::now();
-    let operation_kind = request.operation_type.clone();
+    let operation_kind = request.operation_type;
     let key = headers
         .get("idempotency-key")
         .and_then(|value| value.to_str().ok())
@@ -79,6 +79,7 @@ pub(crate) async fn start_operation(
     );
     match state.service.start_operation(request, key) {
         Ok(operation) => {
+            tracing::Span::current().record("operation_id", operation.id.to_string().as_str());
             info!(
                 request_id = %correlation_id,
                 operation_id = %operation.id,

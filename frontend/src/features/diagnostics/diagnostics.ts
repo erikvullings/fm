@@ -1,6 +1,6 @@
 /** Diagnostics model and types (spec §30). */
 
-import { RuntimeCapabilities } from "../../models/runtime-capabilities";
+import type { RuntimeCapabilities } from "../../models/runtime-capabilities";
 
 /** Diagnostics information for troubleshooting and bug reports. */
 export interface DiagnosticsView {
