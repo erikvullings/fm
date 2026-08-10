@@ -41,6 +41,7 @@ use state::AppState;
 fn api_router() -> OpenApiRouter<AppState> {
     OpenApiRouter::with_openapi(routes::api_doc())
         .routes(utoipa_axum::routes!(routes::health::get_health))
+        .routes(utoipa_axum::routes!(routes::diagnostics::get_diagnostics))
         .routes(utoipa_axum::routes!(routes::events::get_events))
         .routes(utoipa_axum::routes!(
             routes::runtime::get_runtime_capabilities

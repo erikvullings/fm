@@ -8,6 +8,11 @@ dist/
 *.tsbuildinfo
 .vite/
 
+# Benchmarks and test fixtures (generated, reproducible via seed)
+fixtures/benchmark/
+/tmp/
+.criterion/
+
 # Tooling caches / logs
 *.log
 npm-debug.log*

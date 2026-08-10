@@ -7,6 +7,7 @@
 
 pub mod action;
 pub mod connection;
+pub mod diagnostics;
 pub mod entry;
 pub mod error;
 pub mod files;
@@ -14,6 +15,7 @@ pub mod health;
 pub mod location;
 pub mod operation;
 pub mod plugin;
+pub mod redaction;
 pub mod requests;
 pub mod runtime;
 pub mod search;
@@ -39,6 +41,10 @@ pub use entry::{
     ArchiveInfoDto, EntryKindDto, EntryMetadataDto, EntrySummaryDto, ImageDimensionsDto,
     MediaMetadataDto, OwnershipInfoDto, PermissionsInfoDto,
 };
+pub use diagnostics::{
+    ConnectionStateDto, DiagnosticErrorDto, DiagnosticsDto, OperationQueueStatusDto,
+    PluginStatusDto,
+};
 pub use error::{ApplicationErrorCode, ApplicationErrorDto};
 pub use files::{
     ArchiveCredentialRequestDto, LoadEditableFileRequestDto, LoadEditableFileResponseDto,
@@ -58,6 +64,7 @@ pub use plugin::{
     PluginColumnDto, PluginDescriptorDto, PluginIconDefinitionDto, PluginIconThemeDto,
     PluginLogEntryDto, PluginPermissionsDto,
 };
+pub use redaction::{redact, redact_absolute_paths, redact_path};
 pub use requests::{EntryMetadataRequest, ListDirectoryRequest, NavigateRequest};
 pub use runtime::{PlatformKindDto, RuntimeCapabilitiesDto, RuntimeKindDto};
 pub use search::{StartSearchRequestDto, StartSearchResponseDto};

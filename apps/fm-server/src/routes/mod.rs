@@ -3,6 +3,7 @@
 
 pub(crate) mod action;
 pub(crate) mod connection;
+pub(crate) mod diagnostics;
 pub(crate) mod directory;
 pub(crate) mod events;
 pub(crate) mod files;

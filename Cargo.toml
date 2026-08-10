@@ -51,6 +51,7 @@ axum = "0.8.9"
 bitflags = "2.13.1"
 chrono = { version = "0.4.45", features = ["serde"] }
 clap = { version = "4.6.4", features = ["derive", "env"] }
+criterion = { version = "0.5.1", features = ["html_reports"] }
 dirs = "6.0.0"
 drag = "2.1.1"
 futures = "0.3.31"
