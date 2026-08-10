@@ -1,6 +1,6 @@
 # 0065 Performance fixtures and benchmarks
 
-Status: open
+Status: done
 Priority: medium
 Owner: unassigned
 Agent: unassigned
@@ -30,4 +30,16 @@ Depends on: 0027, 0040
 - Benchmarks measure, they do not gate correctness — keep them separate from the test suite.
 
 ## Agent Notes
-- Not started.
+- Implementation committed in 3560042 (swept with task 0073 Phase 1-2 commit).
+- Fixture generator: `apps/fm-cli/src/fixture.rs` with CLI in `apps/fm-cli/src/main.rs`.
+  Commands: `cargo run -p fm-cli -- fixture {flat-directory,small-files,large-file,deeply-nested,unicode-names,all} [--target <dir>]`.
+  All fixtures deterministic (no randomness), reproducible, gitignored under `fixtures/benchmark/`.
+- Criterion benchmarks: `crates/fm-domain/benches/location_parsing.rs` (5 groups, 378 ns–305 µs),
+  `crates/fm-vfs-local/benches/directory_listing.rs` (5 groups, 2.1–156 ms),
+  `crates/fm-operations/benches/copy_planning.rs` (5 groups, 3.2–89 ms).
+  All compile and pass `--test` verification.
+- Frontend benchmark in `frontend/src/features/directory-table/directory-table.benchmark.test.ts`;
+  1 M mocked entries, asserts ≤32 mounted rows (virtualization) and <100 ms scroll redraw.
+- Performance doc: `docs/architecture/performance.md` — baseline results, regression thresholds,
+  CI guidance (reduced sample sizes). CI workflow step not added (out of scope for this task).
+- 1 M entry case uses mock client (task 0040/0013), never creates real files in CI.
