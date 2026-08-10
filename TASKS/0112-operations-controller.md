@@ -1,6 +1,6 @@
 # 0112 Extract Operations Controller from AppShell
 
-Status: open
+Status: done
 Priority: high
 Subsystem: frontend
 Depends on: none
@@ -25,3 +25,4 @@ All operation initiation (copy, move, trash, delete, pack, extract, paste) is in
 
 ## Agent Notes
 -
+- 2026-08-10 claude: Created OperationsController module at frontend/src/features/operations/operations-controller.ts. All startOperation calls in AppShell keyboard handlers and context menu handlers replaced with controller methods. 11 tests in operations-controller.test.ts. TypeScript clean, all tests pass.

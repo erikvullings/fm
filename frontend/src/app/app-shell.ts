@@ -86,6 +86,10 @@ import {
   reduceOperationEvents,
   transitionOperationState,
 } from '../features/operations/operation-state';
+import {
+  createOperationsController,
+  type OperationsController,
+} from '../features/operations/operations-controller';
 import { PermanentDeleteDialog } from '../features/operations/permanent-delete-dialog';
 import { CloseLastTabDialog } from '../features/panes/close-last-tab-dialog';
 import { isParentEntry, withParentEntry } from '../features/panes/parent-entry';
@@ -1522,17 +1526,14 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       const currentClipboard = clipboard();
       const mode = currentClipboard.mode;
       if (mode === undefined || directory.location === undefined) return;
-      void attrsClient
-        .startOperation({
-          type: mode,
-          sources: currentClipboard.locations,
-          destination: directory.location,
-          conflictPolicy: 'ask',
-        })
-        .then(() => {
-          if (mode === 'move') replaceClipboard(clearClipboard(currentClipboard));
-          m.redraw();
-        });
+      void (
+        mode === 'move'
+          ? opsController.move(currentClipboard.locations, directory.location)
+          : opsController.copy(currentClipboard.locations, directory.location)
+      ).then(() => {
+        if (mode === 'move') replaceClipboard(clearClipboard(currentClipboard));
+        m.redraw();
+      });
       return;
     }
     invokePaletteAction(action, undefined, {
@@ -1642,13 +1643,11 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
         const mode = currentClipboard.mode;
         if (mode === undefined || active === undefined) return;
         clipboardMessage = undefined;
-        void attrsClient
-          .startOperation({
-            type: mode,
-            sources: currentClipboard.locations,
-            destination: active.location,
-            conflictPolicy: 'ask',
-          })
+        void (
+          mode === 'move'
+            ? opsController.move(currentClipboard.locations, active.location)
+            : opsController.copy(currentClipboard.locations, active.location)
+        )
           .then(() => {
             if (mode === 'move') replaceClipboard(clearClipboard(currentClipboard));
             m.redraw();
@@ -1683,12 +1682,10 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
           : directories.get(activeTabKey(otherPaneId))?.location;
       if (selected.length > 0 && destination !== undefined) {
         event.preventDefault();
-        void attrsClient.startOperation({
-          type: 'copy',
-          sources: selected.map((entry) => entry.location),
+        void opsController.copy(
+          selected.map((entry) => entry.location),
           destination,
-          conflictPolicy: 'ask',
-        });
+        );
       }
       return;
     }
@@ -1742,12 +1739,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       const selectedEntry = selected?.length === 1 ? selected[0] : undefined;
       if (selectedEntry !== undefined && destination !== undefined) {
         event.preventDefault();
-        void attrsClient.startOperation({
-          type: 'copy',
-          sources: [selectedEntry.location],
-          destination,
-          conflictPolicy: 'ask',
-        });
+        void opsController.extract(selectedEntry.location, destination);
       }
       return;
     }
@@ -1765,12 +1757,10 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
           : directories.get(activeTabKey(otherPaneId))?.location;
       if (selected.length > 0 && destination !== undefined) {
         event.preventDefault();
-        void attrsClient.startOperation({
-          type: 'move',
-          sources: selected.map((entry) => entry.location),
+        void opsController.move(
+          selected.map((entry) => entry.location),
           destination,
-          conflictPolicy: 'ask',
-        });
+        );
       }
       return;
     }
@@ -1783,11 +1773,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       const selected = getSelectedEntries(selection, directory?.entries ?? []);
       if (selected.length > 0) {
         event.preventDefault();
-        void attrsClient.startOperation({
-          type: 'trash',
-          sources: selected.map((entry) => entry.location),
-          conflictPolicy: 'ask',
-        });
+        void opsController.trash(selected.map((entry) => entry.location));
       }
       return;
     }
@@ -1800,13 +1786,11 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       const selected = getSelectedEntries(selection, directory?.entries ?? []);
       if (selected.length > 0) {
         event.preventDefault();
-        void attrsClient.startOperation({
-          type: 'delete',
-          sources: selected.map((entry) => entry.location),
-          conflictPolicy: 'ask',
-          permanentDeleteConfirmed: currentSettings?.confirmPermanentDelete === false,
-          overrideReadOnly: false,
-        });
+        void opsController.delete(
+          selected.map((entry) => entry.location),
+          currentSettings?.confirmPermanentDelete === false,
+          false,
+        );
       }
       return;
     }
@@ -2155,6 +2139,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
   }
 
   let attrsClient: FileManagerClient;
+  let opsController: OperationsController;
 
   function replaceWorkspace(next: WorkspaceProjection): void {
     workspace = next;
@@ -2651,12 +2636,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
         const active = activeDirectory();
         if (active === undefined || active.paneId !== paneId) return;
         const destinationUri = `${active.location.uri.replace(/\/$/u, '')}/${encodeURIComponent(name)}`;
-        void client.startOperation({
-          type: 'rename',
-          sources: [entry.location],
-          destination: { ...entry.location, uri: destinationUri },
-          conflictPolicy: 'ask',
-        });
+        void opsController.rename(entry.location, { ...entry.location, uri: destinationUri });
       },
       onContextMenu: (entries, x, y) => openContextMenu(paneId, entries, x, y),
       onDragStart: (draggedEntries, event) => {
@@ -2699,12 +2679,9 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
         }
         const sources = draggedLocations;
         draggedLocations = [];
-        void client.startOperation({
-          type: nativeDropInProgress ? 'copy' : operationForDrop(platform, event),
-          sources,
-          destination: target,
-          conflictPolicy: 'ask',
-        });
+        void (nativeDropInProgress || operationForDrop(platform, event) === 'copy'
+          ? opsController.copy(sources, target)
+          : opsController.move(sources, target));
       },
       onTabDragOver: (targetTabId, event) => {
         const targetTab = pane?.tabsById[targetTabId];
@@ -2733,12 +2710,9 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
         }
         const sources = draggedLocations;
         draggedLocations = [];
-        void client.startOperation({
-          type: nativeDropInProgress ? 'copy' : operationForDrop(platform, event),
-          sources,
-          destination: targetTab.location,
-          conflictPolicy: 'ask',
-        });
+        void (nativeDropInProgress || operationForDrop(platform, event) === 'copy'
+          ? opsController.copy(sources, targetTab.location)
+          : opsController.move(sources, targetTab.location));
       },
       onMultiRename: (selected) => {
         if (tab === undefined) return;
@@ -2792,6 +2766,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
   return {
     oninit: ({ attrs }) => {
       attrsClient = attrs.client;
+      opsController = createOperationsController(attrs.client);
       keybindingRuntime = attrs.runtime === 'http' ? 'browser' : 'desktop';
       runtimeKind = attrs.runtime;
       document.addEventListener('keydown', handleGlobalKeydown);
@@ -3263,18 +3238,9 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
               createDirectoryOpen = false;
               createDirectoryLocation = undefined;
               pendingCreatedLocation = `${location.uri.replace(/\/$/u, '')}/${encodeURIComponent(name)}`;
-              void attrs.client
-                .startOperation({
-                  type: 'createDirectory',
-                  sources: [],
-                  destination: location,
-                  conflictPolicy: 'ask',
-                  name,
-                  createIntermediateDirectories: false,
-                })
-                .catch(() => {
-                  pendingCreatedLocation = undefined;
-                });
+              void opsController.createDirectory(location, name).catch(() => {
+                pendingCreatedLocation = undefined;
+              });
             },
           }),
           m(ArchiveCreateDialog, {
@@ -3287,17 +3253,16 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
               const request = archiveCreateRequest;
               if (request === undefined) return;
               archiveCreateRequest = undefined;
-              void attrs.client.startOperation({
-                type: request.moveSources ? 'moveToArchive' : 'createArchive',
-                sources: request.sources,
-                destination: {
+              void opsController.pack(
+                request.sources,
+                {
                   ...request.destinationDirectory,
                   uri: `${request.destinationDirectory.uri.replace(/\/$/u, '')}/${encodeURIComponent(name)}`,
                 },
-                conflictPolicy: 'ask',
-                archiveFormat: format,
-                archiveCompressionLevel: compressionLevel,
-              });
+                request.moveSources,
+                format,
+                compressionLevel,
+              );
             },
           }),
           m(MultiRenameDialog, {
@@ -3328,12 +3293,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
               multiRenameLocation = undefined;
               multiRenameExistingNames = new Set();
               if (sources.length === 0) return;
-              void attrs.client.startOperation({
-                type: 'rename',
-                sources,
-                destinations,
-                conflictPolicy: 'ask',
-              });
+              void opsController.multiRename(sources, destinations);
             },
           }),
           m(ArchivePasswordDialog, {
