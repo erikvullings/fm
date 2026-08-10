@@ -12,20 +12,9 @@ import {
   searchIcon,
   settingsIcon,
 } from '../components/tabler-icons';
-import {
-  clearClipboard,
-  emptyClipboard,
-} from '../features/clipboard/clipboard';
-import {
-  copySelectionToClipboard,
-  isCopySelectionAction,
-} from '../features/clipboard/copy-selection-actions';
+import { emptyClipboard } from '../features/clipboard/clipboard';
 import { CommandPalette } from '../features/command-palette/command-palette';
-import {
-  type CommandAvailabilityContext,
-  evaluateActionAvailability,
-  menuActionsForContext,
-} from '../features/commands/availability';
+import { evaluateActionAvailability, menuActionsForContext } from '../features/commands/availability';
 import { ContextMenu as DirectoryContextMenu } from '../features/commands/context-menu';
 import { ConnectionsManager } from '../features/connections/connection-editor';
 import {
@@ -55,6 +44,10 @@ import {
   createBackendEventHandler,
 } from '../features/events/backend-event-handler';
 import { recordRecentLocation } from '../features/favourites/favourites';
+import {
+  createGlobalKeydownHandler,
+  type GlobalKeydownContext,
+} from '../features/keybindings/global-keydown-handler';
 import { ArchivePasswordDialog } from '../features/navigation/archive-password-dialog';
 import {
   createNavigationController,
@@ -78,6 +71,11 @@ import {
   createOperationsController,
   type OperationsController,
 } from '../features/operations/operations-controller';
+import {
+  createActionCommandController,
+  type ActionCommandController,
+  type ActionCommandControllerContext,
+} from '../features/actions/action-command-controller';
 import { PermanentDeleteDialog } from '../features/operations/permanent-delete-dialog';
 import { CloseLastTabDialog } from '../features/panes/close-last-tab-dialog';
 import {
@@ -85,13 +83,17 @@ import {
   type TabController,
   type TabControllerContext,
 } from '../features/panes/tab-controller';
-
 import {
   createFileViewerController,
   type FileViewerController,
   type FileViewerState,
 } from '../features/preview/file-viewer-controller';
 import { filterEntries } from '../features/quick-filter/quick-filter';
+import {
+  createFindFilesController,
+  type FindFilesController,
+  type FindFilesControllerContext,
+} from '../features/search/find-files-controller';
 import type { FindFilesSearchParams } from '../features/search/find-files-dialog';
 import { FindFilesDialog } from '../features/search/find-files-dialog';
 import type { SelectionPlatform } from '../features/selection/keybindings';
@@ -102,16 +104,12 @@ import {
   reduceSelection,
   type SelectionState,
 } from '../features/selection/selection';
-import { SettingsEditor } from '../features/settings/settings-editor';
 import {
   createSettingsController,
   type SettingsController,
   type SettingsControllerContext,
 } from '../features/settings/settings-controller';
-import {
-  createGlobalKeydownHandler,
-  type GlobalKeydownContext,
-} from '../features/keybindings/global-keydown-handler';
+import { SettingsEditor } from '../features/settings/settings-editor';
 import {
   type SortColumn,
   type SortModel,
@@ -135,13 +133,9 @@ import {
 } from '../features/workspace/workspace-layout';
 import { sortWorkspaceSummaries } from '../features/workspace/workspace-manager';
 import { WorkspaceSwitcher } from '../features/workspace/workspace-switcher';
-import {
-  footerFunctionKeyBindings,
-  type KeybindingRuntime,
-} from '../keybindings/dispatcher';
+import { footerFunctionKeyBindings, type KeybindingRuntime } from '../keybindings/dispatcher';
 import type {
   ActionDescriptor,
-  ActionInvocationContext,
   BackendEvent,
   Connection,
   DirectoryDelta,
@@ -343,6 +337,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
   let findFilesRoot: Location | undefined;
   let findFilesSearchId: string | undefined;
   let findFilesError: string | undefined;
+  let findFilesGeneration = 0;
   const findFilesRootsByLocationUri = new Map<string, Location>();
   /** The query text each `search://` result location was started with, so the breadcrumb/tab can
    * show `search: <query>` instead of the opaque search id in the location's URI. */
@@ -845,99 +840,6 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     return paneId === undefined || location === undefined ? undefined : { paneId, location };
   }
 
-  /** The active tab's current "show hidden files" setting, so a new search respects it. */
-  function activeShowHidden(paneId: PaneId): boolean {
-    const pane = workspace?.panesById[paneId];
-    const tab = pane === undefined ? undefined : pane.tabsById[pane.activeTabId];
-    return tab?.view.showHidden ?? false;
-  }
-
-  /** Opens filename search at the real directory that produced a virtual search location. */
-  function openFindFiles(): void {
-    const active = activeDirectory();
-    if (active === undefined) return;
-    findFilesRoot = findFilesRootsByLocationUri.get(active.location.uri) ?? active.location;
-    findFilesOpen = true;
-  }
-
-  /**
-   * Invalidates any in-flight `startSearch` resolution and running search
-   * when incremented, without depending on backend-assigned search ids
-   * (which are not yet known synchronously) for correlation.
-   */
-  let findFilesGeneration = 0;
-
-  function closeFindFiles(): void {
-    if (findFilesSearchId !== undefined) {
-      void attrsClient.cancelSearch(findFilesSearchId).catch(() => undefined);
-    }
-    findFilesGeneration += 1;
-    findFilesOpen = false;
-    findFilesRoot = undefined;
-    findFilesSearchId = undefined;
-    findFilesError = undefined;
-  }
-
-  /** Closes the query dialog without cancelling the search now displayed in the active pane. */
-  function dismissFindFiles(): void {
-    findFilesOpen = false;
-    findFilesRoot = undefined;
-    findFilesError = undefined;
-  }
-
-  /** Starts (or restarts) a search rooted at the dialog's current directory. */
-  function startFindFilesSearch(params: FindFilesSearchParams): void {
-    const root = findFilesRoot;
-    if (root === undefined || workspace === undefined) return;
-    if (findFilesSearchId !== undefined) {
-      void attrsClient.cancelSearch(findFilesSearchId).catch(() => undefined);
-    }
-    findFilesGeneration += 1;
-    const generation = findFilesGeneration;
-    findFilesError = undefined;
-    findFilesSearchId = undefined;
-    const searchPaneId = activeDirectory()?.paneId ?? workspace.activePaneId;
-    void attrsClient
-      .startSearch({
-        query: params.filenameQuery,
-        contentQuery: params.contentQuery,
-        contentRegex: params.contentRegex,
-        contentCaseSensitive: false,
-        contentWholeWord: true,
-        recurse: params.recurse,
-        showHidden: searchPaneId === undefined ? false : activeShowHidden(searchPaneId),
-        roots: [root],
-        workspaceId: workspace.id,
-      })
-      .then((result) => {
-        if (generation !== findFilesGeneration) {
-          void attrsClient.cancelSearch(result.searchId).catch(() => undefined);
-          return;
-        }
-        findFilesSearchId = result.searchId;
-        findFilesRootsByLocationUri.set(result.location.uri, root);
-        findFilesQueriesByLocationUri.set(
-          result.location.uri,
-          params.filenameQuery || JSON.stringify(params),
-        );
-        findFilesParamsByLocationUri.set(result.location.uri, params);
-        const paneId = activeDirectory()?.paneId ?? workspace?.activePaneId;
-        if (paneId === undefined) return;
-        dismissFindFiles();
-        void navigation.navigate(paneId, result.location).then(() => {
-          // Land keyboard focus in the pane so arrow keys move the cursor immediately,
-          // matching the UX of navigating there by clicking (task 0089 follow-up).
-          focusPane?.(paneId);
-          m.redraw();
-        });
-      })
-      .catch((error: unknown) => {
-        if (generation !== findFilesGeneration) return;
-        findFilesError = error instanceof Error ? error.message : 'Unable to start search';
-        m.redraw();
-      });
-  }
-
   function clipboard() {
     return appState?.clipboard ?? emptyClipboard;
   }
@@ -957,199 +859,6 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     return getSelectedEntryLocations(selection, directory?.entries ?? []);
   }
 
-  function actionContext() {
-    const active = activeDirectory();
-    const selection =
-      active === undefined ? undefined : selections.get(activeTabKey(active.paneId));
-    return {
-      ...(active === undefined ? {} : { paneId: active.paneId }),
-      ...(selection === undefined || selection.selectedEntryIds.length === 0
-        ? {}
-        : { selectedEntryIds: [...selection.selectedEntryIds] }),
-      ...(selection?.cursorEntryId === undefined ? {} : { cursorEntryId: selection.cursorEntryId }),
-    };
-  }
-
-  function commandAvailabilityContext(
-    selectedEntries?: readonly EntrySummary[],
-    paneId?: PaneId,
-  ): CommandAvailabilityContext {
-    const active = activeDirectory();
-    const effectivePaneId = paneId ?? active?.paneId;
-    const effectiveKey = effectivePaneId === undefined ? undefined : activeTabKey(effectivePaneId);
-    const effectiveEntries =
-      selectedEntries ??
-      (effectiveKey === undefined
-        ? []
-        : getSelectedEntries(
-          selections.get(effectiveKey),
-          directories.get(effectiveKey)?.entries ?? [],
-        ));
-    const directory = effectiveKey === undefined ? undefined : directories.get(effectiveKey);
-    return {
-      selectedEntries: effectiveEntries,
-      locationWritable: directory?.writable === true,
-      clipboardHasEntries: clipboard().locations.length > 0,
-      openTerminalSupported,
-    };
-  }
-
-  /**
-   * `core.open`/`core.view`/`core.edit`/`core.openWith`/
-   * `core.revealInSystemFileManager` act on a single entry and
-   * `core.openTerminal` acts on the current directory (task 0061); the
-   * backend cannot resolve an opaque `EntryId` back to a path itself (there
-   * is no server-side entry registry, mirroring plugin action invocation),
-   * so the frontend must supply the target as an explicit `{ uri }`
-   * parameter built from the already-loaded `Location`.
-   */
-  function platformActionParameters(
-    actionId: string,
-    selectedEntries: readonly EntrySummary[],
-    directoryLocation: Location | undefined,
-  ): { uri: string } | undefined {
-    if (
-      actionId === 'core.open' ||
-      actionId === 'core.view' ||
-      actionId === 'core.edit' ||
-      actionId === 'core.openWith' ||
-      actionId === 'core.revealInSystemFileManager'
-    ) {
-      const entry = selectedEntries[0];
-      return entry === undefined ? undefined : { uri: entry.location.uri };
-    }
-    if (actionId === 'core.openTerminal') {
-      return directoryLocation === undefined ? undefined : { uri: directoryLocation.uri };
-    }
-    return undefined;
-  }
-
-  function invokeActionById(
-    actionId: string,
-    parameters: unknown,
-    context: ActionInvocationContext,
-  ): void {
-    void attrsClient
-      .invokeAction({
-        actionId,
-        ...(parameters === undefined ? {} : { parameters }),
-        context,
-      })
-      .then(() => {
-        commandPaletteRecency.set(actionId, Date.now());
-        m.redraw();
-      })
-      .catch((error: unknown) => {
-        // Action-invocation failures are transient and user-actionable (e.g. "no default
-        // application registered") - a toast is enough; never leave a persistent banner
-        // above the command bar for these.
-        toast({ html: error instanceof Error ? error.message : 'Unable to run command.' });
-        m.redraw();
-      });
-  }
-
-  function invokePaletteAction(
-    action: ActionDescriptor,
-    parameters?: unknown,
-    context = actionContext(),
-  ): void {
-    if (action.id === 'core.palette') return;
-    if (action.id === 'core.favourites') {
-      commandPaletteOpen = true;
-      return;
-    }
-    if (action.id.startsWith('core.favourite.')) {
-      const index = Number(action.id.slice('core.favourite.'.length));
-      const favourite = currentSettings?.favouriteLocations[index];
-      if (favourite !== undefined && context.paneId !== undefined) {
-        void navigation.navigate(context.paneId, favourite.location);
-      }
-      return;
-    }
-    if (action.id === 'core.createDirectory') {
-      createDirectoryLocation = undefined;
-      createDirectoryOpen = true;
-      return;
-    }
-    const paneId = context.paneId;
-    const directory = paneId === undefined ? undefined : directories.get(activeTabKey(paneId));
-    const selectedEntries =
-      directory === undefined || context.selectedEntryIds === undefined
-        ? []
-        : directory.entries.filter((entry) => new Set(context.selectedEntryIds).has(entry.id));
-    if (isCopySelectionAction(action.id)) {
-      if (directory === undefined || directory.location === undefined) return;
-      void copySelectionToClipboard(action.id, selectedEntries, directory.location)
-        .then((copied) => {
-          if (copied) commandPaletteRecency.set(action.id, Date.now());
-          m.redraw();
-        })
-        .catch((error: unknown) => {
-          toast({
-            html:
-              error instanceof Error ? error.message : 'Unable to write to the system clipboard.',
-          });
-          m.redraw();
-        });
-      return;
-    }
-    const effectiveParameters =
-      parameters ?? platformActionParameters(action.id, selectedEntries, directory?.location);
-    invokeActionById(action.id, effectiveParameters, context);
-  }
-
-  function openContextMenu(
-    paneId: PaneId,
-    entries: readonly EntrySummary[],
-    x: number,
-    y: number,
-  ): void {
-    contextMenu = { paneId, entries, x, y };
-    m.redraw();
-  }
-
-  function invokeContextMenuAction(actionId: string): void {
-    const menu = contextMenu;
-    if (menu === undefined) return;
-    const action = registeredActions.find((candidate) => candidate.id === actionId);
-    const directory = directories.get(activeTabKey(menu.paneId));
-    if (action === undefined || directory === undefined) return;
-    if (
-      !evaluateActionAvailability(action, commandAvailabilityContext(menu.entries, menu.paneId))
-        .available
-    ) {
-      return;
-    }
-    if (action.id === 'core.createDirectory') {
-      createDirectoryLocation = directory.location;
-      createDirectoryOpen = true;
-      return;
-    }
-    if (action.id === 'core.refresh') {
-      void navigation.load(menu.paneId);
-      return;
-    }
-    if (action.id === 'core.paste') {
-      const currentClipboard = clipboard();
-      const mode = currentClipboard.mode;
-      if (mode === undefined || directory.location === undefined) return;
-      void (
-        mode === 'move'
-          ? opsController.move(currentClipboard.locations, directory.location)
-          : opsController.copy(currentClipboard.locations, directory.location)
-      ).then(() => {
-        if (mode === 'move') replaceClipboard(clearClipboard(currentClipboard));
-        m.redraw();
-      });
-      return;
-    }
-    invokePaletteAction(action, undefined, {
-      paneId: menu.paneId,
-      selectedEntryIds: menu.entries.map((entry) => entry.id),
-      ...(menu.entries[0] === undefined ? {} : { cursorEntryId: menu.entries[0].id }),
-    });
-  }
-
   /**
    * Clicking a footer function-key hint re-triggers the exact same keydown
    * path a real key press would (pane.ts's local handler, then this file's
@@ -1160,7 +869,6 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     const paneElement = document.querySelector<HTMLElement>('[data-active="true"] > .fm-pane');
     paneElement?.dispatchEvent(new KeyboardEvent('keydown', { key: shortcut, bubbles: true }));
   }
-
 
   const backendEventContext: BackendEventContext = {
     getWorkspaceId: () => workspace?.id,
@@ -1241,6 +949,8 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
   let tabController: TabController;
   let settingsController: SettingsController;
   let globalKeydownHandler: (event: KeyboardEvent) => void;
+  let findFilesController: FindFilesController;
+  let actionCommandController: ActionCommandController;
 
   const workspaceControllerContext: WorkspaceControllerContext = {
     getWorkspace: () => workspace,
@@ -1403,19 +1113,82 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     activeDirectory,
     activeTabKey,
     actionsWithFavourites,
-    openFindFiles,
+    openFindFiles: () => findFilesController.openFindFiles(),
     replaceClipboard,
     selectedLocations,
-    invokeActionById,
+    invokeActionById: (actionId, parameters, context) =>
+      actionCommandController.invokeActionById(actionId, parameters, context),
     openViewer: (paneId, entry, initialSearch) =>
       openViewer(attrsClient, paneId, entry, initialSearch),
     openEditor: (paneId, entry) => openEditor(attrsClient, paneId, entry),
-    actionContext,
-    commandAvailabilityContext,
+    actionContext: () => actionCommandController.actionContext(),
+    commandAvailabilityContext: (selectedEntries, paneId) =>
+      actionCommandController.commandAvailabilityContext(selectedEntries, paneId),
     contentSearchInitialQuery,
     refetchAffectedPanes,
-    platformActionParameters,
+    platformActionParameters: (actionId, selectedEntries, directoryLocation) =>
+      actionCommandController.platformActionParameters(actionId, selectedEntries, directoryLocation),
     activatePane: (paneId) => activatePane(attrsClient, paneId),
+    redraw: () => m.redraw(),
+  };
+
+  const findFilesControllerContext: FindFilesControllerContext = {
+    getFindFilesOpen: () => findFilesOpen,
+    setFindFilesOpen: (open) => {
+      findFilesOpen = open;
+    },
+    getFindFilesRoot: () => findFilesRoot,
+    setFindFilesRoot: (root) => {
+      findFilesRoot = root;
+    },
+    getFindFilesSearchId: () => findFilesSearchId,
+    setFindFilesSearchId: (searchId) => {
+      findFilesSearchId = searchId;
+    },
+    getFindFilesError: () => findFilesError,
+    setFindFilesError: (error) => {
+      findFilesError = error;
+    },
+    getFindFilesGeneration: () => findFilesGeneration,
+    setFindFilesGeneration: (generation) => {
+      findFilesGeneration = generation;
+    },
+    getFindFilesRootsByLocationUri: () => findFilesRootsByLocationUri,
+    getFindFilesQueriesByLocationUri: () => findFilesQueriesByLocationUri,
+    getFindFilesParamsByLocationUri: () => findFilesParamsByLocationUri,
+    getActiveDirectory: () => activeDirectory(),
+    getWorkspace: () => workspace,
+    getNavigation: () => navigation,
+    getClient: () => attrsClient,
+    getFocusPane: () => focusPane,
+    redraw: () => m.redraw(),
+  };
+
+  const actionCommandControllerContext: ActionCommandControllerContext = {
+    getCommandPaletteOpen: () => commandPaletteOpen,
+    setCommandPaletteOpen: (open) => {
+      commandPaletteOpen = open;
+    },
+    getContextMenu: () => contextMenu,
+    setContextMenu: (menu) => {
+      contextMenu = menu;
+    },
+    getCommandPaletteRecency: () => commandPaletteRecency,
+    getActiveDirectory: () => activeDirectory(),
+    getActiveTabKey: (paneId) => activeTabKey(paneId),
+    getSelections: () => selections,
+    getDirectories: () => directories,
+    getCurrentSettings: () => currentSettings,
+    getClient: () => attrsClient,
+    getRegisteredActions: () => registeredActions,
+    getWorkspace: () => workspace,
+    getNavigation: () => navigation,
+    getOpsController: () => opsController,
+    getGetSelectedEntries: () => getSelectedEntries,
+    getClipboard: () => clipboard(),
+    replaceClipboard: (next) => replaceClipboard(next),
+    toast: (options) => toast(options),
+    getOpenTerminalSupported: () => openTerminalSupported,
     redraw: () => m.redraw(),
   };
 
@@ -1498,8 +1271,10 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     closeViewer,
     closeEditor,
     updateLocationSettings,
-    invokeActionById,
-    openContextMenu,
+    invokeActionById: (actionId, parameters, context) =>
+      actionCommandController.invokeActionById(actionId, parameters, context),
+    openContextMenu: (paneId, entries, x, y) =>
+      actionCommandController.openContextMenu(paneId, entries, x, y),
     refetchAffectedPanes,
     replaceWorkspace,
   };
@@ -1550,7 +1325,10 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     ).catch(() => undefined);
   }
 
-  function renderDialogs(client: FileManagerClient, pendingDelete: typeof operations.byId[string]): m.Children[] {
+  function renderDialogs(
+    client: FileManagerClient,
+    pendingDelete: (typeof operations.byId)[string],
+  ): m.Children[] {
     return [
       m(OperationCentre, {
         state: operations,
@@ -1713,15 +1491,14 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
           return updated;
         },
         onProbeHostKey: (id) => probeSshHostKeyRequest(client, id),
-        onAcceptHostKey: (id, fingerprint) =>
-          acceptSshHostKeyRequest(client, id, fingerprint),
+        onAcceptHostKey: (id, fingerprint) => acceptSshHostKeyRequest(client, id, fingerprint),
       }),
       m(FindFilesDialog, {
         open: findFilesOpen,
         scopeLabel: findFilesRoot === undefined ? '' : pathFromUri(findFilesRoot.uri),
         ...(findFilesError === undefined ? {} : { error: findFilesError }),
-        onSearch: (params: FindFilesSearchParams) => startFindFilesSearch(params),
-        onCancel: () => closeFindFiles(),
+        onSearch: (params: FindFilesSearchParams) => findFilesController.startFindFilesSearch(params),
+        onCancel: () => findFilesController.closeFindFiles(),
       }),
       m(PermanentDeleteDialog, {
         open: pendingDelete !== undefined,
@@ -1789,6 +1566,8 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       tabController = createTabController(attrs.client, tabControllerContext);
       settingsController = createSettingsController(settingsControllerContext);
       globalKeydownHandler = createGlobalKeydownHandler(globalKeydownHandlerContext);
+      findFilesController = createFindFilesController(findFilesControllerContext);
+      actionCommandController = createActionCommandController(actionCommandControllerContext);
       paneContentBuilder = createPaneContentBuilder(paneContentBuilderContext);
       keybindingRuntime = attrs.runtime === 'http' ? 'browser' : 'desktop';
       runtimeKind = attrs.runtime;
@@ -1990,7 +1769,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
                 'aria-label': 'Find files',
                 'data-tooltip': 'Find files',
                 onclick: () => {
-                  openFindFiles();
+                  findFilesController.openFindFiles();
                 },
               },
               searchIcon(),
@@ -2207,12 +1986,12 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
             open: commandPaletteOpen,
             actions: actionsWithFavourites(),
             recency: commandPaletteRecency,
-            context: actionContext(),
-            availabilityContext: commandAvailabilityContext(),
+            context: actionCommandController.actionContext(),
+            availabilityContext: actionCommandController.commandAvailabilityContext(),
             onClose: () => {
               commandPaletteOpen = false;
             },
-            onInvoke: invokePaletteAction,
+            onInvoke: actionCommandController.invokePaletteAction,
           }),
           m(DirectoryContextMenu, {
             open: contextMenu !== undefined,
@@ -2223,12 +2002,12 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
                 ? []
                 : menuActionsForContext(
                   registeredActions,
-                  commandAvailabilityContext(contextMenu.entries, contextMenu.paneId),
+                  actionCommandController.commandAvailabilityContext(contextMenu.entries, contextMenu.paneId),
                 ),
             onClose: () => {
               contextMenu = undefined;
             },
-            onInvoke: invokeContextMenuAction,
+            onInvoke: actionCommandController.invokeContextMenuAction,
           }),
           ...renderDialogs(attrs.client, pendingDelete),
           m(
@@ -2252,7 +2031,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
                       },
                     }
                     : action,
-                  commandAvailabilityContext(),
+                  actionCommandController.commandAvailabilityContext(),
                 ).available,
             ).map((binding) =>
               m(

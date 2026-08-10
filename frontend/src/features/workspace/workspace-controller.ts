@@ -1,10 +1,4 @@
 import type { FileManagerClient, NativeFileDrop } from '../../api/client/file-manager-client';
-import { loadConnections } from '../connections/connections-model';
-import { NativeIconLoader } from '../directory-table/native-icon-loader';
-import type { NavigationController } from '../navigation/navigation';
-import type { SelectionPlatform } from '../selection/keybindings';
-import { isWorkspaceRevisionConflict } from './dispatch-workspace-command';
-import { firstAvailableWorkspaceId } from './workspace-manager';
 import type {
   Connection,
   Location,
@@ -13,6 +7,12 @@ import type {
   WorkspaceProjection,
   WorkspaceSummary,
 } from '../../models';
+import { loadConnections } from '../connections/connections-model';
+import { NativeIconLoader } from '../directory-table/native-icon-loader';
+import type { NavigationController } from '../navigation/navigation';
+import type { SelectionPlatform } from '../selection/keybindings';
+import { isWorkspaceRevisionConflict } from './dispatch-workspace-command';
+import { firstAvailableWorkspaceId } from './workspace-manager';
 
 export interface WorkspaceControllerContext {
   getWorkspace(): WorkspaceProjection | undefined;
