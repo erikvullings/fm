@@ -6,10 +6,132 @@ specification and [TASKS/README.md](TASKS/README.md) for the implementation task
 
 [![CI](https://github.com/erikvullings/fm/actions/workflows/ci.yml/badge.svg)](https://github.com/erikvullings/fm/actions/workflows/ci.yml)
 
+## Prerequisites
+
+| Tool | Minimum version | Notes |
+|---|---|---|
+| Rust toolchain | **1.97.1** (stable) | Pinned via `rust-toolchain.toml`. Install via [rustup](https://rustup.rs/). |
+| Node.js | **22 LTS** | Managed by [nvs](https://github.com/jasongin/nvs) or nvm. |
+| pnpm | **11** | `npm install -g pnpm` or `corepack enable`. |
+| cargo-watch | latest | `cargo install cargo-watch` — used in the recommended dev flow. |
+
+**Tauri prerequisites (desktop builds only):**
+
+- **macOS**: Xcode Command Line Tools (`xcode-select --install`). No additional WebView runtime
+  needed (uses system WebKit).
+- **Windows**: Microsoft C++ Build Tools (Visual Studio 2022 or Build Tools for Visual Studio)
+  and WebView2 Runtime (ships with Windows 11; installer available at
+  <https://developer.microsoft.com/microsoft-edge/webview2/>).
+- **Linux**: `webkit2gtk-4.1`, `build-essential`, `curl`, `wget`, `file`, `libssl-dev`,
+  `libayatana-appindicator3-dev`, `librsvg2-dev`. See the
+  [Tauri prerequisites guide](https://tauri.app/start/prerequisites/) for your distro.
+
+## Repository layout
+
+```
+Cargo.toml              workspace root — all Rust crates declared here
+package.json            root scripts (dev, test, lint, build, api:*)
+apps/
+  fm-cli/               thin CLI wrapper (export-openapi subcommand)
+  fm-desktop/           Tauri shell (src-tauri/ contains tauri.conf.json)
+  fm-server/            Axum HTTP server and SSE endpoint
+crates/
+  fm-application/       core application service, action registry
+  fm-domain/            canonical domain types (entries, locations, …)
+  fm-operations/        operation engine: jobs, scheduler, conflict handling
+  fm-platform/          platform-adapter trait and capability flags
+  fm-platform-macos/    macOS implementation (icons, trash, terminal, …)
+  fm-platform-windows/  Windows implementation (drag-out only so far)
+  fm-plugin-api/        plugin manifest, permissions, contribution types
+  fm-plugin-runtime/    restricted Lua sandbox and plugin lifecycle
+  fm-transport-dto/     OpenAPI-serialisable DTOs shared by server and client
+  fm-vfs/               VFS provider trait and capability flags
+  fm-vfs-local/         local filesystem provider
+  fm-vfs-sftp/          SFTP provider (fm-ssh session layer)
+  fm-connections/       remote connection profiles
+  fm-credentials/       credential store abstraction
+  fm-credentials-macos/ macOS Keychain backend
+  fm-credentials-windows/ Windows Credential Manager backend
+  fm-events/            typed event bus and replay buffer
+  fm-search/            recursive filesystem search
+  fm-settings/          versioned JSON settings with migrations
+  fm-ssh/               SSH session and host-key verification
+  fm-metadata/          file metadata helpers
+  fm-archive/           archive VFS provider (zip, tar, …)
+  fm-test-support/      shared test fixtures and helpers
+frontend/
+  src/                  Mithril/TypeScript sources
+  openapi/              checked-in OpenAPI document (do not hand-edit)
+docs/
+  architecture/         Architecture notes and file-format contracts
+  decisions/            Architecture Decision Records (ADRs 0001–0011)
+  plugin-api/           Plugin API reference (README.md)
+plugins/                Bundled sample plugins (Lua)
+TASKS/                  Per-task implementation files (task tracker)
+```
+
 ## Development
 
 See [AGENTS.md](AGENTS.md) for repository conventions, and run `pnpm run <script>` at the repo
 root (`dev`, `test`, `lint`, `build`, ...) — see the root `package.json` for the full list.
+
+### Development commands
+
+| Command | What it does |
+|---|---|
+| `pnpm dev` | Start the Vite dev server with the **mock** client (default). No Rust process needed. |
+| `pnpm dev:mock` | Same as `pnpm dev` — mock runtime explicitly selected (`VITE_RUNTIME=mock`). |
+| `pnpm dev:http` | Start Vite against the **Axum backend** (`VITE_RUNTIME=http`). Requires Terminal 1 below. |
+| `pnpm dev:tauri` | Launch the **Tauri desktop** app in dev mode (`VITE_RUNTIME=tauri`). |
+| `pnpm test` | Run Rust tests + frontend tests + script tests. |
+| `pnpm test:rust` | `cargo test --workspace` |
+| `pnpm test:frontend` | Vitest (frontend unit tests) |
+| `pnpm lint` | Rust + Biome linting/formatting checks |
+| `pnpm api:export` | Export `frontend/openapi/openapi.json` from the running server |
+| `pnpm api:generate` | Regenerate the Orval Fetch client under `frontend/src/api/` |
+| `pnpm api:check` | Export + generate and fail if either checked-in file would change |
+| `pnpm build` | Production Rust + frontend build |
+| `pnpm build:tauri` | Package the Tauri desktop app (`.app`/`.dmg` on macOS, `.msi`/`.exe` on Windows) |
+
+### Recommended two-terminal flow (HTTP mode)
+
+```bash
+# Terminal 1 — Axum backend (auto-rebuilds on file change)
+FM_SERVER_PORT=8787 cargo watch -x "run -p fm-server"
+
+# Terminal 2 — Vite dev server with /api proxy to localhost:8787
+pnpm dev:http
+```
+
+The Vite server starts at <http://127.0.0.1:5180>.
+
+**How the proxy works:** Vite forwards every `/api/*` request to `http://127.0.0.1:8787`. For SSE
+(`GET /api/v1/events`), the proxy configuration in `frontend/config/api-proxy.ts` disables
+compression, removes timeouts, and adds `cache-control: no-cache, no-transform` and
+`x-accel-buffering: no` so that events are flushed to the browser without buffering.
+
+### Runtimes
+
+The `VITE_RUNTIME` environment variable selects the client adapter at build time:
+
+| `VITE_RUNTIME` | Adapter | Backend needed |
+|---|---|---|
+| `mock` (default) | In-process mock — fixtures up to 1 M entries | None |
+| `http` | HTTP + SSE against Axum | `fm-server` on port 8787 |
+| `tauri` | Tauri IPC commands + Tauri channel events | Embedded in the Tauri shell |
+
+### Swagger UI
+
+When `fm-server` is running, open <http://127.0.0.1:8787/api/v1/docs> to browse the interactive
+OpenAPI documentation. The raw OpenAPI JSON is at <http://127.0.0.1:8787/api/v1/openapi.json>.
+
+### Further reading
+
+- [AGENTS.md](AGENTS.md) — coding-agent rules and repository conventions
+- [docs/decisions/](docs/decisions/) — Architecture Decision Records (ADR 0001–0011)
+- [docs/plugin-api/README.md](docs/plugin-api/README.md) — Plugin API reference
+- [TASKS/README.md](TASKS/README.md) — Implementation task index and milestone status
+- [ROADMAP.md](ROADMAP.md) — What is done, mocked, and not yet implemented
 
 For deterministic frontend development without Axum or Tauri, run `pnpm dev:mock`. The mock
 adapter provides nested and special-case directory fixtures, configurable loading/failure states,

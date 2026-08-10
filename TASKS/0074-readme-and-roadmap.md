@@ -1,6 +1,6 @@
 # 0074 README, development commands and roadmap
 
-Status: open
+Status: done
 Priority: medium
 Owner: unassigned
 Agent: unassigned
@@ -30,4 +30,15 @@ commands, and a roadmap showing which parts remain mocked or incomplete.
   add a line to the relevant task's acceptance criteria as it lands.
 
 ## Agent Notes
-- Not started.
+- 2026-08-10: Implemented. Added prerequisites table, repository layout, development commands
+  table, two-terminal flow explanation, proxy/SSE proxy explanation, runtime table, Swagger UI
+  URL, and further-reading links to README.md. Created ROADMAP.md covering all milestones per §16,
+  every `PlatformCapabilities` bit with per-platform status, platform-untested areas per §35, and
+  cross-cutting quality tasks.
+- `cargo build --workspace` verified green on macOS (dev profile). Frontend tests have 4
+  pre-existing failures in theme and client tests unrelated to documentation; noted but not fixed
+  here.
+- Windows deviations noted throughout: `WindowsPlatformAdapter` reports only `NATIVE_DRAG_OUT`;
+  task 0060 (Windows platform integration) remains open.
+
+Status: done
