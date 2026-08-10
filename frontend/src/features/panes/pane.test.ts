@@ -1,6 +1,6 @@
 import m from 'mithril';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-
+import type { KeybindingRuntime } from '../../keybindings/dispatcher';
 import type {
   ActionDescriptor,
   Connection,
@@ -25,7 +25,6 @@ import {
   type PaneTab,
   searchBreadcrumbSegments,
 } from './pane';
-import type { KeybindingRuntime } from '../../keybindings/dispatcher';
 
 let root: HTMLElement;
 

@@ -1,10 +1,6 @@
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { type Theme, ThemeManager } from 'mithril-materialized';
 import type { FileManagerClient } from '../../api/client/file-manager-client';
-import {
-  installPluginIconTheme,
-  restoreDefaultIconTheme,
-} from '../../themes/plugin-icon-theme';
 import type {
   PaneId,
   PluginDescriptor,
@@ -13,9 +9,10 @@ import type {
   WorkspaceId,
   WorkspaceProjection,
 } from '../../models';
+import { installPluginIconTheme, restoreDefaultIconTheme } from '../../themes/plugin-icon-theme';
+import type { RuntimeKind } from '../../utilities/runtime';
 import type { EntryFormatSettings } from '../entry-formatting/entry-formatting';
 import { dispatchWorkspaceCommand } from '../workspace/dispatch-workspace-command';
-import type { RuntimeKind } from '../../utilities/runtime';
 
 export interface SettingsControllerContext {
   setTheme(theme: Theme): void;
@@ -161,7 +158,8 @@ export function createSettingsController(context: SettingsControllerContext): Se
         }
         return;
       }
-      const plugin = context.getPlugins().find((candidate) => candidate.id === themeId);      if (plugin?.iconTheme === undefined || !plugin.enabled) {
+      const plugin = context.getPlugins().find((candidate) => candidate.id === themeId);
+      if (plugin?.iconTheme === undefined || !plugin.enabled) {
         if (context.getInstalledIconThemeId() !== undefined) restoreDefaultIconTheme();
         context.setInstalledIconThemeId(undefined);
         return;

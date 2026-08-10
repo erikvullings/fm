@@ -19,7 +19,6 @@ import type {
 import type { DirectoryColumnDescriptor } from '../directory-table/directory-table';
 import type { NativeIconLoader } from '../directory-table/native-icon-loader';
 import type { EntryFormatSettings } from '../entry-formatting/entry-formatting';
-import { Pane } from '../panes/pane';
 import type {
   DirectorySummaryAttrs,
   FavouritesAttrs,
@@ -27,6 +26,7 @@ import type {
   PaneNavigationAttrs,
   TableConfigAttrs,
 } from '../panes/pane';
+import { Pane } from '../panes/pane';
 import type { SelectionPlatform } from '../selection/keybindings';
 import type { SelectionAction } from '../selection/selection';
 import './workspace-layout.css';

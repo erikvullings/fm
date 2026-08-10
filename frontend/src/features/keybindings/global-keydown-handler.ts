@@ -1,20 +1,5 @@
 import { toast } from 'mithril-materialized';
 import {
-  clearClipboard,
-  copyToClipboard,
-  cutToClipboard,
-  validatePasteTarget,
-} from '../clipboard/clipboard';
-import type { CommandAvailabilityContext } from '../commands/availability';
-import type { NavigationController, PaneDirectoryView } from '../navigation/navigation';
-import { isParentEntry } from '../panes/parent-entry';
-import type { TabController } from '../panes/tab-controller';
-import type { FileViewerController, FileViewerState } from '../preview/file-viewer-controller';
-import type { SelectionPlatform } from '../selection/keybindings';
-import { getSelectedEntries, type SelectionState } from '../selection/selection';
-import type { OperationsController } from '../operations/operations-controller';
-import { applyAppPatches, type AppState, setQuickFilterDraftPatch } from '../../state';
-import {
   dispatchKeybinding,
   hasPrimaryModifier,
   type KeybindingRuntime,
@@ -29,6 +14,21 @@ import type {
   Settings,
   WorkspaceProjection,
 } from '../../models';
+import { type AppState, applyAppPatches, setQuickFilterDraftPatch } from '../../state';
+import {
+  clearClipboard,
+  copyToClipboard,
+  cutToClipboard,
+  validatePasteTarget,
+} from '../clipboard/clipboard';
+import type { CommandAvailabilityContext } from '../commands/availability';
+import type { NavigationController, PaneDirectoryView } from '../navigation/navigation';
+import type { OperationsController } from '../operations/operations-controller';
+import { isParentEntry } from '../panes/parent-entry';
+import type { TabController } from '../panes/tab-controller';
+import type { FileViewerController, FileViewerState } from '../preview/file-viewer-controller';
+import type { SelectionPlatform } from '../selection/keybindings';
+import { getSelectedEntries, type SelectionState } from '../selection/selection';
 
 type ArchiveCreateRequest = {
   readonly sources: readonly Location[];
@@ -55,7 +55,9 @@ export interface GlobalKeydownContext {
   getRegisteredActions(): readonly ActionDescriptor[];
   clipboard(): ClipboardState;
   getFindFilesOpen(): boolean;
-  getViewer(paneId: PaneId): { readonly controller: FileViewerController; state: FileViewerState } | undefined;
+  getViewer(
+    paneId: PaneId,
+  ): { readonly controller: FileViewerController; state: FileViewerState } | undefined;
   getArchiveCreateRequest(): ArchiveCreateRequest | undefined;
   getCreateDirectoryOpen(): boolean;
   getAppState(): AppState | undefined;
@@ -188,10 +190,10 @@ export function createGlobalKeydownHandler(
           active === undefined || directory === undefined
             ? undefined
             : {
-                location: active.location,
-                writable: directory.writable === true,
-                loaded: directory.state.type === 'loaded',
-              };
+              location: active.location,
+              writable: directory.writable === true,
+              loaded: directory.state.type === 'loaded',
+            };
         const validation = validatePasteTarget(currentClipboard, target);
         if (!validation.ok) {
           context.setClipboardMessage(validation.message);

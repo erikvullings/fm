@@ -1,27 +1,5 @@
 import m from 'mithril';
 import type { FileManagerClient } from '../../api/client/file-manager-client';
-import { isCutLocation } from '../clipboard/clipboard';
-import { loadConnections } from '../connections/connections-model';
-import { SAMPLE_FILE_AGE_COLUMN } from '../directory-table/directory-table';
-import type { NativeIconLoader } from '../directory-table/native-icon-loader';
-import { operationForDrop, resolveDropTarget, validateDropTarget } from '../drag-drop/drag-drop';
-import { FileEditor } from '../editor/file-editor';
-import type { FileEditorController, FileEditorState } from '../editor/file-editor-controller';
-import type { EntryFormatSettings } from '../entry-formatting/entry-formatting';
-import { reorderFavourites } from '../favourites/favourites';
-import { archiveRootForEntry } from '../navigation/archive-location';
-import { type NavigationController, type PaneDirectoryView, parentLocation } from '../navigation/navigation';
-import type { OperationsController } from '../operations/operations-controller';
-import { isParentEntry, withParentEntry } from '../panes/parent-entry';
-import { FileViewer } from '../preview/file-viewer';
-import type { FileViewerController, FileViewerState } from '../preview/file-viewer-controller';
-import { hiddenSelectedEntryCount } from '../quick-filter/quick-filter';
-import type { SelectionPlatform } from '../selection/keybindings';
-import { emptySelection, reduceSelection, type SelectionAction, type SelectionState } from '../selection/selection';
-import { type SortModel, sortEntriesResponsive } from '../sorting/sorting';
-import { dispatchWorkspaceCommand } from './dispatch-workspace-command';
-import { pathFromUri, type WorkspacePaneContent } from './workspace-layout';
-import type { WorkspaceController } from './workspace-controller';
 import type { KeybindingRuntime } from '../../keybindings/dispatcher';
 import type {
   ActionDescriptor,
@@ -46,6 +24,37 @@ import {
   deleteQuickFilterDraftPatch,
   setQuickFilterDraftPatch,
 } from '../../state';
+import { isCutLocation } from '../clipboard/clipboard';
+import { loadConnections } from '../connections/connections-model';
+import { SAMPLE_FILE_AGE_COLUMN } from '../directory-table/directory-table';
+import type { NativeIconLoader } from '../directory-table/native-icon-loader';
+import { operationForDrop, resolveDropTarget, validateDropTarget } from '../drag-drop/drag-drop';
+import { FileEditor } from '../editor/file-editor';
+import type { FileEditorController, FileEditorState } from '../editor/file-editor-controller';
+import type { EntryFormatSettings } from '../entry-formatting/entry-formatting';
+import { reorderFavourites } from '../favourites/favourites';
+import { archiveRootForEntry } from '../navigation/archive-location';
+import {
+  type NavigationController,
+  type PaneDirectoryView,
+  parentLocation,
+} from '../navigation/navigation';
+import type { OperationsController } from '../operations/operations-controller';
+import { isParentEntry, withParentEntry } from '../panes/parent-entry';
+import { FileViewer } from '../preview/file-viewer';
+import type { FileViewerController, FileViewerState } from '../preview/file-viewer-controller';
+import { hiddenSelectedEntryCount } from '../quick-filter/quick-filter';
+import type { SelectionPlatform } from '../selection/keybindings';
+import {
+  emptySelection,
+  reduceSelection,
+  type SelectionAction,
+  type SelectionState,
+} from '../selection/selection';
+import { type SortModel, sortEntriesResponsive } from '../sorting/sorting';
+import { dispatchWorkspaceCommand } from './dispatch-workspace-command';
+import type { WorkspaceController } from './workspace-controller';
+import { pathFromUri, type WorkspacePaneContent } from './workspace-layout';
 
 type InitialSearch = {
   readonly query: string;
@@ -78,11 +87,21 @@ export interface PaneContentContext {
   getSelections(): Map<string, SelectionState>;
   getSortedEntries(): Map<
     string,
-    { readonly input: readonly EntrySummary[]; readonly key: string; readonly entries: readonly EntrySummary[] }
+    {
+      readonly input: readonly EntrySummary[];
+      readonly key: string;
+      readonly entries: readonly EntrySummary[];
+    }
   >;
   getSortRequests(): Map<string, object>;
-  getViewerByPane(): Map<PaneId, { readonly controller: FileViewerController; state: FileViewerState }>;
-  getEditorByPane(): Map<PaneId, { readonly controller: FileEditorController; state: FileEditorState }>;
+  getViewerByPane(): Map<
+    PaneId,
+    { readonly controller: FileViewerController; state: FileViewerState }
+  >;
+  getEditorByPane(): Map<
+    PaneId,
+    { readonly controller: FileEditorController; state: FileEditorState }
+  >;
 
   // Scalar state setters
   setConnections(conns: readonly Connection[]): void;
@@ -107,7 +126,11 @@ export interface PaneContentContext {
     sort: readonly SortDescriptor[],
     foldersFirst: boolean,
   ): readonly EntrySummary[];
-  entriesFilteredFor(key: string, entries: readonly EntrySummary[], query: string): readonly EntrySummary[];
+  entriesFilteredFor(
+    key: string,
+    entries: readonly EntrySummary[],
+    query: string,
+  ): readonly EntrySummary[];
   quickFilterQueryFor(key: string, tab: TabProjection | undefined): string;
   quickFilterOpenFor(key: string, tab: TabProjection | undefined): boolean;
   contentSearchInitialQuery(locationUri: string, entry: EntrySummary): InitialSearch | undefined;
@@ -224,10 +247,12 @@ export function createPaneContentBuilder(
       formatSettings: entryFormatSettings,
       ...(nativeIconLoader === undefined ? {} : { nativeIconLoader }),
       pluginColumns:
-        context.getPlugins().some(
-          (plugin) =>
-            plugin.enabled && plugin.columns?.some((column) => column.id === 'sample.fileAge'),
-        ) &&
+        context
+          .getPlugins()
+          .some(
+            (plugin) =>
+              plugin.enabled && plugin.columns?.some((column) => column.id === 'sample.fileAge'),
+          ) &&
           tab?.view.columns.some((column) => column.columnId === 'sample.fileAge' && column.visible)
           ? [SAMPLE_FILE_AGE_COLUMN]
           : [],
@@ -238,7 +263,9 @@ export function createPaneContentBuilder(
       ...(cursorIndex === undefined || cursorIndex < 0 ? {} : { cursorIndex }),
       onNavigate: async (path) => {
         if (tab !== undefined) {
-          await context.getNavigation().navigate(paneId, context.locationForPath(tab.location, path));
+          await context
+            .getNavigation()
+            .navigate(paneId, context.locationForPath(tab.location, path));
         }
       },
       onNavigateLocation: async (location) => {
@@ -294,7 +321,9 @@ export function createPaneContentBuilder(
               return context.openViewer(otherPaneId, entry, initialSearch);
             }
           }
-          return context.getNavigation().navigate(paneId, parentLocation(entry.location), entry.name);
+          return context
+            .getNavigation()
+            .navigate(paneId, parentLocation(entry.location), entry.name);
         }
         const systemLocations = context.getSystemLocations();
         const isSystemLocation = systemLocations.some(
@@ -319,66 +348,69 @@ export function createPaneContentBuilder(
           // The loaded prefix doesn't include the real last entry yet: fetch every remaining
           // page (cheap, cache-backed slices on the backend) before landing the cursor, rather
           // than jumping to the last entry loaded so far.
-          void context.getNavigation().loadAllPages(paneId).then(async () => {
-            // `entriesSortedFor`'s cache is only refreshed by a redraw, and no redraw happens
-            // between the background page fetches above. For directories at/over its 10k
-            // responsive-sort threshold, reading the cache right now would otherwise return a
-            // stale sort of a much smaller (pre-`loadAllPages`) prefix and land the cursor on
-            // the wrong entry. Force a fresh, correctly-ordered sort of the fully-loaded
-            // entries first, and seed the cache with it so this call (and the next redraw) see
-            // the real order.
-            //
-            // This must stay scoped to `tab`/`key` as captured when the action was dispatched,
-            // never re-derived from `pane.activeTabId` — the user may have switched to a
-            // different tab while the pages were still loading in the background, and applying
-            // the result to whichever tab is active *now* would write this tab's cursor/entry
-            // into the wrong tab's selection state.
-            const freshDirectory = context.getDirectories().get(key);
-            if (tab !== undefined && freshDirectory !== undefined) {
-              const sortDescriptors = context.effectiveSort(tab.view.sort);
-              const cacheKey = JSON.stringify([sortDescriptors, tab.view.foldersFirst]);
-              // Invalidate any in-flight sort of an earlier (smaller) entries snapshot so it
-              // can't overwrite the fresh result seeded below once it resolves.
-              context.getSortRequests().set(key, {});
-              const sorted = await sortEntriesResponsive(
-                freshDirectory.entries,
-                context.frontendSort(sortDescriptors),
-                tab.view.foldersFirst,
-              );
-              context.getSortedEntries().set(key, {
-                input: freshDirectory.entries,
-                key: cacheKey,
-                entries: sorted,
-              });
-              context.getSortRequests().delete(key);
-            }
-            const sortedFresh =
-              tab === undefined
-                ? (context.getDirectories().get(key)?.entries ?? [])
-                : context.entriesSortedFor(
-                  key,
-                  context.getDirectories().get(key)?.entries ?? [],
-                  context.effectiveSort(tab.view.sort),
+          void context
+            .getNavigation()
+            .loadAllPages(paneId)
+            .then(async () => {
+              // `entriesSortedFor`'s cache is only refreshed by a redraw, and no redraw happens
+              // between the background page fetches above. For directories at/over its 10k
+              // responsive-sort threshold, reading the cache right now would otherwise return a
+              // stale sort of a much smaller (pre-`loadAllPages`) prefix and land the cursor on
+              // the wrong entry. Force a fresh, correctly-ordered sort of the fully-loaded
+              // entries first, and seed the cache with it so this call (and the next redraw) see
+              // the real order.
+              //
+              // This must stay scoped to `tab`/`key` as captured when the action was dispatched,
+              // never re-derived from `pane.activeTabId` — the user may have switched to a
+              // different tab while the pages were still loading in the background, and applying
+              // the result to whichever tab is active *now* would write this tab's cursor/entry
+              // into the wrong tab's selection state.
+              const freshDirectory = context.getDirectories().get(key);
+              if (tab !== undefined && freshDirectory !== undefined) {
+                const sortDescriptors = context.effectiveSort(tab.view.sort);
+                const cacheKey = JSON.stringify([sortDescriptors, tab.view.foldersFirst]);
+                // Invalidate any in-flight sort of an earlier (smaller) entries snapshot so it
+                // can't overwrite the fresh result seeded below once it resolves.
+                context.getSortRequests().set(key, {});
+                const sorted = await sortEntriesResponsive(
+                  freshDirectory.entries,
+                  context.frontendSort(sortDescriptors),
                   tab.view.foldersFirst,
                 );
-            const filteredFresh = context.entriesFilteredFor(
-              key,
-              sortedFresh,
-              context.quickFilterQueryFor(key, tab),
-            );
-            const loadedEntries =
-              tab === undefined
-                ? filteredFresh
-                : withParentEntry(pathFromUri(tab.location.uri), filteredFresh);
-            const loadedEntryIds = loadedEntries.map((entry) => entry.id);
-            const next = reduceSelection(
-              context.getSelections().get(key) ?? selection,
-              action,
-              loadedEntryIds,
-            );
-            context.getSelections().set(key, next);
-            m.redraw();
-          });
+                context.getSortedEntries().set(key, {
+                  input: freshDirectory.entries,
+                  key: cacheKey,
+                  entries: sorted,
+                });
+                context.getSortRequests().delete(key);
+              }
+              const sortedFresh =
+                tab === undefined
+                  ? (context.getDirectories().get(key)?.entries ?? [])
+                  : context.entriesSortedFor(
+                    key,
+                    context.getDirectories().get(key)?.entries ?? [],
+                    context.effectiveSort(tab.view.sort),
+                    tab.view.foldersFirst,
+                  );
+              const filteredFresh = context.entriesFilteredFor(
+                key,
+                sortedFresh,
+                context.quickFilterQueryFor(key, tab),
+              );
+              const loadedEntries =
+                tab === undefined
+                  ? filteredFresh
+                  : withParentEntry(pathFromUri(tab.location.uri), filteredFresh);
+              const loadedEntryIds = loadedEntries.map((entry) => entry.id);
+              const next = reduceSelection(
+                context.getSelections().get(key) ?? selection,
+                action,
+                loadedEntryIds,
+              );
+              context.getSelections().set(key, next);
+              m.redraw();
+            });
           return;
         }
         const next = reduceSelection(selection, action, entryIds);
@@ -405,7 +437,9 @@ export function createPaneContentBuilder(
       },
       onFilterQueryChange: (query) => {
         if (key === undefined) return;
-        context.setAppState(applyAppPatches(context.getAppState()!, setQuickFilterDraftPatch(key, query)));
+        context.setAppState(
+          applyAppPatches(context.getAppState()!, setQuickFilterDraftPatch(key, query)),
+        );
         m.redraw();
       },
       onFilterCommit: () => {
@@ -434,7 +468,9 @@ export function createPaneContentBuilder(
       onFilterClose: () => {
         if (key !== undefined) {
           context.setQuickFilterOpen(key, false);
-          context.setAppState(applyAppPatches(context.getAppState()!, deleteQuickFilterDraftPatch(key)));
+          context.setAppState(
+            applyAppPatches(context.getAppState()!, deleteQuickFilterDraftPatch(key)),
+          );
         }
         const liveWorkspace = context.getWorkspace();
         if (liveWorkspace !== undefined && tab !== undefined && tab.view.quickFilter != null) {
@@ -457,19 +493,23 @@ export function createPaneContentBuilder(
         const active = context.activeDirectory();
         if (active === undefined || active.paneId !== paneId) return;
         const destinationUri = `${active.location.uri.replace(/\/$/u, '')}/${encodeURIComponent(name)}`;
-        void context.getOpsController().rename(entry.location, { ...entry.location, uri: destinationUri });
+        void context
+          .getOpsController()
+          .rename(entry.location, { ...entry.location, uri: destinationUri });
       },
       onContextMenu: (entries, x, y) => context.openContextMenu(paneId, entries, x, y),
       onDragStart: (draggedEntries, event) => {
         context.setDraggedLocations(draggedEntries.map((entry) => entry.location));
         if (context.getNativeDragOutSupported()) {
           event.preventDefault();
-          void client.startNativeDrag(draggedEntries.map((entry) => entry.location)).catch((error: unknown) => {
-            context.setClipboardMessage(
-              context.workspaceErrorMessage(error, 'Unable to start native drag'),
-            );
-            m.redraw();
-          });
+          void client
+            .startNativeDrag(draggedEntries.map((entry) => entry.location))
+            .catch((error: unknown) => {
+              context.setClipboardMessage(
+                context.workspaceErrorMessage(error, 'Unable to start native drag'),
+              );
+              m.redraw();
+            });
           return;
         }
         event.dataTransfer?.setData('application/x-fm-locations', 'internal');
@@ -502,7 +542,8 @@ export function createPaneContentBuilder(
         }
         const sources = context.getDraggedLocations();
         context.setDraggedLocations([]);
-        void (context.getNativeDropInProgress() || operationForDrop(context.getPlatform(), event) === 'copy'
+        void (context.getNativeDropInProgress() ||
+          operationForDrop(context.getPlatform(), event) === 'copy'
           ? context.getOpsController().copy(sources, target)
           : context.getOpsController().move(sources, target));
       },
@@ -533,7 +574,8 @@ export function createPaneContentBuilder(
         }
         const sources = context.getDraggedLocations();
         context.setDraggedLocations([]);
-        void (context.getNativeDropInProgress() || operationForDrop(context.getPlatform(), event) === 'copy'
+        void (context.getNativeDropInProgress() ||
+          operationForDrop(context.getPlatform(), event) === 'copy'
           ? context.getOpsController().copy(sources, targetTab.location)
           : context.getOpsController().move(sources, targetTab.location));
       },

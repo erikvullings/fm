@@ -1,16 +1,14 @@
 import type { FileManagerClient } from '../../api/client/file-manager-client';
+import type { PaneId, TabId, WorkspaceProjection } from '../../models';
 import {
+  type AppState,
   applyAppPatches,
   deleteClosedTabStackPatch,
   setClosedTabStackPatch,
-  type AppState,
 } from '../../state';
 import type { NavigationController } from '../navigation/navigation';
-import type { PaneId, TabId, WorkspaceProjection } from '../../models';
+import { dispatchWorkspaceCommand } from '../workspace/dispatch-workspace-command';
 import { cycledTabIndex, tabIdForJump } from './tab-navigation';
-import {
-  dispatchWorkspaceCommand,
-} from '../workspace/dispatch-workspace-command';
 
 export interface TabControllerContext {
   getWorkspace(): WorkspaceProjection | undefined;
@@ -179,7 +177,8 @@ export function createTabController(
       const pane = workspace?.panesById[paneId];
       if (pane === undefined) return;
       const currentIndex = pane.tabOrder.indexOf(pane.activeTabId);
-      const nextTabId = pane.tabOrder[cycledTabIndex(currentIndex, pane.tabOrder.length, direction)];
+      const nextTabId =
+        pane.tabOrder[cycledTabIndex(currentIndex, pane.tabOrder.length, direction)];
       if (nextTabId !== undefined) this.activateTab(paneId, nextTabId);
     },
 

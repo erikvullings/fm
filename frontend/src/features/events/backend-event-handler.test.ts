@@ -1,11 +1,13 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import type { BackendEvent, Connection, OperationConflict, WorkspaceProjection } from '../../models';
+import type {
+  BackendEvent,
+  Connection,
+  OperationConflict,
+  WorkspaceProjection,
+} from '../../models';
 import { createOperationsState } from '../operations/operation-state';
-import {
-  createBackendEventHandler,
-  type BackendEventContext,
-} from './backend-event-handler';
+import { type BackendEventContext, createBackendEventHandler } from './backend-event-handler';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -18,10 +20,7 @@ type ConnectionId = string & { readonly _brand: unique symbol };
 const WS_ID = 'ws-1' as WorkspaceId;
 const PANE_ID = 'pane-1' as PaneId;
 
-function makeEvent(
-  payload: BackendEvent['payload'],
-  workspaceId?: string,
-): BackendEvent {
+function makeEvent(payload: BackendEvent['payload'], workspaceId?: string): BackendEvent {
   return {
     eventId: 1,
     timestamp: '2026-01-01T00:00:00Z',
@@ -185,7 +184,10 @@ describe('createBackendEventHandler', () => {
 
       handler(
         makeEvent(
-          { type: 'plugin.changed', plugin: { id: 'plug-a', name: 'Plug A', version: '1.1.0', enabled: false } },
+          {
+            type: 'plugin.changed',
+            plugin: { id: 'plug-a', name: 'Plug A', version: '1.1.0', enabled: false },
+          },
           WS_ID,
         ),
       );
@@ -207,7 +209,15 @@ describe('createBackendEventHandler', () => {
       });
       const handler = createBackendEventHandler(ctx);
 
-      handler(makeEvent({ type: 'plugin.changed', plugin: { id: 'plug-a', name: 'Plug A', version: '1.1.0', enabled: true } }, WS_ID));
+      handler(
+        makeEvent(
+          {
+            type: 'plugin.changed',
+            plugin: { id: 'plug-a', name: 'Plug A', version: '1.1.0', enabled: true },
+          },
+          WS_ID,
+        ),
+      );
       // Allow listPlugins promise to settle.
       await new Promise((resolve) => setTimeout(resolve, 0));
 
@@ -222,7 +232,9 @@ describe('createBackendEventHandler', () => {
       const ctx = makeContext({ getConnections: vi.fn(() => [conn]) });
       const handler = createBackendEventHandler(ctx);
 
-      handler(makeEvent({ type: 'connection.deleted', connectionId: 'conn-1' as ConnectionId }, WS_ID));
+      handler(
+        makeEvent({ type: 'connection.deleted', connectionId: 'conn-1' as ConnectionId }, WS_ID),
+      );
 
       expect(ctx.setConnections).toHaveBeenCalledWith(
         expect.not.arrayContaining([expect.objectContaining({ id: 'conn-1' })]),
@@ -280,7 +292,13 @@ describe('createBackendEventHandler', () => {
 
       handler(
         makeEvent(
-          { type: 'search.resultsBatch', searchId: 'search-42', entries: [], isComplete: true, warningsCount: 0 },
+          {
+            type: 'search.resultsBatch',
+            searchId: 'search-42',
+            entries: [],
+            isComplete: true,
+            warningsCount: 0,
+          },
           WS_ID,
         ),
       );
@@ -292,7 +310,14 @@ describe('createBackendEventHandler', () => {
 
   describe('workspace.deleted (active workspace)', () => {
     it('lists workspaces and triggers recovery when the active workspace is deleted', async () => {
-      const summaries = [{ id: 'ws-2' as WorkspaceId, name: 'Other', revision: 1, updatedAt: '2026-01-01T00:00:00Z' }];
+      const summaries = [
+        {
+          id: 'ws-2' as WorkspaceId,
+          name: 'Other',
+          revision: 1,
+          updatedAt: '2026-01-01T00:00:00Z',
+        },
+      ];
       const ctx = makeContext({
         listWorkspaces: vi.fn(() => Promise.resolve(summaries)),
         recoverActiveWorkspace: vi.fn(() => Promise.resolve()),

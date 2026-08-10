@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
-
-import type { Connection, ConnectionConfiguration } from '../../models';
 import type { FileManagerClient } from '../../api/client/file-manager-client';
+import type { Connection, ConnectionConfiguration } from '../../models';
 import {
   connectionStatusGlyph,
   connectionStatusLabel,
@@ -122,7 +121,9 @@ describe('sftpStartPathForConnection', () => {
 
   it('falls back to /home/<username> when startPath is not configured', () => {
     expect(
-      sftpStartPathForConnection(sampleConnection({ configuration: sshConfiguration({ startPath: null }) })),
+      sftpStartPathForConnection(
+        sampleConnection({ configuration: sshConfiguration({ startPath: null }) }),
+      ),
     ).toBe('/home/erik');
   });
 

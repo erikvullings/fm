@@ -17,8 +17,8 @@ import type {
 import { upsertConnection, withoutConnection } from '../connections/connections-model';
 import {
   dismissOperation,
-  reduceOperationEvents,
   type OperationCentreState,
+  reduceOperationEvents,
 } from '../operations/operation-state';
 
 const FAST_OPERATION_DISMISS_THRESHOLD_MS = 500;
@@ -114,9 +114,7 @@ export interface BackendEventContext {
  * lived in AppShell's `handleBackendEvent` closure now lives here, testable in
  * isolation via a mock {@link BackendEventContext}.
  */
-export function createBackendEventHandler(
-  ctx: BackendEventContext,
-): (event: BackendEvent) => void {
+export function createBackendEventHandler(ctx: BackendEventContext): (event: BackendEvent) => void {
   return function handleBackendEvent(event: BackendEvent): void {
     const payload = event.payload;
 
@@ -173,7 +171,10 @@ export function createBackendEventHandler(
                 panesNeedRefresh = true;
               }
               if (!isAutoDismissibleState(current.state)) continue;
-              if (Date.now() - Date.parse(current.createdAt) < FAST_OPERATION_DISMISS_THRESHOLD_MS) {
+              if (
+                Date.now() - Date.parse(current.createdAt) <
+                FAST_OPERATION_DISMISS_THRESHOLD_MS
+              ) {
                 next = dismissOperation(next, id);
               } else {
                 ctx.scheduleAutoDismiss(id, AUTO_DISMISS_DELAY_MS);

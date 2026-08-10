@@ -39,13 +39,13 @@ import type { SelectionAction } from '../selection/selection';
 import { breadcrumbSegments, searchBreadcrumbSegments } from './breadcrumb-view';
 import { isParentEntry } from './parent-entry';
 import { createRenameEditingController } from './rename-edit-controller';
-import { TabStrip } from './tab-strip';
 import type { PaneTab } from './tab-strip';
+import { TabStrip } from './tab-strip';
 import { createTypeaheadController } from './typeahead-controller';
 import './pane.css';
 
-export { breadcrumbSegments, searchBreadcrumbSegments } from './breadcrumb-view';
 export type { BreadcrumbSegment } from './breadcrumb-view';
+export { breadcrumbSegments, searchBreadcrumbSegments } from './breadcrumb-view';
 export type { PaneTab } from './tab-strip';
 
 // ── Sub-object interfaces ──────────────────────────────────────────────────────
@@ -63,7 +63,9 @@ export interface FavouritesAttrs {
   readonly onRefreshConnections?: (() => void | Promise<void>) | undefined;
   readonly unavailableLocations?: ReadonlySet<string> | undefined;
   readonly onNavigateLocation?: ((location: Location) => void | Promise<void>) | undefined;
-  readonly onAddFavourite?: ((label: string, location: Location) => void | Promise<void>) | undefined;
+  readonly onAddFavourite?:
+  | ((label: string, location: Location) => void | Promise<void>)
+  | undefined;
   readonly onDeleteFavourite?: ((location: Location) => void | Promise<void>) | undefined;
   readonly onReorderFavourites?: ((from: number, to: number) => void | Promise<void>) | undefined;
 }
@@ -511,7 +513,11 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
               const cursorEntry =
                 attrs.cursorIndex === undefined ? undefined : attrs.entries[attrs.cursorIndex];
               const taResult = typeaheadCtrl.moveWithinMatches(
-                attrs.entries, cursorEntry, command.offset, undefined, false,
+                attrs.entries,
+                cursorEntry,
+                command.offset,
+                undefined,
+                false,
               );
               if (taResult === false) {
                 attrs.onSelectionAction(command);
@@ -524,7 +530,11 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
               const cursorEntry =
                 attrs.cursorIndex === undefined ? undefined : attrs.entries[attrs.cursorIndex];
               const taResult = typeaheadCtrl.moveWithinMatches(
-                attrs.entries, cursorEntry, offset, undefined, false,
+                attrs.entries,
+                cursorEntry,
+                offset,
+                undefined,
+                false,
               );
               if (taResult === false) {
                 attrs.onSelectionAction({ type: 'moveCursor', offset });
@@ -536,7 +546,11 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
               const cursorEntry =
                 attrs.cursorIndex === undefined ? undefined : attrs.entries[attrs.cursorIndex];
               const taResult = typeaheadCtrl.moveWithinMatches(
-                attrs.entries, cursorEntry, 0, command.edge, false,
+                attrs.entries,
+                cursorEntry,
+                0,
+                command.edge,
+                false,
               );
               if (taResult === false) {
                 attrs.onSelectionAction(command);
@@ -548,7 +562,11 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
               const cursorEntry =
                 attrs.cursorIndex === undefined ? undefined : attrs.entries[attrs.cursorIndex];
               const taResult = typeaheadCtrl.moveWithinMatches(
-                attrs.entries, cursorEntry, command.offset, undefined, true,
+                attrs.entries,
+                cursorEntry,
+                command.offset,
+                undefined,
+                true,
               );
               if (taResult === false) {
                 attrs.onSelectionAction(command);
@@ -711,8 +729,7 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
                   ...(attrs.favourites.connections ?? []).map((connection) =>
                     (() => {
                       const openInPane = attrs.tabs.some(
-                        (tab) =>
-                          tab.locationUri?.startsWith(`sftp://${connection.id}/`) === true,
+                        (tab) => tab.locationUri?.startsWith(`sftp://${connection.id}/`) === true,
                       );
                       const status = openInPane ? 'connected' : connection.status;
                       return m(
@@ -921,18 +938,12 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
                 m(
                   '.fm-breadcrumb-segments',
                   {
-                    ondblclick: isSearchLocation
-                      ? undefined
-                      : () => beginEditing(attrs.path),
+                    ondblclick: isSearchLocation ? undefined : () => beginEditing(attrs.path),
                   },
                   isSearchLocation
                     ? searchBreadcrumbSegments(activeLocationUri, attrs.searchQuery).map(
                       (segment) =>
-                        m(
-                          'span.fm-breadcrumb-segment',
-                          { key: segment.path },
-                          segment.label,
-                        ),
+                        m('span.fm-breadcrumb-segment', { key: segment.path }, segment.label),
                     )
                     : (isSftpLocation && attrs.path !== '/'
                       ? breadcrumbSegments(attrs.path).slice(1)
@@ -989,7 +1000,9 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
                 m.redraw();
               }
             },
-            ...(typeaheadCtrl.prefix === undefined ? {} : { nameMatchPrefix: typeaheadCtrl.prefix }),
+            ...(typeaheadCtrl.prefix === undefined
+              ? {}
+              : { nameMatchPrefix: typeaheadCtrl.prefix }),
             onRetry: () => void attrs.onRetry(),
             onEndReached: () => void attrs.onLoadNextPage(),
             onCursorChange: (index, modifiers) => {
@@ -1039,17 +1052,14 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
               if (dragged === undefined || isParentEntry(dragged.id)) return;
               const selection = attrs.selectedEntryIds.has(dragged.id)
                 ? attrs.entries.filter(
-                  (entry) =>
-                    !isParentEntry(entry.id) && attrs.selectedEntryIds.has(entry.id),
+                  (entry) => !isParentEntry(entry.id) && attrs.selectedEntryIds.has(entry.id),
                 )
                 : [dragged];
               attrs.onDragStart?.(selection, event);
             },
             onDragOver: (index, event) =>
-              attrs.onDragOver?.(
-                index === undefined ? undefined : attrs.entries[index],
-                event,
-              ) ?? false,
+              attrs.onDragOver?.(index === undefined ? undefined : attrs.entries[index], event) ??
+              false,
             onDrop: (index, event) =>
               attrs.onDrop?.(index === undefined ? undefined : attrs.entries[index], event),
             onSortChange: attrs.onSortChange,
