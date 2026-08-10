@@ -1550,7 +1550,236 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     ).catch(() => undefined);
   }
 
-  /** Opens a new tab in `paneId`, starting at the pane's currently active location. */
+  function renderDialogs(client: FileManagerClient, pendingDelete: typeof operations.byId[string]): m.Children[] {
+    return [
+      m(OperationCentre, {
+        state: operations,
+        onCancel: (operationId) => {
+          operations = transitionOperationState(operations, operationId, 'cancelling');
+          void client.cancelOperation(operationId).catch(() => undefined);
+        },
+        onPause: (operationId) => {
+          operations = transitionOperationState(operations, operationId, 'paused');
+          void client.pauseOperation(operationId).catch(() => undefined);
+        },
+        onResume: (operationId) => {
+          operations = transitionOperationState(operations, operationId, 'running');
+          void client.resumeOperation(operationId).catch(() => undefined);
+        },
+        onDismiss: (operationId) => {
+          cancelAutoDismiss(operationId);
+          rememberDismissedOperation(operationId);
+          operations = dismissOperation(operations, operationId);
+        },
+      }),
+      m(CreateDirectoryDialog, {
+        open: createDirectoryOpen,
+        onCancel: () => {
+          createDirectoryOpen = false;
+          createDirectoryLocation = undefined;
+        },
+        onConfirm: (name: string) => {
+          const location = createDirectoryLocation ?? activeDirectory()?.location;
+          if (location === undefined) return;
+          createDirectoryOpen = false;
+          createDirectoryLocation = undefined;
+          pendingCreatedLocation = `${location.uri.replace(/\/$/u, '')}/${encodeURIComponent(name)}`;
+          void opsController.createDirectory(location, name).catch(() => {
+            pendingCreatedLocation = undefined;
+          });
+        },
+      }),
+      m(ArchiveCreateDialog, {
+        open: archiveCreateRequest !== undefined,
+        moveSources: archiveCreateRequest?.moveSources ?? false,
+        onCancel: () => {
+          archiveCreateRequest = undefined;
+        },
+        onConfirm: (name: string, format: ArchiveFormat, compressionLevel?: number) => {
+          const request = archiveCreateRequest;
+          if (request === undefined) return;
+          archiveCreateRequest = undefined;
+          void opsController.pack(
+            request.sources,
+            {
+              ...request.destinationDirectory,
+              uri: `${request.destinationDirectory.uri.replace(/\/$/u, '')}/${encodeURIComponent(name)}`,
+            },
+            request.moveSources,
+            format,
+            compressionLevel,
+          );
+        },
+      }),
+      m(MultiRenameDialog, {
+        open: multiRenameOpen,
+        entries: multiRenameEntries,
+        existingSiblingNames: multiRenameExistingNames,
+        onCancel: () => {
+          multiRenameOpen = false;
+          multiRenameEntries = [];
+          multiRenameLocation = undefined;
+          multiRenameExistingNames = new Set();
+        },
+        onApply: (renamed) => {
+          const location = multiRenameLocation;
+          multiRenameOpen = false;
+          if (location === undefined) return;
+          const entriesById = new Map(multiRenameEntries.map((entry) => [entry.id, entry]));
+          const sources: Location[] = [];
+          const destinations: Location[] = [];
+          for (const { id, newName } of renamed) {
+            const entry = entriesById.get(id);
+            if (entry === undefined) continue;
+            const destinationUri = `${location.uri.replace(/\/$/u, '')}/${encodeURIComponent(newName)}`;
+            sources.push(entry.location);
+            destinations.push({ ...entry.location, uri: destinationUri });
+          }
+          multiRenameEntries = [];
+          multiRenameLocation = undefined;
+          multiRenameExistingNames = new Set();
+          if (sources.length === 0) return;
+          void opsController.multiRename(sources, destinations);
+        },
+      }),
+      m(ArchivePasswordDialog, {
+        open: pendingArchiveCredential !== undefined,
+        invalid: pendingArchiveCredential?.invalid ?? false,
+        archiveLabel:
+          pendingArchiveCredential === undefined
+            ? ''
+            : pathFromUri(pendingArchiveCredential.location.uri),
+        ...(archiveCredentialError === undefined ? {} : { error: archiveCredentialError }),
+        onCancel: () => {
+          const pending = pendingArchiveCredential;
+          pendingArchiveCredential = undefined;
+          archiveCredentialError = undefined;
+          pending?.resolve(false);
+        },
+        onConfirm: (password: string) => {
+          const pending = pendingArchiveCredential;
+          if (pending === undefined) return;
+          void client
+            .cacheArchivePassword({ location: pending.location, password })
+            .then(() => {
+              if (pendingArchiveCredential === pending) {
+                pendingArchiveCredential = undefined;
+                archiveCredentialError = undefined;
+                pending.resolve(true);
+                m.redraw();
+              }
+            })
+            .catch((error: unknown) => {
+              archiveCredentialError =
+                error instanceof Error ? error.message : 'Unable to cache archive password';
+              m.redraw();
+            });
+        },
+      }),
+      m(ConnectionsManager, {
+        open: connectionsManagerOpen,
+        connections,
+        onRefresh: async () => {
+          connections = await loadConnections(client);
+        },
+        onClose: () => {
+          connectionsManagerOpen = false;
+          m.redraw();
+        },
+        onSave: async (draft, editingId) => {
+          const result = await saveConnection(client, draft, editingId);
+          if (result.ok) {
+            connections = upsertConnection(connections, result.connection);
+          }
+          return result;
+        },
+        onDelete: async (id) => {
+          await deleteConnectionRequest(client, id);
+          connections = withoutConnection(connections, id);
+        },
+        onConnect: async (id) => {
+          const updated = await connectConnectionRequest(client, id);
+          connections = upsertConnection(connections, updated);
+          return updated;
+        },
+        onDisconnect: async (id) => {
+          const updated = await disconnectConnectionRequest(client, id);
+          connections = upsertConnection(connections, updated);
+          return updated;
+        },
+        onTest: async (id) => {
+          const updated = await testConnectionRequest(client, id);
+          connections = upsertConnection(connections, updated);
+          return updated;
+        },
+        onProbeHostKey: (id) => probeSshHostKeyRequest(client, id),
+        onAcceptHostKey: (id, fingerprint) =>
+          acceptSshHostKeyRequest(client, id, fingerprint),
+      }),
+      m(FindFilesDialog, {
+        open: findFilesOpen,
+        scopeLabel: findFilesRoot === undefined ? '' : pathFromUri(findFilesRoot.uri),
+        ...(findFilesError === undefined ? {} : { error: findFilesError }),
+        onSearch: (params: FindFilesSearchParams) => startFindFilesSearch(params),
+        onCancel: () => closeFindFiles(),
+      }),
+      m(PermanentDeleteDialog, {
+        open: pendingDelete !== undefined,
+        itemCount: pendingDelete?.progress.totalItems ?? 0,
+        totalBytes: pendingDelete?.progress.totalBytes ?? 0,
+        onCancel: () => {
+          if (pendingDelete !== undefined) void client.cancelOperation(pendingDelete.id);
+        },
+        onConfirm: () => {
+          if (pendingDelete !== undefined) {
+            void client
+              .resolveConflict({
+                operationId: pendingDelete.id,
+                resolution: 'confirm',
+                applyToAllSimilar: false,
+              })
+              .then(() => {
+                refetchAffectedPanes();
+                m.redraw();
+              });
+          }
+        },
+      }),
+      m(ConflictDialog, {
+        conflict: pendingConflict,
+        onResolve: (resolution, applyToAllSimilar) => {
+          const conflict = pendingConflict;
+          if (conflict === undefined) return;
+          void client
+            .resolveConflict({
+              operationId: conflict.operationId,
+              resolution,
+              applyToAllSimilar,
+            })
+            .then(() => {
+              if (pendingConflict?.conflictId === conflict.conflictId) {
+                pendingConflict = undefined;
+                refetchAffectedPanes();
+                m.redraw();
+              }
+            });
+        },
+      }),
+      m(CloseLastTabDialog, {
+        open: closeTabConfirmation !== undefined,
+        onConfirm: () => {
+          const confirmation = closeTabConfirmation;
+          closeTabConfirmation = undefined;
+          if (confirmation !== undefined) {
+            tabController.performCloseTab(confirmation.paneId, confirmation.tabId);
+          }
+        },
+        onCancel: () => {
+          closeTabConfirmation = undefined;
+        },
+      }),
+    ];
+  }
 
   return {
     oninit: ({ attrs }) => {
@@ -2001,232 +2230,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
             },
             onInvoke: invokeContextMenuAction,
           }),
-          m(OperationCentre, {
-            state: operations,
-            onCancel: (operationId) => {
-              operations = transitionOperationState(operations, operationId, 'cancelling');
-              void attrs.client.cancelOperation(operationId).catch(() => undefined);
-            },
-            onPause: (operationId) => {
-              operations = transitionOperationState(operations, operationId, 'paused');
-              void attrs.client.pauseOperation(operationId).catch(() => undefined);
-            },
-            onResume: (operationId) => {
-              operations = transitionOperationState(operations, operationId, 'running');
-              void attrs.client.resumeOperation(operationId).catch(() => undefined);
-            },
-            onDismiss: (operationId) => {
-              cancelAutoDismiss(operationId);
-              rememberDismissedOperation(operationId);
-              operations = dismissOperation(operations, operationId);
-            },
-          }),
-          m(CreateDirectoryDialog, {
-            open: createDirectoryOpen,
-            onCancel: () => {
-              createDirectoryOpen = false;
-              createDirectoryLocation = undefined;
-            },
-            onConfirm: (name: string) => {
-              const location = createDirectoryLocation ?? activeDirectory()?.location;
-              if (location === undefined) return;
-              createDirectoryOpen = false;
-              createDirectoryLocation = undefined;
-              pendingCreatedLocation = `${location.uri.replace(/\/$/u, '')}/${encodeURIComponent(name)}`;
-              void opsController.createDirectory(location, name).catch(() => {
-                pendingCreatedLocation = undefined;
-              });
-            },
-          }),
-          m(ArchiveCreateDialog, {
-            open: archiveCreateRequest !== undefined,
-            moveSources: archiveCreateRequest?.moveSources ?? false,
-            onCancel: () => {
-              archiveCreateRequest = undefined;
-            },
-            onConfirm: (name: string, format: ArchiveFormat, compressionLevel?: number) => {
-              const request = archiveCreateRequest;
-              if (request === undefined) return;
-              archiveCreateRequest = undefined;
-              void opsController.pack(
-                request.sources,
-                {
-                  ...request.destinationDirectory,
-                  uri: `${request.destinationDirectory.uri.replace(/\/$/u, '')}/${encodeURIComponent(name)}`,
-                },
-                request.moveSources,
-                format,
-                compressionLevel,
-              );
-            },
-          }),
-          m(MultiRenameDialog, {
-            open: multiRenameOpen,
-            entries: multiRenameEntries,
-            existingSiblingNames: multiRenameExistingNames,
-            onCancel: () => {
-              multiRenameOpen = false;
-              multiRenameEntries = [];
-              multiRenameLocation = undefined;
-              multiRenameExistingNames = new Set();
-            },
-            onApply: (renamed) => {
-              const location = multiRenameLocation;
-              multiRenameOpen = false;
-              if (location === undefined) return;
-              const entriesById = new Map(multiRenameEntries.map((entry) => [entry.id, entry]));
-              const sources: Location[] = [];
-              const destinations: Location[] = [];
-              for (const { id, newName } of renamed) {
-                const entry = entriesById.get(id);
-                if (entry === undefined) continue;
-                const destinationUri = `${location.uri.replace(/\/$/u, '')}/${encodeURIComponent(newName)}`;
-                sources.push(entry.location);
-                destinations.push({ ...entry.location, uri: destinationUri });
-              }
-              multiRenameEntries = [];
-              multiRenameLocation = undefined;
-              multiRenameExistingNames = new Set();
-              if (sources.length === 0) return;
-              void opsController.multiRename(sources, destinations);
-            },
-          }),
-          m(ArchivePasswordDialog, {
-            open: pendingArchiveCredential !== undefined,
-            invalid: pendingArchiveCredential?.invalid ?? false,
-            archiveLabel:
-              pendingArchiveCredential === undefined
-                ? ''
-                : pathFromUri(pendingArchiveCredential.location.uri),
-            ...(archiveCredentialError === undefined ? {} : { error: archiveCredentialError }),
-            onCancel: () => {
-              const pending = pendingArchiveCredential;
-              pendingArchiveCredential = undefined;
-              archiveCredentialError = undefined;
-              pending?.resolve(false);
-            },
-            onConfirm: (password: string) => {
-              const pending = pendingArchiveCredential;
-              if (pending === undefined) return;
-              void attrs.client
-                .cacheArchivePassword({ location: pending.location, password })
-                .then(() => {
-                  if (pendingArchiveCredential === pending) {
-                    pendingArchiveCredential = undefined;
-                    archiveCredentialError = undefined;
-                    pending.resolve(true);
-                    m.redraw();
-                  }
-                })
-                .catch((error: unknown) => {
-                  archiveCredentialError =
-                    error instanceof Error ? error.message : 'Unable to cache archive password';
-                  m.redraw();
-                });
-            },
-          }),
-          m(ConnectionsManager, {
-            open: connectionsManagerOpen,
-            connections,
-            onRefresh: async () => {
-              connections = await loadConnections(attrs.client);
-            },
-            onClose: () => {
-              connectionsManagerOpen = false;
-              m.redraw();
-            },
-            onSave: async (draft, editingId) => {
-              const result = await saveConnection(attrs.client, draft, editingId);
-              if (result.ok) {
-                connections = upsertConnection(connections, result.connection);
-              }
-              return result;
-            },
-            onDelete: async (id) => {
-              await deleteConnectionRequest(attrs.client, id);
-              connections = withoutConnection(connections, id);
-            },
-            onConnect: async (id) => {
-              const updated = await connectConnectionRequest(attrs.client, id);
-              connections = upsertConnection(connections, updated);
-              return updated;
-            },
-            onDisconnect: async (id) => {
-              const updated = await disconnectConnectionRequest(attrs.client, id);
-              connections = upsertConnection(connections, updated);
-              return updated;
-            },
-            onTest: async (id) => {
-              const updated = await testConnectionRequest(attrs.client, id);
-              connections = upsertConnection(connections, updated);
-              return updated;
-            },
-            onProbeHostKey: (id) => probeSshHostKeyRequest(attrs.client, id),
-            onAcceptHostKey: (id, fingerprint) =>
-              acceptSshHostKeyRequest(attrs.client, id, fingerprint),
-          }),
-          m(FindFilesDialog, {
-            open: findFilesOpen,
-            scopeLabel: findFilesRoot === undefined ? '' : pathFromUri(findFilesRoot.uri),
-            ...(findFilesError === undefined ? {} : { error: findFilesError }),
-            onSearch: (params: FindFilesSearchParams) => startFindFilesSearch(params),
-            onCancel: () => closeFindFiles(),
-          }),
-          m(PermanentDeleteDialog, {
-            open: pendingDelete !== undefined,
-            itemCount: pendingDelete?.progress.totalItems ?? 0,
-            totalBytes: pendingDelete?.progress.totalBytes ?? 0,
-            onCancel: () => {
-              if (pendingDelete !== undefined) void attrs.client.cancelOperation(pendingDelete.id);
-            },
-            onConfirm: () => {
-              if (pendingDelete !== undefined) {
-                void attrs.client
-                  .resolveConflict({
-                    operationId: pendingDelete.id,
-                    resolution: 'confirm',
-                    applyToAllSimilar: false,
-                  })
-                  .then(() => {
-                    refetchAffectedPanes();
-                    m.redraw();
-                  });
-              }
-            },
-          }),
-          m(ConflictDialog, {
-            conflict: pendingConflict,
-            onResolve: (resolution, applyToAllSimilar) => {
-              const conflict = pendingConflict;
-              if (conflict === undefined) return;
-              void attrs.client
-                .resolveConflict({
-                  operationId: conflict.operationId,
-                  resolution,
-                  applyToAllSimilar,
-                })
-                .then(() => {
-                  if (pendingConflict?.conflictId === conflict.conflictId) {
-                    pendingConflict = undefined;
-                    refetchAffectedPanes();
-                    m.redraw();
-                  }
-                });
-            },
-          }),
-          m(CloseLastTabDialog, {
-            open: closeTabConfirmation !== undefined,
-            onConfirm: () => {
-              const confirmation = closeTabConfirmation;
-              closeTabConfirmation = undefined;
-              if (confirmation !== undefined) {
-                tabController.performCloseTab(confirmation.paneId, confirmation.tabId);
-              }
-            },
-            onCancel: () => {
-              closeTabConfirmation = undefined;
-            },
-          }),
+          ...renderDialogs(attrs.client, pendingDelete),
           m(
             '.fm-function-key-bar',
             footerFunctionKeyBindings(
