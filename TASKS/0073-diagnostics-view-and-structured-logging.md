@@ -1,6 +1,6 @@
 # 0073 Diagnostics view and structured logging
 
-Status: in-progress
+Status: done
 Priority: medium
 Owner: unassigned
 Agent: unassigned
@@ -78,3 +78,44 @@ Depends on: 0036, 0054
 6. Test in both HTTP and Tauri modes
 
 **Commit**: 74b7e4d "Task 0073 Phase 3-4: Frontend diagnostics view and documentation"
+
+### Phase 5: Final completion (commit b5d361e)
+
+#### Backend — Structured Tracing Spans
+- `trace_span` in `lib.rs` creates `http_request` span with `request_id`, `workspace_id`, `operation_id`, `plugin_id`, `provider_id`, `duration_ms`, `result` as recorded fields.
+- `list_directory` records `workspace_id` + `provider_id` on the current span via `Span::current().record()`.
+- `apply_workspace_command` records `workspace_id`.
+- `start_operation` records `operation_id` on success.
+- `enable_plugin` / `disable_plugin` record `plugin_id`.
+
+#### Backend — Log Level + Format Config + Rolling File Log
+- `main.rs` now calls `init_tracing()` which reads:
+  - `RUST_LOG` for level filter (existing, unchanged semantics)
+  - `FM_LOG_FORMAT`: `compact` (default) or `pretty`
+  - `FM_LOG_FILE`: path prefix → `tracing-appender::rolling::daily()` for rolling log (desktop mode)
+- `fm-desktop/src-tauri/src/lib.rs` gets identical `init_tracing()` function that defaults to daily rolling log in `$DATA_DIR/fm/fm-desktop.log` when `FM_LOG_FILE` is not set (desktop mode auto-log).
+- Added `tracing-appender = "0.2"` to workspace and both app `Cargo.toml`s.
+
+#### Backend — Real SSE Connection State
+- `events.rs`: `connection_state.record_event()` called for every `SubscriptionEvent::Event` streamed to a client.
+
+#### Frontend — Wired Diagnostics View
+- `activityIcon` (heartbeat line) added to `tabler-icons.ts`.
+- `app-shell.ts`: diagnostics button + `<details.fm-diagnostics-disclosure>` panel added alongside the settings button, displaying `DiagnosticsViewComponent` when open.
+- `diagnostics-view.ts` rewritten to fix all TypeScript errors (removed unused `FileManagerClient` import, `Spinner` import, fixed `type Vnode` / `type DiagnosticsView` imports, removed unused `client` parameter).
+- `diagnostics.ts` / `diagnostics.test.ts` fixed for `verbatimModuleSyntax` + unused `vi` import.
+
+#### Pre-existing Lint Fixes (opportunistic, blocking CI)
+- `redaction.rs`: 5× `and_then(|x| Some(y))` → `map(|x| y)`; nested `if` collapsed.
+- `operation.rs`: `.clone()` on Copy type removed.
+- `accessible_roots.rs` + `tests/security.rs`: `&[x.clone()]` → `std::slice::from_ref(&x)`.
+- `copy_planning.rs` bench: nested `if let` + `if` collapsed.
+
+### Final Acceptance Criteria Status
+- ✅ Structured tracing spans: request_id, operation_id, workspace_id, plugin_id, provider_id, duration, result (Empty until handler records them)
+- ✅ Logging never includes file contents, secrets, paths by default — redaction helper + 11 tests
+- ✅ Log level via `RUST_LOG`; format via `FM_LOG_FORMAT`; rolling file via `FM_LOG_FILE` (desktop defaults to daily rolling log)
+- ✅ Diagnostics view: frontend/backend/Tauri version, platform, runtime capabilities, SSE state, plugins, recent errors (bounded 50), operation queue
+- ✅ "Copy for Bug Report" button produces redacted text block
+- ✅ Works in browser AND desktop modes (server + Tauri host both wired)
+- ✅ Tests: redaction (11 unit + 2 doc), diagnostics DTO (4), frontend model (4)
