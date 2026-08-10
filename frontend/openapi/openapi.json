@@ -3131,6 +3131,13 @@
             "minimum": 0,
             "type": "integer"
           },
+          "startPath": {
+            "description": "Optional initial remote directory to open when browsing this connection.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "username": {
             "description": "Remote username.",
             "type": "string"

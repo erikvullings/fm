@@ -69,6 +69,8 @@ pub struct SshConnectionConfiguration {
     pub port: u16,
     /// Remote username.
     pub username: String,
+    /// Optional initial remote directory to open when browsing this connection.
+    pub start_path: Option<String>,
     /// Authentication method.
     pub authentication: SshAuthenticationMethod,
     /// Host-key verification policy.
@@ -240,6 +242,7 @@ mod tests {
             host: "example.test".to_owned(),
             port: 22,
             username: "erik".to_owned(),
+            start_path: Some("/home/erik".to_owned()),
             authentication: SshAuthenticationMethod::Password,
             host_key_policy: HostKeyPolicy::PromptOnFirstUse,
             keepalive: Some(Duration::from_secs(30)),
@@ -296,6 +299,7 @@ mod tests {
             host: "  ".to_owned(),
             port: 0,
             username: String::new(),
+            start_path: None,
             authentication: SshAuthenticationMethod::Agent,
             host_key_policy: HostKeyPolicy::PromptOnFirstUse,
             keepalive: None,

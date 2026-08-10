@@ -93,6 +93,8 @@ pub struct SshConnectionConfigurationDto {
     pub port: u16,
     /// Remote username.
     pub username: String,
+    /// Optional initial remote directory to open when browsing this connection.
+    pub start_path: Option<String>,
     /// Authentication method.
     pub authentication: SshAuthenticationMethodDto,
     /// Host-key verification policy.
@@ -356,6 +358,7 @@ mod tests {
             host: "example.test".to_owned(),
             port: 22,
             username: "erik".to_owned(),
+            start_path: Some("/home/erik".to_owned()),
             authentication: SshAuthenticationMethodDto::Password,
             host_key_policy: HostKeyPolicyDto::PromptOnFirstUse,
             keepalive_seconds: Some(30),

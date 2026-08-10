@@ -4,8 +4,10 @@ import type { Connection, ConnectionConfiguration } from '../../models';
 import {
   connectionStatusGlyph,
   connectionStatusLabel,
+  defaultSshStartPath,
   isBrowsable,
   sftpRootLocation,
+  sftpStartPathForConnection,
   upsertConnection,
   validateConnectionDraft,
   withoutConnection,
@@ -19,6 +21,7 @@ function sshConfiguration(
     host: 'example.test',
     port: 22,
     username: 'erik',
+    startPath: null,
     authentication: 'password',
     hostKeyPolicy: 'promptOnFirstUse',
     keepaliveSeconds: null,
@@ -93,6 +96,51 @@ describe('sftpRootLocation', () => {
     expect(location.providerId).toBe('sftp');
     expect(location.uri).toBe('sftp://11111111-1111-4111-8111-111111111111/');
   });
+
+  it('builds an sftp:// location for an explicit remote start path', () => {
+    const location = sftpRootLocation('11111111-1111-4111-8111-111111111111', '/home/erik');
+    expect(location.providerId).toBe('sftp');
+    expect(location.uri).toBe('sftp://11111111-1111-4111-8111-111111111111/home/erik');
+  });
+
+  it('normalizes a start path missing a leading slash', () => {
+    const location = sftpRootLocation('11111111-1111-4111-8111-111111111111', 'home/erik');
+    expect(location.uri).toBe('sftp://11111111-1111-4111-8111-111111111111/home/erik');
+  });
+});
+
+describe('sftpStartPathForConnection', () => {
+  it('uses explicit ssh startPath when configured', () => {
+    expect(
+      sftpStartPathForConnection(
+        sampleConnection({ configuration: sshConfiguration({ startPath: '/srv/data' }) }),
+      ),
+    ).toBe('/srv/data');
+  });
+
+  it('falls back to /home/<username> when startPath is not configured', () => {
+    expect(
+      sftpStartPathForConnection(sampleConnection({ configuration: sshConfiguration({ startPath: null }) })),
+    ).toBe('/home/erik');
+  });
+
+  it('normalizes a configured startPath missing leading slash', () => {
+    expect(
+      sftpStartPathForConnection(
+        sampleConnection({ configuration: sshConfiguration({ startPath: 'var/lib' }) }),
+      ),
+    ).toBe('/var/lib');
+  });
+});
+
+describe('defaultSshStartPath', () => {
+  it('builds a home path for a non-empty username', () => {
+    expect(defaultSshStartPath('tno')).toBe('/home/tno');
+  });
+
+  it('falls back to root for an empty username', () => {
+    expect(defaultSshStartPath('  ')).toBe('/');
+  });
 });
 
 describe('upsertConnection', () => {
@@ -163,6 +211,14 @@ describe('validateConnectionDraft', () => {
       configuration: sshConfiguration({ port: 70_000 }),
     });
     expect(errors.map((error) => error.field)).toContain('port');
+  });
+
+  it('rejects a configured ssh start path without a leading slash', () => {
+    const errors = validateConnectionDraft({
+      name: 'Home Server',
+      configuration: sshConfiguration({ startPath: 'relative/path' }),
+    });
+    expect(errors.map((error) => error.field)).toContain('startPath');
   });
 
   it('does not require ssh-specific fields for a non-ssh kind', () => {

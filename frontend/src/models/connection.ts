@@ -87,6 +87,7 @@ export function defaultSshConfiguration(): ConnectionConfiguration {
     host: '',
     port: 22,
     username: '',
+    startPath: null,
     authentication: 'password',
     hostKeyPolicy: 'promptOnFirstUse',
     keepaliveSeconds: null,

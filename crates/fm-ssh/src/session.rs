@@ -247,7 +247,13 @@ async fn authenticate(
                 passphrase.as_ref().map(|value| value.as_str()),
             )
             .map_err(|error| SshError::InvalidPrivateKey(error.to_string()))?;
-            let key_with_hash = PrivateKeyWithHashAlg::new(Arc::new(private_key), None);
+            // OpenSSH uses rsa-sha2-* signatures for RSA keys by default on
+            // modern servers. Keep parity by preferring SHA-2 here instead of
+            // leaving hash selection implicit.
+            let key_with_hash = PrivateKeyWithHashAlg::new(
+                Arc::new(private_key),
+                Some(russh::keys::HashAlg::Sha512),
+            );
             handle
                 .authenticate_publickey(username, key_with_hash)
                 .await

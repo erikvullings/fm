@@ -114,10 +114,8 @@
   margin: 0;
 }
 
-.fm-connection-form {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
+.fm-connections-success {
+  margin: 0;
 }
 
 /* Materialize's own `.row { margin-bottom: 20px }` default is meant for

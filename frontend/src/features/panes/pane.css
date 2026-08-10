@@ -27,8 +27,8 @@
   grid-row: 2;
 }
 
-.fm-pane > .fm-directory-table,
-.fm-pane > .fm-directory-state {
+.fm-pane>.fm-directory-table,
+.fm-pane>.fm-directory-state {
   grid-row: 3;
 }
 
@@ -108,7 +108,7 @@
   white-space: nowrap;
 }
 
-.fm-pane-tab-title > * {
+.fm-pane-tab-title>* {
   display: inline !important;
 }
 
@@ -187,6 +187,13 @@
   display: flex;
   min-width: 0;
   overflow: hidden;
+}
+
+.fm-breadcrumb-scheme {
+  align-self: center;
+  padding: 0 0 0 0.65rem;
+  color: var(--fm-text-muted);
+  white-space: nowrap;
 }
 
 .fm-breadcrumb-segment {
@@ -278,7 +285,7 @@
   align-items: center;
 }
 
-.fm-favourites-add > input[type="text"]:not(.browser-default) {
+.fm-favourites-add>input[type="text"]:not(.browser-default) {
   box-sizing: border-box;
   flex: 1;
   min-width: 0;
@@ -293,7 +300,7 @@
   font: inherit;
 }
 
-.fm-favourites-add > input[type="text"]:not(.browser-default):focus {
+.fm-favourites-add>input[type="text"]:not(.browser-default):focus {
   border: 1px solid var(--fm-accent);
   box-shadow: 0 0 0 1px var(--fm-accent);
 }
@@ -331,7 +338,7 @@
 /* Beats `.fm-favourites-recents > button`'s `display: block` (same specificity
    family, defined later) by matching on both the parent class and the
    element's own class. */
-.fm-favourites-recents > button.fm-server-item {
+.fm-favourites-recents>button.fm-server-item {
   display: flex;
   width: 100%;
   align-items: center;
@@ -351,7 +358,7 @@
   color: var(--fm-text-muted);
 }
 
-.fm-favourites-item > button:first-child {
+.fm-favourites-item>button:first-child {
   flex: 1;
   min-width: 0;
   overflow: hidden;
@@ -363,8 +370,8 @@
   white-space: nowrap;
 }
 
-.fm-favourites-menu > strong,
-.fm-favourites-recents > strong {
+.fm-favourites-menu>strong,
+.fm-favourites-recents>strong {
   color: var(--fm-text);
   font-size: 0.9em;
 }
@@ -394,46 +401,46 @@
   gap: 0.25rem;
 }
 
-.fm-favourites-item > button:first-child {
+.fm-favourites-item>button:first-child {
   cursor: pointer !important;
 }
 
-.fm-favourites-recents > button {
+.fm-favourites-recents>button {
   cursor: pointer;
 }
 
-.fm-favourites-item > button:first-child:hover:not(:disabled),
-.fm-favourites-item > button:first-child:focus-visible,
-.fm-favourites-recents > button:hover:not(:disabled),
-.fm-favourites-recents > button:focus-visible {
+.fm-favourites-item>button:first-child:hover:not(:disabled),
+.fm-favourites-item>button:first-child:focus-visible,
+.fm-favourites-recents>button:hover:not(:disabled),
+.fm-favourites-recents>button:focus-visible {
   background: var(--fm-hover);
   color: var(--fm-text);
 }
 
-.fm-favourites-item > button:not(:first-child) {
+.fm-favourites-item>button:not(:first-child) {
   opacity: 0;
   pointer-events: none;
   color: var(--fm-text-muted);
 }
 
-.fm-favourites-item:hover > button:not(:first-child),
-.fm-favourites-item:focus-within > button:not(:first-child) {
+.fm-favourites-item:hover>button:not(:first-child),
+.fm-favourites-item:focus-within>button:not(:first-child) {
   opacity: 1;
   pointer-events: auto;
 }
 
-.fm-favourites-item > button:not(:first-child):hover:not(:disabled),
-.fm-favourites-item > button:not(:first-child):focus-visible {
+.fm-favourites-item>button:not(:first-child):hover:not(:disabled),
+.fm-favourites-item>button:not(:first-child):focus-visible {
   background: var(--fm-hover);
   color: var(--fm-text);
 }
 
-.fm-favourites-item > button:not(:first-child):disabled {
+.fm-favourites-item>button:not(:first-child):disabled {
   color: var(--fm-text-muted);
 }
 
-.fm-favourites-item:hover > button:not(:first-child):disabled,
-.fm-favourites-item:focus-within > button:not(:first-child):disabled {
+.fm-favourites-item:hover>button:not(:first-child):disabled,
+.fm-favourites-item:focus-within>button:not(:first-child):disabled {
   opacity: 0.35;
 }
 
@@ -444,7 +451,7 @@
 }
 
 /* Recent locations are selectable menu items, not section headings. */
-.fm-favourites-recents > button {
+.fm-favourites-recents>button {
   display: block;
   width: 100%;
   min-width: 0;
@@ -458,7 +465,7 @@
   cursor: pointer !important;
 }
 
-.fm-path-editor > input[type="text"]:not(.browser-default).fm-path-input {
+.fm-path-editor>input[type="text"]:not(.browser-default).fm-path-input {
   box-sizing: border-box;
   flex: 1;
   min-width: 0;
@@ -486,7 +493,7 @@
   color: var(--fm-error);
 }
 
-.fm-pane > .fm-directory-table {
+.fm-pane>.fm-directory-table {
   border: 0;
 }
 

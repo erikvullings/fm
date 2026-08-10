@@ -1,7 +1,7 @@
 import m from 'mithril';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { ActionDescriptor, EntryId, EntrySummary, TabId } from '../../models';
+import type { ActionDescriptor, Connection, EntryId, EntrySummary, TabId } from '../../models';
 import {
   breadcrumbSegments,
   Pane,
@@ -74,6 +74,29 @@ const keybindingActions = [
 const defaultTabs: readonly PaneTab[] = [
   { id: 'tab-1' as TabId, title: 'erik', path: '/home/erik' },
 ];
+
+function sampleConnection(overrides: Partial<Connection> = {}): Connection {
+  return {
+    id: 'connection-1',
+    name: 'Home Server',
+    kind: 'ssh',
+    configuration: {
+      kind: 'ssh',
+      host: 'example.test',
+      port: 22,
+      username: 'erik',
+      startPath: null,
+      authentication: 'password',
+      hostKeyPolicy: 'promptOnFirstUse',
+      keepaliveSeconds: null,
+    },
+    hasCredential: true,
+    status: 'disconnected',
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+    ...overrides,
+  };
+}
 
 function attrs(overrides: Partial<PaneAttrs> = {}): PaneAttrs {
   return {
@@ -277,6 +300,39 @@ describe('Pane search breadcrumb rendering', () => {
     segments[3]?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
     m.redraw.sync();
     expect(root.querySelector('.fm-path-input')).toBeNull();
+  });
+});
+
+describe('Pane SFTP breadcrumb rendering', () => {
+  it('shows an sftp:// prefix while keeping only remote path segments in the breadcrumb', () => {
+    mount(
+      attrs({
+        path: '/home/erik',
+        locationUri: 'sftp://11111111-1111-4111-8111-111111111111/home/erik',
+      }),
+    );
+
+    expect(root.querySelector('.fm-breadcrumb-scheme')?.textContent).toBe('sftp://');
+    expect(
+      [...root.querySelectorAll<HTMLElement>('.fm-breadcrumb-segment')].map(
+        (segment) => segment.textContent,
+      ),
+    ).toEqual(['home', 'erik']);
+  });
+
+  it('keeps the root segment when the displayed SFTP path is exactly /', () => {
+    mount(
+      attrs({
+        path: '/',
+        locationUri: 'sftp://11111111-1111-4111-8111-111111111111/',
+      }),
+    );
+
+    expect(
+      [...root.querySelectorAll<HTMLElement>('.fm-breadcrumb-segment')].map(
+        (segment) => segment.textContent,
+      ),
+    ).toEqual(['/']);
   });
 });
 
@@ -1124,5 +1180,82 @@ describe('Pane tab strip', () => {
     m.redraw.sync();
     root.querySelector<HTMLButtonElement>('.fm-cloud-locations-error button')?.click();
     expect(onRetrySystemLocations).toHaveBeenCalledOnce();
+  });
+
+  it('opens an SSH server from the Servers section at /home/<username>', async () => {
+    const onNavigateLocation = vi.fn();
+    mount(
+      attrs({
+        connections: [sampleConnection({ id: 'server-1', name: 'Spark', status: 'connected' })],
+        onNavigateLocation,
+      }),
+    );
+
+    root.querySelector<HTMLButtonElement>('.fm-pane-tab-favourites')?.click();
+    m.redraw.sync();
+    root.querySelector<HTMLButtonElement>('.fm-servers-locations .fm-server-item')?.click();
+    await Promise.resolve();
+
+    expect(onNavigateLocation).toHaveBeenCalledWith({
+      providerId: 'sftp',
+      uri: 'sftp://server-1/home/erik',
+    });
+  });
+
+  it('opens an SSH server at its configured startPath override', async () => {
+    const onNavigateLocation = vi.fn();
+    mount(
+      attrs({
+        connections: [
+          sampleConnection({
+            id: 'server-1',
+            name: 'Spark',
+            status: 'connected',
+            configuration: {
+              kind: 'ssh',
+              host: 'example.test',
+              port: 22,
+              username: 'erik',
+              startPath: '/srv/spark',
+              authentication: 'password',
+              hostKeyPolicy: 'promptOnFirstUse',
+              keepaliveSeconds: null,
+            },
+          }),
+        ],
+        onNavigateLocation,
+      }),
+    );
+
+    root.querySelector<HTMLButtonElement>('.fm-pane-tab-favourites')?.click();
+    m.redraw.sync();
+    root.querySelector<HTMLButtonElement>('.fm-servers-locations .fm-server-item')?.click();
+    await Promise.resolve();
+
+    expect(onNavigateLocation).toHaveBeenCalledWith({
+      providerId: 'sftp',
+      uri: 'sftp://server-1/srv/spark',
+    });
+  });
+
+  it('shows a connected server indicator when a tab is currently open on that SFTP connection', () => {
+    mount(
+      attrs({
+        tabs: [
+          {
+            id: 'tab-1' as TabId,
+            title: 'Spark',
+            path: '/home/tno',
+            locationUri: 'sftp://server-1/home/tno',
+          },
+        ],
+        connections: [sampleConnection({ id: 'server-1', name: 'Spark', status: 'disconnected' })],
+      }),
+    );
+
+    root.querySelector<HTMLButtonElement>('.fm-pane-tab-favourites')?.click();
+    m.redraw.sync();
+
+    expect(root.querySelector('.fm-servers-locations .fm-server-status')?.textContent).toBe('●');
   });
 });

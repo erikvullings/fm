@@ -313,10 +313,10 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
   let createDirectoryLocation: Location | undefined;
   let archiveCreateRequest:
     | {
-        readonly sources: readonly Location[];
-        readonly destinationDirectory: Location;
-        readonly moveSources: boolean;
-      }
+      readonly sources: readonly Location[];
+      readonly destinationDirectory: Location;
+      readonly moveSources: boolean;
+    }
     | undefined;
   let multiRenameOpen = false;
   let multiRenameEntries: readonly EntrySummary[] = [];
@@ -324,10 +324,10 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
   let multiRenameExistingNames: ReadonlySet<string> = new Set();
   let pendingArchiveCredential:
     | {
-        readonly location: Location;
-        readonly invalid: boolean;
-        readonly resolve: (supplied: boolean) => void;
-      }
+      readonly location: Location;
+      readonly invalid: boolean;
+      readonly resolve: (supplied: boolean) => void;
+    }
     | undefined;
   let archiveCredentialError: string | undefined;
   let findFilesOpen = false;
@@ -362,11 +362,11 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
   let nativeIconLoader: NativeIconLoader | undefined;
   let contextMenu:
     | {
-        readonly paneId: PaneId;
-        readonly entries: readonly EntrySummary[];
-        readonly x: number;
-        readonly y: number;
-      }
+      readonly paneId: PaneId;
+      readonly entries: readonly EntrySummary[];
+      readonly x: number;
+      readonly y: number;
+    }
     | undefined;
   const commandPaletteRecency = new Map<string, number>();
   let pendingCreatedLocation: string | undefined;
@@ -747,11 +747,11 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     entry: EntrySummary,
   ):
     | {
-        readonly query: string;
-        readonly regex: boolean;
-        readonly caseSensitive: boolean;
-        readonly wholeWord: boolean;
-      }
+      readonly query: string;
+      readonly regex: boolean;
+      readonly caseSensitive: boolean;
+      readonly wholeWord: boolean;
+    }
     | undefined {
     const params = findFilesParamsByLocationUri.get(locationUri);
     if (params?.contentQuery === undefined || params.contentQuery === '') return undefined;
@@ -1318,10 +1318,10 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       (effectiveKey === undefined
         ? []
         : (directories
-            .get(effectiveKey)
-            ?.entries.filter(
-              (entry) => selections.get(effectiveKey)?.selectedEntryIds.includes(entry.id) === true,
-            ) ?? []));
+          .get(effectiveKey)
+          ?.entries.filter(
+            (entry) => selections.get(effectiveKey)?.selectedEntryIds.includes(entry.id) === true,
+          ) ?? []));
     const directory = effectiveKey === undefined ? undefined : directories.get(effectiveKey);
     return {
       selectedEntries: effectiveEntries,
@@ -1577,10 +1577,10 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
           active === undefined || directory === undefined
             ? undefined
             : {
-                location: active.location,
-                writable: directory.writable === true,
-                loaded: directory.state.type === 'loaded',
-              };
+              location: active.location,
+              writable: directory.writable === true,
+              loaded: directory.state.type === 'loaded',
+            };
         const validation = validatePasteTarget(currentClipboard, target);
         if (!validation.ok) {
           clipboardMessage = validation.message;
@@ -2308,11 +2308,11 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       tab === undefined || key === undefined
         ? directory.entries
         : entriesSortedFor(
-            key,
-            directory.entries,
-            effectiveSort(tab.view.sort),
-            tab.view.foldersFirst,
-          );
+          key,
+          directory.entries,
+          effectiveSort(tab.view.sort),
+          tab.view.foldersFirst,
+        );
     const quickFilterQuery = key === undefined ? '' : quickFilterQueryFor(key, tab);
     const filtered = key === undefined ? sorted : entriesFilteredFor(key, sorted, quickFilterQuery);
     const entries =
@@ -2327,7 +2327,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     const totalKnownEntries =
       quickFilterQuery.trim() === ''
         ? (directory.totalKnownEntries ?? directory.entries.length) +
-          (entries.length - filtered.length)
+        (entries.length - filtered.length)
         : entries.length;
     return {
       ...directory,
@@ -2344,6 +2344,9 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       onManageConnections: () => {
         connectionsManagerOpen = true;
         m.redraw();
+      },
+      onRefreshConnections: async () => {
+        connections = await loadConnections(client);
       },
       unavailableLocations,
       entries,
@@ -2367,7 +2370,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
           (plugin) =>
             plugin.enabled && plugin.columns?.some((column) => column.id === 'sample.fileAge'),
         ) &&
-        tab?.view.columns.some((column) => column.columnId === 'sample.fileAge' && column.visible)
+          tab?.view.columns.some((column) => column.columnId === 'sample.fileAge' && column.visible)
           ? [SAMPLE_FILE_AGE_COLUMN]
           : [],
       platform,
@@ -2496,11 +2499,11 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
               tab === undefined
                 ? (freshDirectory?.entries ?? [])
                 : entriesSortedFor(
-                    key,
-                    freshDirectory?.entries ?? [],
-                    effectiveSort(tab.view.sort),
-                    tab.view.foldersFirst,
-                  );
+                  key,
+                  freshDirectory?.entries ?? [],
+                  effectiveSort(tab.view.sort),
+                  tab.view.foldersFirst,
+                );
             const filteredFresh = entriesFilteredFor(
               key,
               sortedFresh,
@@ -2693,37 +2696,37 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       },
       ...(editorByPane.has(paneId)
         ? {
-            viewerContent: (() => {
-              const editor = editorByPane.get(paneId);
-              return editor === undefined
-                ? undefined
-                : m(FileEditor, {
-                    state: editor.state,
-                    controller: editor.controller,
-                    onClose: () => closeEditor(paneId),
-                  });
-            })(),
-          }
+          viewerContent: (() => {
+            const editor = editorByPane.get(paneId);
+            return editor === undefined
+              ? undefined
+              : m(FileEditor, {
+                state: editor.state,
+                controller: editor.controller,
+                onClose: () => closeEditor(paneId),
+              });
+          })(),
+        }
         : viewerByPane.has(paneId)
           ? {
-              viewerContent: (() => {
-                const viewer = viewerByPane.get(paneId);
-                if (viewer === undefined) return undefined;
-                return m(FileViewer, {
-                  state: viewer.state,
-                  onLoadMore: () => void viewer.controller.loadMore(),
-                  onSearchQueryChange: (query) => viewer.controller.setSearchOptions({ query }),
-                  onSearchOptionChange: (patch) => viewer.controller.setSearchOptions(patch),
-                  onRunSearch: () => void viewer.controller.runSearch(),
-                  onNextMatch: () => void viewer.controller.goToNextMatch(),
-                  onPreviousMatch: () => void viewer.controller.goToPreviousMatch(),
-                  onZoomIn: () => viewer.controller.zoomIn(),
-                  onZoomOut: () => viewer.controller.zoomOut(),
-                  onResetZoom: () => viewer.controller.resetZoom(),
-                  onClose: () => closeViewer(paneId),
-                });
-              })(),
-            }
+            viewerContent: (() => {
+              const viewer = viewerByPane.get(paneId);
+              if (viewer === undefined) return undefined;
+              return m(FileViewer, {
+                state: viewer.state,
+                onLoadMore: () => void viewer.controller.loadMore(),
+                onSearchQueryChange: (query) => viewer.controller.setSearchOptions({ query }),
+                onSearchOptionChange: (patch) => viewer.controller.setSearchOptions(patch),
+                onRunSearch: () => void viewer.controller.runSearch(),
+                onNextMatch: () => void viewer.controller.goToNextMatch(),
+                onPreviousMatch: () => void viewer.controller.goToPreviousMatch(),
+                onZoomIn: () => viewer.controller.zoomIn(),
+                onZoomOut: () => viewer.controller.zoomOut(),
+                onResetZoom: () => viewer.controller.resetZoom(),
+                onClose: () => closeViewer(paneId),
+              });
+            })(),
+          }
           : {}),
     };
   }
@@ -2878,8 +2881,8 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
         [
           isMacOverlay
             ? m('.fm-titlebar-spacer', { 'data-tauri-drag-region': '' }, [
-                m('span.fm-titlebar-label', 'Procyon'),
-              ])
+              m('span.fm-titlebar-label', 'Procyon'),
+            ])
             : null,
           m('.fm-workspace-toolbar', [
             m('.fm-navigation-controls', { 'aria-label': 'Active pane navigation' }, [
@@ -3069,41 +3072,41 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
                         ? m('p', 'Loading settings…')
                         : settingsDialogOpen
                           ? m(SettingsEditor, {
-                              settings: currentSettings,
-                              actions: registeredActions,
-                              platform,
-                              runtime: keybindingRuntime,
-                              plugins,
-                              onPreview: (draft: Settings) => {
-                                applyAppearance(draft);
-                                m.redraw();
-                              },
-                              onSave: async (draft: Settings) => {
-                                const showHiddenChanged =
-                                  currentSettings !== undefined &&
-                                  currentSettings.showHiddenFiles !== draft.showHiddenFiles;
-                                await attrs.client.updateSettings(draft);
-                                currentSettings = draft;
-                                applyAppearance(draft);
-                                closeSettingsDialog();
-                                if (showHiddenChanged) {
-                                  void applyShowHiddenFilesToAllTabs(
-                                    attrs.client,
-                                    draft.showHiddenFiles,
-                                  );
-                                }
-                              },
-                              onCancel: () => {
-                                if (currentSettings !== undefined) applyAppearance(currentSettings);
-                                closeSettingsDialog();
-                              },
-                              onTogglePlugin: (pluginId: PluginId, enabled: boolean) =>
-                                attrs.client.setPluginEnabled(pluginId, enabled),
-                              onRequestPluginLogs: (
-                                pluginId: PluginId,
-                              ): Promise<readonly PluginLogEntry[]> =>
-                                attrs.client.getPluginLogs(pluginId),
-                            })
+                            settings: currentSettings,
+                            actions: registeredActions,
+                            platform,
+                            runtime: keybindingRuntime,
+                            plugins,
+                            onPreview: (draft: Settings) => {
+                              applyAppearance(draft);
+                              m.redraw();
+                            },
+                            onSave: async (draft: Settings) => {
+                              const showHiddenChanged =
+                                currentSettings !== undefined &&
+                                currentSettings.showHiddenFiles !== draft.showHiddenFiles;
+                              await attrs.client.updateSettings(draft);
+                              currentSettings = draft;
+                              applyAppearance(draft);
+                              closeSettingsDialog();
+                              if (showHiddenChanged) {
+                                void applyShowHiddenFilesToAllTabs(
+                                  attrs.client,
+                                  draft.showHiddenFiles,
+                                );
+                              }
+                            },
+                            onCancel: () => {
+                              if (currentSettings !== undefined) applyAppearance(currentSettings);
+                              closeSettingsDialog();
+                            },
+                            onTogglePlugin: (pluginId: PluginId, enabled: boolean) =>
+                              attrs.client.setPluginEnabled(pluginId, enabled),
+                            onRequestPluginLogs: (
+                              pluginId: PluginId,
+                            ): Promise<readonly PluginLogEntry[]> =>
+                              attrs.client.getPluginLogs(pluginId),
+                          })
                           : undefined,
                     ]),
                   ],
@@ -3115,26 +3118,26 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
             workspace === undefined
               ? m('.fm-workspace-loading', workspaceError ?? 'Loading workspace…')
               : m(WorkspaceLayoutView, {
-                  workspace,
-                  paneContent: (paneId) =>
-                    paneContent(
-                      attrs.client,
-                      attrs.entryFormatSettings ?? loadedEntryFormatSettings,
-                      paneId,
-                    ),
-                  onActivatePane: (paneId) => activatePane(attrs.client, paneId),
-                  onUpdateLayout: (layout) => updateLayout(attrs.client, layout),
-                  onSelectTab: (paneId, tabId) => activateTab(attrs.client, paneId, tabId),
-                  onCloseTab: (paneId, tabId) => requestCloseTab(attrs.client, paneId, tabId),
-                  onNewTab: (paneId) => openTab(attrs.client, paneId),
-                  registerFlush: (flush) => {
-                    flushPendingLayoutUpdate = flush;
-                  },
-                  registerFocusPane: (focus) => {
-                    focusPane = focus;
-                  },
-                  searchQueryForLocationUri: (uri) => findFilesQueriesByLocationUri.get(uri),
-                }),
+                workspace,
+                paneContent: (paneId) =>
+                  paneContent(
+                    attrs.client,
+                    attrs.entryFormatSettings ?? loadedEntryFormatSettings,
+                    paneId,
+                  ),
+                onActivatePane: (paneId) => activatePane(attrs.client, paneId),
+                onUpdateLayout: (layout) => updateLayout(attrs.client, layout),
+                onSelectTab: (paneId, tabId) => activateTab(attrs.client, paneId, tabId),
+                onCloseTab: (paneId, tabId) => requestCloseTab(attrs.client, paneId, tabId),
+                onNewTab: (paneId) => openTab(attrs.client, paneId),
+                registerFlush: (flush) => {
+                  flushPendingLayoutUpdate = flush;
+                },
+                registerFocusPane: (focus) => {
+                  focusPane = focus;
+                },
+                searchQueryForLocationUri: (uri) => findFilesQueriesByLocationUri.get(uri),
+              }),
           ]),
           clipboardMessage === undefined
             ? undefined
@@ -3158,9 +3161,9 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
               contextMenu === undefined
                 ? []
                 : menuActionsForContext(
-                    registeredActions,
-                    commandAvailabilityContext(contextMenu.entries, contextMenu.paneId),
-                  ),
+                  registeredActions,
+                  commandAvailabilityContext(contextMenu.entries, contextMenu.paneId),
+                ),
             onClose: () => {
               contextMenu = undefined;
             },
@@ -3307,6 +3310,9 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
           m(ConnectionsManager, {
             open: connectionsManagerOpen,
             connections,
+            onRefresh: async () => {
+              connections = await loadConnections(attrs.client);
+            },
             onClose: () => {
               connectionsManagerOpen = false;
               m.redraw();
@@ -3412,12 +3418,12 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
                 evaluateActionAvailability(
                   action.id === 'core.edit' || action.id === 'core.view'
                     ? {
-                        ...action,
-                        contextRequirements: {
-                          ...action.contextRequirements,
-                          featureAvailable: true,
-                        },
-                      }
+                      ...action,
+                      contextRequirements: {
+                        ...action.contextRequirements,
+                        featureAvailable: true,
+                      },
+                    }
                     : action,
                   commandAvailabilityContext(),
                 ).available,

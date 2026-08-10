@@ -23,17 +23,31 @@ export function isBrowsable(connection: Connection): boolean {
   return connection.kind === 'ssh';
 }
 
+/** Fallback start path for SSH connections when no explicit override is saved. */
+export function defaultSshStartPath(username: string): string {
+  const trimmed = username.trim();
+  return trimmed.length === 0 ? '/' : `/home/${trimmed}`;
+}
+
+/** Resolves the effective SFTP start path for a browsable connection. */
+export function sftpStartPathForConnection(connection: Connection): string {
+  if (connection.configuration.kind !== 'ssh') return '/';
+  const configured = connection.configuration.startPath?.trim();
+  if (configured !== undefined && configured.length > 0) {
+    return configured.startsWith('/') ? configured : `/${configured}`;
+  }
+  return defaultSshStartPath(connection.configuration.username);
+}
+
 /**
- * Builds the `sftp://<connection-id>/` location for a connection's root
- * (spec §6.5). The initial path is always `/` - the connection's SSH
- * configuration does not carry a "home directory" the client can know ahead
- * of listing, so `/` is the one path guaranteed to exist and be listable for
- * any reachable server; a user can navigate deeper (or the server's own
- * default directory, if `/` is not their home) from there like any other
- * pane location.
+ * Builds an SFTP location for a connection id (spec §6.5).
+ *
+ * `startPath` must be an absolute remote path; when omitted, `/` is used.
  */
-export function sftpRootLocation(connectionId: ConnectionId): Location {
-  return { providerId: SFTP_PROVIDER_ID, uri: `sftp://${connectionId}/` };
+export function sftpRootLocation(connectionId: ConnectionId, startPath = '/'): Location {
+  const normalized =
+    startPath.length === 0 ? '/' : startPath.startsWith('/') ? startPath : `/${startPath}`;
+  return { providerId: SFTP_PROVIDER_ID, uri: `sftp://${connectionId}${normalized}` };
 }
 
 /**
@@ -121,7 +135,7 @@ export function validateConnectionDraft(
     errors.push({ field: 'name', message: 'Enter a connection name.' });
   }
   if (draft.configuration.kind === 'ssh') {
-    const { host, username, port } = draft.configuration;
+    const { host, username, port, startPath } = draft.configuration;
     if (host.trim().length === 0) {
       errors.push({ field: 'host', message: 'Enter a host.' });
     }
@@ -130,6 +144,12 @@ export function validateConnectionDraft(
     }
     if (!Number.isInteger(port) || port <= 0 || port > 65_535) {
       errors.push({ field: 'port', message: 'Enter a port between 1 and 65535.' });
+    }
+    if (startPath !== null && startPath !== undefined) {
+      const normalized = startPath.trim();
+      if (normalized.length > 0 && !normalized.startsWith('/')) {
+        errors.push({ field: 'startPath', message: 'Start folder must begin with /.' });
+      }
     }
   }
   return errors;

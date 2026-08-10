@@ -60,6 +60,8 @@ export interface WorkspacePaneContent {
   readonly connections?: readonly Connection[];
   /** Opens the connections manager (add/edit/delete/connect/disconnect/test, task 0103). */
   readonly onManageConnections?: () => void;
+  /** Refreshes the saved-connections list before opening favourites so status glyphs stay fresh. */
+  readonly onRefreshConnections?: () => void | Promise<void>;
   readonly unavailableLocations?: ReadonlySet<string>;
   readonly onNavigateLocation?: (location: Location) => void | Promise<void>;
   readonly onAddFavourite?: (label: string, location: Location) => void | Promise<void>;
@@ -138,6 +140,15 @@ export function pathFromUri(uri: string): string {
   if (uri.startsWith('mock:///')) {
     const path = decodeURIComponent(uri.slice('mock://'.length));
     return path.length === 0 ? '/' : path;
+  }
+  if (uri.startsWith('sftp://')) {
+    const withoutScheme = uri.slice('sftp://'.length);
+    const slashIndex = withoutScheme.indexOf('/');
+    if (slashIndex === -1) {
+      return '/';
+    }
+    const remotePath = decodeURIComponent(withoutScheme.slice(slashIndex));
+    return remotePath.length === 0 ? '/' : remotePath;
   }
   return uri;
 }
@@ -358,6 +369,7 @@ export const WorkspaceLayoutView: FactoryComponent<WorkspaceLayoutViewAttrs> = (
       },
       m(Pane, {
         path: pathFromUri(tab.location.uri),
+        locationUri: tab.location.uri,
         tabTitle: displayTabTitle(
           tab.location.uri,
           tab.title,
@@ -365,9 +377,9 @@ export const WorkspaceLayoutView: FactoryComponent<WorkspaceLayoutViewAttrs> = (
         ),
         ...(tab.location.uri.startsWith('search://')
           ? (() => {
-              const searchQuery = attrs.searchQueryForLocationUri?.(tab.location.uri);
-              return searchQuery === undefined ? {} : { searchQuery };
-            })()
+            const searchQuery = attrs.searchQueryForLocationUri?.(tab.location.uri);
+            return searchQuery === undefined ? {} : { searchQuery };
+          })()
           : {}),
         tabs: resolvedTabOrder(pane).map((tabId) => {
           const paneTab = pane.tabsById[tabId];
@@ -377,6 +389,7 @@ export const WorkspaceLayoutView: FactoryComponent<WorkspaceLayoutViewAttrs> = (
             id: tabId,
             title: paneTab === undefined ? '' : bareTabTitle(uri ?? '', paneTab.title, query),
             path: paneTab === undefined ? '' : displayPathFromUri(paneTab.location.uri, query),
+            ...(uri === undefined ? {} : { locationUri: uri }),
             isSearchTab: uri?.startsWith('search://') ?? false,
           };
         }),
@@ -408,6 +421,9 @@ export const WorkspaceLayoutView: FactoryComponent<WorkspaceLayoutViewAttrs> = (
         ...(content.onManageConnections === undefined
           ? {}
           : { onManageConnections: content.onManageConnections }),
+        ...(content.onRefreshConnections === undefined
+          ? {}
+          : { onRefreshConnections: content.onRefreshConnections }),
         ...(content.unavailableLocations === undefined
           ? {}
           : { unavailableLocations: content.unavailableLocations }),

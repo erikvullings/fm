@@ -95,6 +95,7 @@ mod tests {
                 host: "example.test".to_owned(),
                 port: 22,
                 username: "erik".to_owned(),
+                start_path: Some("/home/erik".to_owned()),
                 authentication: SshAuthenticationMethod::Password,
                 host_key_policy: HostKeyPolicy::PromptOnFirstUse,
                 keepalive: None,

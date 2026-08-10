@@ -9,23 +9,28 @@ import type { SshAuthenticationMethodDto } from './sshAuthenticationMethodDto';
  * SSH connection configuration (spec §6.3).
  */
 export interface SshConnectionConfigurationDto {
-  /** Authentication method. */
-  authentication: SshAuthenticationMethodDto;
-  /** Hostname or IP address. */
-  host: string;
-  /** Host-key verification policy. */
-  hostKeyPolicy: HostKeyPolicyDto;
-  /**
-     * Keepalive interval in seconds, if any.
-     * @minimum 0
-     * @nullable
-     */
-  keepaliveSeconds?: number | null;
-  /**
-     * TCP port, conventionally 22.
-     * @minimum 0
-     */
-  port: number;
-  /** Remote username. */
-  username: string;
+   /** Authentication method. */
+   authentication: SshAuthenticationMethodDto;
+   /** Hostname or IP address. */
+   host: string;
+   /** Host-key verification policy. */
+   hostKeyPolicy: HostKeyPolicyDto;
+   /**
+      * Keepalive interval in seconds, if any.
+      * @minimum 0
+      * @nullable
+      */
+   keepaliveSeconds?: number | null;
+   /**
+      * TCP port, conventionally 22.
+      * @minimum 0
+      */
+   port: number;
+   /**
+      * Optional initial remote directory to open when browsing this connection.
+      * @nullable
+      */
+   startPath?: string | null;
+   /** Remote username. */
+   username: string;
 }
