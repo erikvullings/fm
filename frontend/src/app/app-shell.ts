@@ -95,7 +95,11 @@ import {
 import { PermanentDeleteDialog } from '../features/operations/permanent-delete-dialog';
 import { CloseLastTabDialog } from '../features/panes/close-last-tab-dialog';
 import { isParentEntry, withParentEntry } from '../features/panes/parent-entry';
-import { cycledTabIndex, tabIdForJump } from '../features/panes/tab-navigation';
+import {
+  createTabController,
+  type TabController,
+  type TabControllerContext,
+} from '../features/panes/tab-controller';
 import { FileViewer } from '../features/preview/file-viewer';
 import {
   createFileViewerController,
@@ -177,9 +181,7 @@ import {
   clipboardPatch,
   connectionPatch,
   createInitialAppState,
-  deleteClosedTabStackPatch,
   deleteQuickFilterDraftPatch,
-  setClosedTabStackPatch,
   setQuickFilterDraftPatch,
 } from '../state';
 import { installPluginIconTheme, restoreDefaultIconTheme } from '../themes/plugin-icon-theme';
@@ -1814,6 +1816,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
   let attrsClient: FileManagerClient;
   let opsController: OperationsController;
   let workspaceController: WorkspaceController;
+  let tabController: TabController;
 
   const workspaceControllerContext: WorkspaceControllerContext = {
     getWorkspace: () => workspace,
@@ -1883,6 +1886,27 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     loadPanesActiveFirst: (ws) => loadPanesActiveFirst(ws),
   };
 
+  const tabControllerContext: TabControllerContext = {
+    getWorkspace: () => workspace,
+    setWorkspace: (ws) => {
+      workspace = ws;
+    },
+    getAppState: () => appState,
+    setAppState: (state) => {
+      appState = state;
+    },
+    getNavigation: () => navigation,
+    redraw: () => m.redraw(),
+    applyCurrentShowHiddenSetting,
+    clearTabState,
+    getCloseTabConfirmation: () => closeTabConfirmation,
+    setCloseTabConfirmation: (conf) => {
+      closeTabConfirmation = conf;
+    },
+    hasCachedSnapshot: (paneId, tabId) => 
+      directories.get(tabKey(paneId, tabId))?.state.type === 'loaded',
+  };
+
   function replaceWorkspace(next: WorkspaceProjection): void {
     workspace = next;
     m.redraw();
@@ -1930,61 +1954,13 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
   }
 
   /** Opens a new tab in `paneId`, starting at the pane's currently active location. */
-  function openTab(client: FileManagerClient, paneId: PaneId): void {
-    if (workspace === undefined) return;
-    const pane = workspace.panesById[paneId];
-    const activeTab = pane?.tabsById[pane.activeTabId];
-    if (activeTab === undefined) return;
-    void dispatchWorkspaceCommand(
-      client,
-      {
-        type: 'addTab',
-        workspaceId: workspace.id,
-        paneId,
-        location: activeTab.location,
-        expectedRevision: workspace.revision,
-      },
-      (next) => {
-        replaceWorkspace(next);
-        const newTabId = next.panesById[paneId]?.activeTabId;
-        if (newTabId === undefined) {
-          void navigation.load(paneId);
-          return;
-        }
-        void applyCurrentShowHiddenSetting(client, next.id, paneId, newTabId, next.revision).then(
-          () => navigation.load(paneId),
-        );
-      },
-    ).catch(() => undefined);
+  function openTab(_client: FileManagerClient, paneId: PaneId): void {
+    tabController.openTab(paneId);
   }
 
   /** Switches `paneId`'s active tab, cancelling any in-flight request for the tab being hidden. */
-  function activateTab(client: FileManagerClient, paneId: PaneId, tabId: TabId): void {
-    if (workspace === undefined) return;
-    const pane = workspace.panesById[paneId];
-    if (pane === undefined || pane.activeTabId === tabId) return;
-    const previousTabId = pane.activeTabId;
-    // Task 0069's acceptance criteria: "switching tabs is instant: the previous snapshot is
-    // reused if still valid, otherwise refetched." Capture whether we already have one for the
-    // tab being activated *before* dispatching, so an unconditional reload doesn't truncate an
-    // already-fully-loaded large directory back down to its first page and strand the cursor on
-    // an entry that briefly no longer exists in the (temporarily shorter) entries array.
-    const hasCachedSnapshot = directories.get(tabKey(paneId, tabId))?.state.type === 'loaded';
-    void dispatchWorkspaceCommand(
-      client,
-      {
-        type: 'activateTab',
-        workspaceId: workspace.id,
-        paneId,
-        tabId,
-        expectedRevision: workspace.revision,
-      },
-      (next) => {
-        replaceWorkspace(next);
-        navigation.abort(paneId, previousTabId);
-        if (!hasCachedSnapshot) void navigation.load(paneId);
-      },
-    ).catch(() => undefined);
+  function activateTab(_client: FileManagerClient, paneId: PaneId, tabId: TabId): void {
+    tabController.activateTab(paneId, tabId);
   }
 
   /**
@@ -1993,26 +1969,8 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
    * the home directory rather than leaving an empty pane) — the frontend
    * just clears the closed tab's caches and trusts the returned projection.
    */
-  function performCloseTab(client: FileManagerClient, paneId: PaneId, tabId: TabId): void {
-    if (workspace === undefined) return;
-    const closedTab = workspace.panesById[paneId]?.tabsById[tabId];
-    if (closedTab !== undefined)
-      appState = applyAppPatches(appState!, setClosedTabStackPatch(paneId, closedTab));
-    void dispatchWorkspaceCommand(
-      client,
-      {
-        type: 'closeTab',
-        workspaceId: workspace.id,
-        paneId,
-        tabId,
-        expectedRevision: workspace.revision,
-      },
-      (next) => {
-        clearTabState(paneId, tabId);
-        replaceWorkspace(next);
-        void navigation.load(paneId);
-      },
-    ).catch(() => undefined);
+  function performCloseTab(_client: FileManagerClient, paneId: PaneId, tabId: TabId): void {
+    tabController.performCloseTab(paneId, tabId);
   }
 
   /**
@@ -2020,60 +1978,23 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
    * §37) — the backend would otherwise silently replace it with a blank
    * tab, which is surprising without warning.
    */
-  function requestCloseTab(client: FileManagerClient, paneId: PaneId, tabId: TabId): void {
-    const pane = workspace?.panesById[paneId];
-    if (pane === undefined) return;
-    if (pane.tabOrder.length <= 1) {
-      closeTabConfirmation = { paneId, tabId };
-      m.redraw();
-      return;
-    }
-    performCloseTab(client, paneId, tabId);
+  function requestCloseTab(_client: FileManagerClient, paneId: PaneId, tabId: TabId): void {
+    tabController.requestCloseTab(paneId, tabId);
   }
 
   /** Reopens the most recently closed tab in `paneId` (depth 1), restoring its location only. */
-  function reopenClosedTab(client: FileManagerClient, paneId: PaneId): void {
-    const closed = appState?.closedTabStacks.byPaneId[paneId];
-    if (workspace === undefined || closed === undefined) return;
-    appState = applyAppPatches(appState!, deleteClosedTabStackPatch(paneId));
-    void dispatchWorkspaceCommand(
-      client,
-      {
-        type: 'addTab',
-        workspaceId: workspace.id,
-        paneId,
-        location: closed.location,
-        expectedRevision: workspace.revision,
-      },
-      (next) => {
-        replaceWorkspace(next);
-        const newTabId = next.panesById[paneId]?.activeTabId;
-        if (newTabId === undefined) {
-          void navigation.load(paneId);
-          return;
-        }
-        void applyCurrentShowHiddenSetting(client, next.id, paneId, newTabId, next.revision).then(
-          () => navigation.load(paneId),
-        );
-      },
-    ).catch(() => undefined);
+  function reopenClosedTab(_client: FileManagerClient, paneId: PaneId): void {
+    tabController.reopenClosedTab(paneId);
   }
 
   /** Activates the next/previous tab in `paneId`, wrapping around at the ends. */
-  function cycleTab(client: FileManagerClient, paneId: PaneId, direction: 1 | -1): void {
-    const pane = workspace?.panesById[paneId];
-    if (pane === undefined) return;
-    const currentIndex = pane.tabOrder.indexOf(pane.activeTabId);
-    const nextTabId = pane.tabOrder[cycledTabIndex(currentIndex, pane.tabOrder.length, direction)];
-    if (nextTabId !== undefined) activateTab(client, paneId, nextTabId);
+  function cycleTab(_client: FileManagerClient, paneId: PaneId, direction: 1 | -1): void {
+    tabController.cycleTab(paneId, direction);
   }
 
   /** Activates the `oneBasedIndex`-th tab in `paneId`, if one exists (Ctrl+1-9 jump). */
-  function jumpToTab(client: FileManagerClient, paneId: PaneId, oneBasedIndex: number): void {
-    const pane = workspace?.panesById[paneId];
-    if (pane === undefined) return;
-    const tabId = tabIdForJump(pane.tabOrder, oneBasedIndex);
-    if (tabId !== undefined) activateTab(client, paneId, tabId);
+  function jumpToTab(_client: FileManagerClient, paneId: PaneId, oneBasedIndex: number): void {
+    tabController.jumpToTab(paneId, oneBasedIndex);
   }
 
   function paneContent(
@@ -2511,6 +2432,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       attrsClient = attrs.client;
       opsController = createOperationsController(attrs.client);
       workspaceController = createWorkspaceController(attrs.client, workspaceControllerContext);
+      tabController = createTabController(attrs.client, tabControllerContext);
       keybindingRuntime = attrs.runtime === 'http' ? 'browser' : 'desktop';
       runtimeKind = attrs.runtime;
       document.addEventListener('keydown', handleGlobalKeydown);
