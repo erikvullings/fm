@@ -1,6 +1,6 @@
 # 0113 Extract EventHandler Registry from AppShell
 
-Status: open
+Status: done
 Priority: high
 Subsystem: frontend
 Depends on: none
@@ -24,4 +24,4 @@ AppShell's `handleBackendEvent` method is a ~100-line switch statement dispatchi
 - Reference: architecture review — deepening opportunity #2
 
 ## Agent Notes
--
+- 2026-08-10 claude: Created backend-event-handler.ts at frontend/src/features/events/. Defined BackendEventContext interface with typed callbacks for workspace, operations, directory, plugins, connections, and search state. handleBackendEvent logic moved out of AppShell closure into standalone createBackendEventHandler factory. AppShell builds context object referencing its closure state and passes it to the factory. Removed FAST_OPERATION_DISMISS_THRESHOLD_MS, AUTO_DISMISS_DELAY_MS, shouldRefreshOnTerminalOperation constants/functions from app-shell.ts (now internal to the new module). Removed reduceOperationEvents import (no longer needed in app-shell.ts). 11 tests in backend-event-handler.test.ts. TypeScript clean, all new tests pass.

@@ -4,6 +4,10 @@ import { IconButton, type Theme, ThemeManager, toast } from 'mithril-materialize
 
 import type { FileManagerClient } from '../api/client/file-manager-client';
 import {
+  createBackendEventHandler,
+  type BackendEventContext,
+} from '../features/events/backend-event-handler';
+import {
   arrowLeftIcon,
   arrowRightIcon,
   closeIcon,
@@ -83,7 +87,6 @@ import { OperationCentre } from '../features/operations/operation-centre';
 import {
   createOperationsState,
   dismissOperation,
-  reduceOperationEvents,
   transitionOperationState,
 } from '../features/operations/operation-state';
 import {
@@ -150,7 +153,6 @@ import type {
   EntryId,
   EntrySummary,
   Location,
-  Operation,
   OperationConflict,
   OperationId,
   OperationState,
@@ -191,13 +193,7 @@ export interface AppShellAttrs {
 
 const DEFAULT_THEME: Theme = 'auto';
 
-/**
- * Operations that reach a successful terminal state within this window of
- * their `createdAt` are dismissed without ever showing the operation centre:
- * no user can read a progress card that appears and disappears faster than
- * this, so surfacing it would only be visual noise.
- */
-const FAST_OPERATION_DISMISS_THRESHOLD_MS = 500;
+
 
 /** Applies host-detected mount access metadata to a directory view. */
 export function respectSystemLocationReadOnly(
@@ -221,13 +217,7 @@ export function respectSystemLocationReadOnly(
   return { ...view, writable: false };
 }
 
-/**
- * Delay before a terminal, non-`failed` operation (completed, cancelled or
- * interrupted) auto-dismisses itself. Only failures require the user to
- * dismiss manually; everything else would otherwise pile up in the operation
- * centre forever.
- */
-const AUTO_DISMISS_DELAY_MS = 5_000;
+
 
 const DISMISSED_OPERATIONS_STORAGE_KEY = 'fm.dismissedOperationIds';
 const MAX_DISMISSED_OPERATIONS = 500;
@@ -263,16 +253,7 @@ function isAutoDismissibleState(state: OperationState): boolean {
   );
 }
 
-function shouldRefreshOnTerminalOperation(operation: Operation): boolean {
-  if (operation.kind === 'search') return false;
-  return (
-    operation.state === 'completed' ||
-    operation.state === 'completedWithWarnings' ||
-    operation.state === 'failed' ||
-    operation.state === 'cancelled' ||
-    operation.state === 'interrupted'
-  );
-}
+
 
 /** Converts a displayed breadcrumb path back to its provider-specific location. */
 export function locationForPath(current: Location, path: string): Location {
@@ -1971,172 +1952,77 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     }
   }
 
-  function handleBackendEvent(event: BackendEvent): void {
-    const payload = event.payload;
-    // Workspace lifecycle events must refresh the switcher's summary list
-    // regardless of which workspace they pertain to (task 0084); every other
-    // payload stays scoped to the active workspace by the filter below.
-    if (
-      payload.type === 'workspace.created' ||
-      payload.type === 'workspace.renamed' ||
-      payload.type === 'workspace.deleted'
-    ) {
-      refreshWorkspaceSummaries(attrsClient);
-      if (payload.type === 'workspace.deleted' && event.workspaceId === workspace?.id) {
-        void attrsClient
-          .listWorkspaces()
-          .then((summaries) => {
-            workspaceSummaries = summaries;
-            return recoverActiveWorkspace(attrsClient, summaries);
-          })
-          .catch((error: unknown) => {
-            workspaceActionError = workspaceErrorMessage(error, 'Unable to recover workspace');
-          })
-          .finally(() => m.redraw());
-        return;
-      }
-    }
-    if (event.workspaceId !== undefined && event.workspaceId !== workspace?.id) return;
-    if (payload.type === 'operation.conflict') {
-      pendingConflict = payload;
-      m.redraw();
-    }
-    if (payload.type.startsWith('operation.')) {
+  const backendEventContext: BackendEventContext = {
+    getWorkspaceId: () => workspace?.id,
+    getWorkspaceRevision: () => workspace?.revision,
+    replaceWorkspace,
+    refreshWorkspaceSummaries: () => refreshWorkspaceSummaries(attrsClient),
+    setWorkspaceSummaries: (summaries) => {
+      workspaceSummaries = summaries;
+    },
+    setWorkspaceActionError: (message) => {
+      workspaceActionError = message;
+    },
+    recoverActiveWorkspace: (summaries) => recoverActiveWorkspace(attrsClient, summaries),
+    listWorkspaces: () => attrsClient.listWorkspaces(),
+    getWorkspace: (id) => attrsClient.getWorkspace(id),
+    setPendingConflict: (conflict) => {
+      pendingConflict = conflict;
+    },
+    getPendingOperationEvents: () => pendingOperationEvents,
+    pushPendingOperationEvent: (event) => {
       pendingOperationEvents.push(event);
-      if (operationFrame === undefined) {
-        operationFrame = requestAnimationFrame(() => {
-          operationFrame = undefined;
-          const events = pendingOperationEvents;
-          pendingOperationEvents = [];
-          const previous = operations;
-          let next = reduceOperationEvents(previous, events);
-          let panesNeedRefresh = false;
-          for (const [id, current] of Object.entries(next.byId) as Array<
-            [OperationId, Operation | undefined]
-          >) {
-            if (current === undefined) continue;
-            const previousState = previous.byId[id]?.state;
-            if (previousState === current.state) continue;
-            clearDismissedOperation(id);
-            if (shouldRefreshOnTerminalOperation(current)) {
-              panesNeedRefresh = true;
-            }
-            if (!isAutoDismissibleState(current.state)) continue;
-            if (Date.now() - Date.parse(current.createdAt) < FAST_OPERATION_DISMISS_THRESHOLD_MS) {
-              next = dismissOperation(next, id);
-            } else {
-              scheduleAutoDismiss(id, AUTO_DISMISS_DELAY_MS);
-            }
-          }
-          for (const dismissedId of dismissedOperationIds) {
-            if (next.byId[dismissedId] !== undefined) {
-              next = dismissOperation(next, dismissedId);
-            }
-          }
-          operations = next;
-          if (panesNeedRefresh) refetchAffectedPanes();
-          m.redraw();
-        });
-      }
-      return;
-    }
-    if (payload.type === 'directory.snapshot') {
-      const current = directories.get(activeTabKey(payload.snapshot.paneId));
-      if (current?.revision !== undefined && payload.snapshot.revision <= current.revision) return;
-      applyDelta(payload.snapshot.paneId, { type: 'reset', snapshot: payload.snapshot });
-      return;
-    }
-    if (payload.type === 'directory.delta') {
-      try {
-        applyDelta(payload.paneId, payload.delta);
-      } catch {
-        // A malformed delta payload should degrade to a full refetch, not crash the UI loop.
-        refetchAffectedPanes(payload.paneId);
-      }
-      return;
-    }
-    if (payload.type === 'plugin.changed') {
-      const changed = payload.plugin;
-      plugins = plugins.some((plugin) => plugin.id === changed.id)
-        ? plugins.map((plugin) => (plugin.id === changed.id ? { ...plugin, ...changed } : plugin))
-        : plugins;
-      m.redraw();
-      // `PluginPayload` only carries id/name/version/enabled; refetch the full descriptor
-      // (columns, permissions, diagnostic, iconTheme) so e.g. an icon theme newly enabled here
-      // becomes available in the Settings Editor without a page reload.
-      void attrsClient
-        .listPlugins()
-        .then((listed) => {
-          plugins = listed;
-          if (currentSettings !== undefined) applyIconTheme(currentSettings.iconTheme);
-          m.redraw();
-        })
-        .catch(() => undefined);
-      return;
-    }
-    if (
-      payload.type === 'connection.created' ||
-      payload.type === 'connection.updated' ||
-      payload.type === 'connection.statusChanged' ||
-      payload.type === 'connection.deleted'
-    ) {
-      if (payload.type === 'connection.deleted') {
-        connections = withoutConnection(connections, payload.connectionId);
-        m.redraw();
-        return;
-      }
-      // `connection.created`/`connection.updated`/`connection.statusChanged`
-      // only carry the id (and, for the last, the new status): refetch the
-      // full record so the `SERVERS` group and manager stay accurate.
-      void attrsClient
-        .getConnection(payload.connectionId)
-        .then((updated) => {
-          connections = upsertConnection(connections, updated);
-          m.redraw();
-        })
-        .catch(() => undefined);
-      return;
-    }
-    if (payload.type === 'search.resultsBatch') {
-      if (payload.searchId !== findFilesSearchId) return;
-      for (const entry of payload.entries) {
-        if (entry.contentMatches !== undefined && entry.contentMatches.length > 0) {
-          contentMatchesByEntryUri.set(entry.location.uri, entry.contentMatches);
-        }
-      }
-      const searchUri = `search://local/${payload.searchId}`;
-      if (workspace !== undefined) {
-        for (const [paneId, pane] of Object.entries(workspace.panesById) as Array<
-          [PaneId, WorkspaceProjection['panesById'][PaneId]]
-        >) {
-          const tab = pane.tabsById[pane.activeTabId];
-          if (tab?.location.uri !== searchUri) continue;
-          // Batches arrive roughly every 100ms while a search is running. Reloading on every
-          // single one used to abort-and-restart the previous reload's still-in-flight fetch
-          // each time (`navigation.load()` without `background: true` always preempts), so only
-          // the very last reload - after the search finished - ever won the race to complete,
-          // making results appear all at once instead of streaming in. Debouncing here so at
-          // most one reload is in flight per pane (plus always forcing one final reload once the
-          // search completes) lets intermediate reloads land as they finish.
-          if (payload.isComplete) {
-            void navigation.load(paneId);
-            continue;
-          }
-          if (searchBatchReloadInFlight.has(paneId)) continue;
-          searchBatchReloadInFlight.add(paneId);
-          void navigation
-            .load(paneId, { background: true })
-            .finally(() => searchBatchReloadInFlight.delete(paneId));
-        }
-      }
-      m.redraw();
-      return;
-    }
-    if ('revision' in payload && workspace !== undefined) {
-      if (payload.revision <= workspace.revision) return;
-      void attrsClient.getWorkspace(workspace.id).then(replaceWorkspace);
-    }
-  }
+    },
+    clearPendingOperationEvents: () => {
+      const events = pendingOperationEvents;
+      pendingOperationEvents = [];
+      return events;
+    },
+    getOperationFrame: () => operationFrame,
+    setOperationFrame: (frame) => {
+      operationFrame = frame;
+    },
+    getOperations: () => operations,
+    setOperations: (next) => {
+      operations = next;
+    },
+    getDismissedOperationIds: () => dismissedOperationIds,
+    clearDismissedOperation,
+    scheduleAutoDismiss,
+    getActiveDirectoryRevision: (paneId) => directories.get(activeTabKey(paneId))?.revision,
+    applyDelta,
+    refetchAffectedPanes,
+    getPlugins: () => plugins,
+    setPlugins: (next) => {
+      plugins = next;
+    },
+    listPlugins: () => attrsClient.listPlugins(),
+    getCurrentIconThemeSetting: () => currentSettings?.iconTheme,
+    applyIconTheme,
+    getConnections: () => connections,
+    setConnections: (next) => {
+      connections = next;
+    },
+    getConnection: (id) => attrsClient.getConnection(id),
+    getFindFilesSearchId: () => findFilesSearchId,
+    getSearchBatchReloadInFlight: () => searchBatchReloadInFlight,
+    cacheContentMatches: (uri, matches) => {
+      contentMatchesByEntryUri.set(uri, matches);
+    },
+    findPanesWithUri: (uri) =>
+      workspace === undefined
+        ? []
+        : (
+            Object.entries(workspace.panesById) as Array<
+              [PaneId, WorkspaceProjection['panesById'][PaneId]]
+            >
+          )
+            .filter(([, pane]) => pane.tabsById[pane.activeTabId]?.location.uri === uri)
+            .map(([paneId]) => paneId),
+    loadPane: (paneId, options) => navigation.load(paneId, options),
+    redraw: () => m.redraw(),
+  };
+  const handleBackendEvent = createBackendEventHandler(backendEventContext);
 
   let attrsClient: FileManagerClient;
   let opsController: OperationsController;
