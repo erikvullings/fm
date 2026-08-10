@@ -24,20 +24,8 @@ import {
   menuActionsForContext,
 } from '../features/commands/availability';
 import { ContextMenu as DirectoryContextMenu } from '../features/commands/context-menu';
-import { ConnectionsManager } from '../features/connections/connection-editor';
-import {
-  acceptSshHostKey as acceptSshHostKeyRequest,
-  connectConnection as connectConnectionRequest,
-  deleteConnection as deleteConnectionRequest,
-  disconnectConnection as disconnectConnectionRequest,
-  loadConnections,
-  probeSshHostKey as probeSshHostKeyRequest,
-  saveConnection,
-  testConnection as testConnectionRequest,
-  upsertConnection,
-  withoutConnection,
-} from '../features/connections/connections-model';
 import { createDialogUIController } from '../features/dialogs/dialog-ui-controller';
+import { renderAppDialogs, type AppDialogsContext } from '../features/dialogs/app-dialogs';
 import type { NativeIconLoader } from '../features/directory-table/native-icon-loader';
 import {
   createFileEditorController,
@@ -57,31 +45,19 @@ import {
   createGlobalKeydownHandler,
   type GlobalKeydownContext,
 } from '../features/keybindings/global-keydown-handler';
-import { ArchivePasswordDialog } from '../features/navigation/archive-password-dialog';
 import {
   createNavigationController,
   type NavigationController,
   type PaneDirectoryView,
 } from '../features/navigation/navigation';
 import {
-  ArchiveCreateDialog,
-  type ArchiveFormat,
-} from '../features/operations/archive-create-dialog';
-import { ConflictDialog } from '../features/operations/conflict-dialog';
-import { CreateDirectoryDialog } from '../features/operations/create-directory-dialog';
-import { MultiRenameDialog } from '../features/operations/multi-rename-dialog';
-import { OperationCentre } from '../features/operations/operation-centre';
-import {
   createOperationsState,
   dismissOperation,
-  transitionOperationState,
 } from '../features/operations/operation-state';
 import {
   createOperationsController,
   type OperationsController,
 } from '../features/operations/operations-controller';
-import { PermanentDeleteDialog } from '../features/operations/permanent-delete-dialog';
-import { CloseLastTabDialog } from '../features/panes/close-last-tab-dialog';
 import {
   createTabController,
   type TabController,
@@ -99,7 +75,6 @@ import {
   type FindFilesControllerContext,
 } from '../features/search/find-files-controller';
 import type { FindFilesSearchParams } from '../features/search/find-files-dialog';
-import { FindFilesDialog } from '../features/search/find-files-dialog';
 import type { SelectionPlatform } from '../features/selection/keybindings';
 import {
   emptySelection,
@@ -131,7 +106,6 @@ import {
   type WorkspaceControllerContext,
 } from '../features/workspace/workspace-controller';
 import {
-  pathFromUri,
   WorkspaceLayoutView,
   type WorkspacePaneContent,
 } from '../features/workspace/workspace-layout';
@@ -1316,225 +1290,30 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     ).catch(() => undefined);
   }
 
-  function renderDialogs(
-    client: FileManagerClient,
-    pendingDelete: (typeof operations.byId)[string],
-  ): m.Children[] {
-    return [
-      m(OperationCentre, {
-        state: operations,
-        onCancel: (operationId) => {
-          operations = transitionOperationState(operations, operationId, 'cancelling');
-          void client.cancelOperation(operationId).catch(() => undefined);
-        },
-        onPause: (operationId) => {
-          operations = transitionOperationState(operations, operationId, 'paused');
-          void client.pauseOperation(operationId).catch(() => undefined);
-        },
-        onResume: (operationId) => {
-          operations = transitionOperationState(operations, operationId, 'running');
-          void client.resumeOperation(operationId).catch(() => undefined);
-        },
-        onDismiss: (operationId) => {
-          cancelAutoDismiss(operationId);
-          rememberDismissedOperation(operationId);
-          operations = dismissOperation(operations, operationId);
-        },
-      }),
-      m(CreateDirectoryDialog, {
-        open: dialogs.getState().createDirectoryOpen,
-        onCancel: () => dialogs.cancelCreateDirectory(),
-        onConfirm: (name: string) =>
-          dialogs.confirmCreateDirectory(
-            name,
-            activeDirectory()?.location,
-            (loc, n) => opsController.createDirectory(loc, n).then(() => undefined),
-          ),
-      }),
-      m(ArchiveCreateDialog, {
-        open: dialogs.getState().archiveCreateRequest !== undefined,
-        moveSources: dialogs.getState().archiveCreateRequest?.moveSources ?? false,
-        onCancel: () => dialogs.cancelArchiveCreate(),
-        onConfirm: (name: string, format: ArchiveFormat, compressionLevel?: number) => {
-          const request = dialogs.getState().archiveCreateRequest;
-          if (request === undefined) return;
-          dialogs.cancelArchiveCreate();
-          void opsController.pack(
-            request.sources,
-            {
-              ...request.destinationDirectory,
-              uri: `${request.destinationDirectory.uri.replace(/\/$/u, '')}/${encodeURIComponent(name)}`,
-            },
-            request.moveSources,
-            format,
-            compressionLevel,
-          );
-        },
-      }),
-      m(MultiRenameDialog, {
-        open: dialogs.getState().multiRenameOpen,
-        entries: dialogs.getState().multiRenameEntries,
-        existingSiblingNames: dialogs.getState().multiRenameExistingNames,
-        onCancel: () => dialogs.cancelMultiRename(),
-        onApply: (renamed) => {
-          const { multiRenameLocation: location, multiRenameEntries: entries } = dialogs.getState();
-          dialogs.cancelMultiRename();
-          if (location === undefined) return;
-          const entriesById = new Map(entries.map((entry) => [entry.id, entry]));
-          const sources: Location[] = [];
-          const destinations: Location[] = [];
-          for (const { id, newName } of renamed) {
-            const entry = entriesById.get(id);
-            if (entry === undefined) continue;
-            sources.push(entry.location);
-            destinations.push({
-              ...entry.location,
-              uri: `${location.uri.replace(/\/$/u, '')}/${encodeURIComponent(newName)}`,
-            });
-          }
-          if (sources.length === 0) return;
-          void opsController.multiRename(sources, destinations);
-        },
-      }),
-      m(ArchivePasswordDialog, {
-        open: dialogs.getState().pendingArchiveCredential !== undefined,
-        invalid: dialogs.getState().pendingArchiveCredential?.invalid ?? false,
-        archiveLabel:
-          dialogs.getState().pendingArchiveCredential === undefined
-            ? ''
-            : pathFromUri(dialogs.getState().pendingArchiveCredential!.location.uri),
-        ...(dialogs.getState().archiveCredentialError === undefined
-          ? {}
-          : { error: dialogs.getState().archiveCredentialError! }),
-        onCancel: () => {
-          const pending = dialogs.getState().pendingArchiveCredential;
-          dialogs.clearArchiveCredential();
-          pending?.resolve(false);
-        },
-        onConfirm: (password: string) => {
-          const pending = dialogs.getState().pendingArchiveCredential;
-          if (pending === undefined) return;
-          void client
-            .cacheArchivePassword({ location: pending.location, password })
-            .then(() => {
-              if (dialogs.getState().pendingArchiveCredential === pending) {
-                dialogs.clearArchiveCredential();
-                pending.resolve(true);
-                m.redraw();
-              }
-            })
-            .catch((error: unknown) => {
-              dialogs.setArchiveCredentialError(
-                error instanceof Error ? error.message : 'Unable to cache archive password',
-              );
-              m.redraw();
-            });
-        },
-      }),
-      m(ConnectionsManager, {
-        open: connectionsManagerOpen,
-        connections,
-        onRefresh: async () => {
-          connections = await loadConnections(client);
-        },
-        onClose: () => {
-          connectionsManagerOpen = false;
-          m.redraw();
-        },
-        onSave: async (draft, editingId) => {
-          const result = await saveConnection(client, draft, editingId);
-          if (result.ok) {
-            connections = upsertConnection(connections, result.connection);
-          }
-          return result;
-        },
-        onDelete: async (id) => {
-          await deleteConnectionRequest(client, id);
-          connections = withoutConnection(connections, id);
-        },
-        onConnect: async (id) => {
-          const updated = await connectConnectionRequest(client, id);
-          connections = upsertConnection(connections, updated);
-          return updated;
-        },
-        onDisconnect: async (id) => {
-          const updated = await disconnectConnectionRequest(client, id);
-          connections = upsertConnection(connections, updated);
-          return updated;
-        },
-        onTest: async (id) => {
-          const updated = await testConnectionRequest(client, id);
-          connections = upsertConnection(connections, updated);
-          return updated;
-        },
-        onProbeHostKey: (id) => probeSshHostKeyRequest(client, id),
-        onAcceptHostKey: (id, fingerprint) => acceptSshHostKeyRequest(client, id, fingerprint),
-      }),
-      m(FindFilesDialog, {
-        open: findFilesOpen,
-        scopeLabel: findFilesRoot === undefined ? '' : pathFromUri(findFilesRoot.uri),
-        ...(findFilesError === undefined ? {} : { error: findFilesError }),
-        onSearch: (params: FindFilesSearchParams) =>
-          findFilesController.startFindFilesSearch(params),
-        onCancel: () => findFilesController.closeFindFiles(),
-      }),
-      m(PermanentDeleteDialog, {
-        open: pendingDelete !== undefined,
-        itemCount: pendingDelete?.progress.totalItems ?? 0,
-        totalBytes: pendingDelete?.progress.totalBytes ?? 0,
-        onCancel: () => {
-          if (pendingDelete !== undefined) void client.cancelOperation(pendingDelete.id);
-        },
-        onConfirm: () => {
-          if (pendingDelete !== undefined) {
-            void client
-              .resolveConflict({
-                operationId: pendingDelete.id,
-                resolution: 'confirm',
-                applyToAllSimilar: false,
-              })
-              .then(() => {
-                refetchAffectedPanes();
-                m.redraw();
-              });
-          }
-        },
-      }),
-      m(ConflictDialog, {
-        conflict: pendingConflict,
-        onResolve: (resolution, applyToAllSimilar) => {
-          const conflict = pendingConflict;
-          if (conflict === undefined) return;
-          void client
-            .resolveConflict({
-              operationId: conflict.operationId,
-              resolution,
-              applyToAllSimilar,
-            })
-            .then(() => {
-              if (pendingConflict?.conflictId === conflict.conflictId) {
-                pendingConflict = undefined;
-                refetchAffectedPanes();
-                m.redraw();
-              }
-            });
-        },
-      }),
-      m(CloseLastTabDialog, {
-        open: closeTabConfirmation !== undefined,
-        onConfirm: () => {
-          const confirmation = closeTabConfirmation;
-          closeTabConfirmation = undefined;
-          if (confirmation !== undefined) {
-            tabController.performCloseTab(confirmation.paneId, confirmation.tabId);
-          }
-        },
-        onCancel: () => {
-          closeTabConfirmation = undefined;
-        },
-      }),
-    ];
-  }
+  const appDialogsContext: AppDialogsContext = {
+    getOperations: () => operations,
+    setOperations: (next) => { operations = next; },
+    getPendingConflict: () => pendingConflict,
+    setPendingConflict: (conflict) => { pendingConflict = conflict; },
+    getConnections: () => connections,
+    setConnections: (conns) => { connections = conns; },
+    getConnectionsManagerOpen: () => connectionsManagerOpen,
+    setConnectionsManagerOpen: (open) => { connectionsManagerOpen = open; },
+    getFindFilesOpen: () => findFilesOpen,
+    getFindFilesRoot: () => findFilesRoot,
+    getFindFilesError: () => findFilesError,
+    getCloseTabConfirmation: () => closeTabConfirmation,
+    setCloseTabConfirmation: (conf) => { closeTabConfirmation = conf; },
+    getDialogs: () => dialogs,
+    getFindFilesController: () => findFilesController,
+    getTabController: () => tabController,
+    getOpsController: () => opsController,
+    getActiveDirectoryLocation: () => activeDirectory()?.location,
+    cancelAutoDismiss,
+    rememberDismissedOperation,
+    refetchAffectedPanes,
+    redraw: () => m.redraw(),
+  };
 
   return {
     oninit: ({ attrs }) => {
@@ -1990,7 +1769,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
             },
             onInvoke: actionCommandController.invokeContextMenuAction,
           }),
-          ...renderDialogs(attrs.client, pendingDelete),
+          ...renderAppDialogs(attrs.client, pendingDelete, appDialogsContext),
           m(
             '.fm-function-key-bar',
             footerFunctionKeyBindings(
