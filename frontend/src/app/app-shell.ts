@@ -15,7 +15,6 @@ import {
 import {
   clearClipboard,
   emptyClipboard,
-  isCutLocation,
 } from '../features/clipboard/clipboard';
 import {
   copySelectionToClipboard,
@@ -41,14 +40,7 @@ import {
   upsertConnection,
   withoutConnection,
 } from '../features/connections/connections-model';
-import { SAMPLE_FILE_AGE_COLUMN } from '../features/directory-table/directory-table';
 import type { NativeIconLoader } from '../features/directory-table/native-icon-loader';
-import {
-  operationForDrop,
-  resolveDropTarget,
-  validateDropTarget,
-} from '../features/drag-drop/drag-drop';
-import { FileEditor } from '../features/editor/file-editor';
 import {
   createFileEditorController,
   type FileEditorController,
@@ -62,14 +54,12 @@ import {
   type BackendEventContext,
   createBackendEventHandler,
 } from '../features/events/backend-event-handler';
-import { recordRecentLocation, reorderFavourites } from '../features/favourites/favourites';
-import { archiveRootForEntry } from '../features/navigation/archive-location';
+import { recordRecentLocation } from '../features/favourites/favourites';
 import { ArchivePasswordDialog } from '../features/navigation/archive-password-dialog';
 import {
   createNavigationController,
   type NavigationController,
   type PaneDirectoryView,
-  parentLocation,
 } from '../features/navigation/navigation';
 import {
   ArchiveCreateDialog,
@@ -90,19 +80,18 @@ import {
 } from '../features/operations/operations-controller';
 import { PermanentDeleteDialog } from '../features/operations/permanent-delete-dialog';
 import { CloseLastTabDialog } from '../features/panes/close-last-tab-dialog';
-import { isParentEntry, withParentEntry } from '../features/panes/parent-entry';
 import {
   createTabController,
   type TabController,
   type TabControllerContext,
 } from '../features/panes/tab-controller';
-import { FileViewer } from '../features/preview/file-viewer';
+
 import {
   createFileViewerController,
   type FileViewerController,
   type FileViewerState,
 } from '../features/preview/file-viewer-controller';
-import { filterEntries, hiddenSelectedEntryCount } from '../features/quick-filter/quick-filter';
+import { filterEntries } from '../features/quick-filter/quick-filter';
 import type { FindFilesSearchParams } from '../features/search/find-files-dialog';
 import { FindFilesDialog } from '../features/search/find-files-dialog';
 import type { SelectionPlatform } from '../features/selection/keybindings';
@@ -111,7 +100,6 @@ import {
   getSelectedEntries,
   getSelectedEntryLocations,
   reduceSelection,
-  type SelectionAction,
   type SelectionState,
 } from '../features/selection/selection';
 import { SettingsEditor } from '../features/settings/settings-editor';
@@ -131,6 +119,10 @@ import {
   sortEntriesResponsive,
 } from '../features/sorting/sorting';
 import { dispatchWorkspaceCommand } from '../features/workspace/dispatch-workspace-command';
+import {
+  createPaneContentBuilder,
+  type PaneContentContext,
+} from '../features/workspace/pane-content-builder';
 import {
   createWorkspaceController,
   type WorkspaceController,
@@ -153,7 +145,6 @@ import type {
   BackendEvent,
   Connection,
   DirectoryDelta,
-  EntryId,
   EntrySummary,
   Location,
   OperationConflict,
@@ -181,7 +172,6 @@ import {
   connectionPatch,
   createInitialAppState,
   deleteQuickFilterDraftPatch,
-  setQuickFilterDraftPatch,
 } from '../state';
 import type { RuntimeKind } from '../utilities/runtime';
 
@@ -1429,6 +1419,91 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     redraw: () => m.redraw(),
   };
 
+  let paneContentBuilder: (
+    client: FileManagerClient,
+    entryFormatSettings: EntryFormatSettings,
+    paneId: PaneId,
+  ) => WorkspacePaneContent;
+
+  const paneContentBuilderContext: PaneContentContext = {
+    getWorkspace: () => workspace,
+    getCurrentSettings: () => currentSettings,
+    getSystemLocations: () => systemLocations,
+    getSystemLocationsError: () => systemLocationsError,
+    getConnections: () => connections,
+    getUnavailableLocations: () => unavailableLocations,
+    getNativeIconLoader: () => nativeIconLoader,
+    getPlugins: () => plugins,
+    getPlatform: () => platform,
+    getKeybindingRuntime: () => keybindingRuntime,
+    getRegisteredActions: () => registeredActions,
+    getDraggedLocations: () => draggedLocations,
+    getNativeDragOutSupported: () => nativeDragOutSupported,
+    getNativeDropInProgress: () => nativeDropInProgress,
+    getAppState: () => appState,
+    clipboard,
+    getDirectories: () => directories,
+    getSelections: () => selections,
+    getSortedEntries: () => sortedEntries,
+    getSortRequests: () => sortRequests,
+    getViewerByPane: () => viewerByPane,
+    getEditorByPane: () => editorByPane,
+    setConnections: (conns) => {
+      connections = conns;
+    },
+    setConnectionsManagerOpen: (open) => {
+      connectionsManagerOpen = open;
+    },
+    setAppState: (state) => {
+      appState = state;
+    },
+    setQuickFilterOpen: (key, open) => {
+      quickFilterOpen.set(key, open);
+    },
+    setDraggedLocations: (locs) => {
+      draggedLocations = locs;
+    },
+    setClipboardMessage: (msg) => {
+      clipboardMessage = msg;
+    },
+    setMultiRenameOpen: (open) => {
+      multiRenameOpen = open;
+    },
+    setMultiRenameEntries: (entries) => {
+      multiRenameEntries = entries;
+    },
+    setMultiRenameLocation: (location) => {
+      multiRenameLocation = location;
+    },
+    setMultiRenameExistingNames: (names) => {
+      multiRenameExistingNames = names;
+    },
+    tabKey,
+    effectiveSort,
+    frontendSort,
+    sortLabel,
+    entriesSortedFor,
+    entriesFilteredFor,
+    quickFilterQueryFor,
+    quickFilterOpenFor,
+    contentSearchInitialQuery,
+    workspaceErrorMessage,
+    locationForPath,
+    activeDirectory,
+    getNavigation: () => navigation,
+    getWorkspaceController: () => workspaceController,
+    getOpsController: () => opsController,
+    openViewer: (paneId, entry, initialSearch) =>
+      openViewer(attrsClient, paneId, entry, initialSearch),
+    closeViewer,
+    closeEditor,
+    updateLocationSettings,
+    invokeActionById,
+    openContextMenu,
+    refetchAffectedPanes,
+    replaceWorkspace,
+  };
+
   function replaceWorkspace(next: WorkspaceProjection): void {
     workspace = next;
     m.redraw();
@@ -1477,437 +1552,6 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
 
   /** Opens a new tab in `paneId`, starting at the pane's currently active location. */
 
-
-  function paneContent(
-    client: FileManagerClient,
-    entryFormatSettings: EntryFormatSettings,
-    paneId: PaneId,
-  ): WorkspacePaneContent {
-    const pane = workspace?.panesById[paneId];
-    const tab = pane?.tabsById[pane.activeTabId];
-    const key = tab === undefined ? undefined : tabKey(paneId, tab.id);
-    const directory: PaneDirectoryView = (key === undefined ? undefined : directories.get(key)) ?? {
-      state: { type: 'idle' } as const,
-      entries: [],
-      hasMore: false,
-    };
-    const selection = (key === undefined ? undefined : selections.get(key)) ?? emptySelection;
-    const sorted =
-      tab === undefined || key === undefined
-        ? directory.entries
-        : entriesSortedFor(
-          key,
-          directory.entries,
-          effectiveSort(tab.view.sort),
-          tab.view.foldersFirst,
-        );
-    const quickFilterQuery = key === undefined ? '' : quickFilterQueryFor(key, tab);
-    const filtered = key === undefined ? sorted : entriesFilteredFor(key, sorted, quickFilterQuery);
-    const entries =
-      tab === undefined ? filtered : withParentEntry(pathFromUri(tab.location.uri), filtered);
-    const entryIds = entries.map((entry) => entry.id);
-    const cursorIndex =
-      selection.cursorEntryId === undefined ? undefined : entryIds.indexOf(selection.cursorEntryId);
-    const selectedEntryIds = new Set<EntryId>(selection.selectedEntryIds);
-    // While filtering, the true directory total can't be projected past what's loaded and
-    // matched so far; otherwise use the backend's real count (plus the synthetic ".." row)
-    // so the scrollbar is sized correctly from the very first page, not just once fully loaded.
-    const totalKnownEntries =
-      quickFilterQuery.trim() === ''
-        ? (directory.totalKnownEntries ?? directory.entries.length) +
-        (entries.length - filtered.length)
-        : entries.length;
-    return {
-      ...directory,
-      ...(tab === undefined ? {} : { location: tab.location }),
-      favouriteLocations: currentSettings?.favouriteLocations ?? [],
-      recentLocations:
-        workspace === undefined || currentSettings === undefined
-          ? []
-          : (currentSettings.recentLocationsByWorkspace[workspace.id] ?? []),
-      systemLocations,
-      ...(systemLocationsError === undefined ? {} : { systemLocationsError }),
-      onRetrySystemLocations: () => workspaceController.loadSystemLocations(),
-      connections,
-      onManageConnections: () => {
-        connectionsManagerOpen = true;
-        m.redraw();
-      },
-      onRefreshConnections: async () => {
-        connections = await loadConnections(client);
-      },
-      unavailableLocations,
-      entries,
-      selectedEntryIds,
-      cutEntryIds: new Set<EntryId>(
-        directory.entries
-          .filter((entry) => isCutLocation(clipboard(), entry.location))
-          .map((entry) => entry.id),
-      ),
-      sortLabel: sortLabel(effectiveSort(tab?.view.sort ?? [])),
-      sort: effectiveSort(tab?.view.sort ?? []),
-      totalEntryCount: directory.entries.length,
-      totalKnownEntries,
-      hiddenSelectedCount: hiddenSelectedEntryCount(directory.entries, filtered, selectedEntryIds),
-      filterOpen: key === undefined ? false : quickFilterOpenFor(key, tab),
-      filterQuery: quickFilterQuery,
-      formatSettings: entryFormatSettings,
-      ...(nativeIconLoader === undefined ? {} : { nativeIconLoader }),
-      pluginColumns:
-        plugins.some(
-          (plugin) =>
-            plugin.enabled && plugin.columns?.some((column) => column.id === 'sample.fileAge'),
-        ) &&
-          tab?.view.columns.some((column) => column.columnId === 'sample.fileAge' && column.visible)
-          ? [SAMPLE_FILE_AGE_COLUMN]
-          : [],
-      platform,
-      keybindingRuntime,
-      actions: registeredActions,
-      keybindingOverrides: currentSettings?.keybindings ?? {},
-      ...(cursorIndex === undefined || cursorIndex < 0 ? {} : { cursorIndex }),
-      onNavigate: async (path) => {
-        if (tab !== undefined) {
-          await navigation.navigate(paneId, locationForPath(tab.location, path));
-        }
-      },
-      onNavigateLocation: async (location) => {
-        await navigation.navigate(paneId, location);
-      },
-      onAddFavourite: (label, location) =>
-        updateLocationSettings(client, (settings) => ({
-          ...settings,
-          favouriteLocations: [...settings.favouriteLocations, { label, location }],
-        })),
-      onDeleteFavourite: (location) =>
-        updateLocationSettings(client, (settings) => ({
-          ...settings,
-          favouriteLocations: settings.favouriteLocations.filter(
-            (favourite) =>
-              favourite.location.providerId !== location.providerId ||
-              favourite.location.uri !== location.uri,
-          ),
-          recentLocationsByWorkspace: Object.fromEntries(
-            Object.entries(settings.recentLocationsByWorkspace).map(([workspaceId, locations]) => [
-              workspaceId,
-              locations.filter(
-                (candidate) =>
-                  candidate.providerId !== location.providerId || candidate.uri !== location.uri,
-              ),
-            ]),
-          ),
-        })),
-      onReorderFavourites: (from, to) =>
-        updateLocationSettings(client, (settings) => ({
-          ...settings,
-          favouriteLocations: reorderFavourites(settings.favouriteLocations, from, to),
-        })),
-      onBack: () => navigation.back(paneId),
-      onForward: () => navigation.forward(paneId),
-      onParent: () =>
-        tab?.location.uri.startsWith('search://')
-          ? navigation.back(paneId)
-          : navigation.parent(paneId),
-      onOpenEntry: (entry) => {
-        if (isParentEntry(entry.id)) {
-          return tab?.location.uri.startsWith('search://')
-            ? navigation.back(paneId)
-            : navigation.parent(paneId);
-        }
-        if (tab?.location.uri.startsWith('search://')) {
-          // If this entry has content matches from a content search, open the file
-          // viewer with the search query pre-populated so the user can jump to matches.
-          const initialSearch = contentSearchInitialQuery(tab.location.uri, entry);
-          if (initialSearch !== undefined) {
-            const otherPaneId = workspace?.paneOrder.find(
-              (candidatePaneId) => candidatePaneId !== paneId,
-            );
-            if (otherPaneId) {
-              return openViewer(attrsClient, otherPaneId, entry, initialSearch);
-            }
-          }
-          return navigation.navigate(paneId, parentLocation(entry.location), entry.name);
-        }
-        const isSystemLocation = systemLocations.some(
-          ({ location }) =>
-            location.providerId === entry.location.providerId &&
-            location.uri === entry.location.uri,
-        );
-        if (entry.kind === 'directory' || isSystemLocation) {
-          return navigation.navigate(paneId, entry.location);
-        }
-        const archiveRoot = archiveRootForEntry(entry);
-        if (archiveRoot !== undefined) return navigation.navigate(paneId, archiveRoot);
-        return invokeActionById(
-          'core.open',
-          { uri: entry.location.uri },
-          { paneId, selectedEntryIds: [entry.id], cursorEntryId: entry.id },
-        );
-      },
-      onSelectionAction: (action: SelectionAction) => {
-        if (key === undefined) return;
-        if (action.type === 'moveCursorTo' && action.edge === 'last' && directory.hasMore) {
-          // The loaded prefix doesn't include the real last entry yet: fetch every remaining
-          // page (cheap, cache-backed slices on the backend) before landing the cursor, rather
-          // than jumping to the last entry loaded so far.
-          void navigation.loadAllPages(paneId).then(async () => {
-            // `entriesSortedFor`'s cache is only refreshed by a redraw, and no redraw happens
-            // between the background page fetches above. For directories at/over its 10k
-            // responsive-sort threshold, reading the cache right now would otherwise return a
-            // stale sort of a much smaller (pre-`loadAllPages`) prefix and land the cursor on
-            // the wrong entry. Force a fresh, correctly-ordered sort of the fully-loaded
-            // entries first, and seed the cache with it so this call (and the next redraw) see
-            // the real order.
-            //
-            // This must stay scoped to `tab`/`key` as captured when the action was dispatched,
-            // never re-derived from `pane.activeTabId` — the user may have switched to a
-            // different tab while the pages were still loading in the background, and applying
-            // the result to whichever tab is active *now* would write this tab's cursor/entry
-            // into the wrong tab's selection state.
-            const freshDirectory = directories.get(key);
-            if (tab !== undefined && freshDirectory !== undefined) {
-              const sortDescriptors = effectiveSort(tab.view.sort);
-              const cacheKey = JSON.stringify([sortDescriptors, tab.view.foldersFirst]);
-              // Invalidate any in-flight sort of an earlier (smaller) entries snapshot so it
-              // can't overwrite the fresh result seeded below once it resolves.
-              sortRequests.set(key, {});
-              const sorted = await sortEntriesResponsive(
-                freshDirectory.entries,
-                frontendSort(sortDescriptors),
-                tab.view.foldersFirst,
-              );
-              sortedEntries.set(key, {
-                input: freshDirectory.entries,
-                key: cacheKey,
-                entries: sorted,
-              });
-              sortRequests.delete(key);
-            }
-            const sortedFresh =
-              tab === undefined
-                ? (freshDirectory?.entries ?? [])
-                : entriesSortedFor(
-                  key,
-                  freshDirectory?.entries ?? [],
-                  effectiveSort(tab.view.sort),
-                  tab.view.foldersFirst,
-                );
-            const filteredFresh = entriesFilteredFor(
-              key,
-              sortedFresh,
-              quickFilterQueryFor(key, tab),
-            );
-            const loadedEntries =
-              tab === undefined
-                ? filteredFresh
-                : withParentEntry(pathFromUri(tab.location.uri), filteredFresh);
-            const loadedEntryIds = loadedEntries.map((entry) => entry.id);
-            const next = reduceSelection(selections.get(key) ?? selection, action, loadedEntryIds);
-            selections.set(key, next);
-            m.redraw();
-          });
-          return;
-        }
-        const next = reduceSelection(selection, action, entryIds);
-        selections.set(key, next);
-        m.redraw();
-      },
-      onRetry: () => navigation.retry(paneId),
-      onLoadNextPage: () => navigation.loadNextPage(paneId),
-      onSortChange: (sort) => {
-        if (workspace === undefined || tab === undefined) return;
-        void dispatchWorkspaceCommand(
-          client,
-          {
-            type: 'updateView',
-            workspaceId: workspace.id,
-            paneId,
-            tabId: tab.id,
-            patch: { sort: [...sort] },
-            expectedRevision: workspace.revision,
-          },
-          replaceWorkspace,
-        ).catch(() => undefined);
-      },
-      onFilterQueryChange: (query) => {
-        if (key === undefined) return;
-        appState = applyAppPatches(appState!, setQuickFilterDraftPatch(key, query));
-        m.redraw();
-      },
-      onFilterCommit: () => {
-        if (key === undefined) return;
-        const draft = appState?.quickFilterDrafts.byTabKey[key];
-        if (workspace === undefined || tab === undefined || draft === undefined) return;
-        const committed = tab.view.quickFilter?.query ?? '';
-        if (draft === committed) return;
-        void dispatchWorkspaceCommand(
-          client,
-          {
-            type: 'updateView',
-            workspaceId: workspace.id,
-            paneId,
-            tabId: tab.id,
-            patch: {
-              quickFilter:
-                draft.trim() === '' ? { type: 'clear' } : { type: 'set', filter: { query: draft } },
-            },
-            expectedRevision: workspace.revision,
-          },
-          replaceWorkspace,
-        ).catch(() => undefined);
-      },
-      onFilterClose: () => {
-        if (key !== undefined) {
-          quickFilterOpen.set(key, false);
-          appState = applyAppPatches(appState!, deleteQuickFilterDraftPatch(key));
-        }
-        if (workspace !== undefined && tab !== undefined && tab.view.quickFilter != null) {
-          void dispatchWorkspaceCommand(
-            client,
-            {
-              type: 'updateView',
-              workspaceId: workspace.id,
-              paneId,
-              tabId: tab.id,
-              patch: { quickFilter: { type: 'clear' } },
-              expectedRevision: workspace.revision,
-            },
-            replaceWorkspace,
-          ).catch(() => undefined);
-        }
-        m.redraw();
-      },
-      onRename: (entry, name) => {
-        const active = activeDirectory();
-        if (active === undefined || active.paneId !== paneId) return;
-        const destinationUri = `${active.location.uri.replace(/\/$/u, '')}/${encodeURIComponent(name)}`;
-        void opsController.rename(entry.location, { ...entry.location, uri: destinationUri });
-      },
-      onContextMenu: (entries, x, y) => openContextMenu(paneId, entries, x, y),
-      onDragStart: (draggedEntries, event) => {
-        draggedLocations = draggedEntries.map((entry) => entry.location);
-        if (nativeDragOutSupported) {
-          event.preventDefault();
-          void client.startNativeDrag(draggedLocations).catch((error: unknown) => {
-            clipboardMessage = workspaceErrorMessage(error, 'Unable to start native drag');
-            m.redraw();
-          });
-          return;
-        }
-        event.dataTransfer?.setData('application/x-fm-locations', 'internal');
-        if (event.dataTransfer != null) event.dataTransfer.effectAllowed = 'copyMove';
-      },
-      onDragOver: (entry, event) => {
-        const target = tab === undefined ? undefined : resolveDropTarget(tab.location, entry);
-        const validation = validateDropTarget(
-          draggedLocations,
-          target,
-          directory.writable === true,
-        );
-        if (!validation.ok) return false;
-        if (event.dataTransfer != null) {
-          event.dataTransfer.dropEffect = operationForDrop(platform, event);
-        }
-        return true;
-      },
-      onDrop: (entry, event) => {
-        if (tab === undefined) return;
-        const target = resolveDropTarget(tab.location, entry);
-        const validation = validateDropTarget(
-          draggedLocations,
-          target,
-          directory.writable === true,
-        );
-        if (!validation.ok) {
-          clipboardMessage = validation.message;
-          return;
-        }
-        const sources = draggedLocations;
-        draggedLocations = [];
-        void (nativeDropInProgress || operationForDrop(platform, event) === 'copy'
-          ? opsController.copy(sources, target)
-          : opsController.move(sources, target));
-      },
-      onTabDragOver: (targetTabId, event) => {
-        const targetTab = pane?.tabsById[targetTabId];
-        const targetDirectory = directories.get(tabKey(paneId, targetTabId));
-        const validation = validateDropTarget(
-          draggedLocations,
-          targetTab?.location,
-          targetDirectory?.writable === true,
-        );
-        if (!validation.ok) return false;
-        if (event.dataTransfer != null)
-          event.dataTransfer.dropEffect = operationForDrop(platform, event);
-        return true;
-      },
-      onTabDrop: (targetTabId, event) => {
-        const targetTab = pane?.tabsById[targetTabId];
-        const targetDirectory = directories.get(tabKey(paneId, targetTabId));
-        const validation = validateDropTarget(
-          draggedLocations,
-          targetTab?.location,
-          targetDirectory?.writable === true,
-        );
-        if (!validation.ok || targetTab === undefined) {
-          if (!validation.ok) clipboardMessage = validation.message;
-          return;
-        }
-        const sources = draggedLocations;
-        draggedLocations = [];
-        void (nativeDropInProgress || operationForDrop(platform, event) === 'copy'
-          ? opsController.copy(sources, targetTab.location)
-          : opsController.move(sources, targetTab.location));
-      },
-      onMultiRename: (selected) => {
-        if (tab === undefined) return;
-        multiRenameOpen = true;
-        multiRenameEntries = selected;
-        multiRenameLocation = tab.location;
-        const selectedIds = new Set(selected.map((entry) => entry.id));
-        multiRenameExistingNames = new Set(
-          directory.entries
-            .filter((entry) => !selectedIds.has(entry.id))
-            .map((entry) => entry.name),
-        );
-      },
-      ...(editorByPane.has(paneId)
-        ? {
-          viewerContent: (() => {
-            const editor = editorByPane.get(paneId);
-            return editor === undefined
-              ? undefined
-              : m(FileEditor, {
-                state: editor.state,
-                controller: editor.controller,
-                onClose: () => closeEditor(paneId),
-              });
-          })(),
-        }
-        : viewerByPane.has(paneId)
-          ? {
-            viewerContent: (() => {
-              const viewer = viewerByPane.get(paneId);
-              if (viewer === undefined) return undefined;
-              return m(FileViewer, {
-                state: viewer.state,
-                onLoadMore: () => void viewer.controller.loadMore(),
-                onSearchQueryChange: (query) => viewer.controller.setSearchOptions({ query }),
-                onSearchOptionChange: (patch) => viewer.controller.setSearchOptions(patch),
-                onRunSearch: () => void viewer.controller.runSearch(),
-                onNextMatch: () => void viewer.controller.goToNextMatch(),
-                onPreviousMatch: () => void viewer.controller.goToPreviousMatch(),
-                onZoomIn: () => viewer.controller.zoomIn(),
-                onZoomOut: () => viewer.controller.zoomOut(),
-                onResetZoom: () => viewer.controller.resetZoom(),
-                onClose: () => closeViewer(paneId),
-              });
-            })(),
-          }
-          : {}),
-    };
-  }
-
   return {
     oninit: ({ attrs }) => {
       attrsClient = attrs.client;
@@ -1916,6 +1560,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       tabController = createTabController(attrs.client, tabControllerContext);
       settingsController = createSettingsController(settingsControllerContext);
       globalKeydownHandler = createGlobalKeydownHandler(globalKeydownHandlerContext);
+      paneContentBuilder = createPaneContentBuilder(paneContentBuilderContext);
       keybindingRuntime = attrs.runtime === 'http' ? 'browser' : 'desktop';
       runtimeKind = attrs.runtime;
       document.addEventListener('keydown', globalKeydownHandler);
@@ -2307,7 +1952,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
               : m(WorkspaceLayoutView, {
                 workspace,
                 paneContent: (paneId) =>
-                  paneContent(
+                  paneContentBuilder(
                     attrs.client,
                     attrs.entryFormatSettings ?? loadedEntryFormatSettings,
                     paneId,
