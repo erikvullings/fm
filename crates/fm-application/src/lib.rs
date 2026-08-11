@@ -7,9 +7,12 @@
 
 mod action;
 mod connection_dto;
+mod connection_facade;
 mod directory;
 mod error;
+mod file_editor;
 mod operation_planner;
+mod plugin_manager;
 mod service;
 mod ssh;
 pub mod workspace;

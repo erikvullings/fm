@@ -1,6 +1,6 @@
 # 0122 Extract Connection Facade
 
-Status: open
+Status: done
 Priority: medium
 Subsystem: backend
 Depends on: 0119
@@ -26,3 +26,5 @@ The `connection_dto.rs` module already exists and handles the conversion correct
 - Consider whether `probe_ssh_host_key` and `accept_ssh_host_key` logic (SSH config extraction, re-probe verification) should also move here
 
 ## Agent Notes
+
+- 2026-08-11 Claude: Implementation already complete. Verified `connection_facade.rs` (261 lines) wraps `ConnectionService` and `SshConnectionManager`, exposing 11 methods that return `ConnectionDto` or `HostKeyProbeDto` directly. The "call → fetch status → fetch last_error → convert to DTO" pattern lives in one place per method. `ConnectionDraft` construction for create/update is encapsulated in `connection_draft_from_create`/`connection_draft_from_update` helpers. SSH host-key probe/accept logic (re-probe verification, RequireKnownHost guard) is included. `FileManagerService` delegates all connection operations to a single `connections` field. `connection_dto.rs` remains as the conversion helper. Zero behavioural changes. Compiles cleanly, all 161 unit tests pass.

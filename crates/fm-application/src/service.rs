@@ -2,67 +2,54 @@
 
 use std::collections::{HashMap, HashSet};
 use std::fs;
-use std::hash::{Hash, Hasher};
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use fm_archive::ArchiveFileSystemProvider;
-use fm_connections::{
-    ConnectionDraft, ConnectionId, ConnectionService, JsonFileConnectionRepository,
-};
+use fm_connections::{ConnectionService, JsonFileConnectionRepository};
 use fm_credentials::{CredentialStore, InMemoryCredentialStore};
 use fm_domain::OperationId;
-use fm_domain::{
-    ActionContextRequirements, ActionDescriptor, ActionId, ActionSource, DirectorySnapshot,
-    EntryId, EntryKind, EntryMetadata, Location, PluginId,
-};
+use fm_domain::{ActionId, DirectorySnapshot, EntryId, EntryMetadata, Location};
 use fm_events::{
     BackendEventPayload, ConflictPolicyPayload, EntryRefPayload, EventAudience, EventBus,
     NotificationLevelPayload, NotificationPayload, OperationKindPayload, OperationPayload,
-    OperationProgressDetails, OperationStatePayload, PluginPayload,
+    OperationProgressDetails, OperationStatePayload,
 };
 use fm_operations::{
     ConflictResolution, Operation, OperationSnapshotObserver, Scheduler, SchedulerError,
 };
 use fm_platform::{FallbackPlatformAdapter, PlatformAdapter, PlatformCapabilities};
-use fm_plugin_api::{
-    ActionContribution, IconThemeManifest, PluginManifest, PluginPermissions, SelectedEntryContext,
-};
-use fm_plugin_runtime::{PluginDiscovery, PluginRuntime};
 use fm_search::{SearchEngine, SearchFileSystemProvider, SearchResultsStore};
+use fm_plugin_runtime::{PluginDiscovery, PluginRuntime};
 use fm_settings::{
     ConflictPolicy, DateFormat, DefaultPaneLayout, Settings, SettingsStore, SizeFormat, Theme,
 };
 use fm_transport_dto::{
-    ActionDescriptorDto, ActionResultDto, ConflictPolicyDto,
-    ConflictResolutionDto, ConnectionDto, CreateConnectionRequestDto, DateFormatDto,
-    DefaultPaneLayoutDto, EntryMetadataRequest, InvokeActionRequestDto, ListDirectoryRequest,
-    LoadEditableFileRequestDto, LoadEditableFileResponseDto, NavigateRequest,
-    OperationConflictPolicyDto, OperationDto, OperationKindDto, OperationProgressDto,
-    OperationStateDto, PlatformKindDto, PluginLogEntryDto, PluginPermissionsDto,
-    ReadFileRangeRequestDto, ReadFileRangeResponseDto, ResolveOperationConflictRequestDto,
-    RuntimeCapabilitiesDto, RuntimeKindDto, SaveEditableFileRequestDto,
-    SaveEditableFileResponseDto, SearchInFileMatchDto, SearchInFileRequestDto,
-    SearchInFileResponseDto, SettingsDto, SizeFormatDto, StartOperationRequestDto,
-    StartSearchRequestDto, StartSearchResponseDto, ThemeDto, UpdateConnectionRequestDto,
-    WorkspaceCommandDto, WorkspaceDto, WorkspaceSummaryDto,
+    ActionDescriptorDto, ActionResultDto, ConflictPolicyDto, ConflictResolutionDto, ConnectionDto,
+    CreateConnectionRequestDto, DateFormatDto, DefaultPaneLayoutDto, EntryMetadataRequest,
+    InvokeActionRequestDto, ListDirectoryRequest, NavigateRequest, OperationConflictPolicyDto,
+    OperationDto, OperationKindDto, OperationProgressDto, OperationStateDto, PlatformKindDto,
+    PluginDescriptorDto, PluginLogEntryDto, ReadFileRangeRequestDto, ReadFileRangeResponseDto,
+    ResolveOperationConflictRequestDto, RuntimeCapabilitiesDto, RuntimeKindDto,
+    SearchInFileMatchDto, SearchInFileRequestDto, SearchInFileResponseDto, SettingsDto,
+    SizeFormatDto, StartOperationRequestDto, StartSearchRequestDto, StartSearchResponseDto,
+    ThemeDto, UpdateConnectionRequestDto, WorkspaceCommandDto, WorkspaceDto, WorkspaceSummaryDto,
 };
-use fm_vfs::{
-    CopyCommitOptions, EntryRef, ProviderCapabilities, ProviderReadStream, ProviderRegistry,
-    WriteOptions,
-};
+use fm_vfs::{EntryRef, ProviderCapabilities, ProviderReadStream, ProviderRegistry};
 use fm_vfs_local::LocalFileSystemProvider;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::AsyncReadExt;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
-use crate::DirectoryService;
 use crate::action::ActionRegistry;
-use crate::connection_dto;
+use crate::connection_facade::ConnectionFacade;
 use crate::error::ApplicationError;
+use crate::file_editor::{read_stream_error, FileEditorService};
 use crate::operation_planner::OperationPlanner;
+use crate::plugin_manager::PluginManager;
+use crate::DirectoryService;
 use crate::workspace::{JsonFileWorkspaceRepository, WorkspaceService, WorkspaceSummary};
 
 /// Central application service that every host (Axum, Tauri, CLI) calls into.
@@ -80,22 +67,20 @@ pub struct FileManagerService {
     runtime: RuntimeKindDto,
     platform: Arc<dyn PlatformAdapter>,
     workspaces: WorkspaceService<JsonFileWorkspaceRepository>,
-    connections: ConnectionService<JsonFileConnectionRepository>,
-    ssh_connections: Arc<fm_ssh::SshConnectionManager>,
+    connections: ConnectionFacade,
     directories: DirectoryService,
+    editor: FileEditorService,
     providers: ProviderRegistry,
     archive_provider: Arc<ArchiveFileSystemProvider>,
     events: EventBus,
     settings_store: SettingsStore,
     settings: Arc<Mutex<Settings>>,
-    plugins: PluginDiscovery,
-    plugin_runtime: PluginRuntime,
+    plugin_manager: PluginManager,
     operations: Scheduler,
     operation_history: Arc<OperationHistory>,
     planner: OperationPlanner,
     operation_idempotency: Mutex<HashMap<String, OperationId>>,
     force_cross_volume_moves: AtomicBool,
-    audit_log_path: PathBuf,
     actions: ActionRegistry,
     search: SearchEngine,
 }
@@ -103,14 +88,6 @@ pub struct FileManagerService {
 const OPERATION_HISTORY_FILE_NAME: &str = "operation-history.json";
 const OPERATION_HISTORY_MAX_ENTRIES: usize = 100;
 const OPERATION_HISTORY_MAX_AGE_DAYS: i64 = 30;
-/// Whole-file editor ceiling. Large files remain on task 0088's ranged viewer path.
-pub(crate) const MAX_EDITABLE_FILE_BYTES: u64 = 3 * 1024 * 1024;
-
-fn content_revision(bytes: &[u8]) -> String {
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    bytes.hash(&mut hasher);
-    format!("{:016x}", hasher.finish())
-}
 
 /// Crash-safe operation snapshots stored beside settings.
 struct OperationHistory {
@@ -466,34 +443,41 @@ impl FileManagerService {
             workspaces: WorkspaceService::new(JsonFileWorkspaceRepository::new(
                 workspace_directory,
             )),
-            connections: ConnectionService::new(
-                JsonFileConnectionRepository::new(settings_directory.join("connections")),
-                credential_store,
-                events.clone(),
-            )
-            .with_dialer(
-                fm_connections::ConnectionKind::Ssh,
-                Arc::new(crate::ssh::SshDialer::new(ssh_connections.clone())),
+            connections: ConnectionFacade::new(
+                ConnectionService::new(
+                    JsonFileConnectionRepository::new(settings_directory.join("connections")),
+                    credential_store,
+                    events.clone(),
+                )
+                .with_dialer(
+                    fm_connections::ConnectionKind::Ssh,
+                    Arc::new(crate::ssh::SshDialer::new(ssh_connections.clone())),
+                ),
+                ssh_connections,
             ),
-            ssh_connections,
             directories,
+            editor: FileEditorService::new(providers.clone(), audit_log_path.clone()),
             providers,
             archive_provider,
             events: events.clone(),
-            settings_store,
-            settings: settings_mutex,
-            plugins: PluginDiscovery::new(settings_directory.join("plugins"))
-                .with_bundled_directory(
-                    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../plugins"),
-                ),
-            plugin_runtime: PluginRuntime::default(),
+            settings_store: settings_store.clone(),
+            settings: settings_mutex.clone(),
+            plugin_manager: PluginManager::new(
+                PluginDiscovery::new(settings_directory.join("plugins"))
+                    .with_bundled_directory(
+                        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../plugins"),
+                    ),
+                PluginRuntime::default(),
+                settings_mutex,
+                settings_store.clone(),
+                events.clone(),
+            ),
             operations: Scheduler::new(operation_concurrency, events)
                 .with_observer(operation_observer),
             operation_history,
             planner,
             operation_idempotency: Mutex::new(HashMap::new()),
             force_cross_volume_moves: AtomicBool::new(false),
-            audit_log_path,
             actions: ActionRegistry::with_core_actions(platform_capabilities),
             search,
         }
@@ -668,207 +652,18 @@ impl FileManagerService {
     #[must_use]
     pub fn list_actions(&self) -> Vec<ActionDescriptorDto> {
         let mut actions = self.actions.list();
-        for (manifest, directory) in self.enabled_plugin_manifests() {
-            match self.plugin_runtime.actions(&manifest, &directory) {
-                Ok(contributions) => actions.extend(
-                    contributions
-                        .into_iter()
-                        .map(|action| plugin_action_descriptor(&manifest, action)),
-                ),
-                Err(error) => {
-                    self.events.publish(
-                        EventAudience::Global,
-                        BackendEventPayload::NotificationCreated {
-                            notification: NotificationPayload {
-                                id: Uuid::new_v4().to_string(),
-                                level: NotificationLevelPayload::Warning,
-                                message: format!("Plugin {} was isolated: {error}", manifest.id),
-                            },
-                        },
-                    );
-                }
-            }
+        let plugin_actions = self.plugin_manager.list_plugin_actions();
+        for (descriptor, _, _) in plugin_actions {
+            actions.push(descriptor);
         }
         actions.sort_by(|left, right| left.id.cmp(&right.id));
         actions.into_iter().map(Into::into).collect()
     }
 
-    /// Manifests and directories of every plugin that is both valid and
-    /// enabled (spec §18/§19). Shared by [`Self::list_actions`] and plugin
-    /// action dispatch in [`Self::invoke_action`] so both agree on which
-    /// plugins are eligible to contribute actions.
-    fn enabled_plugin_manifests(&self) -> Vec<(PluginManifest, PathBuf)> {
-        let enabled = self
-            .settings
-            .lock()
-            .unwrap_or_else(|error| error.into_inner())
-            .enabled_plugins
-            .clone();
-        self.plugins
-            .discover()
-            .into_iter()
-            .filter_map(|plugin| {
-                let manifest = plugin.manifest?;
-                enabled
-                    .contains(&manifest.id)
-                    .then_some((manifest, plugin.directory))
-            })
-            .collect()
-    }
-
-    /// Finds an enabled plugin's action contribution by id, along with the
-    /// manifest and directory needed to invoke it (spec §18/§20).
-    fn find_plugin_action(
-        &self,
-        action_id: &ActionId,
-    ) -> Option<(PluginManifest, PathBuf, ActionDescriptor)> {
-        self.enabled_plugin_manifests()
-            .into_iter()
-            .find_map(|(manifest, directory)| {
-                let contributions = self.plugin_runtime.actions(&manifest, &directory).ok()?;
-                let action = contributions
-                    .into_iter()
-                    .find(|action| action.id == action_id.as_str())?;
-                let descriptor = plugin_action_descriptor(&manifest, action);
-                Some((manifest, directory, descriptor))
-            })
-    }
-
-    /// Runs a plugin's `invoke(action_id)` entrypoint with the caller-supplied
-    /// selection (spec §20). The caller (frontend) already knows the current
-    /// selection's name and file URI, so it is passed directly as invocation
-    /// parameters rather than requiring the backend to resolve an
-    /// [`fm_domain::EntryId`] back to metadata.
-    fn invoke_plugin_action(
-        &self,
-        action_id: &ActionId,
-        manifest: &PluginManifest,
-        directory: &Path,
-        parameters: Option<serde_json::Value>,
-    ) -> Result<ActionResultDto, ApplicationError> {
-        let selection = parameters
-            .map(serde_json::from_value::<PluginActionParametersDto>)
-            .transpose()
-            .map_err(|error| {
-                ApplicationError::InvalidRequest(format!("invalid action parameters: {error}"))
-            })?
-            .unwrap_or_default()
-            .selected_entries;
-
-        match self
-            .plugin_runtime
-            .invoke_action(manifest, directory, action_id.as_str(), &selection)
-        {
-            Ok(outcome) => {
-                if outcome.clipboard_text.is_some() {
-                    self.events.publish(
-                        EventAudience::Global,
-                        BackendEventPayload::NotificationCreated {
-                            notification: NotificationPayload {
-                                id: Uuid::new_v4().to_string(),
-                                level: NotificationLevelPayload::Info,
-                                message: "Copied to clipboard.".to_owned(),
-                            },
-                        },
-                    );
-                }
-                Ok(ActionResultDto {
-                    action_id: action_id.as_str().to_owned(),
-                    invoked: true,
-                    operation_id: None,
-                    clipboard_text: outcome.clipboard_text,
-                })
-            }
-            Err(error) => Err(ApplicationError::InvalidRequest(format!(
-                "plugin action {action_id:?} failed: {error}"
-            ))),
-        }
-    }
-
     /// Lists discovered plugins, retaining malformed manifests as disabled records.
     #[must_use]
-    pub fn list_plugins(&self) -> Vec<fm_transport_dto::PluginDescriptorDto> {
-        let enabled = self
-            .settings
-            .lock()
-            .unwrap_or_else(|error| error.into_inner())
-            .enabled_plugins
-            .clone();
-        self.plugins
-            .discover()
-            .into_iter()
-            .map(|plugin| {
-                let id = plugin.id();
-                let (name, version, description) = plugin.manifest.as_ref().map_or_else(
-                    || (id.clone(), String::new(), String::new()),
-                    |manifest| {
-                        (
-                            manifest.name.clone(),
-                            manifest.version.clone(),
-                            manifest.description.clone(),
-                        )
-                    },
-                );
-                let columns =
-                    if plugin.is_valid() && enabled.contains(&id) {
-                        match plugin.manifest.as_ref().map(|manifest| {
-                            self.plugin_runtime.columns(manifest, &plugin.directory)
-                        }) {
-                            Some(Ok(columns)) => columns
-                                .into_iter()
-                                .map(|column| fm_transport_dto::PluginColumnDto {
-                                    id: column.id,
-                                    title: column.title,
-                                })
-                                .collect(),
-                            Some(Err(error)) => {
-                                self.events.publish(
-                                    EventAudience::Global,
-                                    BackendEventPayload::NotificationCreated {
-                                        notification: NotificationPayload {
-                                            id: Uuid::new_v4().to_string(),
-                                            level: NotificationLevelPayload::Warning,
-                                            message: format!("Plugin {id} was isolated: {error}"),
-                                        },
-                                    },
-                                );
-                                Vec::new()
-                            }
-                            None => Vec::new(),
-                        }
-                    } else {
-                        Vec::new()
-                    };
-                let runtime_diagnostic = self.plugin_runtime.disabled_reason(&id);
-                let permissions = plugin
-                    .manifest
-                    .as_ref()
-                    .map(|manifest| plugin_permissions_dto(&manifest.permissions))
-                    .unwrap_or_default();
-                let is_enabled =
-                    plugin.is_valid() && enabled.contains(&id) && runtime_diagnostic.is_none();
-                // Listed regardless of `is_enabled` (unlike columns/actions, which require the
-                // plugin's Lua runtime to be live) so the settings UI can offer a not-yet-enabled
-                // theme for selection; `plugin_icon_theme_asset` below still refuses to serve any
-                // asset unless the plugin is actually enabled.
-                let icon_theme = if plugin.is_valid() {
-                    plugin.icon_theme.as_ref().map(plugin_icon_theme_dto)
-                } else {
-                    None
-                };
-                fm_transport_dto::PluginDescriptorDto {
-                    enabled: is_enabled,
-                    id,
-                    name,
-                    version,
-                    description,
-                    diagnostic: plugin.diagnostic.or(runtime_diagnostic),
-                    columns,
-                    permissions,
-                    icon_theme,
-                }
-            })
-            .collect()
+    pub fn list_plugins(&self) -> Vec<PluginDescriptorDto> {
+        self.plugin_manager.list_plugins()
     }
 
     /// Reads one asset referenced by an enabled plugin's icon theme (task 0095), rejecting any
@@ -879,55 +674,12 @@ impl FileManagerService {
         plugin_id: &str,
         asset_path: &str,
     ) -> Result<String, ApplicationError> {
-        let enabled = self
-            .settings
-            .lock()
-            .unwrap_or_else(|error| error.into_inner())
-            .enabled_plugins
-            .clone();
-        let plugin = self
-            .plugins
-            .discover()
-            .into_iter()
-            .find(|plugin| plugin.is_valid() && plugin.id() == plugin_id)
-            .filter(|_plugin| enabled.iter().any(|id| id == plugin_id))
-            .ok_or(ApplicationError::NotFound)?;
-        let icon_theme = plugin
-            .icon_theme
-            .as_ref()
-            .ok_or(ApplicationError::NotFound)?;
-        let is_declared = icon_theme
-            .icon_definitions
-            .values()
-            .any(|definition| definition.icon_path.to_string_lossy() == asset_path);
-        if !is_declared {
-            return Err(ApplicationError::NotFound);
-        }
-        let resolved =
-            fm_plugin_runtime::resolve_plugin_asset(&plugin.directory, Path::new(asset_path))
-                .ok_or(ApplicationError::NotFound)?;
-        fs::read_to_string(&resolved)
-            .map_err(|error| ApplicationError::PlatformOperationFailed(error.to_string()))
+        self.plugin_manager.plugin_icon_theme_asset(plugin_id, asset_path)
     }
 
     /// Returns the bounded diagnostic log retained for one plugin (spec §19.4).
     pub fn plugin_logs(&self, plugin_id: &str) -> Result<Vec<PluginLogEntryDto>, ApplicationError> {
-        let exists = self
-            .plugins
-            .discover()
-            .into_iter()
-            .any(|plugin| plugin.id() == plugin_id);
-        if !exists {
-            return Err(ApplicationError::NotFound);
-        }
-        Ok(self
-            .plugin_runtime
-            .logs(plugin_id)
-            .into_iter()
-            .map(|entry| PluginLogEntryDto {
-                message: entry.message,
-            })
-            .collect())
+        self.plugin_manager.plugin_logs(plugin_id)
     }
 
     /// Persists a plugin enablement decision after confirming its manifest is valid.
@@ -936,43 +688,7 @@ impl FileManagerService {
         plugin_id: String,
         enabled: bool,
     ) -> Result<(), ApplicationError> {
-        let plugin = self
-            .plugins
-            .discover()
-            .into_iter()
-            .find(|plugin| plugin.is_valid() && plugin.id() == plugin_id);
-        let Some(plugin) = plugin else {
-            return Err(ApplicationError::NotFound);
-        };
-        let manifest = plugin
-            .manifest
-            .as_ref()
-            .expect("validated plugin has a manifest");
-        let mut settings = self
-            .settings
-            .lock()
-            .unwrap_or_else(|error| error.into_inner());
-        settings.enabled_plugins.retain(|id| id != &plugin_id);
-        if enabled {
-            self.plugin_runtime.reenable(&plugin_id);
-            settings.enabled_plugins.push(plugin_id.clone());
-            settings.enabled_plugins.sort();
-        }
-        self.settings_store
-            .save(&settings)
-            .map_err(|_| ApplicationError::Internal)?;
-        self.events.publish(
-            EventAudience::Global,
-            BackendEventPayload::PluginChanged {
-                plugin: PluginPayload {
-                    id: PluginId::new(plugin_id),
-                    name: manifest.name.clone(),
-                    version: manifest.version.clone(),
-                    enabled,
-                },
-            },
-        );
-        Ok(())
+        self.plugin_manager.set_plugin_enabled(plugin_id, enabled)
     }
 
     /// Invokes a registered action, re-validating its context requirements
@@ -988,11 +704,13 @@ impl FileManagerService {
         let action_id = ActionId::new(action_id);
         let context = request.context.into();
 
-        if let Some((manifest, directory, descriptor)) = self.find_plugin_action(&action_id) {
+        if let Some((manifest, directory, descriptor)) =
+            self.plugin_manager.find_plugin_action(&action_id)
+        {
             if !descriptor.context_requirements.is_satisfied_by(&context) {
                 return Err(ApplicationError::ActionUnavailable(action_id));
             }
-            return self.invoke_plugin_action(
+            return self.plugin_manager.invoke_plugin_action(
                 &action_id,
                 &manifest,
                 &directory,
@@ -1264,198 +982,17 @@ impl FileManagerService {
     /// Loads a complete text file only when it fits the bounded editor budget.
     pub async fn load_editable_file(
         &self,
-        request: LoadEditableFileRequestDto,
-    ) -> Result<LoadEditableFileResponseDto, ApplicationError> {
-        let location: Location = request.location.into();
-        let provider = self
-            .providers
-            .resolve(&location)
-            .map_err(ApplicationError::from)?;
-        let capabilities = provider
-            .capabilities_for(&location)
-            .map_err(ApplicationError::from)?;
-        capabilities
-            .require(ProviderCapabilities::READ)
-            .map_err(ApplicationError::from)?;
-        let entry = EntryRef {
-            id: EntryId::new(),
-            location,
-        };
-        let cancellation = CancellationToken::new();
-        let summary = provider
-            .inspect(&entry, cancellation.clone())
-            .await
-            .map_err(ApplicationError::from)?;
-        if summary.kind != EntryKind::File {
-            return Err(ApplicationError::InvalidRequest(
-                "only regular files can be edited".to_owned(),
-            ));
-        }
-        let size = provider
-            .file_size(&entry, cancellation.clone())
-            .await
-            .map_err(ApplicationError::from)?;
-        if size > MAX_EDITABLE_FILE_BYTES {
-            return Err(ApplicationError::InvalidRequest(format!(
-                "file is too large for the editor ({size} bytes; limit is {MAX_EDITABLE_FILE_BYTES}); use the large-file viewer or external editor"
-            )));
-        }
-        let mut reader = provider
-            .open_read(&entry, cancellation)
-            .await
-            .map_err(ApplicationError::from)?;
-        let mut bytes = Vec::with_capacity(size as usize);
-        reader
-            .read_to_end(&mut bytes)
-            .await
-            .map_err(read_stream_error)?;
-        if fm_vfs::looks_like_binary(&bytes) {
-            return Err(ApplicationError::InvalidRequest(
-                "binary files cannot be edited in-app; use the external editor".to_owned(),
-            ));
-        }
-        let content = String::from_utf8(bytes.clone()).map_err(|_| {
-            ApplicationError::InvalidRequest(
-                "the file is not valid UTF-8; use the external editor".to_owned(),
-            )
-        })?;
-        Ok(LoadEditableFileResponseDto {
-            content,
-            revision: content_revision(&bytes),
-            size,
-        })
+        request: fm_transport_dto::LoadEditableFileRequestDto,
+    ) -> Result<fm_transport_dto::LoadEditableFileResponseDto, ApplicationError> {
+        self.editor.load(request).await
     }
 
     /// Safely replaces editable content through a sibling temporary file and optimistic revision.
     pub async fn save_editable_file(
         &self,
-        request: SaveEditableFileRequestDto,
-    ) -> Result<SaveEditableFileResponseDto, ApplicationError> {
-        let location: Location = request.location.into();
-        let destination: Option<Location> = request.destination.map(Into::into);
-        let provider = self
-            .providers
-            .resolve(&location)
-            .map_err(ApplicationError::from)?;
-        let capabilities = provider
-            .capabilities_for(&location)
-            .map_err(ApplicationError::from)?;
-        capabilities
-            .require(ProviderCapabilities::READ | ProviderCapabilities::WRITE)
-            .map_err(ApplicationError::from)?;
-        let entry = EntryRef {
-            id: EntryId::new(),
-            location: location.clone(),
-        };
-        let cancellation = CancellationToken::new();
-        let summary = provider
-            .inspect(&entry, cancellation.clone())
-            .await
-            .map_err(ApplicationError::from)?;
-        if summary.kind != EntryKind::File {
-            return Err(ApplicationError::InvalidRequest(
-                "symlinks and non-files cannot be replaced by the editor".to_owned(),
-            ));
-        }
-        let existing_size = provider
-            .file_size(&entry, cancellation.clone())
-            .await
-            .map_err(ApplicationError::from)?;
-        if existing_size > MAX_EDITABLE_FILE_BYTES {
-            return Err(ApplicationError::InvalidRequest(format!(
-                "file is too large for the editor ({existing_size} bytes; limit is {MAX_EDITABLE_FILE_BYTES})"
-            )));
-        }
-        let mut reader = provider
-            .open_read(&entry, cancellation.clone())
-            .await
-            .map_err(ApplicationError::from)?;
-        let mut existing = Vec::new();
-        reader
-            .read_to_end(&mut existing)
-            .await
-            .map_err(read_stream_error)?;
-        let actual_revision = content_revision(&existing);
-        let conflicted = actual_revision != request.expected_revision;
-        if conflicted && !request.overwrite_conflict {
-            return Err(ApplicationError::FileRevisionConflict {
-                expected_revision: request.expected_revision,
-                actual_revision,
-            });
-        }
-        let bytes = request.content.into_bytes();
-        if bytes.len() as u64 > MAX_EDITABLE_FILE_BYTES {
-            return Err(ApplicationError::InvalidRequest(format!(
-                "edited content exceeds the {MAX_EDITABLE_FILE_BYTES}-byte limit"
-            )));
-        }
-        let save_location = destination.as_ref().unwrap_or(&location);
-        let parent = save_location
-            .parent()
-            .map_err(|error| ApplicationError::InvalidRequest(error.to_string()))?
-            .ok_or_else(|| {
-                ApplicationError::InvalidRequest("cannot edit a filesystem root".to_owned())
-            })?;
-        let temporary = parent
-            .join(&format!(".fm-edit-{}.tmp", Uuid::new_v4()))
-            .map_err(|error| ApplicationError::InvalidRequest(error.to_string()))?;
-        let mut writer = provider
-            .open_write(
-                &temporary,
-                WriteOptions { overwrite: false },
-                cancellation.clone(),
-            )
-            .await
-            .map_err(ApplicationError::from)?;
-        if let Err(error) = writer.write_all(&bytes).await {
-            drop(writer);
-            let _ = provider
-                .discard_copy(&temporary, cancellation.clone())
-                .await;
-            return Err(read_stream_error(error));
-        }
-        if let Err(error) = writer.shutdown().await {
-            drop(writer);
-            let _ = provider
-                .discard_copy(&temporary, cancellation.clone())
-                .await;
-            return Err(read_stream_error(error));
-        }
-        drop(writer);
-        provider
-            .commit_copy(
-                &entry,
-                &temporary,
-                save_location,
-                CopyCommitOptions {
-                    overwrite: destination.is_none(),
-                    preserve_metadata: true,
-                },
-                cancellation,
-            )
-            .await
-            .map_err(ApplicationError::from)?;
-        if conflicted {
-            if let Some(parent) = self.audit_log_path.parent() {
-                let _ = std::fs::create_dir_all(parent);
-            }
-            let _ = std::fs::OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(&self.audit_log_path)
-                .and_then(|mut file| {
-                    writeln!(
-                        file,
-                        "explicit editable-file overwrite uri={}",
-                        save_location.uri
-                    )
-                });
-        }
-        Ok(SaveEditableFileResponseDto {
-            revision: content_revision(&bytes),
-            size: bytes.len() as u64,
-            overwrote_conflict: conflicted,
-        })
+        request: fm_transport_dto::SaveEditableFileRequestDto,
+    ) -> Result<fm_transport_dto::SaveEditableFileResponseDto, ApplicationError> {
+        self.editor.save(request).await
     }
 
     /// Searches a single file's content for a substring or regex, for the
@@ -1698,24 +1235,13 @@ impl FileManagerService {
     /// Lists every stored connection profile with its current runtime status
     /// (spec §16 `GET /api/v1/connections`, task 0103).
     pub async fn list_connections(&self) -> Result<Vec<ConnectionDto>, ApplicationError> {
-        let profiles = self.connections.list().await?;
-        let mut dtos = Vec::with_capacity(profiles.len());
-        for profile in profiles {
-            let status = self.connections.status(profile.id).await?;
-            let last_error = self.connections.last_error(profile.id).await?;
-            dtos.push(connection_dto::connection_dto(profile, status, last_error));
-        }
-        Ok(dtos)
+        self.connections.list_connections().await
     }
 
     /// Loads a single connection profile with its current runtime status
     /// (spec §16 `GET /api/v1/connections/{connectionId}`, task 0103).
     pub async fn get_connection(&self, id: Uuid) -> Result<ConnectionDto, ApplicationError> {
-        let connection_id: ConnectionId = id.into();
-        let profile = self.connections.get(connection_id).await?;
-        let status = self.connections.status(connection_id).await?;
-        let last_error = self.connections.last_error(connection_id).await?;
-        Ok(connection_dto::connection_dto(profile, status, last_error))
+        self.connections.get_connection(id).await
     }
 
     /// Creates and persists a new connection profile (spec §16
@@ -1724,16 +1250,7 @@ impl FileManagerService {
         &self,
         request: CreateConnectionRequestDto,
     ) -> Result<ConnectionDto, ApplicationError> {
-        let draft = ConnectionDraft {
-            name: request.name,
-            kind: connection_dto::connection_kind_from_dto(request.kind),
-            configuration: connection_dto::connection_configuration_from_dto(request.configuration),
-            secret: request.secret.map(connection_dto::secret_material_from_dto),
-        };
-        let profile = self.connections.create(draft).await?;
-        let status = self.connections.status(profile.id).await?;
-        let last_error = self.connections.last_error(profile.id).await?;
-        Ok(connection_dto::connection_dto(profile, status, last_error))
+        self.connections.create_connection(request).await
     }
 
     /// Updates an existing connection profile, optionally replacing its
@@ -1744,80 +1261,42 @@ impl FileManagerService {
         id: Uuid,
         request: UpdateConnectionRequestDto,
     ) -> Result<ConnectionDto, ApplicationError> {
-        let connection_id: ConnectionId = id.into();
-        let draft = ConnectionDraft {
-            name: request.name,
-            kind: connection_dto::connection_kind_from_dto(request.kind),
-            configuration: connection_dto::connection_configuration_from_dto(request.configuration),
-            secret: request.secret.map(connection_dto::secret_material_from_dto),
-        };
-        let profile = self.connections.update(connection_id, draft).await?;
-        let status = self.connections.status(connection_id).await?;
-        let last_error = self.connections.last_error(connection_id).await?;
-        Ok(connection_dto::connection_dto(profile, status, last_error))
+        self.connections.update_connection(id, request).await
     }
 
     /// Deletes a connection profile and its stored credential, if any (spec
     /// §16 `DELETE /api/v1/connections/{connectionId}`, task 0103).
     pub async fn delete_connection(&self, id: Uuid) -> Result<(), ApplicationError> {
-        self.connections.delete(id.into()).await?;
-        Ok(())
+        self.connections.delete_connection(id).await
     }
 
     /// Attempts to connect (spec §16
-    /// `POST /api/v1/connections/{connectionId}/connect`, task 0103); see
-    /// [`fm_connections::ConnectionService`]'s documentation for the honest
-    /// scope of this operation before task 0104/0106 register a real dialer.
+    /// `POST /api/v1/connections/{connectionId}/connect`, task 0103).
     pub async fn connect_connection(&self, id: Uuid) -> Result<ConnectionDto, ApplicationError> {
-        let connection_id: ConnectionId = id.into();
-        let status = self.connections.connect(connection_id).await?;
-        let profile = self.connections.get(connection_id).await?;
-        let last_error = self.connections.last_error(connection_id).await?;
-        Ok(connection_dto::connection_dto(profile, status, last_error))
+        self.connections.connect_connection(id).await
     }
 
     /// Marks a connection as disconnected (spec §16
     /// `POST /api/v1/connections/{connectionId}/disconnect`, task 0103).
     pub async fn disconnect_connection(&self, id: Uuid) -> Result<ConnectionDto, ApplicationError> {
-        let connection_id: ConnectionId = id.into();
-        let status = self.connections.disconnect(connection_id).await?;
-        let profile = self.connections.get(connection_id).await?;
-        let last_error = self.connections.last_error(connection_id).await?;
-        Ok(connection_dto::connection_dto(profile, status, last_error))
+        self.connections.disconnect_connection(id).await
     }
 
     /// Checks whether a connection's configuration and credential are
     /// currently usable, without changing its tracked status (spec §16
-    /// `POST /api/v1/connections/{connectionId}/test`, task 0103); see
-    /// [`fm_connections::ConnectionService`]'s documentation for the honest
-    /// scope of this operation before task 0104/0106 register a real dialer.
+    /// `POST /api/v1/connections/{connectionId}/test`, task 0103).
     pub async fn test_connection(&self, id: Uuid) -> Result<ConnectionDto, ApplicationError> {
-        let connection_id: ConnectionId = id.into();
-        let status = self.connections.test(connection_id).await?;
-        let profile = self.connections.get(connection_id).await?;
-        let last_error = self.connections.last_error(connection_id).await?;
-        Ok(connection_dto::connection_dto(profile, status, last_error))
+        self.connections.test_connection(id).await
     }
 
     /// Probes an SSH connection's currently presented host key without
     /// authenticating (task 0104, spec §6.4's mandatory explicit
-    /// confirmation flow) - lets a caller decide whether to accept a
-    /// never-seen or changed key before a real `connect` attempt, which
-    /// would otherwise simply fail with [`ApplicationError::HostKeyUnverified`]/
-    /// [`ApplicationError::HostKeyMismatch`].
+    /// confirmation flow).
     pub async fn probe_ssh_host_key(
         &self,
         id: Uuid,
     ) -> Result<fm_transport_dto::HostKeyProbeDto, ApplicationError> {
-        let connection_id: ConnectionId = id.into();
-        let profile = self.connections.get(connection_id).await?;
-        let target = ssh_target_of(&profile)?;
-        let verification = self
-            .ssh_connections
-            .probe_host_key(&connection_id.to_string(), &target)
-            .await
-            .map_err(|error| ApplicationError::PlatformOperationFailed(error.to_string()))?;
-        Ok(host_key_probe_dto(verification))
+        self.connections.probe_ssh_host_key(id).await
     }
 
     /// Accepts (persists) a host-key fingerprint for an SSH connection (task
@@ -1836,91 +1315,7 @@ impl FileManagerService {
         id: Uuid,
         fingerprint: String,
     ) -> Result<(), ApplicationError> {
-        let connection_id: ConnectionId = id.into();
-        let profile = self.connections.get(connection_id).await?;
-        let target = ssh_target_of(&profile)?;
-        let key = connection_id.to_string();
-        let verification = self
-            .ssh_connections
-            .probe_host_key(&key, &target)
-            .await
-            .map_err(|error| ApplicationError::PlatformOperationFailed(error.to_string()))?;
-        let presented = host_key_verification_fingerprint(&verification);
-        if presented != fingerprint {
-            return Err(ApplicationError::InvalidRequest(
-                "the host key changed again since it was probed; re-probe before accepting"
-                    .to_owned(),
-            ));
-        }
-        let configuration = ssh_configuration_of(&profile)?;
-        if matches!(verification, fm_ssh::HostKeyVerification::Unverified { .. })
-            && matches!(
-                configuration.host_key_policy,
-                fm_connections::HostKeyPolicy::RequireKnownHost
-            )
-        {
-            return Err(ApplicationError::InvalidRequest(
-                "this connection requires a pre-established known host key and does not accept \
-                 first-time trust"
-                    .to_owned(),
-            ));
-        }
-        self.ssh_connections
-            .known_hosts()
-            .accept(&key, fingerprint)
-            .await
-            .map_err(|error| ApplicationError::PlatformOperationFailed(error.to_string()))?;
-        Ok(())
-    }
-}
-
-fn ssh_configuration_of(
-    profile: &fm_connections::ConnectionProfile,
-) -> Result<&fm_connections::SshConnectionConfiguration, ApplicationError> {
-    match &profile.configuration {
-        fm_connections::ConnectionConfiguration::Ssh(configuration) => Ok(configuration),
-        _ => Err(ApplicationError::InvalidRequest(
-            "connection is not an SSH connection".to_owned(),
-        )),
-    }
-}
-
-fn ssh_target_of(
-    profile: &fm_connections::ConnectionProfile,
-) -> Result<fm_ssh::SshConnectTarget, ApplicationError> {
-    let configuration = ssh_configuration_of(profile)?;
-    Ok(fm_ssh::SshConnectTarget {
-        host: configuration.host.clone(),
-        port: configuration.port,
-        username: configuration.username.clone(),
-    })
-}
-
-fn host_key_verification_fingerprint(verification: &fm_ssh::HostKeyVerification) -> String {
-    match verification {
-        fm_ssh::HostKeyVerification::Trusted { fingerprint }
-        | fm_ssh::HostKeyVerification::Unverified { fingerprint }
-        | fm_ssh::HostKeyVerification::Mismatch { fingerprint, .. } => fingerprint.clone(),
-    }
-}
-
-fn host_key_probe_dto(
-    verification: fm_ssh::HostKeyVerification,
-) -> fm_transport_dto::HostKeyProbeDto {
-    match verification {
-        fm_ssh::HostKeyVerification::Trusted { fingerprint } => {
-            fm_transport_dto::HostKeyProbeDto::Trusted { fingerprint }
-        }
-        fm_ssh::HostKeyVerification::Unverified { fingerprint } => {
-            fm_transport_dto::HostKeyProbeDto::Unverified { fingerprint }
-        }
-        fm_ssh::HostKeyVerification::Mismatch {
-            fingerprint,
-            expected_fingerprint,
-        } => fm_transport_dto::HostKeyProbeDto::Mismatch {
-            fingerprint,
-            expected_fingerprint,
-        },
+        self.connections.accept_ssh_host_key(id, fingerprint).await
     }
 }
 
@@ -1940,12 +1335,6 @@ const MAX_RANGE_LENGTH: u64 = 1_048_576;
 
 /// Maximum matches returned by a single [`FileManagerService::search_in_file`] call (task 0088).
 const MAX_SEARCH_MATCHES: usize = 5_000;
-
-fn read_stream_error(error: std::io::Error) -> ApplicationError {
-    ApplicationError::from(fm_vfs::VfsError::Io {
-        message: error.to_string(),
-    })
-}
 
 /// Discards `remaining` bytes from `reader`, for providers without random-access reads.
 /// Stops early at EOF (a request offset past the end of the file yields an empty range).
@@ -2072,89 +1461,6 @@ fn map_file_icon_error(error: fm_platform::PlatformError) -> ApplicationError {
         fm_platform::PlatformError::Unsupported { .. } => ApplicationError::NotFound,
         other => ApplicationError::PlatformOperationFailed(other.to_string()),
     }
-}
-
-/// Projects a manifest's declared capability grants into the wire DTO (spec §19).
-fn plugin_permissions_dto(permissions: &PluginPermissions) -> PluginPermissionsDto {
-    PluginPermissionsDto {
-        selected_entry_metadata: permissions.selected_entry_metadata,
-        selected_entry_content_read: permissions.selected_entry_content_read,
-        filesystem_read: permissions
-            .filesystem_read
-            .iter()
-            .map(|path| path.to_string_lossy().into_owned())
-            .collect(),
-        filesystem_write: permissions
-            .filesystem_write
-            .iter()
-            .map(|path| path.to_string_lossy().into_owned())
-            .collect(),
-        clipboard_read: permissions.clipboard_read,
-        clipboard_write: permissions.clipboard_write,
-        network: permissions.network.clone(),
-        process_spawn: permissions.process_spawn,
-        notifications: permissions.notifications,
-        settings_storage: permissions.settings_storage,
-    }
-}
-
-/// Projects a plugin's parsed `icon-theme.json` into the wire DTO (task 0095).
-fn plugin_icon_theme_dto(icon_theme: &IconThemeManifest) -> fm_transport_dto::PluginIconThemeDto {
-    fm_transport_dto::PluginIconThemeDto {
-        icon_definitions: icon_theme
-            .icon_definitions
-            .iter()
-            .map(|(key, definition)| {
-                (
-                    key.clone(),
-                    fm_transport_dto::PluginIconDefinitionDto {
-                        icon_path: definition.icon_path.to_string_lossy().into_owned(),
-                    },
-                )
-            })
-            .collect(),
-        file: icon_theme.file.clone(),
-        folder: icon_theme.folder.clone(),
-        symlink: icon_theme.symlink.clone(),
-        file_extensions: icon_theme.file_extensions.clone(),
-        mime_prefixes: icon_theme.mime_prefixes.clone(),
-    }
-}
-
-/// Builds an [`ActionDescriptor`] for a plugin's declared action contribution,
-/// deriving the context requirement from `requires_single_selection` (spec §18/§20).
-fn plugin_action_descriptor(
-    manifest: &PluginManifest,
-    action: ActionContribution,
-) -> ActionDescriptor {
-    let context_requirements = if action.requires_single_selection {
-        ActionContextRequirements::single_selection()
-    } else {
-        ActionContextRequirements::none()
-    };
-    ActionDescriptor {
-        id: ActionId::new(action.id),
-        title: action.title,
-        description: Some(action.description),
-        category: "plugin".to_owned(),
-        default_shortcuts: Vec::new(),
-        context_requirements,
-        parameter_schema: None,
-        source: ActionSource::Plugin {
-            plugin_id: PluginId::new(manifest.id.clone()),
-        },
-    }
-}
-
-/// Invocation parameters a caller supplies for a plugin action that needs
-/// the current selection's metadata, e.g. `sample.copyMarkdownPath` (spec §20).
-/// The frontend already has this data from pane state, so it is passed
-/// directly rather than requiring the backend to resolve an `EntryId`.
-#[derive(Debug, Default, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct PluginActionParametersDto {
-    #[serde(default)]
-    selected_entries: Vec<SelectedEntryContext>,
 }
 
 fn operation_dto(operation: Operation, queue_position: Option<u64>) -> OperationDto {
@@ -2406,7 +1712,12 @@ fn detect_platform() -> PlatformKindDto {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::Path;
+
     use fm_events::{SessionId, SubscriptionEvent};
+    use fm_transport_dto::{LoadEditableFileRequestDto, SaveEditableFileRequestDto};
+
+    use crate::file_editor::MAX_EDITABLE_FILE_BYTES;
 
     fn service() -> (tempfile::TempDir, FileManagerService) {
         let dir = tempfile::tempdir().expect("must create a temp dir");
