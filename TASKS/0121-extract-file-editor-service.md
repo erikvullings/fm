@@ -1,6 +1,6 @@
 # 0121 Extract File Editor Service
 
-Status: open
+Status: done
 Priority: medium
 Subsystem: backend
 Depends on: 0119
@@ -24,3 +24,5 @@ Depends on: 0119
 - Existing integration tests in `crates/fm-application/tests/` may already cover some of this; verify overlap
 
 ## Agent Notes
+
+Completed: FileEditorService extracted to `file_editor.rs` (~250 lines) with full isolated test suite (6 tests). FileManagerService delegates to `editor` field via `self.editor.load()` and `self.editor.save()`. All 10 editable-file tests pass (6 module + 4 service integration).

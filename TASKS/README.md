@@ -140,7 +140,7 @@ the workspace-service tasks; see Step 2b above).
 - [x] 0087 F3 view action
 - [x] 0088 Lister-style instant large-file viewer with lazy search
 - [x] 0089 Content search across files
-- [ ] 0090 Total Commander-style selection toggles (invert, select/deselect by mask)
+- [x] 0090 Total Commander-style selection toggles (invert, select/deselect by mask)
 - [x] 0091 Native file icon overlay (backend-served, layered over 0085) *(after 0085; needs 0059)*
 - [x] 0092 Catppuccin icon theme *(after 0085)*
 - [x] 0093 Copy filename and path actions
@@ -217,6 +217,7 @@ FindFilesController, ActionCommandController, DialogUIController, AppDialogs, an
 Features not yet implemented.
 
 - [ ] 0118 Integrate parallel-disk-usage with WinDirStat Treemap View
+- [x] 0126-embedded-terminal-drawer
 
 ## Architecture deepening — backend
 
@@ -225,10 +226,10 @@ Cross-cutting refactors to increase module depth, testability, and AI-navigabili
 0120–0123 each extract one capability and can land in any order once 0119's composition plan is
 decided. 0124 and 0125 are independent and can be picked up early.
 
-- [ ] 0119 Decompose FileManagerService into capability sub-services
-- [ ] 0120 Extract Operation Planner module *(needs 0119)*
-- [ ] 0121 Extract File Editor Service *(needs 0119)*
-- [ ] 0122 Extract Connection Facade *(needs 0119)*
+- [x] 0119 Decompose FileManagerService into capability sub-services
+- [x] 0120 Extract Operation Planner module *(needs 0119)*
+- [x] 0121 Extract File Editor Service *(needs 0119)*
+- [x] 0122 Extract Connection Facade *(needs 0119)*
 - [ ] 0123 Extract Plugin Manager module *(needs 0119)*
 - [ ] 0124 Narrow Location URI parsing in fm-domain *(independent)*
 - [ ] 0125 Make Search Engine VFS-provider agnostic *(independent)*
