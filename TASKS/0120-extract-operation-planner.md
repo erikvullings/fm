@@ -1,6 +1,6 @@
 # 0120 Extract Operation Planner module
 
-Status: open
+Status: done
 Priority: high
 Subsystem: backend
 Depends on: 0119
@@ -27,3 +27,5 @@ The **deletion test** confirms: deleting this `match` block would scatter the co
 - ~370 lines removed from `service.rs`, concentrated into planner module
 
 ## Agent Notes
+
+- 2026-08-11 Extracted all 13 executor structs (`CreateDirectoryExecutor`, `RenameExecutor`, `RenameGroupExecutor`, `PlannedCopyEntry`, `CopyExecutor`, `CopyGroupExecutor`, `CreateArchiveExecutor`, `ArchiveCreationFormat`, `DuplicateExecutor`, `DeleteExecutor`, `TrashExecutor`, `MoveExecutor`, `MoveGroupExecutor`) and their `OperationExecutor` impl blocks from `service.rs` into `operation_planner.rs`. Moved helper functions (`effective_resolution`, `conflict_error`, `conflict_entry`, `copy_stream_error`). `FileManagerService::start_operation()` reduced from ~370-line match to single `self.planner.plan()` call. Service shrank from 5797 to 3980 lines. Added 7 planner-specific tests (archive format inference, format mismatch rejection, unknown extension rejection, empty sources rejection for all operation types, search rejection, trash platform capability rejection). All 152 tests pass, zero warnings, zero behavioral changes.

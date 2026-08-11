@@ -9,6 +9,7 @@ mod action;
 mod connection_dto;
 mod directory;
 mod error;
+mod operation_planner;
 mod service;
 mod ssh;
 pub mod workspace;
