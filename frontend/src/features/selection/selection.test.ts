@@ -133,6 +133,45 @@ describe('selection reducer', () => {
     ).toEqual(['b']);
   });
 
+  it('adds matching visible entries without disturbing hidden or existing selections', () => {
+    const result = reduceSelection(
+      { selectedEntryIds: ['hidden', 'b'] },
+      { type: 'selectByMask', matchingEntryIds: ids('c', 'a') },
+      ids('a', 'b', 'c'),
+    );
+    expect(result.selectedEntryIds).toEqual(['a', 'b', 'c', 'hidden']);
+  });
+
+  it('removes matching visible entries without disturbing the rest of the selection', () => {
+    const result = reduceSelection(
+      { selectedEntryIds: ['hidden', 'a', 'b', 'c'] },
+      { type: 'deselectByMask', matchingEntryIds: ids('c', 'a') },
+      ids('a', 'b', 'c'),
+    );
+    expect(result.selectedEntryIds).toEqual(['b', 'hidden']);
+  });
+
+  it('handles no mask matches and all visible entries matching', () => {
+    const initial: SelectionState = { selectedEntryIds: ['hidden', 'b'] };
+    expect(
+      reduceSelection(initial, { type: 'selectByMask', matchingEntryIds: [] }, ids('a', 'b')),
+    ).toEqual(initial);
+    expect(
+      reduceSelection(
+        initial,
+        { type: 'selectByMask', matchingEntryIds: ids('a', 'b') },
+        ids('a', 'b'),
+      ).selectedEntryIds,
+    ).toEqual(['a', 'b', 'hidden']);
+    expect(
+      reduceSelection(
+        initial,
+        { type: 'deselectByMask', matchingEntryIds: ids('a', 'b') },
+        ids('a', 'b'),
+      ).selectedEntryIds,
+    ).toEqual(['hidden']);
+  });
+
   it('clears selection without moving the cursor', () => {
     expect(
       reduceSelection(

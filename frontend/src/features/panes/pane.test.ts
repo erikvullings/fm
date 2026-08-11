@@ -78,6 +78,17 @@ const keybindingActions = [
   },
   { id: 'core.toggleSelection', title: 'Toggle selection', defaultShortcuts: [{ key: ' ' }] },
   { id: 'core.selectAll', title: 'Select all', defaultShortcuts: [{ key: 'A', ctrl: true }] },
+  {
+    id: 'core.invertSelection',
+    title: 'Invert',
+    defaultShortcuts: [{ key: '*' }, { key: '*', shift: true }],
+  },
+  {
+    id: 'core.selectByMask',
+    title: 'Select by mask',
+    defaultShortcuts: [{ key: '+' }, { key: '+', shift: true }],
+  },
+  { id: 'core.deselectByMask', title: 'Deselect by mask', defaultShortcuts: [{ key: '-' }] },
 ].map(
   (action): ActionDescriptor => ({
     category: 'test',
@@ -934,6 +945,48 @@ describe('Pane navigation input', () => {
       { type: 'extendRange', offset: 1 },
       { type: 'toggle', entryId: 'one' },
       { type: 'selectAll' },
+    ]);
+  });
+
+  it('dispatches invert for numpad star and its Shift+8 fallback', () => {
+    const onSelectionAction = vi.fn();
+    mount(attrs({ onSelectionAction }));
+    const pane = root.querySelector<HTMLElement>('.fm-pane');
+
+    pane?.dispatchEvent(
+      new KeyboardEvent('keydown', { key: '*', code: 'NumpadMultiply', bubbles: true }),
+    );
+    pane?.dispatchEvent(
+      new KeyboardEvent('keydown', { key: '*', code: 'Digit8', shiftKey: true, bubbles: true }),
+    );
+
+    expect(onSelectionAction.mock.calls.map(([action]) => action)).toEqual([
+      { type: 'invert' },
+      { type: 'invert' },
+    ]);
+  });
+
+  it('prompts for a mask and dispatches visible matching entry ids', () => {
+    const prompt = vi
+      .spyOn(window, 'prompt')
+      .mockReturnValueOnce('*.txt')
+      .mockReturnValueOnce('two.*');
+    const onSelectionAction = vi.fn();
+    mount(attrs({ onSelectionAction }));
+    const pane = root.querySelector<HTMLElement>('.fm-pane');
+
+    pane?.dispatchEvent(
+      new KeyboardEvent('keydown', { key: '+', code: 'NumpadAdd', bubbles: true }),
+    );
+    pane?.dispatchEvent(
+      new KeyboardEvent('keydown', { key: '-', code: 'NumpadSubtract', bubbles: true }),
+    );
+
+    expect(prompt).toHaveBeenNthCalledWith(1, 'Select files matching mask', '*.*');
+    expect(prompt).toHaveBeenNthCalledWith(2, 'Deselect files matching mask', '*.*');
+    expect(onSelectionAction.mock.calls.map(([action]) => action)).toEqual([
+      { type: 'selectByMask', matchingEntryIds: ['one', 'two'] },
+      { type: 'deselectByMask', matchingEntryIds: ['two'] },
     ]);
   });
 

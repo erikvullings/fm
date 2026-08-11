@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
 import type { EntryId, EntrySummary } from '../../models';
-import { filterEntries, hiddenSelectedEntryCount, matchesQuickFilter } from './quick-filter';
+import {
+  filterEntries,
+  hiddenSelectedEntryCount,
+  matchesGlobMask,
+  matchesQuickFilter,
+} from './quick-filter';
 
 function entry(name: string, id = name): EntrySummary {
   return {
@@ -21,6 +26,19 @@ describe('matchesQuickFilter', () => {
     expect(matchesQuickFilter(entry('Report.PDF'), 'REPORT')).toBe(true);
     expect(matchesQuickFilter(entry('Report.PDF'), 'pdf')).toBe(true);
     expect(matchesQuickFilter(entry('Report.PDF'), 'invoice')).toBe(false);
+  });
+});
+
+describe('matchesGlobMask', () => {
+  it('matches star and question-mark wildcards case-insensitively', () => {
+    expect(matchesGlobMask('Report.PDF', '*.pdf')).toBe(true);
+    expect(matchesGlobMask('notes.txt', 'n?tes.*')).toBe(true);
+    expect(matchesGlobMask('notes.txt', '*.pdf')).toBe(false);
+  });
+
+  it('treats the Total Commander default *.* as matching every name', () => {
+    expect(matchesGlobMask('README', '*.*')).toBe(true);
+    expect(matchesGlobMask('archive.tar.gz', '*.*')).toBe(true);
   });
 });
 

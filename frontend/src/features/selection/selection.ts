@@ -18,6 +18,8 @@ export type SelectionAction =
   | { readonly type: 'extendRangeTo'; readonly entryId: EntryId }
   | { readonly type: 'selectAll' }
   | { readonly type: 'invert' }
+  | { readonly type: 'selectByMask'; readonly matchingEntryIds: readonly EntryId[] }
+  | { readonly type: 'deselectByMask'; readonly matchingEntryIds: readonly EntryId[] }
   | { readonly type: 'clear' }
   | { readonly type: 'prune'; readonly removedEntryIds: readonly EntryId[] };
 
@@ -122,6 +124,24 @@ export function reduceSelection(
         ...state,
         selectedEntryIds: orderedEntryIds.filter((entryId) => !selected.has(entryId)),
       };
+    }
+    case 'selectByMask': {
+      if (action.matchingEntryIds.length === 0) return state;
+      const selected = new Set([...state.selectedEntryIds, ...action.matchingEntryIds]);
+      const visible = orderedEntryIds.filter((entryId) => selected.has(entryId));
+      const visibleIds = new Set(orderedEntryIds);
+      const hidden = state.selectedEntryIds.filter((entryId) => !visibleIds.has(entryId));
+      return { ...state, selectedEntryIds: [...visible, ...hidden] };
+    }
+    case 'deselectByMask': {
+      if (action.matchingEntryIds.length === 0) return state;
+      const deselected = new Set(action.matchingEntryIds);
+      const remaining = state.selectedEntryIds.filter((entryId) => !deselected.has(entryId));
+      const remainingIds = new Set(remaining);
+      const visible = orderedEntryIds.filter((entryId) => remainingIds.has(entryId));
+      const visibleIds = new Set(orderedEntryIds);
+      const hidden = remaining.filter((entryId) => !visibleIds.has(entryId));
+      return { ...state, selectedEntryIds: [...visible, ...hidden] };
     }
     case 'clear': {
       const { anchorEntryId: _anchorEntryId, ...withoutAnchor } = state;

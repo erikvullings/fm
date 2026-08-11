@@ -7,6 +7,18 @@ import type { EntryId, EntrySummary } from '../../models';
  */
 export type QuickFilterMode = 'plainText';
 
+/** Matches a filename against a case-insensitive `*`/`?` glob mask. */
+export function matchesGlobMask(name: string, pattern: string): boolean {
+  if (pattern === '*.*') return true;
+  let source = '^';
+  for (const character of pattern) {
+    if (character === '*') source += '.*';
+    else if (character === '?') source += '.';
+    else source += character.replace(/[\\^$.*+?()[\]{}|]/gu, '\\$&');
+  }
+  return new RegExp(`${source}$`, 'iu').test(name);
+}
+
 /** Case-insensitive plain-text match against an entry's display name. */
 export function matchesQuickFilter(entry: EntrySummary, query: string): boolean {
   return entry.name.toLocaleLowerCase().includes(query.toLocaleLowerCase());

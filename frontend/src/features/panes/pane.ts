@@ -33,6 +33,7 @@ import {
 import type { NativeIconLoader } from '../directory-table/native-icon-loader';
 import type { EntryFormatSettings } from '../entry-formatting/entry-formatting';
 import { truncateLocationForDisplay } from '../favourites/favourites';
+import { matchesGlobMask } from '../quick-filter/quick-filter';
 import { QuickFilterInput } from '../quick-filter/quick-filter-input';
 import type { SelectionPlatform } from '../selection/keybindings';
 import type { SelectionAction } from '../selection/selection';
@@ -491,11 +492,17 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
                                 ? { type: 'toggleCursorSelection' as const }
                                 : actionId === 'core.selectAll'
                                   ? { type: 'selectAll' as const }
-                                  : actionId === 'core.open'
-                                    ? { type: 'open' as const }
-                                    : actionId === 'core.parent'
-                                      ? { type: 'parent' as const }
-                                      : undefined;
+                                  : actionId === 'core.invertSelection'
+                                    ? { type: 'invert' as const }
+                                    : actionId === 'core.selectByMask'
+                                      ? { type: 'selectByMask' as const }
+                                      : actionId === 'core.deselectByMask'
+                                        ? { type: 'deselectByMask' as const }
+                                        : actionId === 'core.open'
+                                          ? { type: 'open' as const }
+                                          : actionId === 'core.parent'
+                                            ? { type: 'parent' as const }
+                                            : undefined;
             if (actionId === 'core.switchPane') {
               return;
             }
@@ -583,6 +590,26 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
             } else if (command?.type === 'selectAll') {
               event.preventDefault();
               attrs.onSelectionAction({ type: 'selectAll' });
+            } else if (command?.type === 'invert') {
+              event.preventDefault();
+              attrs.onSelectionAction({ type: 'invert' });
+            } else if (command?.type === 'selectByMask' || command?.type === 'deselectByMask') {
+              event.preventDefault();
+              const selecting = command.type === 'selectByMask';
+              const pattern = window.prompt(
+                selecting ? 'Select files matching mask' : 'Deselect files matching mask',
+                '*.*',
+              );
+              if (pattern !== null) {
+                attrs.onSelectionAction({
+                  type: command.type,
+                  matchingEntryIds: attrs.entries
+                    .filter(
+                      (entry) => !isParentEntry(entry.id) && matchesGlobMask(entry.name, pattern),
+                    )
+                    .map((entry) => entry.id),
+                });
+              }
             } else if (event.altKey && event.key === 'ArrowLeft') {
               event.preventDefault();
               void attrs.navigation.onBack();

@@ -1,6 +1,6 @@
 # 0090 Total Commander-style selection toggles (invert, select/deselect by mask)
 
-Status: open
+Status: done
 Priority: low
 Owner: unassigned
 Agent: unassigned
@@ -56,3 +56,16 @@ missing a shortcut:
   before adding a new one for mask-based select/deselect.
 
 ## Agent Notes
+
+- 2026-08-11 codex: Registered and wired invert/select-by-mask/deselect-by-mask actions. Numpad
+  `*`/`+`/`-` use character-key bindings, with `Shift+8` and `Shift+=` fallbacks for keypad-free
+  keyboards; the intentional browser key collision is documented in README. Mask prompts default
+  to Total Commander's `*.*`, which matches extensionless names too, and operate only on visible,
+  non-parent entries while preserving hidden and unrelated selections.
+- 2026-08-11 codex: Added 8 focused behavior tests (3 reducer, 2 glob matcher, 2 pane, 1 registry)
+  and verified the three affected frontend files (95 tests) plus all 15 registry tests. The full
+  `fm-application` suite progressed through its unit and integration tests but was stopped after the
+  pre-existing `cancelling_cross_volume_fallback_leaves_the_source_tree` test hung for more than two
+  minutes. The full frontend suite reached 844 passing tests
+  but retains 4 unrelated failures in pre-existing theme, diagnostics CSS, HTTP operation mapping,
+  and stale mock-action expectations; typecheck likewise retains 3 unrelated pre-existing errors.

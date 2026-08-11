@@ -550,7 +550,31 @@ fn selection_actions() -> Vec<ActionDescriptor> {
         ),
         ("core.toggleSelection", "Toggle Selection", vec![key(" ")]),
         ("core.selectAll", "Select All", vec![primary("a")]),
-        ("core.invertSelection", "Invert Selection", Vec::new()),
+        (
+            "core.invertSelection",
+            "Invert Selection",
+            vec![
+                key("*"),
+                KeyChord {
+                    key: "*".to_owned(),
+                    shift: true,
+                    ..KeyChord::default()
+                },
+            ],
+        ),
+        (
+            "core.selectByMask",
+            "Select by Mask",
+            vec![
+                key("+"),
+                KeyChord {
+                    key: "+".to_owned(),
+                    shift: true,
+                    ..KeyChord::default()
+                },
+            ],
+        ),
+        ("core.deselectByMask", "Deselect by Mask", vec![key("-")]),
         (
             "core.clearSelection",
             "Clear Selection",
@@ -634,10 +658,48 @@ mod tests {
             "core.toggleSelection",
             "core.selectAll",
             "core.invertSelection",
+            "core.selectByMask",
+            "core.deselectByMask",
             "core.clearSelection",
         ] {
             assert!(ids.iter().any(|id| id == expected), "missing {expected}");
         }
+    }
+
+    #[test]
+    fn selection_toggle_actions_have_numpad_and_non_numpad_shortcuts() {
+        let registry = ActionRegistry::with_core_actions(PlatformCapabilities::empty());
+        let shortcuts = |id: &str| {
+            registry
+                .get(&ActionId::new(id))
+                .expect("selection action must be registered")
+                .default_shortcuts
+                .clone()
+        };
+
+        assert_eq!(
+            shortcuts("core.invertSelection"),
+            vec![
+                key("*"),
+                KeyChord {
+                    key: "*".to_owned(),
+                    shift: true,
+                    ..KeyChord::default()
+                },
+            ]
+        );
+        assert_eq!(
+            shortcuts("core.selectByMask"),
+            vec![
+                key("+"),
+                KeyChord {
+                    key: "+".to_owned(),
+                    shift: true,
+                    ..KeyChord::default()
+                },
+            ]
+        );
+        assert_eq!(shortcuts("core.deselectByMask"), vec![key("-")]);
     }
 
     #[test]

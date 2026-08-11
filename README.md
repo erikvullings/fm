@@ -152,7 +152,10 @@ settings keep table and summary formatting consistent.
 Per-pane selection is keyed by stable entry IDs and remains independent of the keyboard cursor.
 Arrow, page, edge, range, toggle, select-all, pane-switching, open and parent bindings are handled
 through the action-registry keybinding dispatcher, with settings overrides, host-platform modifiers
-and type-to-select. While a prefix is
+and type-to-select. Numpad `*`, `+`, and `-` invert selection or select/deselect visible files by a
+prompted glob mask; top-row `Shift+8`, `Shift+=`, and `-` provide keypad-free equivalents. Bindings
+intentionally use character keys because browser keyboard events do not reliably distinguish the
+numpad characters across layouts. While a prefix is
 active it appears behind a divider at the right of the pane footer, highlights the first matching
 in-word occurrence in every matching name, and constrains keyboard cursor movement to those
 matches. Backspace edits the prefix, Escape clears it and the selection, and an unmatched prefix
