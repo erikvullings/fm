@@ -84,6 +84,14 @@ export function createTabController(
       const pane = workspace.panesById[paneId];
       if (pane === undefined || pane.activeTabId === tabId) return;
       const previousTabId = pane.activeTabId;
+      context.setWorkspace({
+        ...workspace,
+        activePaneId: paneId,
+        panesById: {
+          ...workspace.panesById,
+          [paneId]: { ...pane, activeTabId: tabId },
+        },
+      });
       // Task 0069's acceptance criteria: "switching tabs is instant: the previous snapshot is
       // reused if still valid, otherwise refetched."
       const hasCachedSnapshot = context.hasCachedSnapshot(paneId, tabId);
@@ -101,7 +109,10 @@ export function createTabController(
           context.getNavigation().abort(paneId, previousTabId);
           if (!hasCachedSnapshot) void context.getNavigation().load(paneId);
         },
-      ).catch(() => undefined);
+      ).catch(() => {
+        const current = context.getWorkspace();
+        if (current?.revision === workspace.revision) context.setWorkspace(workspace);
+      });
     },
 
     performCloseTab(paneId: PaneId, tabId: TabId): void {

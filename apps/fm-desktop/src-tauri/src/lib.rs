@@ -8,6 +8,7 @@ mod commands;
 mod credentials;
 mod event_stream;
 mod platform;
+mod terminal;
 
 use std::sync::Arc;
 
@@ -59,6 +60,7 @@ pub fn run() {
             ),
         })
         .manage(event_stream::EventSubscriptionRegistry::default())
+        .manage(terminal::TerminalRegistry::default())
         .on_window_event(|window, event| {
             if matches!(event, tauri::WindowEvent::Destroyed) {
                 window
@@ -117,6 +119,9 @@ pub fn run() {
             commands::test_connection,
             commands::probe_ssh_host_key,
             commands::accept_ssh_host_key,
+            commands::open_embedded_terminal,
+            commands::write_embedded_terminal,
+            commands::resize_embedded_terminal,
         ])
         .run(build_context())
         .expect("error while running the Tauri application");

@@ -55,6 +55,7 @@ pub(crate) fn apply(
         WorkspaceCommand::ActivateTab {
             pane_id, tab_id, ..
         } => {
+            workspace.active_pane_id = pane_id;
             let workspace_id = workspace.id;
             let pane = find_pane_mut(workspace, pane_id)?;
             if !pane.tabs.iter().any(|tab| tab.id == tab_id) {
@@ -497,11 +498,11 @@ mod tests {
     }
 
     #[test]
-    fn activate_tab_changes_the_panes_active_tab() {
+    fn activate_tab_changes_the_active_tab_and_pane_atomically() {
         let mut ws = workspace();
         let workspace_id = ws.id;
         let expected_revision = ws.revision;
-        let pane_id = ws.active_pane_id;
+        let pane_id = ws.panes[1].id;
         apply(
             &mut ws,
             WorkspaceCommand::AddTab {
@@ -530,6 +531,7 @@ mod tests {
 
         let pane = ws.panes.iter().find(|pane| pane.id == pane_id).unwrap();
         assert_eq!(pane.active_tab_id, first_tab_id);
+        assert_eq!(ws.active_pane_id, pane_id);
     }
 
     #[test]

@@ -155,6 +155,21 @@ describe('AppShell', () => {
     expect(activePane?.querySelector('.fm-cursor-row')?.textContent).toContain('report.pdf');
   });
 
+  it('keeps keyboard focus and the active pane together after Tab', async () => {
+    mountShell('mock');
+    await vi.waitFor(() => expect(root.querySelectorAll('.fm-workspace-pane')).toHaveLength(2));
+    const left = root.querySelector<HTMLElement>('[data-pane-id="left"] > .fm-pane');
+    left?.focus();
+
+    left?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }));
+    m.redraw.sync();
+
+    expect(document.activeElement?.closest('[data-pane-id]')?.getAttribute('data-pane-id')).toBe(
+      'right',
+    );
+    expect(root.querySelector('[data-pane-id="right"]')?.getAttribute('data-active')).toBe('true');
+  });
+
   it('End loads every remaining page and moves the cursor to the true last entry', async () => {
     const client = new MockFileManagerClient({ pageSize: 100 });
     m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
@@ -1249,6 +1264,17 @@ describe('AppShell', () => {
         undefined,
       ),
     );
+  });
+
+  it('activates a clicked pane locally before the workspace command completes', async () => {
+    const client = new MockFileManagerClient({ latencyMs: 50 });
+    m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
+    await vi.waitFor(() => expect(root.textContent).toContain('Documents'));
+
+    root.querySelector<HTMLElement>('[data-pane-id="right"]')?.click();
+    m.redraw.sync();
+
+    expect(root.querySelector('[data-pane-id="right"]')?.getAttribute('data-active')).toBe('true');
   });
 
   it('refetches panes after confirming a conflict resolution', async () => {

@@ -18,7 +18,63 @@ use fm_transport_dto::{
     WorkspaceDto, WorkspaceSummaryDto,
 };
 
-use crate::{AppState, event_stream::EventSubscriptionRegistry};
+use crate::{
+    AppState,
+    event_stream::EventSubscriptionRegistry,
+    terminal::{TerminalError, TerminalEvent, TerminalRegistry},
+};
+
+#[tauri::command]
+pub(crate) fn open_embedded_terminal(
+    registry: State<'_, TerminalRegistry>,
+    location: LocationDto,
+    columns: u16,
+    rows: u16,
+    channel: Channel<TerminalEvent>,
+) -> Result<String, TerminalError> {
+    let location_uri = location.uri.clone();
+    let native = fm_domain::Location::from(location)
+        .to_native_path()
+        .map_err(|_| TerminalError::UnsupportedLocation)?;
+    registry.open(
+        &location_uri,
+        &native,
+        portable_pty::PtySize {
+            rows,
+            cols: columns,
+            pixel_width: 0,
+            pixel_height: 0,
+        },
+        channel,
+    )
+}
+
+#[tauri::command]
+pub(crate) fn write_embedded_terminal(
+    registry: State<'_, TerminalRegistry>,
+    session_id: String,
+    data: Vec<u8>,
+) -> Result<(), TerminalError> {
+    registry.write(&session_id, &data)
+}
+
+#[tauri::command]
+pub(crate) fn resize_embedded_terminal(
+    registry: State<'_, TerminalRegistry>,
+    session_id: String,
+    columns: u16,
+    rows: u16,
+) -> Result<(), TerminalError> {
+    registry.resize(
+        &session_id,
+        portable_pty::PtySize {
+            rows,
+            cols: columns,
+            pixel_width: 0,
+            pixel_height: 0,
+        },
+    )
+}
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum NativeDragError {

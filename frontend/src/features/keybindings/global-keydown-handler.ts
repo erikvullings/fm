@@ -99,6 +99,7 @@ export interface GlobalKeydownContext {
   ): { uri: string } | undefined;
   activatePane(paneId: PaneId): void;
   redraw(): void;
+  toggleTerminal(): void;
 }
 
 function isEditableTarget(target: EventTarget | null): boolean {
@@ -114,6 +115,13 @@ export function createGlobalKeydownHandler(
   context: GlobalKeydownContext,
 ): (event: KeyboardEvent) => void {
   return function handleGlobalKeydown(event: KeyboardEvent): void {
+    const terminalShortcut = isTerminalToggleShortcut(event, context.getKeybindingRuntime());
+    if (terminalShortcut) {
+      event.preventDefault();
+      context.toggleTerminal();
+      context.redraw();
+      return;
+    }
     if (context.getCommandPaletteOpen()) return;
     if (
       hasPrimaryModifier(event, context.getPlatform()) &&
@@ -190,10 +198,10 @@ export function createGlobalKeydownHandler(
           active === undefined || directory === undefined
             ? undefined
             : {
-              location: active.location,
-              writable: directory.writable === true,
-              loaded: directory.state.type === 'loaded',
-            };
+                location: active.location,
+                writable: directory.writable === true,
+                loaded: directory.state.type === 'loaded',
+              };
         const validation = validatePasteTarget(currentClipboard, target);
         if (!validation.ok) {
           context.setClipboardMessage(validation.message);
@@ -589,4 +597,19 @@ export function createGlobalKeydownHandler(
       return;
     }
   };
+}
+
+/** Cross-platform embedded-terminal chord, with F12 reserved for the desktop host. */
+export function isTerminalToggleShortcut(
+  event: Pick<KeyboardEvent, 'key' | 'code' | 'altKey' | 'ctrlKey' | 'metaKey' | 'shiftKey'>,
+  runtime: KeybindingRuntime,
+): boolean {
+  const bareModifiers = !event.altKey && !event.metaKey && !event.shiftKey;
+  const backquoteKey = event.key === '`' || event.code === 'Backquote';
+  const f12Key = event.key === 'F12' || event.code === 'F12';
+  return (
+    runtime === 'desktop' &&
+    ((bareModifiers && event.ctrlKey && backquoteKey) ||
+      (bareModifiers && !event.ctrlKey && f12Key))
+  );
 }

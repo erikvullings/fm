@@ -51,7 +51,8 @@ export const TabStrip: FactoryComponent<TabStripAttrs> = () => {
               draggable: true,
               title: tab.path,
               'aria-selected': tab.id === attrs.activeTabId ? 'true' : 'false',
-              onclick: () => {
+              onclick: (event: MouseEvent) => {
+                event.stopPropagation();
                 attrs.onSelectTab(tab.id);
               },
               onkeydown: (event: KeyboardEvent) => {

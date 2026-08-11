@@ -109,6 +109,8 @@ export interface WorkspaceLayoutViewAttrs {
   readonly onSelectTab: (paneId: PaneId, tabId: TabId) => void;
   readonly onCloseTab: (paneId: PaneId, tabId: TabId) => void;
   readonly onNewTab: (paneId: PaneId) => void;
+  /** Moves focus into the terminal when it is visible for the active folder. */
+  readonly onFocusTerminal?: () => boolean;
   /**
    * Lets the caller force-persist an in-flight debounced layout edit (e.g.
    * before switching workspaces) by handing it a callback registered once on
@@ -298,10 +300,12 @@ export const WorkspaceLayoutView: FactoryComponent<WorkspaceLayoutViewAttrs> = (
   }
 
   function focusAndActivate(attrs: WorkspaceLayoutViewAttrs, paneId: PaneId): void {
-    attrs.onActivatePane(paneId);
     const workspacePane = paneElements.get(paneId);
     const keyboardTarget = workspacePane?.querySelector<HTMLElement>('.fm-pane');
-    (keyboardTarget ?? workspacePane)?.focus();
+    const target = keyboardTarget ?? workspacePane;
+    if (target === undefined) return;
+    if (document.activeElement === target) attrs.onActivatePane(paneId);
+    else target.focus();
   }
 
   function renderPane(
@@ -326,6 +330,17 @@ export const WorkspaceLayoutView: FactoryComponent<WorkspaceLayoutViewAttrs> = (
         tabindex: active ? 0 : -1,
         oncreate: ({ dom }) => paneElements.set(paneId, dom as HTMLElement),
         onremove: () => paneElements.delete(paneId),
+        onfocusin: (event: FocusEvent) => {
+          // The pane's keyboard surface is the focus/active-pane authority. Ignore descendant
+          // controls here: their click handler activates the pane, avoiding a competing
+          // setActivePane request before a tab button dispatches its atomic activateTab command.
+          if (
+            event.target === event.currentTarget ||
+            (event.target instanceof HTMLElement && event.target.classList.contains('fm-pane'))
+          ) {
+            attrs.onActivatePane(paneId);
+          }
+        },
         onclick: (event: MouseEvent) => {
           // Clicking an interactive control (e.g. the file viewer's search box) must not steal
           // focus back to the directory table - only activate the pane, keep the DOM focus as-is.
@@ -350,6 +365,18 @@ export const WorkspaceLayoutView: FactoryComponent<WorkspaceLayoutViewAttrs> = (
           ) {
             return;
           }
+          if (
+            event.key === 'Tab' &&
+            event.shiftKey &&
+            !event.ctrlKey &&
+            !event.metaKey &&
+            !event.altKey &&
+            attrs.onFocusTerminal?.() === true
+          ) {
+            event.preventDefault();
+            event.stopPropagation();
+            return;
+          }
           const actionId = dispatchKeybinding(
             event,
             {
@@ -364,6 +391,9 @@ export const WorkspaceLayoutView: FactoryComponent<WorkspaceLayoutViewAttrs> = (
             return;
           }
           event.preventDefault();
+          // This layout handler also moves DOM focus. Letting the same Tab reach the document
+          // handler would switch workspace.activePaneId a second time, back to the old pane.
+          event.stopPropagation();
           const paneOrder = paneIdsInLayout(attrs.workspace.layout);
           const currentIndex = paneOrder.indexOf(paneId);
           const direction = event.shiftKey ? -1 : 1;

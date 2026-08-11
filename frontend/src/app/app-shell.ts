@@ -94,6 +94,9 @@ import {
   sortEntries,
   sortEntriesResponsive,
 } from '../features/sorting/sorting';
+import { tauriTerminalClient } from '../features/terminal/terminal-client';
+import { TerminalDrawer } from '../features/terminal/terminal-drawer';
+import { isTerminalVisible } from '../features/terminal/terminal-state';
 import { dispatchWorkspaceCommand } from '../features/workspace/dispatch-workspace-command';
 import {
   createPaneContentBuilder,
@@ -312,7 +315,9 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
   /** Registered by `WorkspaceLayoutView` (task 0089): moves DOM focus into a pane so keyboard
    * cursor navigation works immediately, e.g. right after a filename search closes its dialog. */
   let focusPane: ((paneId: PaneId) => void) | undefined;
+  let focusTerminal: (() => boolean) | undefined;
   let commandPaletteOpen = false;
+  const openTerminalLocations = new Set<string>();
   let openTerminalSupported = false;
   let nativeIconLoader: NativeIconLoader | undefined;
   let contextMenu:
@@ -1094,6 +1099,17 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
         directoryLocation,
       ),
     activatePane: (paneId) => activatePane(attrsClient, paneId),
+    toggleTerminal: () => {
+      if (runtimeKind !== 'tauri') return;
+      const activeLocation = activeDirectory()?.location;
+      if (activeLocation === undefined) return;
+      if (openTerminalLocations.has(activeLocation.uri)) {
+        openTerminalLocations.delete(activeLocation.uri);
+      } else {
+        openTerminalLocations.add(activeLocation.uri);
+        requestAnimationFrame(() => focusTerminal?.());
+      }
+    },
     redraw: () => m.redraw(),
   };
 
@@ -1259,20 +1275,35 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     m.redraw();
   }
 
-  function activatePane(client: FileManagerClient, paneId: PaneId): void {
+  async function activatePane(client: FileManagerClient, paneId: PaneId): Promise<void> {
     if (workspace === undefined || workspace.activePaneId === paneId) {
       return;
     }
-    void dispatchWorkspaceCommand(
-      client,
-      {
-        type: 'setActivePane',
-        workspaceId: workspace.id,
-        paneId,
-        expectedRevision: workspace.revision,
-      },
-      replaceWorkspace,
-    ).catch(() => undefined);
+    const previousWorkspace = workspace;
+    replaceWorkspace({ ...previousWorkspace, activePaneId: paneId });
+    try {
+      await dispatchWorkspaceCommand(
+        client,
+        {
+          type: 'setActivePane',
+          workspaceId: previousWorkspace.id,
+          paneId,
+          expectedRevision: previousWorkspace.revision,
+        },
+        replaceWorkspace,
+      );
+    } catch (error) {
+      if (workspace?.revision === previousWorkspace.revision) replaceWorkspace(previousWorkspace);
+      throw error;
+    }
+  }
+
+  function selectTab(client: FileManagerClient, paneId: PaneId, tabId: TabId): void {
+    if (workspace?.panesById[paneId]?.activeTabId === tabId) {
+      void activatePane(client, paneId).catch(() => undefined);
+      return;
+    }
+    tabController.activateTab(paneId, tabId);
   }
 
   function updateLayout(client: FileManagerClient, layout: WorkspaceLayout): void {
@@ -1799,11 +1830,13 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
                       attrs.entryFormatSettings ?? loadedEntryFormatSettings,
                       paneId,
                     ),
-                  onActivatePane: (paneId) => activatePane(attrs.client, paneId),
+                  onActivatePane: (paneId) =>
+                    void activatePane(attrs.client, paneId).catch(() => undefined),
                   onUpdateLayout: (layout) => updateLayout(attrs.client, layout),
-                  onSelectTab: (paneId, tabId) => tabController.activateTab(paneId, tabId),
+                  onSelectTab: (paneId, tabId) => selectTab(attrs.client, paneId, tabId),
                   onCloseTab: (paneId, tabId) => tabController.requestCloseTab(paneId, tabId),
                   onNewTab: (paneId) => tabController.openTab(paneId),
+                  onFocusTerminal: () => focusTerminal?.() ?? false,
                   registerFlush: (flush) => {
                     flushPendingLayoutUpdate = flush;
                   },
@@ -1813,6 +1846,32 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
                   searchQueryForLocationUri: (uri) => findFilesQueriesByLocationUri.get(uri),
                 }),
           ]),
+          runtimeKind === 'tauri'
+            ? m(TerminalDrawer, {
+                open: isTerminalVisible(openTerminalLocations, activeDirectory()?.location),
+                location: activeDirectory()?.location,
+                client: tauriTerminalClient,
+                onToggle: globalKeydownHandlerContext.toggleTerminal,
+                onSwitchPane: () => {
+                  if (workspace === undefined) return;
+                  const index = workspace.paneOrder.indexOf(workspace.activePaneId);
+                  const nextPaneId = workspace.paneOrder[(index + 1) % workspace.paneOrder.length];
+                  if (nextPaneId !== undefined) focusPane?.(nextPaneId);
+                },
+                onCycleTab: (direction) => {
+                  if (workspace === undefined) return;
+                  const paneId = workspace.activePaneId;
+                  tabController.cycleTab(paneId, direction);
+                  focusPane?.(paneId);
+                },
+                onFocusFolder: () => {
+                  if (workspace !== undefined) focusPane?.(workspace.activePaneId);
+                },
+                registerFocus: (focus) => {
+                  focusTerminal = focus;
+                },
+              })
+            : undefined,
           clipboardMessage === undefined
             ? undefined
             : m('.fm-clipboard-message', { role: 'alert' }, clipboardMessage),

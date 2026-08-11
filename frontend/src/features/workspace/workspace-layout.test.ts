@@ -169,6 +169,15 @@ describe('WorkspaceLayoutView pane focus', () => {
     expect(onActivatePane).toHaveBeenCalledExactlyOnceWith('right');
     expect(document.activeElement).toBe(root.querySelector('[data-pane-id="right"] > .fm-pane'));
   });
+
+  it('activates the pane that receives keyboard focus', () => {
+    const onActivatePane = vi.fn<(paneId: PaneId) => void>();
+    mount(attrs({ onActivatePane }));
+
+    root.querySelector<HTMLElement>('[data-pane-id="right"] > .fm-pane')?.focus();
+
+    expect(onActivatePane).toHaveBeenCalledExactlyOnceWith('right');
+  });
 });
 
 describe('WorkspaceLayoutView keyboard navigation', () => {
@@ -177,11 +186,26 @@ describe('WorkspaceLayoutView keyboard navigation', () => {
     mount(attrs({ onActivatePane }));
     const left = root.querySelector<HTMLElement>('[data-pane-id="left"]');
     left?.focus();
+    onActivatePane.mockClear();
 
     left?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }));
 
     expect(onActivatePane).toHaveBeenCalledExactlyOnceWith('right');
     expect(document.activeElement).toBe(root.querySelector('[data-pane-id="right"] > .fm-pane'));
+  });
+
+  it('moves focus from a folder to an open terminal with Shift+Tab', () => {
+    const onFocusTerminal = vi.fn(() => true);
+    const onActivatePane = vi.fn<(paneId: PaneId) => void>();
+    mount(attrs({ onFocusTerminal, onActivatePane }));
+    const left = root.querySelector<HTMLElement>('[data-pane-id="left"] > .fm-pane');
+
+    left?.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Tab', shiftKey: true, bubbles: true }),
+    );
+
+    expect(onFocusTerminal).toHaveBeenCalledOnce();
+    expect(onActivatePane).not.toHaveBeenCalledWith('right');
   });
 
   it('renders and traverses a future three-pane tree in layout order', () => {
@@ -229,6 +253,17 @@ describe('tab strip wiring', () => {
     expect(onSelectTab).toHaveBeenCalledExactlyOnceWith('right', 'right-tab');
     expect(onCloseTab).toHaveBeenCalledExactlyOnceWith('right', 'right-tab');
     expect(onNewTab).toHaveBeenCalledExactlyOnceWith('right');
+  });
+
+  it('does not also dispatch pane activation when a tab header handles the click', () => {
+    const onSelectTab = vi.fn();
+    const onActivatePane = vi.fn();
+    mount(attrs({ onSelectTab, onActivatePane }));
+
+    root.querySelector<HTMLElement>('[data-pane-id="right"] [role="tab"]')?.click();
+
+    expect(onSelectTab).toHaveBeenCalledExactlyOnceWith('right', 'right-tab');
+    expect(onActivatePane).not.toHaveBeenCalled();
   });
 
   it('keeps a drag-reordered tab order local until the backend tab set changes', () => {
