@@ -2378,6 +2378,37 @@ describe('tabs per pane (task 0069)', () => {
     await vi.waitFor(() => expect(selectedTabIndex()).toBe(0));
   });
 
+  it('refreshes the activated tab directory in the background when switching back with Ctrl+Tab', async () => {
+    const client = new MockFileManagerClient();
+    const listDirectory = vi.spyOn(client, 'listDirectory');
+    m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
+    await vi.waitFor(() => expect(root.textContent).toContain('Documents'));
+
+    function selectedTabIndex(): number {
+      return [...(activePane()?.querySelectorAll<HTMLElement>('[role="tab"]') ?? [])].findIndex(
+        (tab) => tab.getAttribute('aria-selected') === 'true',
+      );
+    }
+
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 't', ctrlKey: true, bubbles: true }),
+    );
+    await vi.waitFor(() => expect(activePane()?.querySelectorAll('[role="tab"]')).toHaveLength(2));
+    await vi.waitFor(() => expect(selectedTabIndex()).toBe(1));
+
+    listDirectory.mockClear();
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Tab', ctrlKey: true, shiftKey: true, bubbles: true }),
+    );
+    await vi.waitFor(() => expect(selectedTabIndex()).toBe(0));
+    await vi.waitFor(() =>
+      expect(listDirectory).toHaveBeenCalledWith(
+        expect.objectContaining({ location: expect.objectContaining({ uri: 'mock:///' }) }),
+        expect.any(AbortSignal),
+      ),
+    );
+  });
+
   it('cycles tabs with literal Ctrl+Tab on macOS instead of switching panes (Cmd+Tab is OS-reserved)', async () => {
     const client = new MockFileManagerClient();
     vi.spyOn(client, 'getRuntimeCapabilities').mockResolvedValue({

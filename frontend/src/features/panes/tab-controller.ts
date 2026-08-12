@@ -107,7 +107,9 @@ export function createTabController(
         (next) => {
           replaceWorkspace(next);
           context.getNavigation().abort(paneId, previousTabId);
-          if (!hasCachedSnapshot) void context.getNavigation().load(paneId);
+          void context
+            .getNavigation()
+            .load(paneId, hasCachedSnapshot ? { background: true } : undefined);
         },
       ).catch(() => {
         const current = context.getWorkspace();

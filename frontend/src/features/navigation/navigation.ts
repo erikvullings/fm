@@ -310,6 +310,44 @@ export function createNavigationController(
     };
   }
 
+  async function hydrateBackgroundSnapshot(
+    workspace: WorkspaceProjection,
+    paneId: PaneId,
+    tab: TabProjection,
+    request: ActiveRequest,
+    firstSnapshot: DirectorySnapshot,
+    minEntries: number,
+  ): Promise<DirectorySnapshot> {
+    let mergedEntries = [...firstSnapshot.entries];
+    let hydratedSnapshot = firstSnapshot;
+    let continuationToken = firstSnapshot.continuationToken;
+    while (
+      isCurrent(paneId, tab.id, request) &&
+      hydratedSnapshot.hasMore &&
+      continuationToken !== undefined &&
+      mergedEntries.length < minEntries
+    ) {
+      const nextSnapshot = await options.client.listDirectory(
+        requestFor(
+          workspace,
+          paneId,
+          request.id,
+          hydratedSnapshot.location,
+          tab,
+          continuationToken,
+        ),
+        request.controller.signal,
+      );
+      mergedEntries = [...mergedEntries, ...nextSnapshot.entries];
+      hydratedSnapshot = nextSnapshot;
+      continuationToken = nextSnapshot.continuationToken;
+    }
+    if (mergedEntries.length === firstSnapshot.entries.length) {
+      return firstSnapshot;
+    }
+    return { ...hydratedSnapshot, entries: mergedEntries };
+  }
+
   async function load(
     paneId: PaneId,
     loadOptions?: { readonly background?: boolean },
@@ -319,6 +357,7 @@ export function createNavigationController(
     if (workspace === undefined || tab === undefined) {
       return;
     }
+    const current = paneViews.get(tabKey(paneId, tab.id));
     if (loadOptions?.background) {
       const inFlight = activeRequests.get(tabKey(paneId, tab.id));
       // A background refresh (filesystem-watch delta) must never preempt an explicit navigation
@@ -334,14 +373,31 @@ export function createNavigationController(
       }
     }
     const request = begin(paneId, tab.id, 'load');
-    publish(paneId, tab.id, loadingView(paneId, tab.id, request, tab.location));
+    if (!loadOptions?.background) {
+      publish(paneId, tab.id, loadingView(paneId, tab.id, request, tab.location));
+    }
     try {
-      const snapshot = await withArchiveCredential(tab.location, () =>
+      let snapshot = await withArchiveCredential(tab.location, () =>
         options.client.listDirectory(
           requestFor(workspace, paneId, request.id, tab.location, tab),
           request.controller.signal,
         ),
       );
+      if (
+        loadOptions?.background &&
+        current !== undefined &&
+        current.entries.length > snapshot.entries.length &&
+        snapshot.hasMore
+      ) {
+        snapshot = await hydrateBackgroundSnapshot(
+          workspace,
+          paneId,
+          tab,
+          request,
+          snapshot,
+          current.entries.length,
+        );
+      }
       if (isCurrent(paneId, tab.id, request) && snapshot.requestId === request.id) {
         publish(paneId, tab.id, viewFromSnapshot(snapshot));
       }
