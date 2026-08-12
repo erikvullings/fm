@@ -23,6 +23,11 @@ describe('pathFromUri', () => {
   it('shows sftp root as slash', () => {
     expect(pathFromUri('sftp://11111111-1111-4111-8111-111111111111/')).toBe('/');
   });
+
+  it('hides FTP connection ids and returns only the remote path', () => {
+    expect(pathFromUri('ftp://11111111-1111-4111-8111-111111111111/pub')).toBe('/pub');
+    expect(pathFromUri('ftps://11111111-1111-4111-8111-111111111111/secure')).toBe('/secure');
+  });
 });
 
 let root: HTMLElement;

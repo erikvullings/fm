@@ -20,7 +20,23 @@ const SFTP_PROVIDER_ID = 'sftp';
  * than offered as a dead click (spec §6, task 0103's Agent Notes).
  */
 export function isBrowsable(connection: Connection): boolean {
-  return connection.kind === 'ssh';
+  return connection.kind === 'ssh' || connection.kind === 'ftp' || connection.kind === 'ftps';
+}
+
+/** Builds the initial VFS location for any browsable remote connection. */
+export function remoteRootLocation(connection: Connection): Location {
+  if (connection.configuration.kind === 'ssh') {
+    return sftpRootLocation(connection.id, sftpStartPathForConnection(connection));
+  }
+  if (connection.configuration.kind === 'ftp' || connection.configuration.kind === 'ftps') {
+    const path = connection.configuration.startPath?.trim() || '/';
+    const normalized = path.startsWith('/') ? path : `/${path}`;
+    return {
+      providerId: 'ftp',
+      uri: `${connection.configuration.kind}://${connection.id}${normalized}`,
+    };
+  }
+  throw new Error('connection is not browsable');
 }
 
 /** Fallback start path for SSH connections when no explicit override is saved. */
@@ -153,7 +169,11 @@ export function validateConnectionDraft(
   if (draft.name.trim().length === 0) {
     errors.push({ field: 'name', message: 'Enter a connection name.' });
   }
-  if (draft.configuration.kind === 'ssh') {
+  if (
+    draft.configuration.kind === 'ssh' ||
+    draft.configuration.kind === 'ftp' ||
+    draft.configuration.kind === 'ftps'
+  ) {
     const { host, username, port, startPath } = draft.configuration;
     if (host.trim().length === 0) {
       errors.push({ field: 'host', message: 'Enter a host.' });

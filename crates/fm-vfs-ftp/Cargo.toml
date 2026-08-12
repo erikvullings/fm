@@ -1,0 +1,23 @@
+[package]
+name = "fm-vfs-ftp"
+description = "FTP and explicit FTPS virtual filesystem provider."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+async-trait.workspace = true
+fm-domain.workspace = true
+fm-vfs.workspace = true
+suppaftp.workspace = true
+tokio = { workspace = true, features = ["io-util", "net"] }
+tokio-util.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+rcgen = "0.14.5"
+tokio-rustls = "0.26.4"
+
+[lints]
+workspace = true

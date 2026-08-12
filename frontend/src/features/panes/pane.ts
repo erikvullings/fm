@@ -22,8 +22,7 @@ import {
   connectionStatusGlyph,
   connectionStatusLabel,
   isBrowsable,
-  sftpRootLocation,
-  sftpStartPathForConnection,
+  remoteRootLocation,
 } from '../connections/connections-model';
 import {
   type DirectoryColumnDescriptor,
@@ -756,7 +755,7 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
                     ...(attrs.favourites.connections ?? []).map((connection) =>
                       (() => {
                         const openInPane = attrs.tabs.some(
-                          (tab) => tab.locationUri?.startsWith(`sftp://${connection.id}/`) === true,
+                          (tab) => tab.locationUri?.includes(`://${connection.id}/`) === true,
                         );
                         const status = openInPane ? 'connected' : connection.status;
                         return m(
@@ -770,14 +769,7 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
                               : connectionStatusLabel(status),
                             disabled: !isBrowsable(connection),
                             onclick: isBrowsable(connection)
-                              ? () =>
-                                  void navigateFavourite(
-                                    sftpRootLocation(
-                                      connection.id,
-                                      sftpStartPathForConnection(connection),
-                                    ),
-                                    attrs,
-                                  )
+                              ? () => void navigateFavourite(remoteRootLocation(connection), attrs)
                               : undefined,
                           },
                           [

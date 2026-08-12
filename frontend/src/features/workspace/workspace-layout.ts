@@ -150,8 +150,8 @@ export function pathFromUri(uri: string): string {
     const path = decodeURIComponent(uri.slice('mock://'.length));
     return path.length === 0 ? '/' : path;
   }
-  if (uri.startsWith('sftp://')) {
-    const withoutScheme = uri.slice('sftp://'.length);
+  if (/^(sftp|ftp|ftps):\/\//.test(uri)) {
+    const withoutScheme = uri.slice(uri.indexOf('://') + 3);
     const slashIndex = withoutScheme.indexOf('/');
     if (slashIndex === -1) {
       return '/';

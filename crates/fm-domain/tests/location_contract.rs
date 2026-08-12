@@ -3,6 +3,19 @@
 use std::path::Path;
 
 use fm_domain::{Location, LocationError, ProviderId};
+
+#[test]
+fn ftp_and_ftps_locations_preserve_transport_security() {
+    let id = "11111111-1111-4111-8111-111111111111";
+    for scheme in ["ftp", "ftps"] {
+        let root = Location::parse(&format!("{scheme}://{id}/pub")).unwrap();
+        assert_eq!(root.provider_id.as_str(), "ftp");
+        assert_eq!(
+            root.join("file.txt").unwrap().uri,
+            format!("{scheme}://{id}/pub/file.txt")
+        );
+    }
+}
 use proptest::prelude::*;
 
 #[test]

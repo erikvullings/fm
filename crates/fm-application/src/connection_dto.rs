@@ -111,6 +111,7 @@ pub(crate) fn connection_configuration_from_dto(
                 host: config.host,
                 port: config.port,
                 username: config.username,
+                start_path: config.start_path,
             })
         }
         ConnectionConfigurationDto::Ftps(config) => {
@@ -118,6 +119,7 @@ pub(crate) fn connection_configuration_from_dto(
                 host: config.host,
                 port: config.port,
                 username: config.username,
+                start_path: config.start_path,
             })
         }
         ConnectionConfigurationDto::OneDrive(config) => {
@@ -166,6 +168,7 @@ fn connection_configuration_to_dto(
                 host: config.host.clone(),
                 port: config.port,
                 username: config.username.clone(),
+                start_path: config.start_path.clone(),
             })
         }
         ConnectionConfiguration::Ftps(config) => {
@@ -173,6 +176,7 @@ fn connection_configuration_to_dto(
                 host: config.host.clone(),
                 port: config.port,
                 username: config.username.clone(),
+                start_path: config.start_path.clone(),
             })
         }
         ConnectionConfiguration::OneDrive(config) => {

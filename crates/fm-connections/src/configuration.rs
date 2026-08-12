@@ -88,6 +88,8 @@ pub struct FtpConnectionConfiguration {
     pub port: u16,
     /// Remote username.
     pub username: String,
+    /// Optional initial remote directory.
+    pub start_path: Option<String>,
 }
 
 /// Minimal native OneDrive configuration stub (later task; OAuth-based).
@@ -172,12 +174,8 @@ impl ConnectionConfiguration {
             // authentication shape lands with 0106/0108+); assume no stored
             // credential is required rather than guessing at a policy for a
             // protocol not yet implemented.
-            Self::Ftp(_)
-            | Self::Ftps(_)
-            | Self::OneDrive(_)
-            | Self::WebDav(_)
-            | Self::S3(_)
-            | Self::Smb(_) => false,
+            Self::Ftp(_) | Self::Ftps(_) => true,
+            Self::OneDrive(_) | Self::WebDav(_) | Self::S3(_) | Self::Smb(_) => false,
         }
     }
 
@@ -319,6 +317,7 @@ mod tests {
             host: String::new(),
             port: 21,
             username: "erik".to_owned(),
+            start_path: None,
         });
         assert_eq!(
             config.validate(),

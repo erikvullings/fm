@@ -113,6 +113,8 @@ pub struct FtpConnectionConfigurationDto {
     pub port: u16,
     /// Remote username.
     pub username: String,
+    /// Optional initial remote directory.
+    pub start_path: Option<String>,
 }
 
 /// Minimal native OneDrive configuration stub.

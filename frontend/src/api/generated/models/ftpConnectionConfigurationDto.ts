@@ -14,6 +14,11 @@ export interface FtpConnectionConfigurationDto {
      * @minimum 0
      */
   port: number;
+  /**
+     * Optional initial remote directory.
+     * @nullable
+     */
+  startPath?: string | null;
   /** Remote username. */
   username: string;
 }

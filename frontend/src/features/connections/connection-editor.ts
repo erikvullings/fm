@@ -88,7 +88,7 @@ interface FormState {
 function kindOptions(): { id: ConnectionKind; label: string }[] {
   return [
     { id: 'ssh', label: 'SSH' },
-    { id: 'ftp', label: 'FTP' },
+    { id: 'ftp', label: 'FTP (insecure)' },
     { id: 'ftps', label: 'FTP over TLS' },
     { id: 'oneDrive', label: 'OneDrive' },
     { id: 'webDav', label: 'WebDAV' },
@@ -117,9 +117,9 @@ function defaultConfigurationFor(kind: ConnectionKind): ConnectionConfiguration 
     case 'ssh':
       return defaultSshConfiguration();
     case 'ftp':
-      return { kind: 'ftp', host: '', port: 21, username: '' };
+      return { kind: 'ftp', host: '', port: 21, username: '', startPath: null };
     case 'ftps':
-      return { kind: 'ftps', host: '', port: 21, username: '' };
+      return { kind: 'ftps', host: '', port: 21, username: '', startPath: null };
     case 'oneDrive':
       return { kind: 'oneDrive', accountHint: null };
     case 'webDav':
@@ -163,6 +163,11 @@ function formFromConnection(connection: Connection): FormState {
 
 /** Builds the write-only secret input for the current form state, or `undefined` if none was entered. */
 function secretInputFrom(form: FormState): ConnectionSecretInput | undefined {
+  if (form.configuration.kind === 'ftp' || form.configuration.kind === 'ftps') {
+    return form.secretPassword.length === 0
+      ? undefined
+      : { kind: 'password', password: form.secretPassword };
+  }
   if (form.configuration.kind !== 'ssh') return undefined;
   switch (form.configuration.authentication) {
     case 'password':
@@ -694,6 +699,28 @@ export const ConnectionsManager: FactoryComponent<ConnectionsManagerAttrs> = () 
             oninput: (value: string) => updateConfiguration({ username: value }),
             ...TECHNICAL_TEXT_ATTRS,
           }),
+          m(TextInput, {
+            label: 'Start folder (optional)',
+            value: configuration.startPath ?? '',
+            oninput: (value: string) => updateConfiguration({ startPath: value || null }),
+            ...TECHNICAL_TEXT_ATTRS,
+          }),
+          m(PasswordInput, {
+            label: 'Password',
+            placeholder: 'Leave blank to keep the stored password',
+            value: form.secretPassword,
+            oninput: (value: string) => {
+              form.secretPassword = value;
+            },
+            ...TECHNICAL_TEXT_ATTRS,
+          }),
+          configuration.kind === 'ftp'
+            ? m(
+                '.fm-field-warning',
+                { role: 'note' },
+                'Insecure: FTP sends credentials and files without encryption.',
+              )
+            : undefined,
         ]);
       case 'oneDrive':
         return m('.row', [

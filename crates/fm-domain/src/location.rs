@@ -28,7 +28,13 @@ const SEARCH_AUTHORITY: &str = "local";
 const RESERVED_SCHEMES: &[&str] = &[];
 
 /// Static scheme-to-provider mapping for data providers (excludes search).
-const SCHEME_MAP: [(&str, &str); 3] = [("file", "local"), ("archive", "archive"), ("sftp", "sftp")];
+const SCHEME_MAP: [(&str, &str); 5] = [
+    ("file", "local"),
+    ("archive", "archive"),
+    ("sftp", "sftp"),
+    ("ftp", "ftp"),
+    ("ftps", "ftp"),
+];
 
 /// A provider-neutral pointer to a location.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -121,6 +127,11 @@ impl Location {
             parsed.validate_segments()?;
             return Ok(Self::new(ProviderId::new(provider_id), uri));
         }
+        if matches!(scheme, "ftp" | "ftps") {
+            let parsed = ParsedFtpUri::parse(uri)?;
+            parsed.validate_segments()?;
+            return Ok(Self::new(ProviderId::new(provider_id), uri));
+        }
         // file scheme (fallthrough)
         let parsed = ParsedFileUri::parse(uri)?;
         parsed.validate_segments()?;
@@ -185,6 +196,9 @@ impl Location {
         if self.provider_id.as_str() == "sftp" {
             return ParsedSftpUri::parse(&self.uri)?.parent();
         }
+        if self.provider_id.as_str() == "ftp" {
+            return ParsedFtpUri::parse(&self.uri)?.parent();
+        }
         self.ensure_local()?;
         let mut parsed = ParsedFileUri::parse(&self.uri)?;
         parsed.validate_segments()?;
@@ -204,6 +218,10 @@ impl Location {
             validate_name(name)?;
             return ParsedSftpUri::parse(&self.uri)?.join(name);
         }
+        if self.provider_id.as_str() == "ftp" {
+            validate_name(name)?;
+            return ParsedFtpUri::parse(&self.uri)?.join(name);
+        }
         self.ensure_local()?;
         validate_name(name)?;
         let mut parsed = ParsedFileUri::parse(&self.uri)?;
@@ -219,6 +237,9 @@ impl Location {
         }
         if self.provider_id.as_str() == "sftp" {
             return ParsedSftpUri::parse(&self.uri)?.name();
+        }
+        if self.provider_id.as_str() == "ftp" {
+            return ParsedFtpUri::parse(&self.uri)?.name();
         }
         self.ensure_local()?;
         let parsed = ParsedFileUri::parse(&self.uri)?;
@@ -348,6 +369,90 @@ impl ParsedSftpUri {
             .last()
             .ok_or_else(|| LocationError::InvalidName("sftp root has no name".to_owned()))?;
         String::from_utf8(bytes.clone()).map_err(|_| LocationError::InvalidUnicode)
+    }
+}
+
+#[derive(Debug)]
+struct ParsedFtpUri {
+    scheme: String,
+    connection_id: String,
+    segments: Vec<Vec<u8>>,
+}
+impl ParsedFtpUri {
+    fn parse(uri: &str) -> Result<Self, LocationError> {
+        let scheme = parse_scheme(uri)?;
+        if !matches!(scheme, "ftp" | "ftps") {
+            return Err(LocationError::InvalidUri);
+        }
+        let remainder = uri
+            .strip_prefix(&format!("{scheme}://"))
+            .ok_or(LocationError::InvalidUri)?;
+        if remainder.contains(['?', '#']) {
+            return Err(LocationError::InvalidUri);
+        }
+        let (connection_id, path) = remainder.split_once('/').ok_or(LocationError::InvalidUri)?;
+        if uuid::Uuid::parse_str(connection_id).is_err() {
+            return Err(LocationError::InvalidUri);
+        }
+        let segments = if path.is_empty() {
+            Vec::new()
+        } else {
+            let raw: Vec<_> = path.split('/').collect();
+            if raw.iter().any(|segment| segment.is_empty()) {
+                return Err(LocationError::EmptySegment);
+            }
+            raw.into_iter()
+                .map(percent_decode)
+                .collect::<Result<_, _>>()?
+        };
+        Ok(Self {
+            scheme: scheme.to_owned(),
+            connection_id: connection_id.to_owned(),
+            segments,
+        })
+    }
+    fn validate_segments(&self) -> Result<(), LocationError> {
+        for segment in &self.segments {
+            if segment.contains(&0) {
+                return Err(LocationError::NullByte);
+            }
+            if segment.contains(&b'/') || segment.contains(&b'\\') {
+                return Err(LocationError::InvalidName(
+                    String::from_utf8_lossy(segment).into_owned(),
+                ));
+            }
+        }
+        Ok(())
+    }
+    fn into_location(self) -> Result<Location, LocationError> {
+        self.validate_segments()?;
+        let path = self
+            .segments
+            .iter()
+            .map(|segment| percent_encode(segment))
+            .collect::<Vec<_>>()
+            .join("/");
+        Location::parse(&format!("{}://{}/{path}", self.scheme, self.connection_id))
+    }
+    fn join(mut self, name: &str) -> Result<Location, LocationError> {
+        self.segments.push(name.as_bytes().to_vec());
+        self.into_location()
+    }
+    fn parent(mut self) -> Result<Option<Location>, LocationError> {
+        if self.segments.pop().is_none() {
+            Ok(None)
+        } else {
+            self.into_location().map(Some)
+        }
+    }
+    fn name(&self) -> Result<String, LocationError> {
+        String::from_utf8(
+            self.segments
+                .last()
+                .ok_or_else(|| LocationError::InvalidName("FTP root has no name".to_owned()))?
+                .clone(),
+        )
+        .map_err(|_| LocationError::InvalidUnicode)
     }
 }
 

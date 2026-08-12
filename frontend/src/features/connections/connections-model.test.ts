@@ -84,8 +84,14 @@ describe('isBrowsable', () => {
     expect(isBrowsable(sampleConnection({ kind: 'ssh' }))).toBe(true);
   });
 
-  it('is false for every other kind (task 0104: only SSH has a real provider)', () => {
-    for (const kind of ['ftp', 'ftps', 'oneDrive', 'webDav', 's3', 'smb'] as const) {
+  it('is true for FTP and FTPS connections', () => {
+    for (const kind of ['ftp', 'ftps'] as const) {
+      expect(isBrowsable(sampleConnection({ kind }))).toBe(true);
+    }
+  });
+
+  it('is false for kinds without a provider', () => {
+    for (const kind of ['oneDrive', 'webDav', 's3', 'smb'] as const) {
       expect(isBrowsable(sampleConnection({ kind }))).toBe(false);
     }
   });
