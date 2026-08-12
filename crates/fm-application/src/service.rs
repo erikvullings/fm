@@ -3243,7 +3243,13 @@ mod tests {
             }
             tokio::time::sleep(std::time::Duration::from_millis(10)).await;
         };
-        assert_eq!(operation.state, OperationStateDto::Completed);
+        assert_eq!(
+            operation.state,
+            OperationStateDto::Completed,
+            "result_summary={:?} errors={:?}",
+            operation.result_summary,
+            operation.errors
+        );
         assert!(parent.join("child").is_dir());
     }
 
