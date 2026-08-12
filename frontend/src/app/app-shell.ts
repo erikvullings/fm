@@ -711,15 +711,18 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     await workspaceController.switchWorkspace(workspaceId);
   }
 
-  function refetchAffectedPanes(paneId?: PaneId): void {
+  function refetchAffectedPanes(
+    paneId?: PaneId,
+    options?: { readonly background?: boolean },
+  ): void {
     if (workspace === undefined) return;
+    const background = options?.background ?? true;
     for (const candidate of workspace.paneOrder) {
-      // `background: true` - this is a filesystem-watch-triggered refresh, not a user-requested
-      // one. It must never abort an explicit navigation already in flight for the pane's tab
-      // (e.g. `navigate()` to a fresh `search://` location), or it silently discards that
-      // navigation's own snapshot fetch with no error and no results ever appearing.
+      // Background refreshes are used for opportunistic reloads (e.g. deltas/watch events),
+      // while some callers (operation completion) request a foreground reload to guarantee
+      // authoritative source/destination listings after mutating actions.
       if (paneId === undefined || candidate === paneId) {
-        void navigation.load(candidate, { background: true });
+        void navigation.load(candidate, background ? { background: true } : undefined);
       }
     }
   }

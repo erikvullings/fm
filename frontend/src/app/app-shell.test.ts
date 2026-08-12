@@ -555,6 +555,52 @@ describe('AppShell', () => {
     });
   });
 
+  it('deletes the cursor entry with Shift+F8 even when no explicit selection remains', async () => {
+    const client = new MockFileManagerClient();
+    vi.spyOn(client, 'listActions').mockResolvedValue([
+      {
+        id: 'core.trash',
+        title: 'Trash',
+        category: 'fileOperations',
+        defaultShortcuts: [{ key: 'F8' }, { key: 'Delete' }],
+        contextRequirements: {},
+        source: { kind: 'core' },
+      },
+      {
+        id: 'core.delete',
+        title: 'Delete',
+        category: 'fileOperations',
+        defaultShortcuts: [
+          { key: 'F8', shift: true },
+          { key: 'Delete', shift: true },
+        ],
+        contextRequirements: {},
+        source: { kind: 'core' },
+      },
+    ]);
+    const startOperation = vi.spyOn(client, 'startOperation');
+    m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
+    await vi.waitFor(() => expect(root.textContent).toContain('.env'));
+    const activePane = root.querySelector<HTMLElement>('[data-active="true"] > .fm-pane');
+    const file = [...(activePane?.querySelectorAll<HTMLElement>('.fm-directory-row') ?? [])].find(
+      (row) => row.textContent?.includes('.env'),
+    );
+    if (file === undefined) throw new Error('fixture file row missing');
+    file.click();
+    activePane?.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true }));
+    m.redraw.sync();
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'F8', shiftKey: true, bubbles: true }),
+    );
+
+    await vi.waitFor(() => expect(startOperation).toHaveBeenCalledOnce());
+    expect(startOperation.mock.calls[0]?.[0]).toMatchObject({
+      type: 'delete',
+      sources: [{ uri: 'mock:///.env' }],
+      conflictPolicy: 'ask',
+    });
+  });
+
   it('invokes core.openWith on the selected file with Ctrl+Enter (Marta shortcut, task 0086/0087)', async () => {
     const client = new MockFileManagerClient();
     const invokeAction = vi.spyOn(client, 'invokeAction');

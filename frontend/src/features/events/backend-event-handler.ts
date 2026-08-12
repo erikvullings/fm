@@ -81,7 +81,7 @@ export interface BackendEventContext {
   /** Returns the current revision for the active tab in `paneId`, or `undefined` if unknown. */
   getActiveDirectoryRevision(paneId: PaneId): number | undefined;
   applyDelta(paneId: PaneId, delta: DirectoryDelta): void;
-  refetchAffectedPanes(paneId?: PaneId): void;
+  refetchAffectedPanes(paneId?: PaneId, options?: { readonly background?: boolean }): void;
 
   // Plugins
   getPlugins(): readonly PluginDescriptor[];
@@ -186,7 +186,9 @@ export function createBackendEventHandler(ctx: BackendEventContext): (event: Bac
               }
             }
             ctx.setOperations(next);
-            if (panesNeedRefresh) ctx.refetchAffectedPanes();
+            // Operation completion must force an authoritative refresh so both source and
+            // destination panes reflect move/copy/rename/delete outcomes immediately.
+            if (panesNeedRefresh) ctx.refetchAffectedPanes(undefined, { background: false });
             ctx.redraw();
           }),
         );

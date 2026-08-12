@@ -111,6 +111,25 @@ function isEditableTarget(target: EventTarget | null): boolean {
   );
 }
 
+function selectedEntriesOrCursor(
+  selection: SelectionState | undefined,
+  entries: readonly EntrySummary[],
+): readonly EntrySummary[] {
+  const selected = getSelectedEntries(selection, entries);
+  if (selected.length > 0) return selected;
+  const cursor =
+    selection?.cursorEntryId === undefined
+      ? undefined
+      : entries.find((entry) => entry.id === selection.cursorEntryId);
+  return cursor === undefined ? [] : [cursor];
+}
+
+function canUseSystemTrash(locations: readonly Location[]): boolean {
+  return locations.every(
+    (location) => location.providerId === 'file' || location.providerId === 'local',
+  );
+}
+
 export function createGlobalKeydownHandler(
   context: GlobalKeydownContext,
 ): (event: KeyboardEvent) => void {
@@ -340,7 +359,7 @@ export function createGlobalKeydownHandler(
         active === undefined
           ? undefined
           : context.getDirectories().get(context.activeTabKey(active.paneId));
-      const selected = getSelectedEntries(selection, directory?.entries ?? []);
+      const selected = selectedEntriesOrCursor(selection, directory?.entries ?? []);
       const workspace = context.getWorkspace();
       const otherPaneId = workspace?.paneOrder.find((paneId) => paneId !== active?.paneId);
       const destination =
@@ -366,10 +385,21 @@ export function createGlobalKeydownHandler(
         active === undefined
           ? undefined
           : context.getDirectories().get(context.activeTabKey(active.paneId));
-      const selected = getSelectedEntries(selection, directory?.entries ?? []);
+      const selected = selectedEntriesOrCursor(selection, directory?.entries ?? []);
       if (selected.length > 0) {
         event.preventDefault();
-        void context.getOpsController().trash(selected.map((entry) => entry.location));
+        const locations = selected.map((entry) => entry.location);
+        if (canUseSystemTrash(locations)) {
+          void context.getOpsController().trash(locations);
+        } else {
+          void context
+            .getOpsController()
+            .delete(
+              locations,
+              context.getCurrentSettings()?.confirmPermanentDelete === false,
+              false,
+            );
+        }
       }
       return;
     }
@@ -383,7 +413,7 @@ export function createGlobalKeydownHandler(
         active === undefined
           ? undefined
           : context.getDirectories().get(context.activeTabKey(active.paneId));
-      const selected = getSelectedEntries(selection, directory?.entries ?? []);
+      const selected = selectedEntriesOrCursor(selection, directory?.entries ?? []);
       if (selected.length > 0) {
         event.preventDefault();
         void context.getOpsController().delete(

@@ -343,4 +343,56 @@ describe('createBackendEventHandler', () => {
       expect(ctx.listWorkspaces).not.toHaveBeenCalled();
     });
   });
+
+  describe('terminal operations', () => {
+    it('forces a foreground pane refetch when a mutating operation reaches a terminal state', () => {
+      const previous = createOperationsState([
+        {
+          id: 'op-1' as never,
+          kind: 'copy',
+          state: 'running',
+          sources: [],
+          progress: { completedItems: 0, completedBytes: 0 },
+          conflictPolicy: 'ask',
+          createdAt: '2026-01-01T00:00:00Z',
+        },
+      ]);
+      const completedOperation = {
+        id: 'op-1' as never,
+        kind: 'copy',
+        state: 'completed',
+        sources: [],
+        progress: { completedItems: 1, completedBytes: 1 },
+        conflictPolicy: 'ask',
+        createdAt: '2026-01-01T00:00:00Z',
+      };
+      const pending: BackendEvent[] = [];
+      const ctx = makeContext({
+        getOperations: vi.fn(() => previous),
+        getOperationFrame: vi.fn(() => undefined),
+        pushPendingOperationEvent: vi.fn((event: BackendEvent) => {
+          pending.push(event);
+        }),
+        clearPendingOperationEvents: vi.fn(() => {
+          const events = [...pending];
+          pending.length = 0;
+          return events;
+        }),
+      });
+      // Replace RAF with immediate execution for deterministic unit behavior.
+      const raf = vi.spyOn(globalThis, 'requestAnimationFrame').mockImplementation((callback) => {
+        callback(0);
+        return 1;
+      });
+      const handler = createBackendEventHandler(ctx);
+
+      try {
+        handler(makeEvent({ type: 'operation.created', operation: completedOperation }, WS_ID));
+      } finally {
+        raf.mockRestore();
+      }
+
+      expect(ctx.refetchAffectedPanes).toHaveBeenCalledWith(undefined, { background: false });
+    });
+  });
 });
