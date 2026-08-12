@@ -3198,7 +3198,9 @@ mod tests {
         fs::create_dir_all(&parent).expect("must create parent directory");
         let destination = fm_transport_dto::LocationDto {
             provider_id: "local".to_owned(),
-            uri: format!("file://{}", parent.display()),
+            uri: Location::from_native_path(&parent)
+                .expect("path must convert to a location")
+                .uri,
         };
         let parameters = serde_json::to_value(StartOperationRequestDto {
             operation_type: OperationKindDto::CreateDirectory,
@@ -3243,24 +3245,7 @@ mod tests {
             }
             tokio::time::sleep(std::time::Duration::from_millis(10)).await;
         };
-        if operation.state != OperationStateDto::Completed {
-            let mut sub = service
-                .event_bus()
-                .subscribe_all_workspaces(SessionId::new("diagnostic"), Some(0));
-            let mut failure_message = None;
-            while let Ok(Ok(SubscriptionEvent::Event(envelope))) =
-                tokio::time::timeout(std::time::Duration::from_millis(200), sub.recv()).await
-            {
-                if let BackendEventPayload::OperationFailed { message, .. } = &envelope.payload {
-                    failure_message = Some(message.clone());
-                    break;
-                }
-            }
-            panic!(
-                "expected Completed, got {:?}; result_summary={:?} errors={:?} failure_message={:?}",
-                operation.state, operation.result_summary, operation.errors, failure_message
-            );
-        }
+        assert_eq!(operation.state, OperationStateDto::Completed);
         assert!(parent.join("child").is_dir());
     }
 
