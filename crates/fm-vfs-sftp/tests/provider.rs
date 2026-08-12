@@ -75,17 +75,17 @@ async fn provider_fixture_and_connections() -> (
     (provider, fixture, connections)
 }
 
-fn location(fixture: &SshFixture, relative: &str) -> Location {
-    let remote = fixture.path(relative);
-    let uri = format!("sftp://{CONNECTION_ID}{}", remote.to_string_lossy());
+/// Builds an `sftp://` location from a root-relative Unix-style path. The
+/// fixture's wire protocol is always Unix-style, independent of the host
+/// OS - see `fm_ssh::fixture`'s module doc for why this must not be built
+/// from `fixture.path()`'s native OS path.
+fn location(_fixture: &SshFixture, relative: &str) -> Location {
+    let uri = format!("sftp://{CONNECTION_ID}/{relative}");
     Location::parse(&uri).expect("test location must parse")
 }
 
-fn root_location(fixture: &SshFixture) -> Location {
-    let uri = format!(
-        "sftp://{CONNECTION_ID}{}",
-        fixture.root.path().to_string_lossy()
-    );
+fn root_location(_fixture: &SshFixture) -> Location {
+    let uri = format!("sftp://{CONNECTION_ID}/");
     Location::parse(&uri).expect("test root location must parse")
 }
 
