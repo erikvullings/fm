@@ -3243,13 +3243,24 @@ mod tests {
             }
             tokio::time::sleep(std::time::Duration::from_millis(10)).await;
         };
-        assert_eq!(
-            operation.state,
-            OperationStateDto::Completed,
-            "result_summary={:?} errors={:?}",
-            operation.result_summary,
-            operation.errors
-        );
+        if operation.state != OperationStateDto::Completed {
+            let mut sub = service
+                .event_bus()
+                .subscribe_all_workspaces(SessionId::new("diagnostic"), Some(0));
+            let mut failure_message = None;
+            while let Ok(Ok(SubscriptionEvent::Event(envelope))) =
+                tokio::time::timeout(std::time::Duration::from_millis(200), sub.recv()).await
+            {
+                if let BackendEventPayload::OperationFailed { message, .. } = &envelope.payload {
+                    failure_message = Some(message.clone());
+                    break;
+                }
+            }
+            panic!(
+                "expected Completed, got {:?}; result_summary={:?} errors={:?} failure_message={:?}",
+                operation.state, operation.result_summary, operation.errors, failure_message
+            );
+        }
         assert!(parent.join("child").is_dir());
     }
 
