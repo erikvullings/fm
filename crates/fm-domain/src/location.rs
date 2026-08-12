@@ -28,11 +28,7 @@ const SEARCH_AUTHORITY: &str = "local";
 const RESERVED_SCHEMES: &[&str] = &[];
 
 /// Static scheme-to-provider mapping for data providers (excludes search).
-const SCHEME_MAP: [(&str, &str); 3] = [
-    ("file", "local"),
-    ("archive", "archive"),
-    ("sftp", "sftp"),
-];
+const SCHEME_MAP: [(&str, &str); 3] = [("file", "local"), ("archive", "archive"), ("sftp", "sftp")];
 
 /// A provider-neutral pointer to a location.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]

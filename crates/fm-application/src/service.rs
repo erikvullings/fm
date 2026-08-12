@@ -3198,7 +3198,9 @@ mod tests {
         fs::create_dir_all(&parent).expect("must create parent directory");
         let destination = fm_transport_dto::LocationDto {
             provider_id: "local".to_owned(),
-            uri: format!("file://{}", parent.display()),
+            uri: Location::from_native_path(&parent)
+                .expect("path must convert to a location")
+                .uri,
         };
         let parameters = serde_json::to_value(StartOperationRequestDto {
             operation_type: OperationKindDto::CreateDirectory,
