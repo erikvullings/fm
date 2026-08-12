@@ -70,7 +70,7 @@ if (process.argv.includes('--print-config')) {
   const result = spawnSync(
     'pnpm',
     ['exec', 'tauri', 'build', '--config', generatedConfig, ...extraArgs],
-    { cwd: tauriRoot, stdio: 'inherit' },
+    { cwd: tauriRoot, stdio: 'inherit', shell: process.platform === 'win32' },
   );
   if (result.error) throw result.error;
   process.exitCode = result.status ?? 1;

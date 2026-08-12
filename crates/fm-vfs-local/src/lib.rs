@@ -841,11 +841,11 @@ async fn summarize_path(path: &Path, location: &Location) -> Result<EntrySummary
     })
 }
 
-fn stable_entry_id(metadata: &std::fs::Metadata, _location: &Location) -> EntryId {
+fn stable_entry_id(_metadata: &std::fs::Metadata, _location: &Location) -> EntryId {
     #[cfg(unix)]
     let identity = {
         use std::os::unix::fs::MetadataExt;
-        format!("local:{}:{}", metadata.dev(), metadata.ino())
+        format!("local:{}:{}", _metadata.dev(), _metadata.ino())
     };
     #[cfg(windows)]
     let identity = match _location
@@ -926,7 +926,7 @@ fn windows_file_identity(path: &Path) -> Option<(u32, u64)> {
             std::ptr::null(),
             OPEN_EXISTING,
             FILE_FLAG_BACKUP_SEMANTICS,
-            0,
+            std::ptr::null_mut(),
         );
         if handle == INVALID_HANDLE_VALUE {
             return None;

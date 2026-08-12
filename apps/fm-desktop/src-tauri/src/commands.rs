@@ -94,8 +94,10 @@ pub(crate) enum NativeDragError {
     EmptySelection,
     #[error("cannot drag `{uri}` as a native file: {reason}")]
     InvalidLocation { uri: String, reason: String },
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
     #[error("failed to schedule native drag: {0}")]
     Schedule(String),
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
     #[error("failed to start native drag: {0}")]
     Start(String),
 }

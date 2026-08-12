@@ -26,7 +26,9 @@ pub(crate) fn build_platform_adapter() -> Arc<dyn PlatformAdapter> {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
     use super::build_platform_adapter;
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
     use fm_platform::PlatformCapabilities;
 
     #[cfg(any(target_os = "macos", target_os = "windows"))]
