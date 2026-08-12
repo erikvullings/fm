@@ -54,14 +54,16 @@ async fn wait_for_state(
     id: uuid::Uuid,
     expected: OperationStateDto,
 ) -> fm_transport_dto::OperationDto {
+    let mut last = None;
     for _ in 0..2000 {
         let operation = service.get_operation(id.into()).unwrap();
         if operation.state == expected {
             return operation;
         }
+        last = Some(operation);
         tokio::time::sleep(Duration::from_millis(10)).await;
     }
-    panic!("operation did not reach {expected:?}")
+    panic!("operation did not reach {expected:?}; last observed: {last:?}")
 }
 
 #[tokio::test]
