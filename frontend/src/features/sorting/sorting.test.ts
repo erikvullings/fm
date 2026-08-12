@@ -95,6 +95,17 @@ describe('entry sorting', () => {
     ).toEqual(['old', 'recent']);
   });
 
+  it('sorts equal modified timestamps deterministically by name in descending mode', () => {
+    const modifiedAt = '2026-11-02T08:00:00Z';
+    const entries = [entry('1.jpg', { modifiedAt }), entry('27.jpg', { modifiedAt })];
+
+    expect(
+      sortEntries(entries, [{ column: 'modified', direction: 'descending' }], false).map(
+        ({ name }) => name,
+      ),
+    ).toEqual(['27.jpg', '1.jpg']);
+  });
+
   it('accepts an empty one-element-capable sort model and returns a stable copy', () => {
     const entries = [entry('second'), entry('first')];
 

@@ -199,6 +199,21 @@ describe('selection reducer', () => {
       anchorEntryId: 'visible',
     });
   });
+
+  it('keeps an existing multi-selection when moving the cursor without Shift', () => {
+    const state: SelectionState = {
+      selectedEntryIds: ['a', 'b', 'c'],
+      cursorEntryId: 'c',
+      anchorEntryId: 'a',
+    };
+    expect(
+      reduceSelection(state, { type: 'moveCursor', offset: 1 }, ids('a', 'b', 'c', 'd')),
+    ).toEqual({
+      selectedEntryIds: ['a', 'b', 'c'],
+      cursorEntryId: 'd',
+      anchorEntryId: 'd',
+    });
+  });
 });
 
 function makeEntries(...specs: { id: string; locationUri?: string }[]): EntrySummary[] {

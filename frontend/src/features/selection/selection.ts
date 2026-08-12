@@ -43,6 +43,7 @@ export function reduceSelection(
   action: SelectionAction,
   orderedEntryIds: readonly EntryId[],
 ): SelectionState {
+  const visibleIds = new Set(orderedEntryIds);
   switch (action.type) {
     case 'moveCursor': {
       const index = clampedIndex(
@@ -50,15 +51,37 @@ export function reduceSelection(
         orderedEntryIds,
       );
       const entryId = index === undefined ? undefined : orderedEntryIds[index];
-      return entryId === undefined
-        ? state
-        : { ...state, selectedEntryIds: [entryId], cursorEntryId: entryId, anchorEntryId: entryId };
+      if (entryId === undefined) return state;
+      // Keep an existing multi-selection when navigating without Shift so users can skip
+      // entries and continue extending selection later.
+      if (
+        state.selectedEntryIds.length > 1 &&
+        state.selectedEntryIds.every((selectedId) => visibleIds.has(selectedId))
+      ) {
+        return { ...state, cursorEntryId: entryId, anchorEntryId: entryId };
+      }
+      return {
+        ...state,
+        selectedEntryIds: [entryId],
+        cursorEntryId: entryId,
+        anchorEntryId: entryId,
+      };
     }
     case 'moveCursorTo': {
       const entryId = action.edge === 'first' ? orderedEntryIds[0] : orderedEntryIds.at(-1);
-      return entryId === undefined
-        ? state
-        : { ...state, selectedEntryIds: [entryId], cursorEntryId: entryId, anchorEntryId: entryId };
+      if (entryId === undefined) return state;
+      if (
+        state.selectedEntryIds.length > 1 &&
+        state.selectedEntryIds.every((selectedId) => visibleIds.has(selectedId))
+      ) {
+        return { ...state, cursorEntryId: entryId, anchorEntryId: entryId };
+      }
+      return {
+        ...state,
+        selectedEntryIds: [entryId],
+        cursorEntryId: entryId,
+        anchorEntryId: entryId,
+      };
     }
     case 'setCursor':
       return { ...state, cursorEntryId: action.entryId };

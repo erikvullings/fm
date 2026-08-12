@@ -50,8 +50,12 @@ function compareByColumn(left: EntrySummary, right: EntrySummary, column: SortCo
       return compareRaw(left.extension, right.extension);
     case 'size':
       return compareRaw(left.size, right.size);
-    case 'modified':
-      return compareRaw(left.modifiedAt, right.modifiedAt);
+    case 'modified': {
+      const comparison = compareRaw(left.modifiedAt, right.modifiedAt);
+      // Archive entries often share the same second-level timestamp; tie-break by name to keep
+      // descending/ascending modified sort deterministic and intuitive.
+      return comparison !== 0 ? comparison : compareNames(left.name, right.name);
+    }
   }
 }
 
