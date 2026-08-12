@@ -5,7 +5,9 @@ use std::sync::{Arc, Mutex as StdMutex};
 use std::time::Duration;
 
 use russh::client::{self, AuthResult};
+#[cfg(unix)]
 use russh::keys::agent::AgentIdentity;
+#[cfg(unix)]
 use russh::keys::agent::client::{AgentClient, AgentStream};
 use russh::keys::{PrivateKeyWithHashAlg, PublicKey};
 use russh_sftp::client::SftpSession;
@@ -312,6 +314,7 @@ async fn authenticate(
                 .await
                 .map_err(|error| SshError::Session(error.to_string()))?
         }
+        #[cfg(unix)]
         SshCredential::Agent => {
             let auth_sock = std::env::var("SSH_AUTH_SOCK").unwrap_or_else(|_| "<unset>".to_owned());
             tracing::info!(ssh_auth_sock = %auth_sock, "connecting to the local SSH agent");
@@ -322,6 +325,12 @@ async fn authenticate(
                 ))
             })?;
             return authenticate_with_agent(handle, username, &mut agent).await;
+        }
+        #[cfg(not(unix))]
+        SshCredential::Agent => {
+            return Err(SshError::Agent(
+                "SSH agent authentication is not yet supported on this platform".into(),
+            ));
         }
     };
 
@@ -342,6 +351,7 @@ async fn authenticate(
 /// Generic over the transport so tests can exercise this against an
 /// in-process agent server via [`AgentClient::connect_uds`] rather than the
 /// real environment's `SSH_AUTH_SOCK`.
+#[cfg(unix)]
 async fn authenticate_with_agent<S: AgentStream + Send + Unpin>(
     handle: &mut client::Handle<ClientHandler>,
     username: &str,
@@ -436,8 +446,11 @@ mod tests {
 
     use std::sync::Arc;
 
+    #[cfg(unix)]
     use russh::keys::agent::client::AgentClient;
+    #[cfg(unix)]
     use russh::keys::agent::server;
+    #[cfg(unix)]
     use tokio::net::{UnixListener, UnixStream};
     use zeroize::Zeroizing;
 
@@ -451,6 +464,7 @@ mod tests {
     /// pre-loaded with `identity`, and returns a client already connected to
     /// it. The server task is leaked for the test's lifetime (process exit
     /// cleans up the socket file along with the temp directory).
+    #[cfg(unix)]
     async fn agent_with_identity(identity: &russh::keys::PrivateKey) -> AgentClient<UnixStream> {
         let socket_dir = tempfile::tempdir().expect("creating a temp dir for the agent socket");
         let socket_path = socket_dir.path().join("agent.sock");
@@ -498,6 +512,7 @@ mod tests {
             .handle
     }
 
+    #[cfg(unix)]
     #[tokio::test]
     async fn agent_authentication_succeeds_with_the_fixture_s_authorized_key() {
         let fixture = SshFixture::start().await;
@@ -509,6 +524,7 @@ mod tests {
             .expect("the agent's authorized identity must authenticate");
     }
 
+    #[cfg(unix)]
     #[tokio::test]
     async fn agent_authentication_fails_when_the_agent_only_holds_an_unauthorized_key() {
         let fixture = SshFixture::start().await;
@@ -525,6 +541,7 @@ mod tests {
         assert_eq!(error, SshError::AuthenticationFailed);
     }
 
+    #[cfg(unix)]
     #[tokio::test]
     async fn agent_authentication_reports_a_typed_error_when_the_agent_has_no_identities() {
         let fixture = SshFixture::start().await;

@@ -186,7 +186,14 @@ mod tests {
         assert_eq!(bus.subscriber_count(), 3);
 
         registry.unsubscribe_window("main");
-        tokio::time::sleep(std::time::Duration::from_millis(1)).await;
+        // Unsubscribing aborts the subscription tasks asynchronously, so poll rather than
+        // sleep a fixed duration - the same flakiness the comment above describes.
+        for _ in 0..100 {
+            if bus.subscriber_count() == 1 {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
 
         assert_eq!(registry.len(), 1);
         assert_eq!(bus.subscriber_count(), 1);

@@ -330,7 +330,6 @@ fn run_search(
         matches_found,
         current_entry.clone(),
     );
-    store.mark_complete(search_id);
 
     if let Some(op_id) = ctx.operation_id {
         let state = if cancellation.is_cancelled() {
@@ -376,6 +375,12 @@ fn flush(
         let summary_batch: Vec<EntrySummary> = batch.into_iter().map(|(e, _)| e).collect();
         ctx.store
             .append(ctx.search_id, summary_batch, warnings_count);
+        // Mark the store complete before publishing, so a subscriber that reacts to
+        // `is_complete: true` by immediately paging the store never observes stale
+        // `has_more: true` from a completion race.
+        if is_complete {
+            ctx.store.mark_complete(ctx.search_id);
+        }
 
         ctx.events.publish(
             ctx.audience.clone(),
