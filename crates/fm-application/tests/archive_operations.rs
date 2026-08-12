@@ -190,23 +190,11 @@ async fn selected_files_can_be_packaged_as_zip_or_7z_operations() {
             Some(Location::from_native_path(&archive).expect("archive location")),
         )
         .await;
-        if operation.state != OperationStateDto::Completed {
-            let mut sub = service
-                .event_bus()
-                .subscribe_all_workspaces(fm_events::SessionId::new("diagnostic"), Some(0));
-            let mut failure_message = None;
-            while let Ok(Ok(fm_events::SubscriptionEvent::Event(envelope))) =
-                tokio::time::timeout(Duration::from_millis(200), sub.recv()).await
-            {
-                if let fm_events::BackendEventPayload::OperationFailed { message, .. } =
-                    &envelope.payload
-                {
-                    failure_message = Some(message.clone());
-                    break;
-                }
-            }
-            panic!("{operation:?}; failure_message={failure_message:?}");
-        }
+        assert_eq!(
+            operation.state,
+            OperationStateDto::Completed,
+            "{operation:?}"
+        );
         let provider = fm_archive::ArchiveFileSystemProvider::new();
         let entries = provider
             .list(

@@ -190,12 +190,12 @@ pub fn create_7z_archive(
     if cancellation.is_cancelled() {
         return Err(VfsError::Cancelled);
     }
-    writer.finish().map_err(|error| VfsError::Io {
+    let file = writer.finish().map_err(|error| VfsError::Io {
         message: error.to_string(),
     })?;
-    std::fs::File::open(&temporary)
-        .and_then(|file| file.sync_all())
+    file.sync_all()
         .map_err(|error| io_error(error, &temporary))?;
+    drop(file);
     std::fs::rename(&temporary, destination).map_err(|error| io_error(error, destination))?;
     guard.disarm();
     Ok(())
