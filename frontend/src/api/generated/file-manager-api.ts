@@ -12,6 +12,7 @@ import type {
   CreateConnectionRequestDto,
   CreateWorkspaceRequestDto,
   DeleteWorkspaceParams,
+  DiagnosticsDto,
   DirectorySnapshotDto,
   EntryMetadataDto,
   EntryMetadataRequest,
@@ -48,7 +49,7 @@ import type {
   WorkspaceSummaryDto
 } from './models';
 
-import { fetchMutator } from '../fetch-mutator';
+import { fetchMutator } from '../fetch-mutator.ts';
 
 export type listActionsResponse200 = {
   data: ActionDescriptorDto[]
@@ -624,6 +625,44 @@ export const testConnection = async (connectionId: string, options?: Parameters<
   {
     ...options,
     method: 'POST'
+
+
+  }
+);}
+
+
+
+export type getDiagnosticsResponse200 = {
+  data: DiagnosticsDto
+  status: 200
+}
+
+export type getDiagnosticsResponseSuccess = (getDiagnosticsResponse200) & {
+  headers: Headers;
+};
+;
+
+export type getDiagnosticsResponse = (getDiagnosticsResponseSuccess)
+
+export const getGetDiagnosticsUrl = () => {
+
+
+
+
+  return `/api/v1/diagnostics`
+}
+
+/**
+ * Includes version info, platform detection, runtime capabilities, and recent errors.
+ * All paths and sensitive fields are redacted for safe sharing in bug reports.
+ * @summary Provides comprehensive diagnostics information for troubleshooting and bug reports.
+ */
+export const getDiagnostics = async ( options?: Parameters<typeof fetchMutator>[1]): Promise<getDiagnosticsResponse> => {
+
+  return fetchMutator<getDiagnosticsResponse>(getGetDiagnosticsUrl(),
+  {
+    ...options,
+    method: 'GET'
 
 
   }

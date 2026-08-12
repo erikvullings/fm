@@ -719,6 +719,45 @@
           }
         ]
       },
+      "ConnectionStateDto": {
+        "description": "State of the SSE/event channel connection.",
+        "properties": {
+          "connected": {
+            "description": "Whether the connection is currently active",
+            "type": "boolean"
+          },
+          "eventsReceived": {
+            "description": "Number of events received since last connection",
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "lastEventReceived": {
+            "description": "Last timestamp an event was received (ISO 8601 format)",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "statusMessage": {
+            "description": "Human-readable status message",
+            "type": "string"
+          },
+          "uptimeSeconds": {
+            "description": "Connection uptime in seconds",
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "connected",
+          "uptimeSeconds",
+          "eventsReceived",
+          "statusMessage"
+        ],
+        "type": "object"
+      },
       "ConnectionStatusDto": {
         "description": "A connection's runtime state (mirrors `fm_connections::ConnectionStatus`).",
         "enum": [
@@ -799,6 +838,97 @@
           "single"
         ],
         "type": "string"
+      },
+      "DiagnosticErrorDto": {
+        "description": "A single error entry from the recent errors buffer.",
+        "properties": {
+          "code": {
+            "description": "Application code (e.g., \"INVALID_PATH\", \"OPERATION_TIMEOUT\")",
+            "type": "string"
+          },
+          "context": {
+            "description": "Optional context (e.g., operation ID, plugin ID)",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "message": {
+            "description": "Error message (redacted of sensitive data)",
+            "type": "string"
+          },
+          "timestamp": {
+            "description": "ISO 8601 timestamp when the error occurred",
+            "type": "string"
+          }
+        },
+        "required": [
+          "timestamp",
+          "message",
+          "code"
+        ],
+        "type": "object"
+      },
+      "DiagnosticsDto": {
+        "description": "Diagnostics information for troubleshooting and bug reports (spec §30).",
+        "properties": {
+          "backendVersion": {
+            "description": "Backend version from Cargo.toml",
+            "type": "string"
+          },
+          "connectionState": {
+            "$ref": "#/components/schemas/ConnectionStateDto",
+            "description": "Current SSE/channel connection state"
+          },
+          "frontendVersion": {
+            "description": "Frontend version from package.json",
+            "type": "string"
+          },
+          "loadedPlugins": {
+            "description": "Loaded plugins and their status",
+            "items": {
+              "$ref": "#/components/schemas/PluginStatusDto"
+            },
+            "type": "array"
+          },
+          "operationQueueStatus": {
+            "$ref": "#/components/schemas/OperationQueueStatusDto",
+            "description": "Operation queue status"
+          },
+          "platform": {
+            "description": "Platform the backend is running on",
+            "type": "string"
+          },
+          "recentErrors": {
+            "description": "Recent non-sensitive errors (bounded buffer, most recent first)",
+            "items": {
+              "$ref": "#/components/schemas/DiagnosticErrorDto"
+            },
+            "type": "array"
+          },
+          "runtimeCapabilities": {
+            "$ref": "#/components/schemas/RuntimeCapabilitiesDto",
+            "description": "Runtime capabilities indicating feature availability"
+          },
+          "tauriVersion": {
+            "description": "Tauri version if running in desktop mode",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "frontendVersion",
+          "backendVersion",
+          "platform",
+          "runtimeCapabilities",
+          "connectionState",
+          "loadedPlugins",
+          "recentErrors",
+          "operationQueueStatus"
+        ],
+        "type": "object"
       },
       "DirectorySnapshotDto": {
         "description": "A batch of directory entries for one pane, at a specific revision.",
@@ -2078,6 +2208,49 @@
         ],
         "type": "object"
       },
+      "OperationQueueStatusDto": {
+        "description": "Operation queue status for diagnostics.",
+        "properties": {
+          "completedCount": {
+            "description": "Total completed operations since app start",
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "pausedCount": {
+            "description": "Number of paused operations",
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "queuedCount": {
+            "description": "Number of queued operations waiting to run",
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "runningCount": {
+            "description": "Number of currently running operations",
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "totalPendingSize": {
+            "description": "Current total size of all pending operations (approximate bytes)",
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "queuedCount",
+          "runningCount",
+          "pausedCount",
+          "completedCount",
+          "totalPendingSize"
+        ],
+        "type": "object"
+      },
       "OperationStateDto": {
         "description": "Observable operation lifecycle state.",
         "enum": [
@@ -2444,6 +2617,41 @@
           "processSpawn",
           "notifications",
           "settingsStorage"
+        ],
+        "type": "object"
+      },
+      "PluginStatusDto": {
+        "description": "Plugin status in the diagnostics view.",
+        "properties": {
+          "enabled": {
+            "description": "Whether the plugin is currently enabled",
+            "type": "boolean"
+          },
+          "errorCount": {
+            "description": "Number of errors in this plugin's diagnostic log (from fm-plugin-runtime)",
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "name": {
+            "description": "Plugin display name",
+            "type": "string"
+          },
+          "pluginId": {
+            "description": "Plugin identifier",
+            "type": "string"
+          },
+          "version": {
+            "description": "Plugin version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "pluginId",
+          "name",
+          "enabled",
+          "version",
+          "errorCount"
         ],
         "type": "object"
       },
@@ -4551,6 +4759,25 @@
           }
         },
         "summary": "Checks whether a connection's configuration and credential are currently\nusable, without changing its tracked status. See\n`fm_connections::ConnectionService`'s documentation for the honest scope\nof this operation before task 0104/0106 register a real protocol dialer."
+      }
+    },
+    "/api/v1/diagnostics": {
+      "get": {
+        "description": "Includes version info, platform detection, runtime capabilities, and recent errors.\nAll paths and sensitive fields are redacted for safe sharing in bug reports.",
+        "operationId": "getDiagnostics",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiagnosticsDto"
+                }
+              }
+            },
+            "description": "Diagnostics information"
+          }
+        },
+        "summary": "Provides comprehensive diagnostics information for troubleshooting and bug reports."
       }
     },
     "/api/v1/directories/list": {
