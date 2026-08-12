@@ -467,6 +467,46 @@ async fn zip_archive_is_navigable_as_directories_without_extracting_it() {
     assert_eq!(docs_page.entries[0].name, "report.txt");
     assert_eq!(docs_page.entries[0].kind, EntryKind::File);
     assert_eq!(docs_page.entries[0].size, Some(16));
+    assert!(docs_page.entries[0].modified_at.is_some());
+}
+
+#[tokio::test]
+async fn zip_inner_paths_with_spaces_are_navigable() {
+    let root = tempdir().expect("temporary root");
+    let archive_path = root.path().join("sample.zip");
+    let file = std::fs::File::create(&archive_path).expect("create fixture");
+    let mut writer = ZipWriter::new(file);
+    writer
+        .start_file("XIII Mysterie/cover.jpg", SimpleFileOptions::default())
+        .expect("start fixture entry");
+    writer.write_all(b"cover").expect("write fixture");
+    writer.finish().expect("finish fixture");
+
+    let provider = ArchiveFileSystemProvider::new();
+    let archive_root = zip_location(&archive_path);
+    let root_page = provider
+        .list(
+            &archive_root,
+            ListOptions::default(),
+            CancellationToken::new(),
+        )
+        .await
+        .expect("list archive root");
+    assert_eq!(root_page.entries.len(), 1);
+    assert_eq!(root_page.entries[0].name, "XIII Mysterie");
+    assert_eq!(root_page.entries[0].kind, EntryKind::Directory);
+
+    let nested_page = provider
+        .list(
+            &archive_root.join("XIII Mysterie").expect("safe child"),
+            ListOptions::default(),
+            CancellationToken::new(),
+        )
+        .await
+        .expect("list space-containing virtual directory");
+    assert_eq!(nested_page.entries.len(), 1);
+    assert_eq!(nested_page.entries[0].name, "cover.jpg");
+    assert_eq!(nested_page.entries[0].kind, EntryKind::File);
 }
 
 #[tokio::test]

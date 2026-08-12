@@ -9,6 +9,7 @@ license.workspace = true
 [dependencies]
 async-trait.workspace = true
 bzip2.workspace = true
+chrono.workspace = true
 flate2.workspace = true
 fm-domain.workspace = true
 fm-vfs.workspace = true

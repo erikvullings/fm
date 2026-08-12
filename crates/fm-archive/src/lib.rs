@@ -13,6 +13,7 @@ use std::{
 };
 
 use async_trait::async_trait;
+use chrono::{DateTime, TimeZone, Utc};
 use fm_domain::{EntryId, EntryKind, EntryMetadata, EntrySummary, Location, ProviderId};
 use fm_vfs::{
     CopyCommitOptions, DirectoryPage, EntryRef, FileSystemProvider, ListOptions,
@@ -854,12 +855,73 @@ impl ParsedArchiveLocation {
         let local =
             Location::parse(&format!("{FILE_PREFIX}{outer}")).map_err(|_| invalid(location))?;
         let archive_path = local.to_native_path().map_err(|_| invalid(location))?;
-        let inner = inner.strip_prefix('/').unwrap_or(inner).to_owned();
+        let inner = decode_archive_inner_path(inner.strip_prefix('/').unwrap_or(inner))
+            .map_err(|_| invalid(location))?;
         Ok(Self {
             archive_path,
             inner,
         })
     }
+}
+
+fn decode_archive_inner_path(inner: &str) -> Result<String, ()> {
+    if inner.is_empty() {
+        return Ok(String::new());
+    }
+    inner
+        .split('/')
+        .map(percent_decode_segment)
+        .collect::<Result<Vec<_>, _>>()
+        .map(|segments| segments.join("/"))
+}
+
+fn percent_decode_segment(segment: &str) -> Result<String, ()> {
+    let bytes = segment.as_bytes();
+    let mut decoded = Vec::with_capacity(bytes.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] == b'%' {
+            if index + 2 >= bytes.len() {
+                return Err(());
+            }
+            let high = hex_nibble(bytes[index + 1]).ok_or(())?;
+            let low = hex_nibble(bytes[index + 2]).ok_or(())?;
+            decoded.push((high << 4) | low);
+            index += 3;
+        } else {
+            decoded.push(bytes[index]);
+            index += 1;
+        }
+    }
+    String::from_utf8(decoded).map_err(|_| ())
+}
+
+fn hex_nibble(value: u8) -> Option<u8> {
+    match value {
+        b'0'..=b'9' => Some(value - b'0'),
+        b'a'..=b'f' => Some(value - b'a' + 10),
+        b'A'..=b'F' => Some(value - b'A' + 10),
+        _ => None,
+    }
+}
+
+fn zip_datetime_to_utc(timestamp: Option<zip::DateTime>) -> Option<DateTime<Utc>> {
+    let timestamp = timestamp?;
+    Utc.with_ymd_and_hms(
+        i32::from(timestamp.year()),
+        u32::from(timestamp.month()),
+        u32::from(timestamp.day()),
+        u32::from(timestamp.hour()),
+        u32::from(timestamp.minute()),
+        u32::from(timestamp.second()),
+    )
+    .single()
+}
+
+fn unix_seconds_to_utc(seconds: u64) -> Option<DateTime<Utc>> {
+    i64::try_from(seconds)
+        .ok()
+        .and_then(|value| DateTime::from_timestamp(value, 0))
 }
 
 fn list_zip(archive_path: &Path, requested: &str) -> Result<Vec<RawEntry>, VfsError> {
@@ -895,6 +957,9 @@ fn list_zip(archive_path: &Path, requested: &str) -> Result<Vec<RawEntry>, VfsEr
                 EntryKind::File
             },
             size: (!is_directory).then_some(item.size()),
+            modified_at: (!is_directory)
+                .then(|| zip_datetime_to_utc(item.last_modified()))
+                .flatten(),
         };
         match children.get(name) {
             Some(existing) if existing.kind != candidate.kind => {
@@ -958,6 +1023,7 @@ fn list_rar(
                 EntryKind::File
             },
             size: (!is_directory).then_some(member.meta.unpacked_size),
+            modified_at: None,
         };
         match children.get(child_name) {
             Some(existing) if existing.kind != candidate.kind => {
@@ -1096,6 +1162,7 @@ fn list_gzip(archive_path: &Path, requested: &str) -> Result<Vec<RawEntry>, VfsE
         name: gzip_entry_name(archive_path)?,
         kind: EntryKind::File,
         size: Some(gzip_uncompressed_size(archive_path)?),
+        modified_at: None,
     }])
 }
 
@@ -1135,6 +1202,7 @@ fn list_tar(
                     .header()
                     .size()
                     .map_err(|error| io_error(error, archive_path))?,
+                entry.header().mtime().ok().and_then(unix_seconds_to_utc),
             ))
         })
         .collect::<Result<Vec<_>, VfsError>>()?;
@@ -1156,14 +1224,14 @@ fn list_seven_zip(
         .iter()
         .map(|entry| {
             let name = safe_stored_path(&entry.name, entry.is_directory)?;
-            Ok((name, entry.is_directory, entry.size))
+            Ok((name, entry.is_directory, entry.size, None))
         })
         .collect::<Result<Vec<_>, VfsError>>()?;
     collect_children(entries, requested)
 }
 
 fn collect_children(
-    entries: impl IntoIterator<Item = (String, bool, u64)>,
+    entries: impl IntoIterator<Item = (String, bool, u64, Option<DateTime<Utc>>)>,
     requested: &str,
 ) -> Result<Vec<RawEntry>, VfsError> {
     let prefix = if requested.is_empty() {
@@ -1172,7 +1240,7 @@ fn collect_children(
         format!("{requested}/")
     };
     let mut children: HashMap<String, RawEntry> = HashMap::new();
-    for (path, stored_directory, size) in entries {
+    for (path, stored_directory, size, modified_at) in entries {
         let Some(remainder) = path.strip_prefix(&prefix) else {
             continue;
         };
@@ -1193,6 +1261,7 @@ fn collect_children(
                 EntryKind::File
             },
             size: (!is_directory).then_some(size),
+            modified_at: (!is_directory).then_some(modified_at).flatten(),
         };
         match children.get(name) {
             Some(existing) if existing.kind != candidate.kind => {
@@ -1495,6 +1564,7 @@ struct RawEntry {
     name: String,
     kind: EntryKind,
     size: Option<u64>,
+    modified_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Clone, Copy)]
@@ -1672,7 +1742,7 @@ fn paginate(
                 name: entry.name,
                 kind: entry.kind,
                 size: entry.size,
-                modified_at: None,
+                modified_at: entry.modified_at,
                 created_at: None,
                 hidden: false,
                 read_only: !writable,
