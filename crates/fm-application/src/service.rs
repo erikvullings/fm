@@ -21,8 +21,8 @@ use fm_operations::{
     ConflictResolution, Operation, OperationSnapshotObserver, Scheduler, SchedulerError,
 };
 use fm_platform::{FallbackPlatformAdapter, PlatformAdapter, PlatformCapabilities};
-use fm_search::{SearchEngine, SearchFileSystemProvider, SearchResultsStore};
 use fm_plugin_runtime::{PluginDiscovery, PluginRuntime};
+use fm_search::{SearchEngine, SearchFileSystemProvider, SearchResultsStore};
 use fm_settings::{
     ConflictPolicy, DateFormat, DefaultPaneLayout, Settings, SettingsStore, SizeFormat, Theme,
 };
@@ -43,14 +43,14 @@ use tokio::io::AsyncReadExt;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
+use crate::DirectoryService;
 use crate::action::ActionRegistry;
 use crate::connection_facade::ConnectionFacade;
 use crate::error::ApplicationError;
-use crate::file_editor::{read_stream_error, FileEditorService};
+use crate::file_editor::{FileEditorService, read_stream_error};
 use crate::operation_planner::OperationPlanner;
 use crate::plugin_manager::PluginManager;
 use crate::remote_terminal::RemoteTerminalService;
-use crate::DirectoryService;
 use crate::workspace::{JsonFileWorkspaceRepository, WorkspaceService, WorkspaceSummary};
 
 /// Central application service that every host (Axum, Tauri, CLI) calls into.
@@ -82,7 +82,7 @@ pub struct FileManagerService {
     operation_history: Arc<OperationHistory>,
     planner: OperationPlanner,
     operation_idempotency: Mutex<HashMap<String, OperationId>>,
-    force_cross_volume_moves: AtomicBool,
+    force_cross_volume_moves: Arc<AtomicBool>,
     actions: ActionRegistry,
     search: SearchEngine,
 }
@@ -444,12 +444,13 @@ impl FileManagerService {
         let search = SearchEngine::new(search_store, events.clone());
         let audit_log_path = settings_directory.join("audit.jsonl");
         let settings_mutex = Arc::new(Mutex::new(loaded.settings));
+        let force_cross_volume_moves = Arc::new(AtomicBool::new(false));
         let planner = OperationPlanner::new(
             providers.clone(),
             Arc::clone(&platform),
             Arc::clone(&settings_mutex),
             audit_log_path.clone(),
-            false,
+            Arc::clone(&force_cross_volume_moves),
         );
         Self {
             runtime,
@@ -478,10 +479,9 @@ impl FileManagerService {
             settings_store: settings_store.clone(),
             settings: settings_mutex.clone(),
             plugin_manager: PluginManager::new(
-                PluginDiscovery::new(settings_directory.join("plugins"))
-                    .with_bundled_directory(
-                        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../plugins"),
-                    ),
+                PluginDiscovery::new(settings_directory.join("plugins")).with_bundled_directory(
+                    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../plugins"),
+                ),
                 PluginRuntime::default(),
                 settings_mutex,
                 settings_store.clone(),
@@ -492,7 +492,7 @@ impl FileManagerService {
             operation_history,
             planner,
             operation_idempotency: Mutex::new(HashMap::new()),
-            force_cross_volume_moves: AtomicBool::new(false),
+            force_cross_volume_moves,
             actions: ActionRegistry::with_core_actions(platform_capabilities),
             search,
         }
@@ -689,7 +689,8 @@ impl FileManagerService {
         plugin_id: &str,
         asset_path: &str,
     ) -> Result<String, ApplicationError> {
-        self.plugin_manager.plugin_icon_theme_asset(plugin_id, asset_path)
+        self.plugin_manager
+            .plugin_icon_theme_asset(plugin_id, asset_path)
     }
 
     /// Returns the bounded diagnostic log retained for one plugin (spec §19.4).

@@ -7,8 +7,8 @@
 use std::sync::Arc;
 
 use fm_connections::{
-    ConnectionConfiguration, ConnectionDraft, ConnectionId, ConnectionProfile,
-    ConnectionService, HostKeyPolicy, JsonFileConnectionRepository, SshConnectionConfiguration,
+    ConnectionConfiguration, ConnectionDraft, ConnectionId, ConnectionProfile, ConnectionService,
+    HostKeyPolicy, JsonFileConnectionRepository, SshConnectionConfiguration,
 };
 use fm_ssh::{HostKeyVerification, SshConnectTarget};
 use fm_transport_dto::{
@@ -36,9 +36,7 @@ impl ConnectionFacade {
     }
 
     /// Lists every stored connection profile with its current runtime status.
-    pub(crate) async fn list_connections(
-        &self,
-    ) -> Result<Vec<ConnectionDto>, ApplicationError> {
+    pub(crate) async fn list_connections(&self) -> Result<Vec<ConnectionDto>, ApplicationError> {
         let profiles = self.connections.list().await?;
         let mut dtos = Vec::with_capacity(profiles.len());
         for profile in profiles {
@@ -50,10 +48,7 @@ impl ConnectionFacade {
     }
 
     /// Loads a single connection profile with its current runtime status.
-    pub(crate) async fn get_connection(
-        &self,
-        id: Uuid,
-    ) -> Result<ConnectionDto, ApplicationError> {
+    pub(crate) async fn get_connection(&self, id: Uuid) -> Result<ConnectionDto, ApplicationError> {
         let connection_id: ConnectionId = id.into();
         let profile = self.connections.get(connection_id).await?;
         let status = self.connections.status(connection_id).await?;
@@ -199,7 +194,10 @@ fn connection_draft_from_create(request: &CreateConnectionRequestDto) -> Connect
         configuration: connection_dto::connection_configuration_from_dto(
             request.configuration.clone(),
         ),
-        secret: request.secret.clone().map(connection_dto::secret_material_from_dto),
+        secret: request
+            .secret
+            .clone()
+            .map(connection_dto::secret_material_from_dto),
     }
 }
 
@@ -210,7 +208,10 @@ fn connection_draft_from_update(request: &UpdateConnectionRequestDto) -> Connect
         configuration: connection_dto::connection_configuration_from_dto(
             request.configuration.clone(),
         ),
-        secret: request.secret.clone().map(connection_dto::secret_material_from_dto),
+        secret: request
+            .secret
+            .clone()
+            .map(connection_dto::secret_material_from_dto),
     }
 }
 
@@ -244,9 +245,7 @@ fn host_key_verification_fingerprint(verification: &HostKeyVerification) -> Stri
 
 fn host_key_probe_dto(verification: HostKeyVerification) -> HostKeyProbeDto {
     match verification {
-        HostKeyVerification::Trusted { fingerprint } => {
-            HostKeyProbeDto::Trusted { fingerprint }
-        }
+        HostKeyVerification::Trusted { fingerprint } => HostKeyProbeDto::Trusted { fingerprint },
         HostKeyVerification::Unverified { fingerprint } => {
             HostKeyProbeDto::Unverified { fingerprint }
         }

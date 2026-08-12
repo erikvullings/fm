@@ -37,7 +37,7 @@ pub(crate) struct OperationPlanner {
     platform: Arc<dyn PlatformAdapter>,
     settings: Arc<Mutex<Settings>>,
     audit_log_path: PathBuf,
-    force_cross_volume_moves: bool,
+    force_cross_volume_moves: Arc<AtomicBool>,
 }
 
 impl OperationPlanner {
@@ -46,7 +46,7 @@ impl OperationPlanner {
         platform: Arc<dyn PlatformAdapter>,
         settings: Arc<Mutex<Settings>>,
         audit_log_path: PathBuf,
-        force_cross_volume_moves: bool,
+        force_cross_volume_moves: Arc<AtomicBool>,
     ) -> Self {
         Self {
             providers,
@@ -70,36 +70,35 @@ impl OperationPlanner {
                         "createArchive requires at least one source".into(),
                     ));
                 }
-                let destination: Location =
-                    destination.clone().ok_or_else(|| {
-                        ApplicationError::InvalidRequest(
-                            "createArchive requires an archive destination".into(),
-                        )
-                    })?;
+                let destination: Location = destination.clone().ok_or_else(|| {
+                    ApplicationError::InvalidRequest(
+                        "createArchive requires an archive destination".into(),
+                    )
+                })?;
                 let destination_path = destination
                     .to_native_path()
                     .map_err(|error| ApplicationError::InvalidRequest(error.to_string()))?;
                 let format =
                     ArchiveCreationFormat::from_request(&destination_path, request.archive_format)?;
                 let compression_level = match format {
-                        ArchiveCreationFormat::Zip => {
-                            let level = request.archive_compression_level.unwrap_or(6);
-                            if !(0..=9).contains(&level) {
-                                return Err(ApplicationError::InvalidRequest(
-                                    "archive compression level must be between 0 and 9".into(),
-                                ));
-                            }
-                            level
-                        }
-                        ArchiveCreationFormat::SevenZip
-                            if request.archive_compression_level.is_some() =>
-                        {
+                    ArchiveCreationFormat::Zip => {
+                        let level = request.archive_compression_level.unwrap_or(6);
+                        if !(0..=9).contains(&level) {
                             return Err(ApplicationError::InvalidRequest(
-                                "7z compression level is not supported by this backend".into(),
+                                "archive compression level must be between 0 and 9".into(),
                             ));
                         }
-                        ArchiveCreationFormat::SevenZip => 6,
-                    };
+                        level
+                    }
+                    ArchiveCreationFormat::SevenZip
+                        if request.archive_compression_level.is_some() =>
+                    {
+                        return Err(ApplicationError::InvalidRequest(
+                            "7z compression level is not supported by this backend".into(),
+                        ));
+                    }
+                    ArchiveCreationFormat::SevenZip => 6,
+                };
                 let sources = request
                     .sources
                     .iter()
@@ -302,7 +301,7 @@ impl OperationPlanner {
                         destination_directory: destination_directory.clone(),
                         copy,
                         fallback: Mutex::new(false),
-                        force_fallback: self.force_cross_volume_moves,
+                        force_fallback: self.force_cross_volume_moves.load(Ordering::Relaxed),
                     });
                 }
                 Arc::new(MoveGroupExecutor {
@@ -1606,11 +1605,7 @@ impl CopyExecutor {
                 .await?;
             let mut writer = self
                 .destination_provider
-                .open_write(
-                    &temporary,
-                    WriteOptions::default(),
-                    cancellation.clone(),
-                )
+                .open_write(&temporary, WriteOptions::default(), cancellation.clone())
                 .await?;
             let mut buffer = vec![0_u8; 128 * 1024];
             loop {
@@ -1900,7 +1895,6 @@ fn copy_stream_error(error: std::io::Error) -> ExecutionError {
 /*  Tests                                                                     */
 /* -------------------------------------------------------------------------- */
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1922,7 +1916,7 @@ mod tests {
             platform,
             settings,
             PathBuf::from("/tmp/audit.jsonl"),
-            false,
+            Arc::new(AtomicBool::new(false)),
         );
         (planner, providers)
     }
@@ -1990,11 +1984,7 @@ mod tests {
             let mut req = request.clone();
             req.operation_type = kind;
             let result = planner.plan(kind, &req);
-            assert!(
-                result.is_err(),
-                "{:?} should reject empty sources",
-                kind
-            );
+            assert!(result.is_err(), "{:?} should reject empty sources", kind);
         }
     }
 
