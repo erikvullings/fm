@@ -318,6 +318,7 @@ describe('HttpFileManagerClient', () => {
           progress: { completedItems: 0, completedBytes: 0 },
           conflictPolicy: 'ask',
           createdAt: '2026-07-31T12:00:00Z',
+          errors: [],
         },
       });
       const client = new HttpFileManagerClient();

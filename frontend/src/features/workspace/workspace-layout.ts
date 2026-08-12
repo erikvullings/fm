@@ -414,9 +414,9 @@ export const WorkspaceLayoutView: FactoryComponent<WorkspaceLayoutViewAttrs> = (
         ),
         ...(tab.location.uri.startsWith('search://')
           ? (() => {
-            const searchQuery = attrs.searchQueryForLocationUri?.(tab.location.uri);
-            return searchQuery === undefined ? {} : { searchQuery };
-          })()
+              const searchQuery = attrs.searchQueryForLocationUri?.(tab.location.uri);
+              return searchQuery === undefined ? {} : { searchQuery };
+            })()
           : {}),
         tabs: resolvedTabOrder(pane).map((tabId) => {
           const paneTab = pane.tabsById[tabId];

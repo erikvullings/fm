@@ -201,9 +201,7 @@ describe('selection reducer', () => {
   });
 });
 
-function makeEntries(
-  ...specs: { id: string; locationUri?: string }[]
-): EntrySummary[] {
+function makeEntries(...specs: { id: string; locationUri?: string }[]): EntrySummary[] {
   return specs.map((s) => ({
     id: s.id as EntryId,
     location: s.locationUri
@@ -272,10 +270,7 @@ describe('getSelectedEntryLocations', () => {
       { id: 'c', locationUri: '/dir/c' },
     );
     const locations = getSelectedEntryLocations(selection, entries);
-    expect(locations).toEqual([
-      entries[1]!.location,
-      entries[2]!.location,
-    ]);
+    expect(locations).toEqual([entries[1]!.location, entries[2]!.location]);
   });
 
   it('is equivalent to getSelectedEntries().map(entry => entry.location)', () => {

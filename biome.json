@@ -37,6 +37,18 @@
       "preset": "recommended"
     }
   },
+  "overrides": [
+    {
+      "includes": ["frontend/src/a11y/keyboard-helpers.test.ts"],
+      "linter": {
+        "rules": {
+          "suspicious": {
+            "noExportsInTest": "off"
+          }
+        }
+      }
+    }
+  ],
   "assist": {
     "enabled": true,
     "actions": {

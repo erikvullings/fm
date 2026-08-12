@@ -37,7 +37,10 @@ export interface ConnectionsManagerAttrs {
   /** Reloads the current connection list from the backend on modal open. */
   readonly onRefresh: () => Promise<void>;
   readonly onClose: () => void;
-  readonly onSave: (draft: ConnectionSaveDraft, editingId?: ConnectionId) => Promise<ConnectionSaveResult>;
+  readonly onSave: (
+    draft: ConnectionSaveDraft,
+    editingId?: ConnectionId,
+  ) => Promise<ConnectionSaveResult>;
   readonly onDelete: (id: ConnectionId) => Promise<void>;
   readonly onConnect: (id: ConnectionId) => Promise<Connection>;
   readonly onDisconnect: (id: ConnectionId) => Promise<Connection>;
@@ -171,18 +174,18 @@ function secretInputFrom(form: FormState): ConnectionSecretInput | undefined {
         return form.secretKeyPath.trim().length === 0
           ? undefined
           : {
-            kind: 'privateKeyPath',
-            path: form.secretKeyPath.trim(),
-            passphrase: form.secretPassphrase.length === 0 ? null : form.secretPassphrase,
-          };
+              kind: 'privateKeyPath',
+              path: form.secretKeyPath.trim(),
+              passphrase: form.secretPassphrase.length === 0 ? null : form.secretPassphrase,
+            };
       }
       return form.secretKey.length === 0
         ? undefined
         : {
-          kind: 'privateKey',
-          key: form.secretKey,
-          passphrase: form.secretPassphrase.length === 0 ? null : form.secretPassphrase,
-        };
+            kind: 'privateKey',
+            key: form.secretKey,
+            passphrase: form.secretPassphrase.length === 0 ? null : form.secretPassphrase,
+          };
     case 'agent':
       return undefined;
     default:
@@ -442,21 +445,21 @@ export const ConnectionsManager: FactoryComponent<ConnectionsManagerAttrs> = () 
     return m('.fm-hostkey-prompt', { role: 'alertdialog' }, [
       isMismatch
         ? m('p.fm-hostkey-warning', [
-          '⚠ The host key for ',
-          m('strong', connection.name),
-          ' has changed since it was last accepted. This can mean the server was reinstalled, or that the connection is being intercepted.',
-        ])
+            '⚠ The host key for ',
+            m('strong', connection.name),
+            ' has changed since it was last accepted. This can mean the server was reinstalled, or that the connection is being intercepted.',
+          ])
         : m('p', [
-          'This is the first connection to ',
-          m('strong', connection.name),
-          '. Verify the fingerprint below out-of-band (e.g. with the server administrator) before trusting it.',
-        ]),
+            'This is the first connection to ',
+            m('strong', connection.name),
+            '. Verify the fingerprint below out-of-band (e.g. with the server administrator) before trusting it.',
+          ]),
       m('p.fm-hostkey-fingerprint', ['Presented: ', m('code', probe.fingerprint)]),
       isMismatch
         ? m('p.fm-hostkey-fingerprint', [
-          'Previously accepted: ',
-          m('code', probe.expectedFingerprint),
-        ])
+            'Previously accepted: ',
+            m('code', probe.expectedFingerprint),
+          ])
         : undefined,
       m('.fm-hostkey-actions', [
         m(FlatButton, {
@@ -478,49 +481,49 @@ export const ConnectionsManager: FactoryComponent<ConnectionsManagerAttrs> = () 
       attrs.connections.length === 0
         ? m('p.fm-connections-empty', 'No saved connections yet.')
         : m(
-          'ul.fm-connections-rows',
-          attrs.connections.map((connection) =>
-            m('li.fm-connections-row', { key: connection.id }, [
-              m(
-                'span.fm-connections-status',
-                {
-                  title: connectionStatusLabel(connection.status),
-                  'aria-label': connectionStatusLabel(connection.status),
-                },
-                connectionStatusGlyph(connection.status),
-              ),
-              m('span.fm-connections-name', connection.name),
-              m('span.fm-connections-kind', connection.kind),
-              m('span.fm-connections-status-label', connectionStatusLabel(connection.status)),
-              m('.fm-connections-actions', [
-                m(FlatButton, {
-                  label: statusActionLabel(connection.status),
-                  disabled: busy,
-                  onclick: () => handleToggleConnection(attrs, connection),
-                }),
-                m(FlatButton, {
-                  label: 'Test',
-                  disabled: busy,
-                  onclick: () => handleTest(attrs, connection),
-                }),
-                m(FlatButton, {
-                  label: 'Edit',
-                  disabled: busy,
-                  onclick: () => openEditForm(connection),
-                }),
-                m(FlatButton, {
-                  label: 'Delete',
-                  disabled: busy,
-                  onclick: () => handleDelete(attrs, connection),
-                }),
+            'ul.fm-connections-rows',
+            attrs.connections.map((connection) =>
+              m('li.fm-connections-row', { key: connection.id }, [
+                m(
+                  'span.fm-connections-status',
+                  {
+                    title: connectionStatusLabel(connection.status),
+                    'aria-label': connectionStatusLabel(connection.status),
+                  },
+                  connectionStatusGlyph(connection.status),
+                ),
+                m('span.fm-connections-name', connection.name),
+                m('span.fm-connections-kind', connection.kind),
+                m('span.fm-connections-status-label', connectionStatusLabel(connection.status)),
+                m('.fm-connections-actions', [
+                  m(FlatButton, {
+                    label: statusActionLabel(connection.status),
+                    disabled: busy,
+                    onclick: () => handleToggleConnection(attrs, connection),
+                  }),
+                  m(FlatButton, {
+                    label: 'Test',
+                    disabled: busy,
+                    onclick: () => handleTest(attrs, connection),
+                  }),
+                  m(FlatButton, {
+                    label: 'Edit',
+                    disabled: busy,
+                    onclick: () => openEditForm(connection),
+                  }),
+                  m(FlatButton, {
+                    label: 'Delete',
+                    disabled: busy,
+                    onclick: () => handleDelete(attrs, connection),
+                  }),
+                ]),
+                connection.status === 'failed' && connection.lastError != null
+                  ? m('.fm-field-error.fm-connections-row-error', connection.lastError)
+                  : undefined,
+                renderHostKeyPrompt(attrs, connection),
               ]),
-              connection.status === 'failed' && connection.lastError != null
-                ? m('.fm-field-error.fm-connections-row-error', connection.lastError)
-                : undefined,
-              renderHostKeyPrompt(attrs, connection),
-            ]),
+            ),
           ),
-        ),
       m(FlatButton, {
         className: 'fm-connections-add',
         label: 'New connection…',
@@ -562,7 +565,9 @@ export const ConnectionsManager: FactoryComponent<ConnectionsManagerAttrs> = () 
         m(TextInput, {
           label: 'Start folder (optional)',
           value: configuration.startPath ?? '',
-          placeholder: configuration.username ? `/home/${configuration.username}` : '/home/username',
+          placeholder: configuration.username
+            ? `/home/${configuration.username}`
+            : '/home/username',
           helperText: 'Leave empty to use the default /home/<username>.',
           oninput: (value: string) => {
             const trimmed = value.trim();
@@ -595,70 +600,70 @@ export const ConnectionsManager: FactoryComponent<ConnectionsManagerAttrs> = () 
       ]),
       configuration.authentication === 'password'
         ? m('.row', [
-          m(PasswordInput, {
-            label: 'Password',
-            value: form.secretPassword,
-            placeholder: 'Leave blank to keep the stored password',
-            oninput: (value: string) => {
-              form.secretPassword = value;
-            },
-            ...TECHNICAL_TEXT_ATTRS,
-          }),
-        ])
+            m(PasswordInput, {
+              label: 'Password',
+              value: form.secretPassword,
+              placeholder: 'Leave blank to keep the stored password',
+              oninput: (value: string) => {
+                form.secretPassword = value;
+              },
+              ...TECHNICAL_TEXT_ATTRS,
+            }),
+          ])
         : undefined,
       configuration.authentication === 'privateKey'
         ? [
-          m('.row', [
-            m(Switch, {
-              label: 'Provide the key as',
-              left: 'File path',
-              right: 'Pasted content',
-              checked: form.secretKeyMode === 'paste',
-              onchange: (checked: boolean) => {
-                form.secretKeyMode = checked ? 'paste' : 'path';
-              },
-            }),
-          ]),
-          form.secretKeyMode === 'path'
-            ? m('.row', [
-              m(TextInput, {
-                label: 'Private key file path',
-                // Read fresh from disk on every connect/test, like ssh's own
-                // `IdentityFile` - never stored, matching `fm-application`'s
-                // `ssh.rs`. A relative `~/...` path is expanded on whichever
-                // host runs the backend (this machine for the desktop app,
-                // the fm-server host for browser mode).
-                helperText: 'Read from disk each time, like ssh - never stored.',
-                placeholder: '~/.ssh/id_ed25519 - leave blank to keep the stored key',
-                value: form.secretKeyPath,
-                oninput: (value: string) => {
-                  form.secretKeyPath = value;
+            m('.row', [
+              m(Switch, {
+                label: 'Provide the key as',
+                left: 'File path',
+                right: 'Pasted content',
+                checked: form.secretKeyMode === 'paste',
+                onchange: (checked: boolean) => {
+                  form.secretKeyMode = checked ? 'paste' : 'path';
                 },
-                ...TECHNICAL_TEXT_ATTRS,
               }),
-            ])
-            : m('.row', [
-              m(TextInput, {
-                label: 'Private key content',
-                placeholder: 'Leave blank to keep the stored key',
-                value: form.secretKey,
+            ]),
+            form.secretKeyMode === 'path'
+              ? m('.row', [
+                  m(TextInput, {
+                    label: 'Private key file path',
+                    // Read fresh from disk on every connect/test, like ssh's own
+                    // `IdentityFile` - never stored, matching `fm-application`'s
+                    // `ssh.rs`. A relative `~/...` path is expanded on whichever
+                    // host runs the backend (this machine for the desktop app,
+                    // the fm-server host for browser mode).
+                    helperText: 'Read from disk each time, like ssh - never stored.',
+                    placeholder: '~/.ssh/id_ed25519 - leave blank to keep the stored key',
+                    value: form.secretKeyPath,
+                    oninput: (value: string) => {
+                      form.secretKeyPath = value;
+                    },
+                    ...TECHNICAL_TEXT_ATTRS,
+                  }),
+                ])
+              : m('.row', [
+                  m(TextInput, {
+                    label: 'Private key content',
+                    placeholder: 'Leave blank to keep the stored key',
+                    value: form.secretKey,
+                    oninput: (value: string) => {
+                      form.secretKey = value;
+                    },
+                    ...TECHNICAL_TEXT_ATTRS,
+                  }),
+                ]),
+            m('.row', [
+              m(PasswordInput, {
+                label: 'Passphrase (optional)',
+                value: form.secretPassphrase,
                 oninput: (value: string) => {
-                  form.secretKey = value;
+                  form.secretPassphrase = value;
                 },
                 ...TECHNICAL_TEXT_ATTRS,
               }),
             ]),
-          m('.row', [
-            m(PasswordInput, {
-              label: 'Passphrase (optional)',
-              value: form.secretPassphrase,
-              oninput: (value: string) => {
-                form.secretPassphrase = value;
-              },
-              ...TECHNICAL_TEXT_ATTRS,
-            }),
-          ]),
-        ]
+          ]
         : undefined,
     ];
   }
@@ -821,9 +826,9 @@ export const ConnectionsManager: FactoryComponent<ConnectionsManagerAttrs> = () 
           mode.kind === 'list'
             ? [{ label: 'Close', onclick: attrs.onClose }]
             : [
-              { label: 'Cancel', onclick: backToList },
-              { label: 'Save', disabled: busy, onclick: () => handleSave(attrs) },
-            ],
+                { label: 'Cancel', onclick: backToList },
+                { label: 'Save', disabled: busy, onclick: () => handleSave(attrs) },
+              ],
       }),
   };
 };

@@ -165,7 +165,7 @@ export function reduceSelection(
 /**
  * Retrieves the directory entries that are currently selected.
  * Returns entries in the same order as the directory listing, not the selection order.
- */export function getSelectedEntries(
+ */ export function getSelectedEntries(
   selection: SelectionState | undefined,
   entries: readonly EntrySummary[],
 ): readonly EntrySummary[] {
@@ -179,7 +179,7 @@ export function reduceSelection(
 /**
  * Retrieves the locations of the currently selected entries.
  * Equivalent to `getSelectedEntries(selection, entries).map(e => e.location)`.
- */export function getSelectedEntryLocations(
+ */ export function getSelectedEntryLocations(
   selection: SelectionState | undefined,
   entries: readonly EntrySummary[],
 ): readonly Location[] {

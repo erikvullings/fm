@@ -59,7 +59,7 @@ describe('locationForPath', () => {
 let root: HTMLElement;
 
 class TestEventSource extends EventTarget {
-  close(): void { }
+  close(): void {}
 }
 
 function mountShell(runtime: 'http' | 'tauri' | 'mock' = 'http'): void {
@@ -979,9 +979,9 @@ describe('AppShell', () => {
     });
     let nativeDropListener:
       | ((drop: {
-        locations: readonly Location[];
-        position: { readonly x: number; readonly y: number };
-      }) => void)
+          locations: readonly Location[];
+          position: { readonly x: number; readonly y: number };
+        }) => void)
       | undefined;
     vi.spyOn(client, 'subscribeNativeFileDrops').mockImplementation(async (listener) => {
       nativeDropListener = listener;
@@ -1070,7 +1070,11 @@ describe('AppShell', () => {
     m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
     await vi.waitFor(() => expect(root.textContent).toContain('copy · failed'));
 
-    root.querySelector<HTMLButtonElement>('[data-operation-id="failed-copy-1"] [data-action="dismiss"]')?.click();
+    root
+      .querySelector<HTMLButtonElement>(
+        '[data-operation-id="failed-copy-1"] [data-action="dismiss"]',
+      )
+      ?.click();
     m.redraw.sync();
     expect(root.textContent).not.toContain('copy · failed');
 
@@ -1621,7 +1625,7 @@ describe('AppShell', () => {
     const install = vi.spyOn(pluginIconTheme, 'installPluginIconTheme').mockResolvedValue();
     const restore = vi
       .spyOn(pluginIconTheme, 'restoreDefaultIconTheme')
-      .mockImplementation(() => { });
+      .mockImplementation(() => {});
 
     m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
     await vi.waitFor(() => expect(install).toHaveBeenCalledTimes(1));

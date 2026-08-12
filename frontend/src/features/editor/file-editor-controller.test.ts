@@ -18,7 +18,9 @@ describe('file editor controller', () => {
     const states: FileEditorState[] = [];
     const controller = createFileEditorController({
       client: {
-        loadEditableFile: vi.fn().mockResolvedValue({ content: '# Title', revision: 'r1', size: 7 }),
+        loadEditableFile: vi
+          .fn()
+          .mockResolvedValue({ content: '# Title', revision: 'r1', size: 7 }),
         saveEditableFile: vi.fn(),
       },
       entry: { ...entry, name: 'README.md', extension: 'md' },

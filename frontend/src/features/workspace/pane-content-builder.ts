@@ -185,11 +185,11 @@ export function createPaneContentBuilder(
       tab === undefined || key === undefined
         ? directory.entries
         : context.entriesSortedFor(
-          key,
-          directory.entries,
-          context.effectiveSort(tab.view.sort),
-          tab.view.foldersFirst,
-        );
+            key,
+            directory.entries,
+            context.effectiveSort(tab.view.sort),
+            tab.view.foldersFirst,
+          );
     const quickFilterQuery = key === undefined ? '' : context.quickFilterQueryFor(key, tab);
     const filtered =
       key === undefined ? sorted : context.entriesFilteredFor(key, sorted, quickFilterQuery);
@@ -205,7 +205,7 @@ export function createPaneContentBuilder(
     const totalKnownEntries =
       quickFilterQuery.trim() === ''
         ? (directory.totalKnownEntries ?? directory.entries.length) +
-        (entries.length - filtered.length)
+          (entries.length - filtered.length)
         : entries.length;
     const currentSettings = context.getCurrentSettings();
     const systemLocationsError = context.getSystemLocationsError();
@@ -253,7 +253,7 @@ export function createPaneContentBuilder(
             (plugin) =>
               plugin.enabled && plugin.columns?.some((column) => column.id === 'sample.fileAge'),
           ) &&
-          tab?.view.columns.some((column) => column.columnId === 'sample.fileAge' && column.visible)
+        tab?.view.columns.some((column) => column.columnId === 'sample.fileAge' && column.visible)
           ? [SAMPLE_FILE_AGE_COLUMN]
           : [],
       platform: context.getPlatform(),
@@ -388,11 +388,11 @@ export function createPaneContentBuilder(
                 tab === undefined
                   ? (context.getDirectories().get(key)?.entries ?? [])
                   : context.entriesSortedFor(
-                    key,
-                    context.getDirectories().get(key)?.entries ?? [],
-                    context.effectiveSort(tab.view.sort),
-                    tab.view.foldersFirst,
-                  );
+                      key,
+                      context.getDirectories().get(key)?.entries ?? [],
+                      context.effectiveSort(tab.view.sort),
+                      tab.view.foldersFirst,
+                    );
               const filteredFresh = context.entriesFilteredFor(
                 key,
                 sortedFresh,
@@ -543,7 +543,7 @@ export function createPaneContentBuilder(
         const sources = context.getDraggedLocations();
         context.setDraggedLocations([]);
         void (context.getNativeDropInProgress() ||
-          operationForDrop(context.getPlatform(), event) === 'copy'
+        operationForDrop(context.getPlatform(), event) === 'copy'
           ? context.getOpsController().copy(sources, target)
           : context.getOpsController().move(sources, target));
       },
@@ -575,7 +575,7 @@ export function createPaneContentBuilder(
         const sources = context.getDraggedLocations();
         context.setDraggedLocations([]);
         void (context.getNativeDropInProgress() ||
-          operationForDrop(context.getPlatform(), event) === 'copy'
+        operationForDrop(context.getPlatform(), event) === 'copy'
           ? context.getOpsController().copy(sources, targetTab.location)
           : context.getOpsController().move(sources, targetTab.location));
       },
@@ -595,37 +595,37 @@ export function createPaneContentBuilder(
       },
       ...(context.getEditorByPane().has(paneId)
         ? {
-          viewerContent: (() => {
-            const editor = context.getEditorByPane().get(paneId);
-            return editor === undefined
-              ? undefined
-              : m(FileEditor, {
-                state: editor.state,
-                controller: editor.controller,
-                onClose: () => context.closeEditor(paneId),
-              });
-          })(),
-        }
-        : context.getViewerByPane().has(paneId)
-          ? {
             viewerContent: (() => {
-              const viewer = context.getViewerByPane().get(paneId);
-              if (viewer === undefined) return undefined;
-              return m(FileViewer, {
-                state: viewer.state,
-                onLoadMore: () => void viewer.controller.loadMore(),
-                onSearchQueryChange: (query) => viewer.controller.setSearchOptions({ query }),
-                onSearchOptionChange: (patch) => viewer.controller.setSearchOptions(patch),
-                onRunSearch: () => void viewer.controller.runSearch(),
-                onNextMatch: () => void viewer.controller.goToNextMatch(),
-                onPreviousMatch: () => void viewer.controller.goToPreviousMatch(),
-                onZoomIn: () => viewer.controller.zoomIn(),
-                onZoomOut: () => viewer.controller.zoomOut(),
-                onResetZoom: () => viewer.controller.resetZoom(),
-                onClose: () => context.closeViewer(paneId),
-              });
+              const editor = context.getEditorByPane().get(paneId);
+              return editor === undefined
+                ? undefined
+                : m(FileEditor, {
+                    state: editor.state,
+                    controller: editor.controller,
+                    onClose: () => context.closeEditor(paneId),
+                  });
             })(),
           }
+        : context.getViewerByPane().has(paneId)
+          ? {
+              viewerContent: (() => {
+                const viewer = context.getViewerByPane().get(paneId);
+                if (viewer === undefined) return undefined;
+                return m(FileViewer, {
+                  state: viewer.state,
+                  onLoadMore: () => void viewer.controller.loadMore(),
+                  onSearchQueryChange: (query) => viewer.controller.setSearchOptions({ query }),
+                  onSearchOptionChange: (patch) => viewer.controller.setSearchOptions(patch),
+                  onRunSearch: () => void viewer.controller.runSearch(),
+                  onNextMatch: () => void viewer.controller.goToNextMatch(),
+                  onPreviousMatch: () => void viewer.controller.goToPreviousMatch(),
+                  onZoomIn: () => viewer.controller.zoomIn(),
+                  onZoomOut: () => viewer.controller.zoomOut(),
+                  onResetZoom: () => viewer.controller.resetZoom(),
+                  onClose: () => context.closeViewer(paneId),
+                });
+              })(),
+            }
           : {}),
     };
   };

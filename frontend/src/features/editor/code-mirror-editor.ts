@@ -8,8 +8,8 @@ import {
   keymap,
   lineNumbers,
 } from '@codemirror/view';
-import m, { type FactoryComponent } from 'mithril';
 import { tags } from '@lezer/highlight';
+import m, { type FactoryComponent } from 'mithril';
 
 const fmHighlightStyle = HighlightStyle.define([
   { tag: [tags.keyword, tags.operatorKeyword, tags.bool, tags.null], color: 'var(--fm-accent)' },
@@ -63,11 +63,11 @@ export const CodeMirrorEditor: FactoryComponent<CodeMirrorEditorAttrs> = () => {
     ...(attrs.readOnly === true
       ? []
       : [
-        history(),
-        highlightActiveLine(),
-        highlightActiveLineGutter(),
-        keymap.of([...defaultKeymap, ...historyKeymap]),
-      ]),
+          history(),
+          highlightActiveLine(),
+          highlightActiveLineGutter(),
+          keymap.of([...defaultKeymap, ...historyKeymap]),
+        ]),
     ...(attrs.language === undefined ? [] : [attrs.language]),
     ...(attrs.extensions ?? []),
     EditorView.domEventHandlers({

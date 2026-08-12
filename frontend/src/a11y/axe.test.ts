@@ -10,8 +10,8 @@
  * individual component semantics; comprehensive testing is manual.
  */
 
-import { describe, expect, it } from 'vitest';
 import { axe, toHaveNoViolations } from 'jest-axe';
+import { describe, expect, it } from 'vitest';
 
 // Extend vitest matcher
 expect.extend(toHaveNoViolations);
@@ -50,7 +50,7 @@ describe('Accessibility: Basic DOM structure checks', () => {
           // Skip alt-text for decorative UI elements
           'image-alt': { enabled: false },
           // Skip region landmarks (flexible pane layout)
-          'region': { enabled: false },
+          region: { enabled: false },
         },
       });
     } finally {

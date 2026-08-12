@@ -61,8 +61,7 @@ export function searchBreadcrumbSegments(
 ): readonly BreadcrumbSegment[] {
   const withoutScheme = uri.slice('search://'.length);
   const separatorIndex = withoutScheme.indexOf('/');
-  const providerId =
-    separatorIndex === -1 ? withoutScheme : withoutScheme.slice(0, separatorIndex);
+  const providerId = separatorIndex === -1 ? withoutScheme : withoutScheme.slice(0, separatorIndex);
   const searchId = separatorIndex === -1 ? '' : withoutScheme.slice(separatorIndex + 1);
   return [
     { label: '/', path: '/' },

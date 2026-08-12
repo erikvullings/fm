@@ -128,10 +128,10 @@ export interface ConnectionSaveDraft extends ConnectionDraftFields {
 export type ConnectionSaveResult =
   | { readonly ok: true; readonly connection: Connection }
   | {
-    readonly ok: false;
-    readonly errors: readonly ConnectionDraftValidationError[];
-    readonly message: string;
-  };
+      readonly ok: false;
+      readonly errors: readonly ConnectionDraftValidationError[];
+      readonly message: string;
+    };
 
 /** Runtime status for connection lifecycle operations in the UI. */
 export interface ConnectionLifecycle {

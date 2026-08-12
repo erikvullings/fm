@@ -82,7 +82,9 @@ export interface ClosedTabStacksState {
 
 /** Content-match summaries keyed by entry URI, cached from SSE batches for viewer pre-population. */
 export interface ContentMatchesState {
-  readonly byEntryUri: Readonly<Partial<Record<string, readonly DeepReadonly<ContentMatchSummary>[]>>>;
+  readonly byEntryUri: Readonly<
+    Partial<Record<string, readonly DeepReadonly<ContentMatchSummary>[]>>
+  >;
 }
 
 /** Complete readonly frontend application snapshot. */

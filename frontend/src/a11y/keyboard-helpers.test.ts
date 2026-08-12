@@ -60,21 +60,21 @@ export function getFocusableElements(container: HTMLElement): HTMLElement[] {
     'textarea:not([disabled])',
     '[tabindex]:not([tabindex="-1"])',
   ];
-  return Array.from(
-    container.querySelectorAll<HTMLElement>(focusableSelectors.join(',')),
-  ).filter((el) => {
-    // Exclude elements hidden from accessibility
-    const computed = window.getComputedStyle(el);
-    const isVisible =
-      computed.visibility !== 'hidden' &&
-      computed.display !== 'none' &&
-      (el as any).offsetParent !== null;
+  return Array.from(container.querySelectorAll<HTMLElement>(focusableSelectors.join(','))).filter(
+    (el) => {
+      // Exclude elements hidden from accessibility
+      const computed = window.getComputedStyle(el);
+      const isVisible =
+        computed.visibility !== 'hidden' &&
+        computed.display !== 'none' &&
+        (el as any).offsetParent !== null;
 
-    // Check aria-hidden
-    const isAriaHidden = el.getAttribute('aria-hidden') === 'true';
+      // Check aria-hidden
+      const isAriaHidden = el.getAttribute('aria-hidden') === 'true';
 
-    return isVisible && !isAriaHidden;
-  });
+      return isVisible && !isAriaHidden;
+    },
+  );
 }
 
 /**
@@ -235,7 +235,7 @@ describe('Keyboard navigation - Manual Browser Tests', () => {
           'Open any modal (settings, conflict, delete confirmation)',
           'Press Tab repeatedly from first focusable element',
           'Verify focus cycles back to first element in modal',
-          'Verify focus doesn\'t escape to background UI',
+          "Verify focus doesn't escape to background UI",
           'Press Escape to close modal',
           'Verify focus returns to the element that opened the modal',
         ],
@@ -255,8 +255,8 @@ describe('Keyboard navigation - Manual Browser Tests', () => {
         name: 'Zoom to 200%',
         steps: [
           'Press Ctrl++ (Cmd++ on Mac) multiple times to reach 200% zoom',
-          'Verify layout doesn\'t break:',
-          '  - No horizontal scroll that shouldn\'t be there',
+          "Verify layout doesn't break:",
+          "  - No horizontal scroll that shouldn't be there",
           '  - Text remains readable',
           '  - Buttons and inputs still clickable',
           '  - Focus indicators still visible',

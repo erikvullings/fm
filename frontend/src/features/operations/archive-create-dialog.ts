@@ -62,31 +62,74 @@ export const ArchiveCreateDialog: FactoryComponent<ArchiveCreateDialogAttrs> = (
         title: attrs.moveSources ? 'Move to archive' : 'Create archive',
         className: 'fm-dense-modal',
         description: m('.fm-create-directory-field', [
-          m('label', [m('span', 'Archive name'), m('input#archive-create-name', {
-            type: 'text', value: name, required: true,
-            oninput: (event: InputEvent) => { name = (event.currentTarget as HTMLInputElement).value; },
-            onkeydown: (event: KeyboardEvent) => {
-              if (event.key === 'Escape') { event.stopPropagation(); cancel(); }
-              if (event.key === 'Enter') { event.preventDefault(); event.stopPropagation(); confirm(attrs); }
-            },
-          })]),
-          m('label', [m('span', 'Format'), m('select', {
-            value: format,
-            onchange: (event: Event) => { format = (event.currentTarget as HTMLSelectElement).value as ArchiveFormat; },
-          }, [m('option', { value: 'zip' }, 'ZIP'), m('option', { value: 'sevenZip' }, '7z')])]),
-          format === 'zip' ? m('label', [m('span', 'Compression'), m('select', {
-            value: String(compressionLevel),
-            onchange: (event: Event) => { compressionLevel = Number((event.currentTarget as HTMLSelectElement).value); },
-          }, [m('option', { value: '1' }, 'Fast'), m('option', { value: '6' }, 'Normal'), m('option', { value: '9' }, 'Maximum')])]) :
-            m('.fm-field-help', '7z uses its backend default compression.'),
+          m('label', [
+            m('span', 'Archive name'),
+            m('input#archive-create-name', {
+              type: 'text',
+              value: name,
+              required: true,
+              oninput: (event: InputEvent) => {
+                name = (event.currentTarget as HTMLInputElement).value;
+              },
+              onkeydown: (event: KeyboardEvent) => {
+                if (event.key === 'Escape') {
+                  event.stopPropagation();
+                  cancel();
+                }
+                if (event.key === 'Enter') {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  confirm(attrs);
+                }
+              },
+            }),
+          ]),
+          m('label', [
+            m('span', 'Format'),
+            m(
+              'select',
+              {
+                value: format,
+                onchange: (event: Event) => {
+                  format = (event.currentTarget as HTMLSelectElement).value as ArchiveFormat;
+                },
+              },
+              [m('option', { value: 'zip' }, 'ZIP'), m('option', { value: 'sevenZip' }, '7z')],
+            ),
+          ]),
+          format === 'zip'
+            ? m('label', [
+                m('span', 'Compression'),
+                m(
+                  'select',
+                  {
+                    value: String(compressionLevel),
+                    onchange: (event: Event) => {
+                      compressionLevel = Number((event.currentTarget as HTMLSelectElement).value);
+                    },
+                  },
+                  [
+                    m('option', { value: '1' }, 'Fast'),
+                    m('option', { value: '6' }, 'Normal'),
+                    m('option', { value: '9' }, 'Maximum'),
+                  ],
+                ),
+              ])
+            : m('.fm-field-help', '7z uses its backend default compression.'),
           nameResult.error === undefined ? undefined : m('.fm-field-error', nameResult.error),
         ]),
         isOpen: attrs.open,
         closeOnEsc: true,
-        onToggle: (open: boolean) => { if (!open) cancel(); },
+        onToggle: (open: boolean) => {
+          if (!open) cancel();
+        },
         buttons: [
           { label: 'Cancel', onclick: cancel },
-          { label: attrs.moveSources ? 'Move' : 'Create', disabled: !nameResult.value, onclick: () => confirm(attrs) },
+          {
+            label: attrs.moveSources ? 'Move' : 'Create',
+            disabled: !nameResult.value,
+            onclick: () => confirm(attrs),
+          },
         ],
       });
     },

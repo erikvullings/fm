@@ -102,9 +102,7 @@ export function createTypeaheadController(onRedraw: () => void): TypeaheadContro
     moveWithinMatches(entries, cursorEntry, offset, edge, extend) {
       if (_state === undefined) return false;
       const prefix = _state.prefix;
-      const matches = entries.filter((entry) =>
-        entry.name.toLocaleLowerCase().includes(prefix),
-      );
+      const matches = entries.filter((entry) => entry.name.toLocaleLowerCase().includes(prefix));
       if (matches.length === 0) return undefined;
       const currentMatchIndex = matches.findIndex((e) => e.id === cursorEntry?.id);
       const targetIndex =
@@ -113,16 +111,13 @@ export function createTypeaheadController(onRedraw: () => void): TypeaheadContro
           : edge === 'last'
             ? matches.length - 1
             : Math.max(
-              0,
-              Math.min(
-                (currentMatchIndex < 0
-                  ? offset < 0
-                    ? matches.length
-                    : -1
-                  : currentMatchIndex) + offset,
-                matches.length - 1,
-              ),
-            );
+                0,
+                Math.min(
+                  (currentMatchIndex < 0 ? (offset < 0 ? matches.length : -1) : currentMatchIndex) +
+                    offset,
+                  matches.length - 1,
+                ),
+              );
       const target = matches[targetIndex];
       if (target === undefined) return undefined;
       if (extend && cursorEntry !== undefined) {

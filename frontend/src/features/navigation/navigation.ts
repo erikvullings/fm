@@ -190,7 +190,7 @@ export function createNavigationController(
     location: Location,
     operation: () => Promise<T>,
   ): Promise<T> {
-    for (; ;) {
+    for (;;) {
       try {
         return await operation();
       } catch (error: unknown) {
@@ -419,15 +419,15 @@ export function createNavigationController(
         location === undefined
           ? undefined
           : await withArchiveCredential(location, () =>
-            navigatePane(
-              workspace.id,
-              paneId,
-              request.id,
-              location,
-              tab,
-              request.controller.signal,
-            ),
-          );
+              navigatePane(
+                workspace.id,
+                paneId,
+                request.id,
+                location,
+                tab,
+                request.controller.signal,
+              ),
+            );
       if (!isCurrent(paneId, tab.id, request)) {
         return;
       }
@@ -552,7 +552,7 @@ export function createNavigationController(
     if (tabId === undefined) {
       return;
     }
-    for (; ;) {
+    for (;;) {
       // Stop (without switching targets) once the tab this was started for is no longer
       // active, e.g. the user switched tabs while pages were still loading in the background.
       const stillActive = options.getWorkspace();

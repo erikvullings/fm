@@ -10,9 +10,10 @@ export interface ConflictDialogAttrs {
 /** Compact, stable metadata for comparing two conflicting entries. */
 export function formatConflictMetadata(entry: OperationConflict['source']): string {
   const size = entry.size === undefined ? 'size unavailable' : `${entry.size}b`;
-  const date = entry.modifiedAt === undefined
-    ? 'modified time unavailable'
-    : new Date(entry.modifiedAt).toISOString().slice(0, 19).replace('T', ' ');
+  const date =
+    entry.modifiedAt === undefined
+      ? 'modified time unavailable'
+      : new Date(entry.modifiedAt).toISOString().slice(0, 19).replace('T', ' ');
   return `${entry.name} · ${size} · ${date}`;
 }
 
@@ -48,15 +49,9 @@ export const ConflictDialog: FactoryComponent<ConflictDialogAttrs> = () => {
           m('p', conflict.message),
           m('dl.fm-conflict-dialog-entries', [
             m('dt', 'Source'),
-            m(
-              'dd',
-              formatConflictMetadata(conflict.source),
-            ),
+            m('dd', formatConflictMetadata(conflict.source)),
             m('dt', 'Destination'),
-            m(
-              'dd',
-              formatConflictMetadata(conflict.destination),
-            ),
+            m('dd', formatConflictMetadata(conflict.destination)),
           ]),
           m('label.fm-conflict-dialog-checkbox', [
             m('input', {

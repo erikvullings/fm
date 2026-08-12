@@ -36,6 +36,41 @@ describe('TerminalDrawer', () => {
     ).not.toThrow();
   });
 
+  it('opens one PTY while terminal startup is still pending across redraws', () => {
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn(() => ({ matches: false, addListener: vi.fn(), removeListener: vi.fn() })),
+    );
+    let resolveOpen: ((sessionId: string) => void) | undefined;
+    const client: TerminalClient = {
+      open: vi.fn(
+        () =>
+          new Promise<string>((resolve) => {
+            resolveOpen = resolve;
+          }),
+      ),
+      write: vi.fn(async () => undefined),
+      resize: vi.fn(async () => undefined),
+    };
+    const location = { providerId: 'local', uri: 'file:///home' };
+    m.mount(root, {
+      view: () =>
+        m(TerminalDrawer, {
+          open: true,
+          location,
+          client,
+          onToggle: vi.fn(),
+        }),
+    });
+
+    m.redraw.sync();
+    m.redraw.sync();
+
+    expect(client.open).toHaveBeenCalledOnce();
+    resolveOpen?.('session-1');
+    vi.unstubAllGlobals();
+  });
+
   it('returns F12 to the file manager while xterm has focus', () => {
     const toggle = vi.fn();
     const event = new KeyboardEvent('keydown', { key: 'F12', cancelable: true });

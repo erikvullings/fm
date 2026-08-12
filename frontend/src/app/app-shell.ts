@@ -3,12 +3,12 @@ import { IconButton, type Theme, ThemeManager, toast } from 'mithril-materialize
 
 import type { FileManagerClient } from '../api/client/file-manager-client';
 import {
+  activityIcon,
   arrowLeftIcon,
   arrowRightIcon,
   closeIcon,
   commandIcon,
   cornerLeftUpIcon,
-  activityIcon,
   layoutGridIcon,
   searchIcon,
   settingsIcon,
@@ -25,6 +25,7 @@ import {
   menuActionsForContext,
 } from '../features/commands/availability';
 import { ContextMenu as DirectoryContextMenu } from '../features/commands/context-menu';
+import { DiagnosticsViewComponent } from '../features/diagnostics/diagnostics-view';
 import { type AppDialogsContext, renderAppDialogs } from '../features/dialogs/app-dialogs';
 import { createDialogUIController } from '../features/dialogs/dialog-ui-controller';
 import type { NativeIconLoader } from '../features/directory-table/native-icon-loader';
@@ -87,7 +88,6 @@ import {
   type SettingsControllerContext,
 } from '../features/settings/settings-controller';
 import { SettingsEditor } from '../features/settings/settings-editor';
-import { DiagnosticsViewComponent } from '../features/diagnostics/diagnostics-view';
 import {
   type SortColumn,
   type SortModel,
@@ -1710,9 +1710,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
                           closeIcon(),
                         ),
                       ]),
-                      diagnosticsDialogOpen
-                        ? m(DiagnosticsViewComponent)
-                        : undefined,
+                      diagnosticsDialogOpen ? m(DiagnosticsViewComponent) : undefined,
                     ]),
                   ],
                 ),

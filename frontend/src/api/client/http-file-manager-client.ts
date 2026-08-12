@@ -365,12 +365,13 @@ export class HttpFileManagerClient implements FileManagerClient {
   }
 
   async startOperation(request: StartOperationRequest, signal?: AbortSignal): Promise<Operation> {
-    const { destinations, ...rest } = request;
+    const { destinations, archiveCompressionLevel, ...rest } = request;
     const response = await requestOperationStart(
       {
         ...rest,
         sources: [...rest.sources],
         ...(destinations === undefined ? {} : { destinations: [...destinations] }),
+        ...(archiveCompressionLevel === undefined ? {} : { archiveCompressionLevel }),
       },
       signal === undefined ? undefined : { signal },
     );
@@ -713,11 +714,11 @@ function operationFromDto(dto: OperationDto): Operation {
     ...(dto.errors.length === 0
       ? {}
       : {
-        errors: dto.errors.map((error) => ({
-          entry: error.entry,
-          message: error.message,
-        })),
-      }),
+          errors: dto.errors.map((error) => ({
+            entry: error.entry,
+            message: error.message,
+          })),
+        }),
   };
 }
 
@@ -749,11 +750,11 @@ function settingsFromDto(settings: SettingsDto): Settings {
         workspaceId,
         Array.isArray(locations)
           ? locations.map(
-            (location): FileLocation => ({
-              providerId: String((location as { providerId?: unknown }).providerId),
-              uri: String((location as { uri?: unknown }).uri),
-            }),
-          )
+              (location): FileLocation => ({
+                providerId: String((location as { providerId?: unknown }).providerId),
+                uri: String((location as { uri?: unknown }).uri),
+              }),
+            )
           : [],
       ]),
     ),

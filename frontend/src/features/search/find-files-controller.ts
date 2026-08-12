@@ -79,7 +79,10 @@ export function createFindFilesController(
     closeFindFiles(): void {
       const searchId = context.getFindFilesSearchId();
       if (searchId !== undefined) {
-        void context.getClient().cancelSearch(searchId).catch(() => undefined);
+        void context
+          .getClient()
+          .cancelSearch(searchId)
+          .catch(() => undefined);
       }
       context.setFindFilesGeneration(context.getFindFilesGeneration() + 1);
       context.setFindFilesOpen(false);
@@ -101,7 +104,10 @@ export function createFindFilesController(
 
       const searchId = context.getFindFilesSearchId();
       if (searchId !== undefined) {
-        void context.getClient().cancelSearch(searchId).catch(() => undefined);
+        void context
+          .getClient()
+          .cancelSearch(searchId)
+          .catch(() => undefined);
       }
 
       const nextGeneration = context.getFindFilesGeneration() + 1;
@@ -121,34 +127,38 @@ export function createFindFilesController(
           contentCaseSensitive: false,
           contentWholeWord: true,
           recurse: params.recurse,
-          showHidden:
-            searchPaneId === undefined ? false : this.activeShowHidden(searchPaneId),
+          showHidden: searchPaneId === undefined ? false : this.activeShowHidden(searchPaneId),
           roots: [root],
           workspaceId: workspace.id,
         })
         .then((result) => {
           if (generation !== context.getFindFilesGeneration()) {
-            void context.getClient().cancelSearch(result.searchId).catch(() => undefined);
+            void context
+              .getClient()
+              .cancelSearch(result.searchId)
+              .catch(() => undefined);
             return;
           }
           context.setFindFilesSearchId(result.searchId);
           context.getFindFilesRootsByLocationUri().set(result.location.uri, root);
-          context.getFindFilesQueriesByLocationUri().set(
-            result.location.uri,
-            params.filenameQuery || JSON.stringify(params),
-          );
+          context
+            .getFindFilesQueriesByLocationUri()
+            .set(result.location.uri, params.filenameQuery || JSON.stringify(params));
           context.getFindFilesParamsByLocationUri().set(result.location.uri, params);
 
           const paneId = context.getActiveDirectory()?.paneId ?? workspace?.activePaneId;
           if (paneId === undefined) return;
 
           this.dismissFindFiles();
-          void context.getNavigation().navigate(paneId, result.location).then(() => {
-            // Land keyboard focus in the pane so arrow keys move the cursor immediately,
-            // matching the UX of navigating there by clicking (task 0089 follow-up).
-            context.getFocusPane()?.(paneId);
-            context.redraw();
-          });
+          void context
+            .getNavigation()
+            .navigate(paneId, result.location)
+            .then(() => {
+              // Land keyboard focus in the pane so arrow keys move the cursor immediately,
+              // matching the UX of navigating there by clicking (task 0089 follow-up).
+              context.getFocusPane()?.(paneId);
+              context.redraw();
+            });
         })
         .catch((error: unknown) => {
           if (generation !== context.getFindFilesGeneration()) return;

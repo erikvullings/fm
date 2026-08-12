@@ -1,20 +1,20 @@
 /** Tests for diagnostics view component. */
 
-import { describe, it, expect } from "vitest";
-import type { DiagnosticsView } from "./diagnostics";
-import { diagnosticsFromDto } from "./diagnostics";
+import { describe, expect, it } from 'vitest';
+import type { DiagnosticsView } from './diagnostics';
+import { diagnosticsFromDto } from './diagnostics';
 
-describe("Diagnostics", () => {
-  describe("diagnosticsFromDto", () => {
-    it("converts DTO to domain model", () => {
+describe('Diagnostics', () => {
+  describe('diagnosticsFromDto', () => {
+    it('converts DTO to domain model', () => {
       const dto = {
-        frontendVersion: "0.1.0",
-        backendVersion: "0.1.0",
-        tauriVersion: "2.0.0",
-        platform: "macOS",
+        frontendVersion: '0.1.0',
+        backendVersion: '0.1.0',
+        tauriVersion: '2.0.0',
+        platform: 'macOS',
         runtimeCapabilities: {
-          runtime: "tauri",
-          platform: "macos",
+          runtime: 'tauri',
+          platform: 'macos',
           nativeMenus: true,
           nativeFileIcons: true,
           nativeThumbnails: true,
@@ -28,26 +28,26 @@ describe("Diagnostics", () => {
         },
         connectionState: {
           connected: true,
-          lastEventReceived: "2026-08-10T12:34:56Z",
+          lastEventReceived: '2026-08-10T12:34:56Z',
           uptimeSeconds: 3600,
           eventsReceived: 42,
-          statusMessage: "Connected",
+          statusMessage: 'Connected',
         },
         loadedPlugins: [
           {
-            pluginId: "plugin-1",
-            name: "Test Plugin",
+            pluginId: 'plugin-1',
+            name: 'Test Plugin',
             enabled: true,
-            version: "1.0.0",
+            version: '1.0.0',
             errorCount: 0,
           },
         ],
         recentErrors: [
           {
-            timestamp: "2026-08-10T12:34:50Z",
-            message: "Sample error",
-            code: "TEST_ERROR",
-            context: "op-123",
+            timestamp: '2026-08-10T12:34:50Z',
+            message: 'Sample error',
+            code: 'TEST_ERROR',
+            context: 'op-123',
           },
         ],
         operationQueueStatus: {
@@ -61,39 +61,39 @@ describe("Diagnostics", () => {
 
       const result = diagnosticsFromDto(dto);
 
-      expect(result.frontendVersion).toBe("0.1.0");
-      expect(result.backendVersion).toBe("0.1.0");
-      expect(result.tauriVersion).toBe("2.0.0");
-      expect(result.platform).toBe("macOS");
+      expect(result.frontendVersion).toBe('0.1.0');
+      expect(result.backendVersion).toBe('0.1.0');
+      expect(result.tauriVersion).toBe('2.0.0');
+      expect(result.platform).toBe('macOS');
       expect(result.connectionState.connected).toBe(true);
       expect(result.connectionState.eventsReceived).toBe(42);
       expect(result.loadedPlugins).toHaveLength(1);
-      expect(result.loadedPlugins[0]?.name).toBe("Test Plugin");
+      expect(result.loadedPlugins[0]?.name).toBe('Test Plugin');
       expect(result.recentErrors).toHaveLength(1);
       expect(result.operationQueueStatus.queuedCount).toBe(1);
     });
 
-    it("handles missing optional fields", () => {
+    it('handles missing optional fields', () => {
       const dto = {
-        frontendVersion: "0.1.0",
-        backendVersion: "0.1.0",
-        platform: "Unknown",
+        frontendVersion: '0.1.0',
+        backendVersion: '0.1.0',
+        platform: 'Unknown',
       };
 
       const result = diagnosticsFromDto(dto);
 
-      expect(result.frontendVersion).toBe("0.1.0");
+      expect(result.frontendVersion).toBe('0.1.0');
       expect(result.tauriVersion).toBeUndefined();
       expect(result.connectionState.connected).toBe(false);
       expect(result.loadedPlugins).toEqual([]);
       expect(result.recentErrors).toEqual([]);
     });
 
-    it("handles null/undefined arrays", () => {
+    it('handles null/undefined arrays', () => {
       const dto = {
-        frontendVersion: "0.1.0",
-        backendVersion: "0.1.0",
-        platform: "Linux",
+        frontendVersion: '0.1.0',
+        backendVersion: '0.1.0',
+        platform: 'Linux',
         loadedPlugins: null,
         recentErrors: undefined,
       };
@@ -105,15 +105,15 @@ describe("Diagnostics", () => {
     });
   });
 
-  describe("DiagnosticsView type", () => {
-    it("has all required fields", () => {
+  describe('DiagnosticsView type', () => {
+    it('has all required fields', () => {
       const view: DiagnosticsView = {
-        frontendVersion: "1.0.0",
-        backendVersion: "1.0.0",
-        platform: "macOS",
+        frontendVersion: '1.0.0',
+        backendVersion: '1.0.0',
+        platform: 'macOS',
         runtimeCapabilities: {
-          runtime: "browserServer",
-          platform: "macos",
+          runtime: 'browserServer',
+          platform: 'macos',
           nativeMenus: false,
           nativeFileIcons: false,
           nativeThumbnails: false,
@@ -129,7 +129,7 @@ describe("Diagnostics", () => {
           connected: true,
           uptimeSeconds: 0,
           eventsReceived: 0,
-          statusMessage: "Connected",
+          statusMessage: 'Connected',
         },
         loadedPlugins: [],
         recentErrors: [],

@@ -26,11 +26,11 @@ export interface ActionCommandControllerContext {
   getCommandPaletteOpen(): boolean;
   getContextMenu():
     | {
-      readonly paneId: PaneId;
-      readonly entries: readonly EntrySummary[];
-      readonly x: number;
-      readonly y: number;
-    }
+        readonly paneId: PaneId;
+        readonly entries: readonly EntrySummary[];
+        readonly x: number;
+        readonly y: number;
+      }
     | undefined;
   getCommandPaletteRecency(): Map<string, number>;
 
@@ -39,11 +39,11 @@ export interface ActionCommandControllerContext {
   setContextMenu(
     menu:
       | {
-        readonly paneId: PaneId;
-        readonly entries: readonly EntrySummary[];
-        readonly x: number;
-        readonly y: number;
-      }
+          readonly paneId: PaneId;
+          readonly entries: readonly EntrySummary[];
+          readonly x: number;
+          readonly y: number;
+        }
       | undefined,
   ): void;
 
@@ -153,9 +153,9 @@ export function createActionCommandController(
       (effectiveKey === undefined
         ? []
         : context.getGetSelectedEntries()(
-          context.getSelections().get(effectiveKey),
-          context.getDirectories().get(effectiveKey)?.entries ?? [],
-        ));
+            context.getSelections().get(effectiveKey),
+            context.getDirectories().get(effectiveKey)?.entries ?? [],
+          ));
     const directory =
       effectiveKey === undefined ? undefined : context.getDirectories().get(effectiveKey);
     return {

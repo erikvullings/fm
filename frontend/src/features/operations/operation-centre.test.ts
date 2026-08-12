@@ -295,7 +295,11 @@ describe('OperationCentre states', () => {
 
     const result = root.querySelector('[data-operation-id="warned-copy"] .fm-operation-result');
     expect(result?.textContent).toContain('Completed with 1 warning.');
-    const warningText = root.querySelector('[data-operation-id="warned-copy"] .fm-operation-warning');
-    expect(warningText?.textContent).toContain('existing-folder: Skipped because destination already exists.');
+    const warningText = root.querySelector(
+      '[data-operation-id="warned-copy"] .fm-operation-warning',
+    );
+    expect(warningText?.textContent).toContain(
+      'existing-folder: Skipped because destination already exists.',
+    );
   });
 });

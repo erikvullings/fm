@@ -56,8 +56,9 @@ function cancelledResult(operation: Operation): string {
   if (operation.kind === 'search') {
     return operation.result?.message ?? `Cancelled after finding ${items} files.`;
   }
-  const bytes = `${formatBytes(completedBytes)}${hasValue(totalBytes) ? ` / ${formatBytes(totalBytes)}` : ''
-    }`;
+  const bytes = `${formatBytes(completedBytes)}${
+    hasValue(totalBytes) ? ` / ${formatBytes(totalBytes)}` : ''
+  }`;
   return operation.result?.message ?? `Cancelled after ${items} items (${bytes}).`;
 }
 
@@ -103,65 +104,68 @@ export const OperationCentre: Component<OperationCentreAttrs> = {
             isSearch
               ? undefined
               : m(
-                'span',
-                `${progress.completedItems}${hasValue(progress.totalItems) ? ` / ${progress.totalItems}` : ''} items`,
-              ),
+                  'span',
+                  `${progress.completedItems}${hasValue(progress.totalItems) ? ` / ${progress.totalItems}` : ''} items`,
+                ),
             isSearch
               ? undefined
               : m(
-                'span',
-                `${formatBytes(progress.completedBytes)}${hasValue(progress.totalBytes) ? ` / ${formatBytes(progress.totalBytes)}` : ''}`,
-              ),
+                  'span',
+                  `${formatBytes(progress.completedBytes)}${hasValue(progress.totalBytes) ? ` / ${formatBytes(progress.totalBytes)}` : ''}`,
+                ),
             hasValue(progress.bytesPerSecond) && !isSearch
               ? m('span', `${formatBytes(progress.bytesPerSecond)}/s`)
               : undefined,
           ]),
           hasValue(progress.totalBytes)
             ? m('progress', {
-              value: progress.completedBytes,
-              max: Math.max(progress.totalBytes, 1),
-              'aria-label': `${operation.kind ?? 'operation'} progress`,
-            })
+                value: progress.completedBytes,
+                max: Math.max(progress.totalBytes, 1),
+                'aria-label': `${operation.kind ?? 'operation'} progress`,
+              })
             : undefined,
           operation.state !== 'completed' && operation.state !== 'completedWithWarnings'
             ? operation.state === 'cancelled'
               ? m('.fm-operation-result', cancelledResult(operation))
               : undefined
             : m(
-              '.fm-operation-result',
-              operation.state === 'completedWithWarnings'
-                ? completedWithWarningsResult(operation)
-                : operation.result?.message ??
-                (isSearch
-                  ? `Found ${operation.progress.completedItems} files.`
-                  : `Completed ${operation.progress.completedItems} items (${formatBytes(operation.progress.completedBytes)}).`),
-            ),
+                '.fm-operation-result',
+                operation.state === 'completedWithWarnings'
+                  ? completedWithWarningsResult(operation)
+                  : (operation.result?.message ??
+                      (isSearch
+                        ? `Found ${operation.progress.completedItems} files.`
+                        : `Completed ${operation.progress.completedItems} items (${formatBytes(operation.progress.completedBytes)}).`)),
+              ),
           operation.state !== 'completedWithWarnings' || warnings.length === 0
             ? undefined
             : m('.fm-operation-warning', [
-              m('details', [
-                m('summary', warnings.length === 1 ? 'Show warning' : 'Show warnings'),
-                m(
-                  'ul',
-                  warnings.map((warning) =>
-                    m('li', `${entryNameFromUri(warning.entry.location.uri)}: ${warning.message}`),
+                m('details', [
+                  m('summary', warnings.length === 1 ? 'Show warning' : 'Show warnings'),
+                  m(
+                    'ul',
+                    warnings.map((warning) =>
+                      m(
+                        'li',
+                        `${entryNameFromUri(warning.entry.location.uri)}: ${warning.message}`,
+                      ),
+                    ),
                   ),
-                ),
+                ]),
               ]),
-            ]),
           failure === undefined
             ? undefined
             : m('.fm-operation-failure', [
-              m('span', failure.message),
-              m('details', [
-                m('summary', 'Details'),
-                m('pre', JSON.stringify(failure.details ?? { code: failure.code }, null, 2)),
+                m('span', failure.message),
+                m('details', [
+                  m('summary', 'Details'),
+                  m('pre', JSON.stringify(failure.details ?? { code: failure.code }, null, 2)),
+                ]),
               ]),
-            ]),
           m('.fm-operation-controls', [
             operation.state === 'queued' ||
-              operation.state === 'planning' ||
-              operation.state === 'running'
+            operation.state === 'planning' ||
+            operation.state === 'running'
               ? button('Cancel', 'cancel', () => attrs.onCancel(operation.id))
               : undefined,
             operation.state === 'running'

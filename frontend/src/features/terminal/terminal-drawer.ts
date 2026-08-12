@@ -23,6 +23,7 @@ type LiveTerminal = {
   fit: FitAddon;
   surface: HTMLElement;
   sessionId?: string | undefined;
+  opening?: Promise<void> | undefined;
 };
 
 export interface TerminalKeyHandlers {
@@ -99,9 +100,9 @@ export const TerminalDrawer: FactoryComponent<TerminalDrawerAttrs> = () => {
             attrs.onToggle();
             m.redraw();
           },
-          onSwitchPane: attrs.onSwitchPane,
-          onCycleTab: attrs.onCycleTab,
-          onFocusFolder: attrs.onFocusFolder,
+          ...(attrs.onSwitchPane === undefined ? {} : { onSwitchPane: attrs.onSwitchPane }),
+          ...(attrs.onCycleTab === undefined ? {} : { onCycleTab: attrs.onCycleTab }),
+          ...(attrs.onFocusFolder === undefined ? {} : { onFocusFolder: attrs.onFocusFolder }),
         }),
       );
       terminal.onData((data) => {
@@ -114,8 +115,8 @@ export const TerminalDrawer: FactoryComponent<TerminalDrawerAttrs> = () => {
       showTerminalSurface(element, live.surface);
     }
     live.fit.fit();
-    if (live.sessionId === undefined) {
-      void attrs.client
+    if (live.sessionId === undefined && live.opening === undefined) {
+      live.opening = attrs.client
         .open(location, live.terminal.cols, live.terminal.rows, (event) => {
           if (event.type === 'output') live?.terminal.write(new Uint8Array(event.data));
           else if (event.type === 'exited') {
@@ -127,9 +128,15 @@ export const TerminalDrawer: FactoryComponent<TerminalDrawerAttrs> = () => {
           }
         })
         .then((id) => {
-          if (live !== undefined) live.sessionId = id;
+          if (live !== undefined) {
+            live.sessionId = id;
+            live.opening = undefined;
+          }
+        })
+        .catch(() => {
+          if (live !== undefined) live.opening = undefined;
         });
-    } else {
+    } else if (live.sessionId !== undefined) {
       void attrs.client.resize(live.sessionId, live.terminal.cols, live.terminal.rows);
     }
   }

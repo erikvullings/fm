@@ -4,8 +4,8 @@
   padding: 2rem;
   max-width: 900px;
   margin: 0 auto;
-  font-family: var(--font-family, system-ui, sans-serif);
-  color: var(--text-color, #333);
+  font-family: var(--fm-font-family);
+  color: var(--fm-text);
 }
 
 .diagnostics-view h1 {
@@ -20,13 +20,13 @@
   gap: 1rem;
   margin-bottom: 1.5rem;
   font-size: 0.95rem;
-  color: var(--text-secondary, #666);
+  color: var(--fm-text-muted);
 }
 
 .copy-btn {
   padding: 0.5rem 1rem;
-  background: var(--button-bg, #007acc);
-  color: white;
+  background: var(--fm-accent);
+  color: var(--fm-surface);
   border: none;
   border-radius: 4px;
   cursor: pointer;
@@ -35,15 +35,16 @@
 }
 
 .copy-btn:hover {
-  background: var(--button-hover-bg, #005a9e);
+  background: var(--fm-accent);
+  filter: brightness(0.9);
 }
 
 .diagnostics-section {
-  background: var(--section-bg, #f5f5f5);
+  background: var(--fm-surface-elevated);
   padding: 1.5rem;
   margin-bottom: 1.5rem;
   border-radius: 6px;
-  border: 1px solid var(--section-border, #ddd);
+  border: 1px solid var(--fm-border);
 }
 
 .diagnostics-section h2 {
@@ -51,7 +52,7 @@
   margin-bottom: 1rem;
   margin-top: 0;
   font-weight: 600;
-  color: var(--heading-color, #222);
+  color: var(--fm-text);
 }
 
 .diagnostics-section dl {
@@ -63,7 +64,7 @@
 
 .diagnostics-section dt {
   font-weight: 500;
-  color: var(--text-muted, #555);
+  color: var(--fm-text-muted);
 }
 
 .diagnostics-section dd {
@@ -72,12 +73,12 @@
 }
 
 .status-ok {
-  color: #28a745;
+  color: var(--fm-success);
   font-weight: 600;
 }
 
 .status-error {
-  color: #dc3545;
+  color: var(--fm-error);
   font-weight: 600;
 }
 
@@ -92,7 +93,7 @@
   justify-content: space-between;
   align-items: center;
   padding: 0.75rem 0;
-  border-bottom: 1px solid var(--list-border, #e0e0e0);
+  border-bottom: 1px solid var(--fm-border);
 }
 
 .plugin-list li:last-child {
@@ -105,8 +106,8 @@
 
 .plugin-status {
   font-size: 0.85rem;
-  color: var(--text-secondary, #666);
-  background: var(--tag-bg, #e8f4f8);
+  color: var(--fm-text-muted);
+  background: var(--fm-hover);
   padding: 0.25rem 0.75rem;
   border-radius: 12px;
 }
@@ -119,21 +120,21 @@
 
 .error-entry {
   padding: 1rem;
-  background: var(--error-bg, #fff5f5);
-  border-left: 4px solid #dc3545;
+  background: var(--fm-surface-elevated);
+  border-left: 4px solid var(--fm-error);
   border-radius: 4px;
 }
 
 .error-entry strong {
   display: block;
   margin-bottom: 0.25rem;
-  color: #dc3545;
+  color: var(--fm-error);
 }
 
 .error-entry .timestamp {
   display: block;
   font-size: 0.8rem;
-  color: var(--text-secondary, #666);
+  color: var(--fm-text-muted);
   margin-bottom: 0.5rem;
 }
 
@@ -145,7 +146,7 @@
 .error-context {
   display: block;
   margin-top: 0.5rem;
-  color: var(--text-secondary, #666);
+  color: var(--fm-text-muted);
   font-style: italic;
 }
 
@@ -155,11 +156,11 @@
 }
 
 .diagnostics-view.error h2 {
-  color: #dc3545;
+  color: var(--fm-error);
 }
 
 .diagnostics-view.error p {
-  color: var(--text-secondary, #666);
+  color: var(--fm-text-muted);
   margin-bottom: 1.5rem;
 }
 

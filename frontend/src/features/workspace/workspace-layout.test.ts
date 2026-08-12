@@ -17,9 +17,7 @@ describe('pathFromUri', () => {
   });
 
   it('hides the sftp connection id and returns only the remote path', () => {
-    expect(pathFromUri('sftp://11111111-1111-4111-8111-111111111111/home/erik')).toBe(
-      '/home/erik',
-    );
+    expect(pathFromUri('sftp://11111111-1111-4111-8111-111111111111/home/erik')).toBe('/home/erik');
   });
 
   it('shows sftp root as slash', () => {

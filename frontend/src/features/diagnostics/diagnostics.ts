@@ -1,6 +1,6 @@
 /** Diagnostics model and types (spec §30). */
 
-import type { RuntimeCapabilities } from "../../models/runtime-capabilities";
+import type { RuntimeCapabilities } from '../../models/runtime-capabilities';
 
 /** Diagnostics information for troubleshooting and bug reports. */
 export interface DiagnosticsView {
@@ -53,17 +53,17 @@ export interface OperationQueueStatus {
 /** Convert DTO to domain model. */
 export function diagnosticsFromDto(dto: any): DiagnosticsView {
   return {
-    frontendVersion: dto.frontendVersion ?? "",
-    backendVersion: dto.backendVersion ?? "",
+    frontendVersion: dto.frontendVersion ?? '',
+    backendVersion: dto.backendVersion ?? '',
     tauriVersion: dto.tauriVersion,
-    platform: dto.platform ?? "Unknown",
+    platform: dto.platform ?? 'Unknown',
     runtimeCapabilities: dto.runtimeCapabilities ?? {},
     connectionState: {
       connected: dto.connectionState?.connected ?? false,
       lastEventReceived: dto.connectionState?.lastEventReceived,
       uptimeSeconds: dto.connectionState?.uptimeSeconds ?? 0,
       eventsReceived: dto.connectionState?.eventsReceived ?? 0,
-      statusMessage: dto.connectionState?.statusMessage ?? "Unknown",
+      statusMessage: dto.connectionState?.statusMessage ?? 'Unknown',
     },
     loadedPlugins: (dto.loadedPlugins ?? []).map((p: any) => ({
       pluginId: p.pluginId,

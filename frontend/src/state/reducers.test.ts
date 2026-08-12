@@ -204,7 +204,10 @@ describe('state slice reducers', () => {
     );
     expect(withDraft.quickFilterDrafts.byTabKey['pane-1:tab-1']).toBe('hello');
 
-    const withSecond = applyAppPatches(withDraft, setQuickFilterDraftPatch('pane-1:tab-2', 'world'));
+    const withSecond = applyAppPatches(
+      withDraft,
+      setQuickFilterDraftPatch('pane-1:tab-2', 'world'),
+    );
     expect(withSecond.quickFilterDrafts.byTabKey['pane-1:tab-1']).toBe('hello');
     expect(withSecond.quickFilterDrafts.byTabKey['pane-1:tab-2']).toBe('world');
 

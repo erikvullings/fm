@@ -301,7 +301,11 @@ export function createFileViewerController(
       if (current.status === 'ready') {
         const readyState = current as Extract<FileViewerState, { status: 'ready' }>;
         // Also clear any stale highlight from the content state.
-        if (readyState.content.kind === 'text' && (readyState.content.highlightOffset !== undefined || readyState.content.highlightLength !== undefined)) {
+        if (
+          readyState.content.kind === 'text' &&
+          (readyState.content.highlightOffset !== undefined ||
+            readyState.content.highlightLength !== undefined)
+        ) {
           const { highlightOffset, highlightLength, ...contentRest } = readyState.content;
           publish({
             ...readyState,
@@ -402,7 +406,10 @@ export function createFileViewerController(
       } else {
         // No matches - clear stale highlight from the content state.
         const content = textContent();
-        if (content !== undefined && (content.highlightOffset !== undefined || content.highlightLength !== undefined)) {
+        if (
+          content !== undefined &&
+          (content.highlightOffset !== undefined || content.highlightLength !== undefined)
+        ) {
           const { highlightOffset, highlightLength, ...contentRest } = content;
           publish({
             ...(current as Extract<FileViewerState, { status: 'ready' }>),
