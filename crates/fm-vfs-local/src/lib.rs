@@ -702,6 +702,31 @@ async fn preserve_copy_metadata(
     })?
 }
 
+/// Opens a path for reading, tolerating directories.
+///
+/// `std::fs::File::open` issues a `CreateFileW` without `FILE_FLAG_BACKUP_SEMANTICS` on
+/// Windows, which the OS rejects with access-denied for directory paths (unlike Unix, where
+/// `open()` on a directory succeeds). Setting that flag lets us obtain a directory handle to
+/// read/set its metadata, matching the Unix behavior `preserve_entry_metadata` relies on.
+fn open_for_metadata(path: &Path) -> io::Result<std::fs::File> {
+    let mut options = std::fs::OpenOptions::new();
+    options.read(true);
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::OpenOptionsExt;
+
+        use windows_sys::Win32::Storage::FileSystem::{
+            FILE_FLAG_BACKUP_SEMANTICS, FILE_GENERIC_READ, FILE_WRITE_ATTRIBUTES,
+        };
+        // GENERIC_READ (from `.read(true)`) lacks FILE_WRITE_ATTRIBUTES, which
+        // `File::set_times` needs; request it explicitly via `access_mode`.
+        options
+            .access_mode(FILE_GENERIC_READ | FILE_WRITE_ATTRIBUTES)
+            .custom_flags(FILE_FLAG_BACKUP_SEMANTICS);
+    }
+    options.open(path)
+}
+
 async fn preserve_entry_metadata(
     source: &Path,
     destination: &Path,
@@ -714,7 +739,7 @@ async fn preserve_entry_metadata(
         let metadata =
             std::fs::metadata(&source).map_err(|error| map_io_error(error, &location))?;
         let destination_file =
-            std::fs::File::open(&destination).map_err(|error| map_io_error(error, &location))?;
+            open_for_metadata(&destination).map_err(|error| map_io_error(error, &location))?;
         destination_file
             .set_times(
                 std::fs::FileTimes::new()
