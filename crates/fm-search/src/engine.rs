@@ -22,8 +22,8 @@ use fm_events::{
     EventBus, OperationProgressDetails, OperationProgressPayload, OperationStatePayload,
 };
 use fm_vfs::{
-    ContentMatch, ContentQuery, EntryRef, FileSystemProvider, ListOptions, looks_like_binary,
-    ProviderCapabilities, ProviderRegistry, search_content,
+    ContentMatch, ContentQuery, EntryRef, FileSystemProvider, ListOptions, ProviderCapabilities,
+    ProviderRegistry, looks_like_binary, search_content,
 };
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, BufReader};
@@ -143,8 +143,8 @@ impl SearchEngine {
         self.store.register(search_id, cancellation.clone());
 
         // Count how many traversal paths are active for completion coordination.
-        let active_paths = (usize::from(!root_paths.is_empty()))
-            + (usize::from(!vfs_roots.is_empty()));
+        let active_paths =
+            (usize::from(!root_paths.is_empty())) + (usize::from(!vfs_roots.is_empty()));
         let coord = CompletionCoordinator {
             total_paths: active_paths,
             finished_paths: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
@@ -262,7 +262,9 @@ struct CompletionCoordinator {
 
 impl CompletionCoordinator {
     fn finished_when_current_ends(&self) -> usize {
-        self.finished_paths.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1
+        self.finished_paths
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            + 1
     }
 
     fn is_last(self) -> bool {
@@ -490,8 +492,7 @@ async fn run_search_vfs(
         };
         // Need LIST to enumerate; need READ if content search is requested.
         if !capabilities.contains(ProviderCapabilities::LIST)
-            || (has_content_query
-                && !capabilities.contains(ProviderCapabilities::READ))
+            || (has_content_query && !capabilities.contains(ProviderCapabilities::READ))
         {
             warnings_count += 1;
             continue;
@@ -542,11 +543,7 @@ async fn run_search_vfs(
 
                 // Check filename match.
                 if has_filename_filter {
-                    if !matches_name(
-                        &entry.name,
-                        &options.filename_query,
-                        filename_mode,
-                    ) {
+                    if !matches_name(&entry.name, &options.filename_query, filename_mode) {
                         continue;
                     }
                 }
@@ -562,31 +559,27 @@ async fn run_search_vfs(
                         id: entry.id,
                         location: entry.location.clone(),
                     };
-                    let matches = match scan_vfs_file(
-                        &*provider,
-                        &entry_ref,
-                        content_query,
-                        cancellation,
-                    )
-                    .await
-                    {
-                        Ok(m) => {
-                            if !m.is_empty() {
-                                Some(
-                                    m.iter()
-                                        .map(|m| ContentMatchSummary {
-                                            line_number: m.line_number,
-                                            offset: m.match_start,
-                                            length: m.match_len,
-                                        })
-                                        .collect(),
-                                )
-                            } else {
-                                None
+                    let matches =
+                        match scan_vfs_file(&*provider, &entry_ref, content_query, cancellation)
+                            .await
+                        {
+                            Ok(m) => {
+                                if !m.is_empty() {
+                                    Some(
+                                        m.iter()
+                                            .map(|m| ContentMatchSummary {
+                                                line_number: m.line_number,
+                                                offset: m.match_start,
+                                                length: m.match_len,
+                                            })
+                                            .collect(),
+                                    )
+                                } else {
+                                    None
+                                }
                             }
-                        }
-                        Err(_) => None,
-                    };
+                            Err(_) => None,
+                        };
                     if let Some(cm) = matches {
                         matches_found += 1;
                         buffer.push((entry, Some(cm)));
@@ -660,12 +653,18 @@ async fn scan_vfs_file(
     query: &ContentQuery,
     cancellation: &CancellationToken,
 ) -> Result<Vec<ContentMatch>, VfsScanError> {
-    let reader = provider.open_read(entry, cancellation.clone()).await.map_err(|_| VfsScanError::Io)?;
+    let reader = provider
+        .open_read(entry, cancellation.clone())
+        .await
+        .map_err(|_| VfsScanError::Io)?;
 
     // Binary sniff: read first chunk via collector.
     let mut buf_reader = BufReader::with_capacity(VFS_SNIFF_BYTES, reader);
     let mut sniff_buf = vec![0_u8; VFS_SNIFF_BYTES];
-    let sniffed = buf_reader.read(&mut sniff_buf).await.map_err(|_| VfsScanError::Io)?;
+    let sniffed = buf_reader
+        .read(&mut sniff_buf)
+        .await
+        .map_err(|_| VfsScanError::Io)?;
     if sniffed == 0 {
         return Ok(Vec::new());
     }
@@ -1486,7 +1485,10 @@ mod tests {
 
     /// Minimal mock provider for testing VFS traversal.
     struct MockVfsProvider {
-        uris_to_entries: std::sync::Mutex<(std::collections::HashMap<String, Vec<fm_domain::EntrySummary>>,fm_domain::ProviderId)>,
+        uris_to_entries: std::sync::Mutex<(
+            std::collections::HashMap<String, Vec<fm_domain::EntrySummary>>,
+            fm_domain::ProviderId,
+        )>,
         uris_to_content: std::sync::Mutex<std::collections::HashMap<String, Vec<u8>>>,
     }
 
@@ -1499,7 +1501,10 @@ mod tests {
                 vec![
                     fm_domain::EntrySummary {
                         id: fm_domain::EntryId::new(),
-                        location: fm_domain::Location::new(root_id.clone(), format!("{root_uri}/a.txt")),
+                        location: fm_domain::Location::new(
+                            root_id.clone(),
+                            format!("{root_uri}/a.txt"),
+                        ),
                         name: "a.txt".to_string(),
                         kind: EntryKind::File,
                         size: Some(4),
@@ -1514,7 +1519,10 @@ mod tests {
                     },
                     fm_domain::EntrySummary {
                         id: fm_domain::EntryId::new(),
-                        location: fm_domain::Location::new(root_id.clone(), format!("{root_uri}/sub")),
+                        location: fm_domain::Location::new(
+                            root_id.clone(),
+                            format!("{root_uri}/sub"),
+                        ),
                         name: "sub".to_string(),
                         kind: EntryKind::Directory,
                         size: None,
@@ -1531,28 +1539,32 @@ mod tests {
             );
             files.insert(
                 format!("{root_uri}/sub"),
-                vec![
-                    fm_domain::EntrySummary {
-                        id: fm_domain::EntryId::new(),
-                        location: fm_domain::Location::new(root_id.clone(), format!("{root_uri}/sub/b.txt")),
-                        name: "b.txt".to_string(),
-                        kind: EntryKind::File,
-                        size: Some(6),
-                        modified_at: None,
-                        created_at: None,
-                        hidden: false,
-                        read_only: false,
-                        extension: Some("txt".to_string()),
-                        mime_type: None,
-                        icon_key: None,
-                        metadata_revision: 0,
-                    },
-                ],
+                vec![fm_domain::EntrySummary {
+                    id: fm_domain::EntryId::new(),
+                    location: fm_domain::Location::new(
+                        root_id.clone(),
+                        format!("{root_uri}/sub/b.txt"),
+                    ),
+                    name: "b.txt".to_string(),
+                    kind: EntryKind::File,
+                    size: Some(6),
+                    modified_at: None,
+                    created_at: None,
+                    hidden: false,
+                    read_only: false,
+                    extension: Some("txt".to_string()),
+                    mime_type: None,
+                    icon_key: None,
+                    metadata_revision: 0,
+                }],
             );
 
             let mut content = std::collections::HashMap::new();
             content.insert(format!("{root_uri}/a.txt"), b"alpha\n".to_vec());
-            content.insert(format!("{root_uri}/sub/b.txt"), b"needle here\nanother needle\n".to_vec());
+            content.insert(
+                format!("{root_uri}/sub/b.txt"),
+                b"needle here\nanother needle\n".to_vec(),
+            );
 
             Self {
                 uris_to_entries: std::sync::Mutex::new((files, root_id.clone())),
@@ -1675,10 +1687,8 @@ mod tests {
         let engine = SearchEngine::new(store.clone(), events.clone(), providers);
         let subscription = subscribe(&events);
 
-        let root_location = fm_domain::Location::new(
-            fm_domain::ProviderId::new("mock"),
-            root_uri.to_string(),
-        );
+        let root_location =
+            fm_domain::Location::new(fm_domain::ProviderId::new("mock"), root_uri.to_string());
         let search_id = Uuid::new_v4();
         let _ = engine.start(
             search_id,
@@ -1708,10 +1718,7 @@ mod tests {
         )
         .await;
         let total: usize = batches.iter().map(|(e, _, _)| e.len()).sum();
-        assert_eq!(
-            total, 1,
-            "only b.txt contains 'needle'"
-        );
+        assert_eq!(total, 1, "only b.txt contains 'needle'");
         let names: Vec<_> = batches
             .iter()
             .flat_map(|(entries, _, _)| entries.iter())
@@ -1733,14 +1740,15 @@ mod tests {
 
     #[tokio::test]
     async fn vfs_traversal_respects_filename_filter() {
-        let batches =
-            test_vfs_search_with_content("mock://filter-root", "a.txt", None).await;
+        let batches = test_vfs_search_with_content("mock://filter-root", "a.txt", None).await;
         let total: usize = batches.iter().map(|(e, _, _)| e.len()).sum();
         assert_eq!(total, 1, "only a.txt should match by filename");
-        assert!(batches
-            .iter()
-            .flat_map(|(entries, _, _)| entries.iter())
-            .any(|e| e.name == "a.txt"));
+        assert!(
+            batches
+                .iter()
+                .flat_map(|(entries, _, _)| entries.iter())
+                .any(|e| e.name == "a.txt")
+        );
     }
 
     #[tokio::test]
@@ -1750,10 +1758,8 @@ mod tests {
         let engine = SearchEngine::new(store.clone(), events.clone(), ProviderRegistry::new());
         let subscription = subscribe(&events);
 
-        let unknown_location = fm_domain::Location::new(
-            fm_domain::ProviderId::new("unknown"),
-            "unknown://somewhere",
-        );
+        let unknown_location =
+            fm_domain::Location::new(fm_domain::ProviderId::new("unknown"), "unknown://somewhere");
         let search_id = Uuid::new_v4();
         let _ = engine
             .start(
