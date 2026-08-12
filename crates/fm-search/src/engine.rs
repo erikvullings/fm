@@ -2,10 +2,17 @@
 //! (spec §24, task 0089).
 //!
 //! [`SearchEngine::start`] resolves every root eagerly (so a bad root is
-//! rejected synchronously) then hands traversal to a blocking task: entries
-//! are matched and streamed in batches rather than collected into memory,
-//! so a 100k-file tree cannot flood the frontend or blow up backend memory.
+//! rejected synchronously) then hands traversal to either:
+//! - A blocking task using `ignore::WalkBuilder` for `file://` roots (optimal
+//!   local-filesystem path with `.gitignore` awareness), or
+//! - An async task using provider-neutral VFS calls (`list`/`open_read`) for
+//!   non-local roots (spec §6, task 0125).
+//!
+//! Entries are matched and streamed in batches rather than collected into
+//! memory, so a 100k-file tree cannot flood the frontend or blow up backend
+//! memory.
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
@@ -14,8 +21,12 @@ use fm_events::{
     BackendEventPayload, ContentMatchSummary, EntryRefPayload, EntrySummaryPayload, EventAudience,
     EventBus, OperationProgressDetails, OperationProgressPayload, OperationStatePayload,
 };
-use fm_vfs::ContentQuery;
+use fm_vfs::{
+    ContentMatch, ContentQuery, EntryRef, FileSystemProvider, ListOptions, looks_like_binary,
+    ProviderCapabilities, ProviderRegistry, search_content,
+};
 use std::sync::Arc;
+use tokio::io::{AsyncReadExt, BufReader};
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
@@ -51,6 +62,7 @@ pub enum SearchError {
 pub struct SearchEngine {
     store: Arc<SearchResultsStore>,
     events: EventBus,
+    providers: ProviderRegistry,
 }
 
 /// Parameters for a search request.
@@ -78,8 +90,16 @@ impl SearchEngine {
     /// Creates an engine that stores results in `store` and streams batches
     /// over `events`.
     #[must_use]
-    pub fn new(store: Arc<SearchResultsStore>, events: EventBus) -> Self {
-        Self { store, events }
+    pub fn new(
+        store: Arc<SearchResultsStore>,
+        events: EventBus,
+        providers: ProviderRegistry,
+    ) -> Self {
+        Self {
+            store,
+            events,
+            providers,
+        }
     }
 
     /// Starts a new cancellable search over `roots` with `options`, publishing
@@ -108,30 +128,74 @@ impl SearchEngine {
         if roots.is_empty() {
             return Err(SearchError::NoRoots);
         }
-        let mut root_paths = Vec::with_capacity(roots.len());
+
+        // Partition roots into native (file://) and VFS (non-local) paths.
+        let mut root_paths = Vec::new();
+        let mut vfs_roots = Vec::new();
         for root in &roots {
-            let path = root
-                .to_native_path()
-                .map_err(|_| SearchError::InvalidRoot(root.uri.clone()))?;
-            root_paths.push(path);
+            match root.to_native_path() {
+                Ok(path) => root_paths.push(path),
+                Err(_) => vfs_roots.push(root.clone()),
+            }
         }
 
         let cancellation = CancellationToken::new();
         self.store.register(search_id, cancellation.clone());
 
-        let store = Arc::clone(&self.store);
-        let events = self.events.clone();
-        tokio::task::spawn_blocking(move || {
-            run_search(
-                search_id,
-                root_paths,
-                &options,
-                &cancellation,
-                &store,
-                &events,
-                &audience,
-            );
-        });
+        // Count how many traversal paths are active for completion coordination.
+        let active_paths = (usize::from(!root_paths.is_empty()))
+            + (usize::from(!vfs_roots.is_empty()));
+        let coord = CompletionCoordinator {
+            total_paths: active_paths,
+            finished_paths: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+        };
+
+        // Spawn blocking task for native (file://) roots using WalkBuilder.
+        if !root_paths.is_empty() {
+            let store = Arc::clone(&self.store);
+            let events = self.events.clone();
+            let options = options.clone();
+            let cancellation = cancellation.clone();
+            let audience = audience.clone();
+            let coord = coord.clone();
+            tokio::task::spawn_blocking(move || {
+                run_search_native(
+                    search_id,
+                    root_paths,
+                    &options,
+                    &cancellation,
+                    &store,
+                    &events,
+                    &audience,
+                    coord,
+                );
+            });
+        }
+
+        // Spawn async task for VFS (non-local) roots.
+        if !vfs_roots.is_empty() {
+            let store = Arc::clone(&self.store);
+            let events = self.events.clone();
+            let providers = self.providers.clone();
+            let options = options.clone();
+            let cancellation = cancellation.clone();
+            let audience = audience.clone();
+            let coord = coord.clone();
+            tokio::spawn(async move {
+                run_search_vfs(
+                    search_id,
+                    vfs_roots,
+                    &options,
+                    &cancellation,
+                    &store,
+                    &events,
+                    &audience,
+                    providers,
+                    coord,
+                )
+                .await;
+            });
+        }
 
         let location = Location::new(
             ProviderId::new("search"),
@@ -184,7 +248,29 @@ struct SearchContext<'a> {
     operation_id: Option<OperationId>,
 }
 
-fn run_search(
+/// Shared completion state for coordinated multi-path searches.
+///
+/// When both native and VFS paths are active, each owns a handle. Completion
+/// is only emitted when the last handle finishes.
+#[derive(Clone)]
+struct CompletionCoordinator {
+    total_paths: usize,
+    /// Atomic tracking is needed since native runs on blocking thread,
+    /// VFS runs on async thread.
+    finished_paths: Arc<std::sync::atomic::AtomicUsize>,
+}
+
+impl CompletionCoordinator {
+    fn finished_when_current_ends(&self) -> usize {
+        self.finished_paths.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1
+    }
+
+    fn is_last(self) -> bool {
+        self.finished_when_current_ends() == self.total_paths
+    }
+}
+
+fn run_search_native(
     search_id: Uuid,
     roots: Vec<PathBuf>,
     options: &SearchOptions,
@@ -192,6 +278,7 @@ fn run_search(
     store: &SearchResultsStore,
     events: &EventBus,
     audience: &EventAudience,
+    completion: CompletionCoordinator,
 ) {
     let ctx = SearchContext {
         search_id,
@@ -322,32 +409,293 @@ fn run_search(
             }
         }
     }
+    let is_last = completion.is_last();
     flush(
         &ctx,
         &mut buffer,
         warnings_count,
-        true,
+        is_last,
         matches_found,
         current_entry.clone(),
     );
 
-    if let Some(op_id) = ctx.operation_id {
-        let state = if cancellation.is_cancelled() {
-            OperationStatePayload::Cancelled
-        } else {
-            OperationStatePayload::Completed
-        };
-        events.publish(
-            audience.clone(),
-            BackendEventPayload::OperationStateChanged {
-                operation_id: op_id,
-                state,
-            },
-        );
+    if is_last {
+        if let Some(op_id) = ctx.operation_id {
+            let state = if cancellation.is_cancelled() {
+                OperationStatePayload::Cancelled
+            } else {
+                OperationStatePayload::Completed
+            };
+            events.publish(
+                audience.clone(),
+                BackendEventPayload::OperationStateChanged {
+                    operation_id: op_id,
+                    state,
+                },
+            );
+        }
     }
 }
 
-/// Flushes buffered matches to the store and publishes them as one event.
+/// Maximum bytes to scan per file during VFS content search.
+const VFS_MAX_SCAN_BYTES: u64 = 10 * 1024 * 1024; // 10 MiB
+/// Bytes to read for binary sniff over VFS streams.
+const VFS_SNIFF_BYTES: usize = 8192;
+
+/// Recursively traverses VFS roots using provider-neutral API.
+///
+/// Uses `list()` for directory enumeration and `open_read()` for content
+/// scanning. No `.gitignore` awareness (not available over VFS). Symlinks
+/// are tracked by URI to prevent cycles.
+async fn run_search_vfs(
+    search_id: Uuid,
+    roots: Vec<Location>,
+    options: &SearchOptions,
+    cancellation: &CancellationToken,
+    store: &SearchResultsStore,
+    events: &EventBus,
+    audience: &EventAudience,
+    providers: ProviderRegistry,
+    completion: CompletionCoordinator,
+) {
+    let ctx = SearchContext {
+        search_id,
+        store,
+        events,
+        audience,
+        operation_id: options.operation_id,
+    };
+    let filename_mode = detect_match_mode(&options.filename_query);
+    let has_filename_filter = !options.filename_query.is_empty();
+    let has_content_query = options.content_query.is_some();
+    let mut buffer: Vec<(EntrySummary, Option<Vec<ContentMatchSummary>>)> =
+        Vec::with_capacity(BATCH_SIZE);
+    let mut warnings_count = 0_u32;
+    let mut last_flush = Instant::now();
+    let mut matches_found: u64 = 0;
+    let mut current_entry: Option<EntryRefPayload> = None;
+    let mut visited: HashSet<String> = HashSet::new();
+
+    for root in roots {
+        if cancellation.is_cancelled() {
+            break;
+        }
+        let Ok(provider) = providers.resolve(&root) else {
+            warnings_count += 1;
+            continue;
+        };
+        let Ok(capabilities) = provider.capabilities_for(&root) else {
+            warnings_count += 1;
+            continue;
+        };
+        // Need LIST to enumerate; need READ if content search is requested.
+        if !capabilities.contains(ProviderCapabilities::LIST)
+            || (has_content_query
+                && !capabilities.contains(ProviderCapabilities::READ))
+        {
+            warnings_count += 1;
+            continue;
+        }
+        if !visited.insert(root.uri.clone()) {
+            continue;
+        }
+        let mut depth = 0;
+        let mut stack = vec![root];
+        while let Some(location) = stack.pop() {
+            if cancellation.is_cancelled() {
+                break;
+            }
+            // List directory.
+            let page = match provider
+                .list(
+                    &location,
+                    ListOptions {
+                        page_size: 1024,
+                        continuation_token: None,
+                    },
+                    cancellation.clone(),
+                )
+                .await
+            {
+                Ok(p) => p,
+                Err(_) => {
+                    warnings_count += 1;
+                    continue;
+                }
+            };
+
+            for entry in page.entries {
+                if entry.kind == EntryKind::Directory {
+                    // Track visited directories to prevent cycles (no symlinks
+                    // following, but providers may return circular refs).
+                    if options.recurse && visited.insert(entry.location.uri.clone()) {
+                        stack.push(entry.location);
+                    }
+                    continue;
+                }
+                // Check recurse depth.
+                if depth == 0 && !options.recurse {
+                    // For non-recursive, only the root directory contents.
+                    // Directories are already counted above; files at root depth
+                    // are processable.
+                }
+
+                // Check filename match.
+                if has_filename_filter {
+                    if !matches_name(
+                        &entry.name,
+                        &options.filename_query,
+                        filename_mode,
+                    ) {
+                        continue;
+                    }
+                }
+
+                current_entry = Some(EntryRefPayload {
+                    id: entry.id,
+                    location: entry.location.clone().into(),
+                });
+
+                if has_content_query {
+                    let content_query = options.content_query.as_ref().expect("safe");
+                    let entry_ref = EntryRef {
+                        id: entry.id,
+                        location: entry.location.clone(),
+                    };
+                    let matches = match scan_vfs_file(
+                        &*provider,
+                        &entry_ref,
+                        content_query,
+                        cancellation,
+                    )
+                    .await
+                    {
+                        Ok(m) => {
+                            if !m.is_empty() {
+                                Some(
+                                    m.iter()
+                                        .map(|m| ContentMatchSummary {
+                                            line_number: m.line_number,
+                                            offset: m.match_start,
+                                            length: m.match_len,
+                                        })
+                                        .collect(),
+                                )
+                            } else {
+                                None
+                            }
+                        }
+                        Err(_) => None,
+                    };
+                    if let Some(cm) = matches {
+                        matches_found += 1;
+                        buffer.push((entry, Some(cm)));
+                    }
+                } else {
+                    matches_found += 1;
+                    buffer.push((entry, None));
+                }
+            }
+
+            // Flush periodically.
+            if buffer.len() >= BATCH_SIZE || last_flush.elapsed() >= BATCH_INTERVAL {
+                flush(
+                    &ctx,
+                    &mut buffer,
+                    warnings_count,
+                    false,
+                    matches_found,
+                    current_entry.clone(),
+                );
+                last_flush = Instant::now();
+            }
+
+            depth += 1;
+        }
+    }
+
+    let is_last = completion.is_last();
+    flush(
+        &ctx,
+        &mut buffer,
+        warnings_count,
+        is_last,
+        matches_found,
+        current_entry.clone(),
+    );
+
+    if is_last {
+        if let Some(op_id) = ctx.operation_id {
+            let state = if cancellation.is_cancelled() {
+                OperationStatePayload::Cancelled
+            } else {
+                OperationStatePayload::Completed
+            };
+            events.publish(
+                audience.clone(),
+                BackendEventPayload::OperationStateChanged {
+                    operation_id: op_id,
+                    state,
+                },
+            );
+        }
+    }
+}
+
+/// VFS content scan errors.
+#[derive(Debug)]
+enum VfsScanError {
+    FileTooLarge,
+    Binary,
+    Io,
+}
+
+/// Scans a single VFS file's content for `query`.
+///
+/// Reads first chunk for binary sniff, then scans the full content line by
+/// line. Bounded by `VFS_MAX_SCAN_BYTES`.
+async fn scan_vfs_file(
+    provider: &dyn FileSystemProvider,
+    entry: &EntryRef,
+    query: &ContentQuery,
+    cancellation: &CancellationToken,
+) -> Result<Vec<ContentMatch>, VfsScanError> {
+    let reader = provider.open_read(entry, cancellation.clone()).await.map_err(|_| VfsScanError::Io)?;
+
+    // Binary sniff: read first chunk via collector.
+    let mut buf_reader = BufReader::with_capacity(VFS_SNIFF_BYTES, reader);
+    let mut sniff_buf = vec![0_u8; VFS_SNIFF_BYTES];
+    let sniffed = buf_reader.read(&mut sniff_buf).await.map_err(|_| VfsScanError::Io)?;
+    if sniffed == 0 {
+        return Ok(Vec::new());
+    }
+    let sniff = &sniff_buf[..sniffed];
+    if looks_like_binary(sniff) {
+        return Err(VfsScanError::Binary);
+    }
+
+    // Size check: try to get known size first.
+    // Since we already have a BufReader wrapping the original stream, we
+    // need to create a new reader for the content scan.
+    let reader2 = provider
+        .open_read(entry, cancellation.clone())
+        .await
+        .map_err(|_| VfsScanError::Io)?;
+
+    // Scan using fm_vfs::search_content (already handles size bounds internally
+    // but we need to check file_size if available).
+    let size = provider.file_size(entry, cancellation.clone()).await.ok();
+    if let Some(s) = size {
+        if s > VFS_MAX_SCAN_BYTES {
+            return Err(VfsScanError::FileTooLarge);
+        }
+    }
+
+    let outcome = search_content(reader2, query, 500, cancellation)
+        .await
+        .map_err(|_| VfsScanError::Io)?;
+    Ok(outcome.matches)
+}
 ///
 /// A final (`is_complete: true`) flush is always sent, even with an empty
 /// buffer, so listeners can reliably detect that no further batches follow.
@@ -535,7 +883,7 @@ mod tests {
 
         let store = Arc::new(SearchResultsStore::new());
         let events = EventBus::new(16);
-        let engine = SearchEngine::new(Arc::clone(&store), events.clone());
+        let engine = SearchEngine::new(Arc::clone(&store), events.clone(), ProviderRegistry::new());
         let subscription = subscribe(&events);
 
         let root_location = Location::from_native_path(root.path()).unwrap();
@@ -571,7 +919,7 @@ mod tests {
 
         let store = Arc::new(SearchResultsStore::new());
         let events = EventBus::new(16);
-        let engine = SearchEngine::new(Arc::clone(&store), events.clone());
+        let engine = SearchEngine::new(Arc::clone(&store), events.clone(), ProviderRegistry::new());
         let subscription = subscribe(&events);
 
         let root_location = Location::from_native_path(root.path()).unwrap();
@@ -600,7 +948,7 @@ mod tests {
 
         let store = Arc::new(SearchResultsStore::new());
         let events = EventBus::new(16);
-        let engine = SearchEngine::new(Arc::clone(&store), events.clone());
+        let engine = SearchEngine::new(Arc::clone(&store), events.clone(), ProviderRegistry::new());
         let subscription = subscribe(&events);
 
         let root_location = Location::from_native_path(root.path()).unwrap();
@@ -641,7 +989,7 @@ mod tests {
 
         let store = Arc::new(SearchResultsStore::new());
         let events = EventBus::new(16);
-        let engine = SearchEngine::new(Arc::clone(&store), events.clone());
+        let engine = SearchEngine::new(Arc::clone(&store), events.clone(), ProviderRegistry::new());
         let subscription = subscribe(&events);
 
         let root_location = Location::from_native_path(root.path()).unwrap();
@@ -674,7 +1022,7 @@ mod tests {
 
         let store = Arc::new(SearchResultsStore::new());
         let events = EventBus::new(16);
-        let engine = SearchEngine::new(Arc::clone(&store), events.clone());
+        let engine = SearchEngine::new(Arc::clone(&store), events.clone(), ProviderRegistry::new());
         let subscription = subscribe(&events);
 
         let root_location = Location::from_native_path(root.path()).unwrap();
@@ -705,7 +1053,7 @@ mod tests {
 
         let store = Arc::new(SearchResultsStore::new());
         let events = EventBus::new(64);
-        let engine = SearchEngine::new(Arc::clone(&store), events.clone());
+        let engine = SearchEngine::new(Arc::clone(&store), events.clone(), ProviderRegistry::new());
         let subscription = subscribe(&events);
 
         let root_location = Location::from_native_path(root.path()).unwrap();
@@ -740,7 +1088,7 @@ mod tests {
 
         let store = Arc::new(SearchResultsStore::new());
         let events = EventBus::new(16);
-        let engine = SearchEngine::new(Arc::clone(&store), events.clone());
+        let engine = SearchEngine::new(Arc::clone(&store), events.clone(), ProviderRegistry::new());
         let subscription = subscribe(&events);
 
         let root_location = Location::from_native_path(root.path()).unwrap();
@@ -775,7 +1123,7 @@ mod tests {
 
         let store = Arc::new(SearchResultsStore::new());
         let events = EventBus::new(16);
-        let engine = SearchEngine::new(Arc::clone(&store), events.clone());
+        let engine = SearchEngine::new(Arc::clone(&store), events.clone(), ProviderRegistry::new());
         let subscription = subscribe(&events);
 
         let root_location = Location::from_native_path(root.path()).unwrap();
@@ -804,7 +1152,7 @@ mod tests {
 
         let store = Arc::new(SearchResultsStore::new());
         let events = EventBus::new(16);
-        let engine = SearchEngine::new(Arc::clone(&store), events.clone());
+        let engine = SearchEngine::new(Arc::clone(&store), events.clone(), ProviderRegistry::new());
         let subscription = subscribe(&events);
 
         let root_location = Location::from_native_path(root.path()).unwrap();
@@ -827,7 +1175,7 @@ mod tests {
     async fn empty_roots_are_rejected_synchronously() {
         let store = Arc::new(SearchResultsStore::new());
         let events = EventBus::new(4);
-        let engine = SearchEngine::new(store, events);
+        let engine = SearchEngine::new(store, events, ProviderRegistry::new());
 
         let error = engine
             .start(
@@ -844,7 +1192,7 @@ mod tests {
     async fn cancelling_an_unknown_search_reports_not_found() {
         let store = Arc::new(SearchResultsStore::new());
         let events = EventBus::new(4);
-        let engine = SearchEngine::new(store, events);
+        let engine = SearchEngine::new(store, events, ProviderRegistry::new());
 
         let unknown = Uuid::new_v4();
         let error = engine.cancel(unknown).unwrap_err();
@@ -862,7 +1210,7 @@ mod tests {
 
         let store = Arc::new(SearchResultsStore::new());
         let events = EventBus::new(16);
-        let engine = SearchEngine::new(Arc::clone(&store), events.clone());
+        let engine = SearchEngine::new(Arc::clone(&store), events.clone(), ProviderRegistry::new());
         let subscription = subscribe(&events);
 
         let root_location = Location::from_native_path(root.path()).unwrap();
@@ -913,7 +1261,7 @@ mod tests {
 
         let store = Arc::new(SearchResultsStore::new());
         let events = EventBus::new(16);
-        let engine = SearchEngine::new(Arc::clone(&store), events.clone());
+        let engine = SearchEngine::new(Arc::clone(&store), events.clone(), ProviderRegistry::new());
         let subscription = subscribe(&events);
 
         let root_location = Location::from_native_path(root.path()).unwrap();
@@ -949,7 +1297,7 @@ mod tests {
 
         let store = Arc::new(SearchResultsStore::new());
         let events = EventBus::new(16);
-        let engine = SearchEngine::new(Arc::clone(&store), events.clone());
+        let engine = SearchEngine::new(Arc::clone(&store), events.clone(), ProviderRegistry::new());
         let subscription = subscribe(&events);
 
         let root_location = Location::from_native_path(root.path()).unwrap();
@@ -989,7 +1337,7 @@ mod tests {
 
         let store = Arc::new(SearchResultsStore::new());
         let events = EventBus::new(16);
-        let engine = SearchEngine::new(Arc::clone(&store), events.clone());
+        let engine = SearchEngine::new(Arc::clone(&store), events.clone(), ProviderRegistry::new());
         let subscription = subscribe(&events);
 
         let root_location = Location::from_native_path(root.path()).unwrap();
@@ -1028,7 +1376,7 @@ mod tests {
 
         let store = Arc::new(SearchResultsStore::new());
         let events = EventBus::new(16);
-        let engine = SearchEngine::new(Arc::clone(&store), events.clone());
+        let engine = SearchEngine::new(Arc::clone(&store), events.clone(), ProviderRegistry::new());
         let subscription = subscribe(&events);
 
         let root_location = Location::from_native_path(root.path()).unwrap();
@@ -1069,7 +1417,7 @@ mod tests {
 
         let store = Arc::new(SearchResultsStore::new());
         let events = EventBus::new(16);
-        let engine = SearchEngine::new(Arc::clone(&store), events.clone());
+        let engine = SearchEngine::new(Arc::clone(&store), events.clone(), ProviderRegistry::new());
         let subscription = subscribe(&events);
 
         let root_location = Location::from_native_path(root.path()).unwrap();
@@ -1109,7 +1457,7 @@ mod tests {
 
         let store = Arc::new(SearchResultsStore::new());
         let events = EventBus::new(16);
-        let engine = SearchEngine::new(Arc::clone(&store), events.clone());
+        let engine = SearchEngine::new(Arc::clone(&store), events.clone(), ProviderRegistry::new());
         let subscription = subscribe(&events);
 
         let root_location = Location::from_native_path(root.path()).unwrap();
@@ -1132,5 +1480,302 @@ mod tests {
         let batches = collect_batches(subscription).await;
         let total: usize = batches.iter().map(|(entries, _, _)| entries.len()).sum();
         assert_eq!(total, 0, "deleted file should not crash the search");
+    }
+
+    // --- VFS provider-based traversal tests ---
+
+    /// Minimal mock provider for testing VFS traversal.
+    struct MockVfsProvider {
+        uris_to_entries: std::sync::Mutex<(std::collections::HashMap<String, Vec<fm_domain::EntrySummary>>,fm_domain::ProviderId)>,
+        uris_to_content: std::sync::Mutex<std::collections::HashMap<String, Vec<u8>>>,
+    }
+
+    impl MockVfsProvider {
+        fn with_root(root_uri: &str) -> Self {
+            let root_id = fm_domain::ProviderId::new("mock");
+            let mut files = std::collections::HashMap::new();
+            files.insert(
+                root_uri.to_string(),
+                vec![
+                    fm_domain::EntrySummary {
+                        id: fm_domain::EntryId::new(),
+                        location: fm_domain::Location::new(root_id.clone(), format!("{root_uri}/a.txt")),
+                        name: "a.txt".to_string(),
+                        kind: EntryKind::File,
+                        size: Some(4),
+                        modified_at: None,
+                        created_at: None,
+                        hidden: false,
+                        read_only: false,
+                        extension: Some("txt".to_string()),
+                        mime_type: None,
+                        icon_key: None,
+                        metadata_revision: 0,
+                    },
+                    fm_domain::EntrySummary {
+                        id: fm_domain::EntryId::new(),
+                        location: fm_domain::Location::new(root_id.clone(), format!("{root_uri}/sub")),
+                        name: "sub".to_string(),
+                        kind: EntryKind::Directory,
+                        size: None,
+                        modified_at: None,
+                        created_at: None,
+                        hidden: false,
+                        read_only: false,
+                        extension: None,
+                        mime_type: None,
+                        icon_key: None,
+                        metadata_revision: 0,
+                    },
+                ],
+            );
+            files.insert(
+                format!("{root_uri}/sub"),
+                vec![
+                    fm_domain::EntrySummary {
+                        id: fm_domain::EntryId::new(),
+                        location: fm_domain::Location::new(root_id.clone(), format!("{root_uri}/sub/b.txt")),
+                        name: "b.txt".to_string(),
+                        kind: EntryKind::File,
+                        size: Some(6),
+                        modified_at: None,
+                        created_at: None,
+                        hidden: false,
+                        read_only: false,
+                        extension: Some("txt".to_string()),
+                        mime_type: None,
+                        icon_key: None,
+                        metadata_revision: 0,
+                    },
+                ],
+            );
+
+            let mut content = std::collections::HashMap::new();
+            content.insert(format!("{root_uri}/a.txt"), b"alpha\n".to_vec());
+            content.insert(format!("{root_uri}/sub/b.txt"), b"needle here\nanother needle\n".to_vec());
+
+            Self {
+                uris_to_entries: std::sync::Mutex::new((files, root_id.clone())),
+                uris_to_content: std::sync::Mutex::new(content),
+            }
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl FileSystemProvider for MockVfsProvider {
+        fn id(&self) -> fm_domain::ProviderId {
+            self.uris_to_entries.lock().unwrap().1.clone()
+        }
+
+        fn capabilities(&self) -> ProviderCapabilities {
+            ProviderCapabilities::LIST | ProviderCapabilities::READ
+        }
+
+        async fn list(
+            &self,
+            location: &Location,
+            _options: ListOptions,
+            _cancellation: CancellationToken,
+        ) -> Result<fm_vfs::DirectoryPage, fm_vfs::VfsError> {
+            let entries = self
+                .uris_to_entries
+                .lock()
+                .unwrap()
+                .0
+                .get(&location.uri)
+                .cloned()
+                .unwrap_or_default();
+            Ok(fm_vfs::DirectoryPage {
+                entries,
+                total_known_entries: None,
+                has_more: false,
+                continuation_token: None,
+            })
+        }
+
+        async fn open_read(
+            &self,
+            entry: &EntryRef,
+            _cancellation: CancellationToken,
+        ) -> Result<fm_vfs::ProviderReadStream, fm_vfs::VfsError> {
+            let content = self
+                .uris_to_content
+                .lock()
+                .unwrap()
+                .get(&entry.location.uri)
+                .cloned()
+                .unwrap_or_default();
+            let reader = std::io::Cursor::new(content);
+            Ok(Box::pin(reader))
+        }
+
+        async fn metadata(
+            &self,
+            _entry: &EntryRef,
+            _cancellation: CancellationToken,
+        ) -> Result<fm_domain::EntryMetadata, fm_vfs::VfsError> {
+            unimplemented!("mock provider does not support metadata")
+        }
+
+        async fn create_directory(
+            &self,
+            _location: &Location,
+            _name: &str,
+            _cancellation: CancellationToken,
+        ) -> Result<fm_vfs::EntryRef, fm_vfs::VfsError> {
+            unimplemented!("mock provider does not support create_directory")
+        }
+
+        async fn rename(
+            &self,
+            _source: &EntryRef,
+            _destination: &Location,
+            _cancellation: CancellationToken,
+        ) -> Result<fm_vfs::EntryRef, fm_vfs::VfsError> {
+            unimplemented!("mock provider does not support rename")
+        }
+
+        async fn remove(
+            &self,
+            _entry: &EntryRef,
+            _options: fm_vfs::RemoveOptions,
+            _cancellation: CancellationToken,
+        ) -> Result<(), fm_vfs::VfsError> {
+            unimplemented!("mock provider does not support remove")
+        }
+
+        async fn open_write(
+            &self,
+            _destination: &Location,
+            _options: fm_vfs::WriteOptions,
+            _cancellation: CancellationToken,
+        ) -> Result<fm_vfs::ProviderWriteStream, fm_vfs::VfsError> {
+            unimplemented!("mock provider does not support open_write")
+        }
+
+        async fn watch(
+            &self,
+            _location: &Location,
+            _cancellation: CancellationToken,
+        ) -> Result<fm_vfs::ProviderChangeStream, fm_vfs::VfsError> {
+            unimplemented!("mock provider does not support watch")
+        }
+    }
+
+    /// Helper to test VFS search with a mock provider registered.
+    async fn test_vfs_search_with_content(
+        root_uri: &str,
+        filename_query: &str,
+        content_query: Option<ContentQuery>,
+    ) -> Vec<(Vec<EntrySummaryPayload>, bool, u32)> {
+        let store = Arc::new(SearchResultsStore::new());
+        let events = EventBus::new(16);
+        let mut providers = ProviderRegistry::new();
+        providers.register(Arc::new(MockVfsProvider::with_root(root_uri)));
+        let engine = SearchEngine::new(store.clone(), events.clone(), providers);
+        let subscription = subscribe(&events);
+
+        let root_location = fm_domain::Location::new(
+            fm_domain::ProviderId::new("mock"),
+            root_uri.to_string(),
+        );
+        let search_id = Uuid::new_v4();
+        let _ = engine.start(
+            search_id,
+            vec![root_location],
+            SearchOptions {
+                filename_query: filename_query.to_string(),
+                content_query,
+                recurse: true,
+                show_hidden: true,
+                operation_id: None,
+            },
+            EventAudience::Global,
+        );
+
+        // Give it time to complete.
+        tokio::time::timeout(Duration::from_secs(5), collect_batches(subscription))
+            .await
+            .expect("VFS search must complete promptly")
+    }
+
+    #[tokio::test]
+    async fn vfs_traversal_finds_files_via_list_and_content_scan() {
+        let batches = test_vfs_search_with_content(
+            "mock://test-root",
+            "",
+            Some(ContentQuery::new("needle", false, false, false).unwrap()),
+        )
+        .await;
+        let total: usize = batches.iter().map(|(e, _, _)| e.len()).sum();
+        assert_eq!(
+            total, 1,
+            "only b.txt contains 'needle'"
+        );
+        let names: Vec<_> = batches
+            .iter()
+            .flat_map(|(entries, _, _)| entries.iter())
+            .map(|e| e.name.as_str())
+            .collect();
+        assert_eq!(names, ["b.txt"]);
+
+        // Verify content matches.
+        let b_matches = batches
+            .iter()
+            .flat_map(|(entries, _, _)| entries.iter())
+            .find(|e| e.name == "b.txt")
+            .and_then(|e| e.content_matches.as_ref())
+            .expect("b.txt must have content matches");
+        assert_eq!(b_matches.len(), 2);
+        assert_eq!(b_matches[0].line_number, 1);
+        assert_eq!(b_matches[1].line_number, 2);
+    }
+
+    #[tokio::test]
+    async fn vfs_traversal_respects_filename_filter() {
+        let batches =
+            test_vfs_search_with_content("mock://filter-root", "a.txt", None).await;
+        let total: usize = batches.iter().map(|(e, _, _)| e.len()).sum();
+        assert_eq!(total, 1, "only a.txt should match by filename");
+        assert!(batches
+            .iter()
+            .flat_map(|(entries, _, _)| entries.iter())
+            .any(|e| e.name == "a.txt"));
+    }
+
+    #[tokio::test]
+    async fn vfs_traversal_handles_unknown_providers_with_warning() {
+        let store = Arc::new(SearchResultsStore::new());
+        let events = EventBus::new(16);
+        let engine = SearchEngine::new(store.clone(), events.clone(), ProviderRegistry::new());
+        let subscription = subscribe(&events);
+
+        let unknown_location = fm_domain::Location::new(
+            fm_domain::ProviderId::new("unknown"),
+            "unknown://somewhere",
+        );
+        let search_id = Uuid::new_v4();
+        let _ = engine
+            .start(
+                search_id,
+                vec![unknown_location],
+                SearchOptions {
+                    filename_query: String::new(),
+                    content_query: None,
+                    recurse: true,
+                    show_hidden: true,
+                    operation_id: None,
+                },
+                EventAudience::Global,
+            )
+            .unwrap();
+
+        let batches = tokio::time::timeout(Duration::from_secs(5), collect_batches(subscription))
+            .await
+            .expect("search must complete");
+        let total: usize = batches.iter().map(|(e, _, _)| e.len()).sum();
+        let warnings = batches.last().unwrap().2;
+        assert_eq!(total, 0, "no matches for unknown provider");
+        assert!(warnings >= 1, "unknown provider must produce a warning");
     }
 }

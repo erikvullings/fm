@@ -441,7 +441,7 @@ impl FileManagerService {
             directories: directories.clone(),
         });
         let platform_capabilities = platform.capabilities();
-        let search = SearchEngine::new(search_store, events.clone());
+        let search = SearchEngine::new(search_store, events.clone(), providers.clone());
         let audit_log_path = settings_directory.join("audit.jsonl");
         let settings_mutex = Arc::new(Mutex::new(loaded.settings));
         let force_cross_volume_moves = Arc::new(AtomicBool::new(false));
