@@ -22,12 +22,14 @@
     "build": "pnpm run build:rust && pnpm run build:frontend",
     "build:rust": "cargo build --workspace --release",
     "build:frontend": "pnpm --dir frontend build",
-    "build:tauri": "node scripts/build-tauri.mjs"
+    "build:tauri": "node scripts/build-tauri.mjs",
+    "prepare": "husky"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.7",
     "@tauri-apps/cli": "^2.11.4",
     "cross-env": "^10.1.0",
+    "husky": "^9.1.7",
     "js-yaml": "^5.2.3"
   }
 }

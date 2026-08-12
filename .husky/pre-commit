@@ -1,0 +1,18 @@
+#!/usr/bin/env sh
+
+staged_rs=$(git diff --cached --name-only --diff-filter=ACM -- '*.rs')
+if [ -n "$staged_rs" ]; then
+  echo "$staged_rs" | xargs rustfmt --edition 2024
+  echo "$staged_rs" | xargs git add
+fi
+
+staged_biome=$(git diff --cached --name-only --diff-filter=ACM \
+  -- 'frontend/**/*.ts' 'frontend/**/*.tsx' 'frontend/**/*.css' 'frontend/**/*.json' \
+     'scripts/**/*.mjs' '*.json' \
+  | { grep -v '^frontend/src/api/generated/' || true; })
+if [ -n "$staged_biome" ]; then
+  echo "$staged_biome" | xargs pnpm exec biome check --write --no-errors-on-unmatched
+  echo "$staged_biome" | xargs git add
+fi
+
+exit 0

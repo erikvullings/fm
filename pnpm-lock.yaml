@@ -17,6 +17,9 @@ importers:
       cross-env:
         specifier: ^10.1.0
         version: 10.1.0
+      husky:
+        specifier: ^9.1.7
+        version: 9.1.7
       js-yaml:
         specifier: ^5.2.3
         version: 5.2.3
@@ -1260,6 +1263,11 @@ packages:
   human-signals@8.0.1:
     resolution: {integrity: sha512-eKCa6bwnJhvxj14kZk5NCPc6Hb6BdsU9DZcOnmQKSnO1VKrfV0zCvtttPZUsBvjmNDn8rpcJfpwSYnHBjc95MQ==}
     engines: {node: '>=18.18.0'}
+
+  husky@9.1.7:
+    resolution: {integrity: sha512-5gs5ytaNjBrh5Ow3zrvdUUY+0VxIuWVL4i9irt6friV+BqdCfmV11CQTWMiBYWHbXhco+J1kHfTOUkePhCDvMA==}
+    engines: {node: '>=18'}
+    hasBin: true
 
   is-plain-obj@4.1.0:
     resolution: {integrity: sha512-+Pgi+vMuUNkJyExiMBt5IlFoMyKnr5zhJ4Uspz58WOhBF5QoIZkFyNHIbBAtHwzVAgk5RtndVNsDRN61/mmDqg==}
@@ -2929,6 +2937,8 @@ snapshots:
       - '@noble/hashes'
 
   human-signals@8.0.1: {}
+
+  husky@9.1.7: {}
 
   is-plain-obj@4.1.0: {}
 
