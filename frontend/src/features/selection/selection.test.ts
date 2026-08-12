@@ -212,7 +212,39 @@ describe('selection reducer', () => {
       selectedEntryIds: ['a', 'b', 'c'],
       cursorEntryId: 'd',
       anchorEntryId: 'd',
+      baseSelectedEntryIds: ['a', 'b', 'c'],
     });
+  });
+
+  it('extends selection from preserved base after plain cursor move', () => {
+    const initial: SelectionState = {
+      selectedEntryIds: ['a', 'b', 'c'],
+      cursorEntryId: 'c',
+      anchorEntryId: 'a',
+    };
+    const afterMove = reduceSelection(
+      initial,
+      { type: 'moveCursor', offset: 1 },
+      ids('a', 'b', 'c', 'd', 'e'),
+    );
+    expect(afterMove.selectedEntryIds).toEqual(['a', 'b', 'c']);
+    expect(afterMove.cursorEntryId).toBe('d');
+
+    // Shift+Down from 'd': unions base {a,b,c} with range [d,e]
+    const extended = reduceSelection(
+      afterMove,
+      { type: 'extendRange', offset: 1 },
+      ids('a', 'b', 'c', 'd', 'e'),
+    );
+    expect(extended.selectedEntryIds).toEqual(['a', 'b', 'c', 'd', 'e']);
+
+    // Shift+Up from 'e': shrinks range back to [d,d], base stays {a,b,c}
+    const shrunk = reduceSelection(
+      extended,
+      { type: 'extendRange', offset: -1 },
+      ids('a', 'b', 'c', 'd', 'e'),
+    );
+    expect(shrunk.selectedEntryIds).toEqual(['a', 'b', 'c', 'd']);
   });
 });
 

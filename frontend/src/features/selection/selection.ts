@@ -5,6 +5,8 @@ export interface SelectionState {
   readonly selectedEntryIds: readonly EntryId[];
   readonly cursorEntryId?: EntryId;
   readonly anchorEntryId?: EntryId;
+  /** Entries frozen from a prior multi-selection so Shift-extend unions rather than replaces. */
+  readonly baseSelectedEntryIds?: readonly EntryId[];
 }
 
 /** Framework-independent transitions supported by the directory selection model. */
@@ -58,10 +60,16 @@ export function reduceSelection(
         state.selectedEntryIds.length > 1 &&
         state.selectedEntryIds.every((selectedId) => visibleIds.has(selectedId))
       ) {
-        return { ...state, cursorEntryId: entryId, anchorEntryId: entryId };
+        return {
+          ...state,
+          cursorEntryId: entryId,
+          anchorEntryId: entryId,
+          baseSelectedEntryIds: state.selectedEntryIds,
+        };
       }
+      const { baseSelectedEntryIds: _b1, ...withoutBase1 } = state;
       return {
-        ...state,
+        ...withoutBase1,
         selectedEntryIds: [entryId],
         cursorEntryId: entryId,
         anchorEntryId: entryId,
@@ -74,10 +82,16 @@ export function reduceSelection(
         state.selectedEntryIds.length > 1 &&
         state.selectedEntryIds.every((selectedId) => visibleIds.has(selectedId))
       ) {
-        return { ...state, cursorEntryId: entryId, anchorEntryId: entryId };
+        return {
+          ...state,
+          cursorEntryId: entryId,
+          anchorEntryId: entryId,
+          baseSelectedEntryIds: state.selectedEntryIds,
+        };
       }
+      const { baseSelectedEntryIds: _b2, ...withoutBase2 } = state;
       return {
-        ...state,
+        ...withoutBase2,
         selectedEntryIds: [entryId],
         cursorEntryId: entryId,
         anchorEntryId: entryId,
@@ -116,12 +130,20 @@ export function reduceSelection(
         anchorEntryId === undefined ? currentIndex : orderedEntryIds.indexOf(anchorEntryId);
       const rangeStart = Math.min(anchorIndex < 0 ? currentIndex : anchorIndex, nextIndex);
       const rangeEnd = Math.max(anchorIndex < 0 ? currentIndex : anchorIndex, nextIndex);
+      const rangeIds = orderedEntryIds.slice(rangeStart, rangeEnd + 1);
+      const base = state.baseSelectedEntryIds;
+      const baseSet = base !== undefined ? new Set(base) : undefined;
+      const merged =
+        baseSet !== undefined
+          ? orderedEntryIds.filter((id) => baseSet.has(id) || rangeIds.includes(id))
+          : rangeIds;
       return {
-        selectedEntryIds: orderedEntryIds.slice(rangeStart, rangeEnd + 1),
+        selectedEntryIds: merged,
         ...(orderedEntryIds[nextIndex] === undefined
           ? {}
           : { cursorEntryId: orderedEntryIds[nextIndex] }),
         ...(anchorEntryId === undefined ? {} : { anchorEntryId }),
+        ...(base !== undefined ? { baseSelectedEntryIds: base } : {}),
       };
     }
     case 'extendRangeTo': {
@@ -133,10 +155,18 @@ export function reduceSelection(
       const anchorIndex = orderedEntryIds.indexOf(anchorEntryId);
       const rangeStart = Math.min(anchorIndex < 0 ? targetIndex : anchorIndex, targetIndex);
       const rangeEnd = Math.max(anchorIndex < 0 ? targetIndex : anchorIndex, targetIndex);
+      const rangeIds = orderedEntryIds.slice(rangeStart, rangeEnd + 1);
+      const base = state.baseSelectedEntryIds;
+      const baseSet = base !== undefined ? new Set(base) : undefined;
+      const merged =
+        baseSet !== undefined
+          ? orderedEntryIds.filter((id) => baseSet.has(id) || rangeIds.includes(id))
+          : rangeIds;
       return {
-        selectedEntryIds: orderedEntryIds.slice(rangeStart, rangeEnd + 1),
+        selectedEntryIds: merged,
         cursorEntryId: action.entryId,
         anchorEntryId,
+        ...(base !== undefined ? { baseSelectedEntryIds: base } : {}),
       };
     }
     case 'selectAll':
@@ -167,8 +197,8 @@ export function reduceSelection(
       return { ...state, selectedEntryIds: [...visible, ...hidden] };
     }
     case 'clear': {
-      const { anchorEntryId: _anchorEntryId, ...withoutAnchor } = state;
-      return { ...withoutAnchor, selectedEntryIds: [] };
+      const { anchorEntryId: _anchorEntryId, baseSelectedEntryIds: _base, ...withoutMeta } = state;
+      return { ...withoutMeta, selectedEntryIds: [] };
     }
     case 'prune': {
       const removed = new Set(action.removedEntryIds);
