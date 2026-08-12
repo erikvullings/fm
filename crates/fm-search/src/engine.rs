@@ -267,11 +267,13 @@ impl CompletionCoordinator {
             + 1
     }
 
+    #[allow(clippy::wrong_self_convention)]
     fn is_last(self) -> bool {
         self.finished_when_current_ends() == self.total_paths
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn run_search_native(
     search_id: Uuid,
     roots: Vec<PathBuf>,
@@ -421,21 +423,19 @@ fn run_search_native(
         current_entry.clone(),
     );
 
-    if is_last {
-        if let Some(op_id) = ctx.operation_id {
-            let state = if cancellation.is_cancelled() {
-                OperationStatePayload::Cancelled
-            } else {
-                OperationStatePayload::Completed
-            };
-            events.publish(
-                audience.clone(),
-                BackendEventPayload::OperationStateChanged {
-                    operation_id: op_id,
-                    state,
-                },
-            );
-        }
+    if is_last && let Some(op_id) = ctx.operation_id {
+        let state = if cancellation.is_cancelled() {
+            OperationStatePayload::Cancelled
+        } else {
+            OperationStatePayload::Completed
+        };
+        events.publish(
+            audience.clone(),
+            BackendEventPayload::OperationStateChanged {
+                operation_id: op_id,
+                state,
+            },
+        );
     }
 }
 
@@ -449,6 +449,7 @@ const VFS_SNIFF_BYTES: usize = 8192;
 /// Uses `list()` for directory enumeration and `open_read()` for content
 /// scanning. No `.gitignore` awareness (not available over VFS). Symlinks
 /// are tracked by URI to prevent cycles.
+#[allow(clippy::too_many_arguments)]
 async fn run_search_vfs(
     search_id: Uuid,
     roots: Vec<Location>,
@@ -542,10 +543,10 @@ async fn run_search_vfs(
                 }
 
                 // Check filename match.
-                if has_filename_filter {
-                    if !matches_name(&entry.name, &options.filename_query, filename_mode) {
-                        continue;
-                    }
+                if has_filename_filter
+                    && !matches_name(&entry.name, &options.filename_query, filename_mode)
+                {
+                    continue;
                 }
 
                 current_entry = Some(EntryRefPayload {
@@ -617,21 +618,19 @@ async fn run_search_vfs(
         current_entry.clone(),
     );
 
-    if is_last {
-        if let Some(op_id) = ctx.operation_id {
-            let state = if cancellation.is_cancelled() {
-                OperationStatePayload::Cancelled
-            } else {
-                OperationStatePayload::Completed
-            };
-            events.publish(
-                audience.clone(),
-                BackendEventPayload::OperationStateChanged {
-                    operation_id: op_id,
-                    state,
-                },
-            );
-        }
+    if is_last && let Some(op_id) = ctx.operation_id {
+        let state = if cancellation.is_cancelled() {
+            OperationStatePayload::Cancelled
+        } else {
+            OperationStatePayload::Completed
+        };
+        events.publish(
+            audience.clone(),
+            BackendEventPayload::OperationStateChanged {
+                operation_id: op_id,
+                state,
+            },
+        );
     }
 }
 
@@ -684,10 +683,10 @@ async fn scan_vfs_file(
     // Scan using fm_vfs::search_content (already handles size bounds internally
     // but we need to check file_size if available).
     let size = provider.file_size(entry, cancellation.clone()).await.ok();
-    if let Some(s) = size {
-        if s > VFS_MAX_SCAN_BYTES {
-            return Err(VfsScanError::FileTooLarge);
-        }
+    if let Some(s) = size
+        && s > VFS_MAX_SCAN_BYTES
+    {
+        return Err(VfsScanError::FileTooLarge);
     }
 
     let outcome = search_content(reader2, query, 500, cancellation)
