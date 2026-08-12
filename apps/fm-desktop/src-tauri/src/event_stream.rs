@@ -175,24 +175,25 @@ mod tests {
         }
         // A single `yield_now` only guarantees one scheduler round, not that all three spawned
         // subscription tasks have registered - under load (e.g. the full workspace suite running
-        // many test binaries concurrently) that can flake. Poll instead, matching the sibling test
-        // above.
-        for _ in 0..100 {
+        // many test binaries concurrently) that can flake, and so can a bounded count of
+        // `yield_now`s if the runner's OS threads are themselves starved. Poll on a wall-clock
+        // budget instead, matching the sibling test above.
+        for _ in 0..2_000 {
             if bus.subscriber_count() == 3 {
                 break;
             }
-            tokio::task::yield_now().await;
+            tokio::time::sleep(std::time::Duration::from_millis(1)).await;
         }
         assert_eq!(bus.subscriber_count(), 3);
 
         registry.unsubscribe_window("main");
         // Unsubscribing aborts the subscription tasks asynchronously, so poll rather than
         // sleep a fixed duration - the same flakiness the comment above describes.
-        for _ in 0..100 {
+        for _ in 0..2_000 {
             if bus.subscriber_count() == 1 {
                 break;
             }
-            tokio::task::yield_now().await;
+            tokio::time::sleep(std::time::Duration::from_millis(1)).await;
         }
 
         assert_eq!(registry.len(), 1);
