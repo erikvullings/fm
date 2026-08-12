@@ -1,6 +1,6 @@
 # 0123 Extract Plugin Manager module
 
-Status: open
+Status: done
 Priority: medium
 Subsystem: backend
 Depends on: 0119
