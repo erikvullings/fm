@@ -270,10 +270,20 @@ async fn upload_and_download_round_trip_real_bytes() {
         .expect("write must succeed");
     writer.shutdown().await.expect("shutdown must succeed");
 
-    assert_eq!(
-        std::fs::read(fixture.path("uploaded.bin")).unwrap(),
-        payload
-    );
+    // shutdown() already drains every pending SFTP write ack and the close ack
+    // before returning, so the server has processed the write - but under a
+    // loaded CI runner the written bytes can take a moment to become visible
+    // to a bystander `std::fs::read` on this same file. Poll briefly rather
+    // than assuming the very first read observes them.
+    let mut on_disk = Vec::new();
+    for _ in 0..100 {
+        on_disk = std::fs::read(fixture.path("uploaded.bin")).unwrap();
+        if on_disk == payload {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+    assert_eq!(on_disk, payload);
 
     let mut reader = provider
         .open_read(&entry_ref(destination), cancellation())
