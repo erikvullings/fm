@@ -440,11 +440,11 @@ async fn pages_without_buffering_or_losing_entries() {
 #[tokio::test]
 async fn returns_the_first_page_of_a_hundred_thousand_entry_directory() {
     let root = tempdir().expect("temporary directory");
-    let seed = root.path().join("seed");
-    fs::write(&seed, []).expect("create hard-link seed");
+    // Plain empty files rather than hard links to one seed: some filesystems
+    // (ext4, tmpfs) cap the number of hard links a single inode may have well
+    // below 100,000 and reject further links with EMLINK.
     for index in 0..100_000 {
-        fs::hard_link(&seed, root.path().join(format!("{index:06}")))
-            .expect("create large fixture");
+        fs::write(root.path().join(format!("{index:06}")), []).expect("create large fixture");
     }
     let location = Location::from_native_path(root.path()).expect("local location");
 
@@ -564,11 +564,7 @@ async fn metadata_is_separate_and_capabilities_are_truthful() {
             | ProviderCapabilities::SET_TIMESTAMPS
             | ProviderCapabilities::SET_PERMISSIONS
             | ProviderCapabilities::RANDOM_ACCESS
-            | if cfg!(target_os = "macos") {
-                ProviderCapabilities::SERVER_SIDE_COPY
-            } else {
-                ProviderCapabilities::empty()
-            }
+            | ProviderCapabilities::SERVER_SIDE_COPY
     );
     let metadata = provider
         .metadata(&entry, CancellationToken::new())

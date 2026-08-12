@@ -495,6 +495,7 @@ mod tests {
         client
     }
 
+    #[cfg(unix)]
     async fn trusted_handle(fixture: &SshFixture) -> client::Handle<ClientHandler> {
         let known_hosts = Arc::new(InMemoryKnownHostsStore::new());
         known_hosts
