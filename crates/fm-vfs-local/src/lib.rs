@@ -1047,26 +1047,23 @@ fn invalid_location(location: &Location) -> VfsError {
 }
 
 fn validate_directory_name(name: &str) -> Result<(), VfsError> {
-    if name.is_empty() {
-        return Err(VfsError::EmptyName);
-    }
-    if name == "." || name == ".." || name.contains('/') || name.contains('\\') {
-        return Err(VfsError::PathTraversalName);
-    }
-    if name.contains('\0') || cfg!(windows) && name.chars().any(|c| "<>:\"|?*".contains(c)) {
+    fm_domain::location::validate_name(name).map_err(|e| match e {
+        fm_domain::LocationError::EmptySegment => VfsError::EmptyName,
+        fm_domain::LocationError::InvalidName(msg) => {
+            if msg.contains('/') || msg.contains('\\') || msg == "." || msg == ".." {
+                VfsError::PathTraversalName
+            } else {
+                VfsError::InvalidNameCharacters
+            }
+        }
+        fm_domain::LocationError::NullByte => VfsError::InvalidNameCharacters,
+        fm_domain::LocationError::ReservedWindowsName(_) => VfsError::ReservedName,
+        _ => VfsError::InvalidNameCharacters,
+    })?;
+    // Additional Windows-specific validation beyond what domain layer covers
+    #[cfg(windows)]
+    if name.chars().any(|c| "<>:\"|?*".contains(c)) {
         return Err(VfsError::InvalidNameCharacters);
-    }
-    let stem = name.split('.').next().unwrap_or_default();
-    let upper = stem.trim_end_matches([' ', '.']).to_ascii_uppercase();
-    let reserved = matches!(upper.as_str(), "CON" | "PRN" | "AUX" | "NUL")
-        || upper
-            .strip_prefix("COM")
-            .or_else(|| upper.strip_prefix("LPT"))
-            .is_some_and(|suffix| {
-                matches!(suffix, "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9")
-            });
-    if reserved {
-        return Err(VfsError::ReservedName);
     }
     Ok(())
 }

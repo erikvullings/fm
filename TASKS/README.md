@@ -232,5 +232,5 @@ decided. 0124 and 0125 are independent and can be picked up early.
 - [x] 0121 Extract File Editor Service *(needs 0119)*
 - [x] 0122 Extract Connection Facade *(needs 0119)*
 - [x] 0123 Extract Plugin Manager module *(needs 0119)*
-- [ ] 0124 Narrow Location URI parsing in fm-domain *(independent)*
+- [x] 0124 Narrow Location URI parsing in fm-domain *(independent)*
 - [ ] 0125 Make Search Engine VFS-provider agnostic *(independent)*

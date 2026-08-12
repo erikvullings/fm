@@ -1,6 +1,6 @@
 # 0124 Narrow Location URI parsing in fm-domain
 
-Status: open
+Status: done
 Priority: medium
 Subsystem: backend
 Depends on: none

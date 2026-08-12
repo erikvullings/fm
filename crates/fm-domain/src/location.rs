@@ -18,20 +18,21 @@ use thiserror::Error;
 
 use crate::ids::ProviderId;
 
-const LOCAL_PROVIDER: &str = "local";
 const LOCAL_SCHEME: &str = "file";
-const SEARCH_PROVIDER: &str = "search";
 const SEARCH_SCHEME: &str = "search";
-const ARCHIVE_PROVIDER: &str = "archive";
-const ARCHIVE_SCHEME: &str = "archive";
-const SFTP_PROVIDER: &str = "sftp";
-const SFTP_SCHEME: &str = "sftp";
 const SEARCH_AUTHORITY: &str = "local";
 /// Schemes named by the specification but not yet backed by a provider
 /// (task 0104 removed `"sftp"` from this list once it gained a real
 /// provider; kept as the seam a later task, e.g. FTP/FTPS, reserves its own
 /// scheme ahead of implementing it).
 const RESERVED_SCHEMES: &[&str] = &[];
+
+/// Static scheme-to-provider mapping for data providers (excludes search).
+const SCHEME_MAP: [(&str, &str); 3] = [
+    ("file", "local"),
+    ("archive", "archive"),
+    ("sftp", "sftp"),
+];
 
 /// A provider-neutral pointer to a location.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -112,26 +113,22 @@ impl Location {
         let scheme = parse_scheme(uri)?;
         if scheme == SEARCH_SCHEME {
             validate_search_uri(uri)?;
-            return Ok(Self::new(ProviderId::new(SEARCH_PROVIDER), uri));
+            return Ok(Self::new(ProviderId::new(SEARCH_SCHEME), uri));
         }
-        if scheme == ARCHIVE_SCHEME {
+        let provider_id = provider_for_scheme(scheme)?;
+        if scheme == "archive" {
             ParsedArchiveUri::parse(uri)?;
-            return Ok(Self::new(ProviderId::new(ARCHIVE_PROVIDER), uri));
+            return Ok(Self::new(ProviderId::new(provider_id), uri));
         }
-        if scheme == SFTP_SCHEME {
+        if scheme == "sftp" {
             let parsed = ParsedSftpUri::parse(uri)?;
             parsed.validate_segments()?;
-            return Ok(Self::new(ProviderId::new(SFTP_PROVIDER), uri));
+            return Ok(Self::new(ProviderId::new(provider_id), uri));
         }
-        if RESERVED_SCHEMES.contains(&scheme) {
-            return Err(LocationError::UnsupportedProvider(scheme.to_owned()));
-        }
-        if scheme != LOCAL_SCHEME {
-            return Err(LocationError::UnknownProvider(scheme.to_owned()));
-        }
+        // file scheme (fallthrough)
         let parsed = ParsedFileUri::parse(uri)?;
         parsed.validate_segments()?;
-        Ok(Self::new(ProviderId::new(LOCAL_PROVIDER), uri))
+        Ok(Self::new(ProviderId::new(provider_id), uri))
     }
 
     /// Creates a validated location and verifies its provider matches the URI.
@@ -186,10 +183,10 @@ impl Location {
 
     /// Returns the parent without string concatenation, or `None` for a root.
     pub fn parent(&self) -> Result<Option<Self>, LocationError> {
-        if self.provider_id.as_str() == ARCHIVE_PROVIDER {
+        if self.provider_id.as_str() == "archive" {
             return ParsedArchiveUri::parse(&self.uri)?.parent();
         }
-        if self.provider_id.as_str() == SFTP_PROVIDER {
+        if self.provider_id.as_str() == "sftp" {
             return ParsedSftpUri::parse(&self.uri)?.parent();
         }
         self.ensure_local()?;
@@ -203,11 +200,11 @@ impl Location {
 
     /// Appends one validated native name as a complete path segment.
     pub fn join(&self, name: &str) -> Result<Self, LocationError> {
-        if self.provider_id.as_str() == ARCHIVE_PROVIDER {
+        if self.provider_id.as_str() == "archive" {
             validate_name(name)?;
             return ParsedArchiveUri::parse(&self.uri)?.join(name);
         }
-        if self.provider_id.as_str() == SFTP_PROVIDER {
+        if self.provider_id.as_str() == "sftp" {
             validate_name(name)?;
             return ParsedSftpUri::parse(&self.uri)?.join(name);
         }
@@ -221,10 +218,10 @@ impl Location {
 
     /// Returns the decoded final path segment.
     pub fn name(&self) -> Result<String, LocationError> {
-        if self.provider_id.as_str() == ARCHIVE_PROVIDER {
+        if self.provider_id.as_str() == "archive" {
             return ParsedArchiveUri::parse(&self.uri)?.name();
         }
-        if self.provider_id.as_str() == SFTP_PROVIDER {
+        if self.provider_id.as_str() == "sftp" {
             return ParsedSftpUri::parse(&self.uri)?.name();
         }
         self.ensure_local()?;
@@ -238,7 +235,7 @@ impl Location {
 
     fn ensure_local(&self) -> Result<(), LocationError> {
         let scheme = parse_scheme(&self.uri)?;
-        if self.provider_id.as_str() != LOCAL_PROVIDER || scheme != LOCAL_SCHEME {
+        if self.provider_id.as_str() != "local" || scheme != LOCAL_SCHEME {
             return Err(LocationError::MismatchedProvider {
                 provider_id: self.provider_id.as_str().to_owned(),
                 scheme: scheme.to_owned(),
@@ -410,7 +407,7 @@ impl ParsedArchiveUri {
             .join("/");
         let separator = if inner.is_empty() { "" } else { "/" };
         Location::new(
-            ProviderId::new(ARCHIVE_PROVIDER),
+            ProviderId::new("archive"),
             format!("archive://{}!{separator}{inner}", self.outer),
         )
     }
@@ -521,16 +518,20 @@ fn parse_scheme(uri: &str) -> Result<&str, LocationError> {
 }
 
 fn provider_for_scheme(scheme: &str) -> Result<&'static str, LocationError> {
-    match scheme {
-        LOCAL_SCHEME => Ok(LOCAL_PROVIDER),
-        SEARCH_SCHEME => Ok(SEARCH_PROVIDER),
-        ARCHIVE_SCHEME => Ok(ARCHIVE_PROVIDER),
-        SFTP_SCHEME => Ok(SFTP_PROVIDER),
-        scheme if RESERVED_SCHEMES.contains(&scheme) => {
-            Err(LocationError::UnsupportedProvider(scheme.to_owned()))
-        }
-        _ => Err(LocationError::UnknownProvider(scheme.to_owned())),
+    if scheme == SEARCH_SCHEME {
+        return Ok(SEARCH_SCHEME);
     }
+    SCHEME_MAP
+        .iter()
+        .find(|(s, _)| *s == scheme)
+        .map(|(_, p)| *p)
+        .ok_or_else(|| {
+            if RESERVED_SCHEMES.contains(&scheme) {
+                LocationError::UnsupportedProvider(scheme.to_owned())
+            } else {
+                LocationError::UnknownProvider(scheme.to_owned())
+            }
+        })
 }
 
 /// Validates the `search://local/{searchId}` shape (spec §24, task 0068).
@@ -555,7 +556,8 @@ fn validate_search_uri(uri: &str) -> Result<(), LocationError> {
     Ok(())
 }
 
-fn validate_name(name: &str) -> Result<(), LocationError> {
+/// Validates a single path segment name (empty, traversal, separators, null bytes, Windows reserved names).
+pub fn validate_name(name: &str) -> Result<(), LocationError> {
     if name.is_empty() {
         return Err(LocationError::EmptySegment);
     }
