@@ -498,3 +498,51 @@ async fn private_key_path_authentication_reports_the_missing_file_in_last_error(
         "expected the missing path in the error, got: {last_error}"
     );
 }
+
+/// The embedded terminal drawer's SSH extension (task 0105): opening a
+/// remote shell on a trusted SSH connection drives a real PTY channel over
+/// the same fixture the SFTP tests above use, without a local shell ever
+/// being involved.
+#[tokio::test]
+async fn open_remote_shell_streams_a_real_remote_pty_over_the_pooled_ssh_connection() {
+    let root = tempfile::tempdir().expect("temporary root");
+    let service = service(&root);
+    let fixture = SshFixture::start().await;
+    let connection_id = register_and_trust_connection(&service, &fixture).await;
+
+    let channel = service
+        .open_remote_shell(connection_id, None, "xterm-256color", 80, 24)
+        .await
+        .expect("opening a remote shell on a trusted SSH connection must succeed");
+    let mut reader = channel.reader;
+
+    channel
+        .writer
+        .write(b"ping")
+        .await
+        .expect("writing to the remote shell must succeed");
+    let event = reader
+        .next()
+        .await
+        .expect("an echoed event must arrive before the channel closes");
+    assert_eq!(
+        event,
+        fm_application::RemoteShellEvent::Data(b"ping".to_vec())
+    );
+}
+
+/// A remote shell channel is not silently opened (or opened locally as a
+/// fallback) for a connection that does not exist - mirrors task 0105's
+/// "unsupported schemes still fail explicitly" acceptance criterion.
+#[tokio::test]
+async fn open_remote_shell_reports_not_found_for_an_unknown_connection() {
+    let root = tempfile::tempdir().expect("temporary root");
+    let service = service(&root);
+
+    let error = service
+        .open_remote_shell(uuid::Uuid::new_v4(), None, "xterm-256color", 80, 24)
+        .await
+        .expect_err("an unknown connection id must not silently open a channel");
+
+    assert_eq!(error, fm_application::ApplicationError::NotFound);
+}

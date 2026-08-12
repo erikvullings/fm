@@ -14,6 +14,7 @@ use tokio::sync::Mutex as AsyncMutex;
 use crate::error::SshError;
 use crate::fingerprint::fingerprint_of;
 use crate::known_hosts::{HostKeyVerification, KnownHostsStore, verify_host_key};
+use crate::shell::{RemoteShellChannel, shell_quote};
 use crate::types::{SshConnectTarget, SshConnectionParameters, SshCredential};
 
 /// How long a connection attempt (transport + host-key exchange) may take
@@ -136,6 +137,58 @@ impl SshSession {
         let sftp = Arc::new(sftp);
         *guard = Some(sftp.clone());
         Ok(sftp)
+    }
+
+    /// Opens a new interactive remote shell channel (task 0105) with a PTY
+    /// of the given `term`/`cols`/`rows`, optionally starting inside
+    /// `remote_cwd`.
+    ///
+    /// A fresh channel every call - unlike [`Self::sftp`], a shell is not
+    /// cached/reused across calls; the caller (the embedded terminal
+    /// registry) is what tracks one persistent channel per location.
+    ///
+    /// SSH's `exec` request takes a single opaque command string rather than
+    /// a `cwd` field, so `remote_cwd` is implemented as `cd <dir> && exec
+    /// $SHELL -l`, with `dir` quoted by [`shell_quote`] so an awkward or
+    /// attacker-influenced path cannot break out of the command. Without a
+    /// `remote_cwd`, a plain `RequestShell` starts the account's configured
+    /// login shell in its default directory.
+    pub async fn open_shell(
+        &self,
+        term: &str,
+        cols: u32,
+        rows: u32,
+        remote_cwd: Option<&str>,
+    ) -> Result<RemoteShellChannel, SshError> {
+        let channel = self
+            .handle
+            .channel_open_session()
+            .await
+            .map_err(|error| SshError::Session(error.to_string()))?;
+        channel
+            .request_pty(true, term, cols, rows, 0, 0, &[])
+            .await
+            .map_err(|error| SshError::Session(error.to_string()))?;
+        match remote_cwd {
+            Some(cwd) => {
+                let command = format!(
+                    "cd {} 2>/dev/null; exec \"${{SHELL:-/bin/sh}}\" -l",
+                    shell_quote(cwd)
+                );
+                channel
+                    .exec(true, command.into_bytes())
+                    .await
+                    .map_err(|error| SshError::Session(error.to_string()))?;
+            }
+            None => {
+                channel
+                    .request_shell(true)
+                    .await
+                    .map_err(|error| SshError::Session(error.to_string()))?;
+            }
+        }
+        let (read, write) = channel.split();
+        Ok(RemoteShellChannel::new(read, write))
     }
 }
 
@@ -386,10 +439,13 @@ mod tests {
     use russh::keys::agent::client::AgentClient;
     use russh::keys::agent::server;
     use tokio::net::{UnixListener, UnixStream};
+    use zeroize::Zeroizing;
 
     use super::*;
-    use crate::fixture::{FIXTURE_USERNAME, SshFixture};
+    use crate::fixture::{FIXTURE_PASSWORD, FIXTURE_USERNAME, SshFixture};
     use crate::known_hosts::InMemoryKnownHostsStore;
+    use crate::shell::RemoteShellEvent;
+    use crate::types::SshHostKeyPolicy;
 
     /// Starts an in-process agent server on an ephemeral Unix socket,
     /// pre-loaded with `identity`, and returns a client already connected to
@@ -495,5 +551,113 @@ mod tests {
             .expect_err("an agent with no identities must not silently succeed");
 
         assert!(matches!(error, SshError::Agent(_)), "got {error:?}");
+    }
+
+    /// Connects and authenticates a full [`SshSession`] against `fixture`
+    /// with password auth, for task 0105's remote-shell-channel tests below.
+    async fn connected_session(fixture: &SshFixture) -> SshSession {
+        let known_hosts = Arc::new(InMemoryKnownHostsStore::new());
+        known_hosts
+            .accept("conn-1", fixture.host_key_fingerprint.clone())
+            .await
+            .expect("seeding the trusted fingerprint must succeed");
+        let params = SshConnectionParameters {
+            target: SshConnectTarget {
+                host: fixture.addr.ip().to_string(),
+                port: fixture.addr.port(),
+                username: FIXTURE_USERNAME.to_owned(),
+            },
+            credential: SshCredential::Password(Zeroizing::new(FIXTURE_PASSWORD.to_owned())),
+            host_key_policy: SshHostKeyPolicy::RequireKnownHost,
+            keepalive: None,
+        };
+        SshSession::connect(&params, known_hosts, "conn-1")
+            .await
+            .expect("connecting to the trusted fixture must succeed")
+    }
+
+    #[tokio::test]
+    async fn open_shell_without_a_cwd_requests_a_plain_shell_and_echoes_written_data() {
+        let fixture = SshFixture::start().await;
+        let session = connected_session(&fixture).await;
+
+        let channel = session
+            .open_shell("xterm-256color", 80, 24, None)
+            .await
+            .expect("opening a shell channel must succeed");
+        let mut reader = channel.reader;
+        let writer = channel.writer;
+
+        writer.write(b"hello").await.expect("writing must succeed");
+        let event = reader
+            .next()
+            .await
+            .expect("an echoed event must arrive before the channel closes");
+        assert_eq!(event, RemoteShellEvent::Data(b"hello".to_vec()));
+
+        assert!(
+            fixture
+                .last_exec_command
+                .lock()
+                .expect("fixture exec-command lock poisoned")
+                .is_none(),
+            "a plain shell request must never go through exec"
+        );
+    }
+
+    #[tokio::test]
+    async fn open_shell_with_a_cwd_execs_a_quoted_cd_prefixed_login_shell() {
+        let fixture = SshFixture::start().await;
+        let session = connected_session(&fixture).await;
+
+        let channel = session
+            .open_shell("xterm-256color", 80, 24, Some("/tmp/o'brien"))
+            .await
+            .expect("opening a shell channel with a cwd must succeed");
+        // The client-side `.exec(...).await` only waits for the request to be
+        // enqueued for sending, not for the server to have processed it (see
+        // `ChannelWriteHalf::send_msg`). Round-tripping one write/echo first
+        // forces a wait for a response that can only arrive after the
+        // server's single-threaded, in-order request processing already
+        // recorded the exec command.
+        let mut reader = channel.reader;
+        channel
+            .writer
+            .write(b"ping")
+            .await
+            .expect("writing must succeed");
+        reader
+            .next()
+            .await
+            .expect("an echoed event must arrive before the channel closes");
+
+        let recorded = fixture
+            .last_exec_command
+            .lock()
+            .expect("fixture exec-command lock poisoned")
+            .clone()
+            .expect("an exec command must have been recorded");
+        let command = String::from_utf8(recorded).expect("exec command must be valid UTF-8");
+
+        assert_eq!(
+            command, "cd '/tmp/o'\\''brien' 2>/dev/null; exec \"${SHELL:-/bin/sh}\" -l",
+            "the awkward path must be safely single-quoted, not interpolated raw"
+        );
+    }
+
+    #[tokio::test]
+    async fn resize_sends_a_window_change_request_without_error() {
+        let fixture = SshFixture::start().await;
+        let session = connected_session(&fixture).await;
+        let channel = session
+            .open_shell("xterm-256color", 80, 24, None)
+            .await
+            .expect("opening a shell channel must succeed");
+
+        channel
+            .writer
+            .resize(100, 40)
+            .await
+            .expect("resizing an open shell channel must succeed");
     }
 }

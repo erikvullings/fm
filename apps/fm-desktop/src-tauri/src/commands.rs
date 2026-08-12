@@ -24,8 +24,15 @@ use crate::{
     terminal::{TerminalError, TerminalEvent, TerminalRegistry},
 };
 
+/// Opens (or reuses) an embedded terminal session for `location` - a local
+/// PTY for a `file:` location, or a remote PTY over SSH (task 0105) for a
+/// `sftp:` one. A local location whose native path cannot be resolved falls
+/// through to [`TerminalRegistry::open`]'s own `UnsupportedLocation` error
+/// rather than being rejected here, so both schemes report failures the same
+/// way.
 #[tauri::command]
-pub(crate) fn open_embedded_terminal(
+pub(crate) async fn open_embedded_terminal(
+    state: State<'_, AppState>,
     registry: State<'_, TerminalRegistry>,
     location: LocationDto,
     columns: u16,
@@ -33,47 +40,50 @@ pub(crate) fn open_embedded_terminal(
     channel: Channel<TerminalEvent>,
 ) -> Result<String, TerminalError> {
     let location_uri = location.uri.clone();
-    let native = fm_domain::Location::from(location)
-        .to_native_path()
-        .map_err(|_| TerminalError::UnsupportedLocation)?;
-    registry.open(
-        &location_uri,
-        &native,
-        portable_pty::PtySize {
-            rows,
-            cols: columns,
-            pixel_width: 0,
-            pixel_height: 0,
-        },
-        channel,
-    )
+    let native_path = fm_domain::Location::from(location).to_native_path().ok();
+    registry
+        .open(
+            &state.service,
+            &location_uri,
+            native_path.as_deref(),
+            portable_pty::PtySize {
+                rows,
+                cols: columns,
+                pixel_width: 0,
+                pixel_height: 0,
+            },
+            channel,
+        )
+        .await
 }
 
 #[tauri::command]
-pub(crate) fn write_embedded_terminal(
+pub(crate) async fn write_embedded_terminal(
     registry: State<'_, TerminalRegistry>,
     session_id: String,
     data: Vec<u8>,
 ) -> Result<(), TerminalError> {
-    registry.write(&session_id, &data)
+    registry.write(&session_id, &data).await
 }
 
 #[tauri::command]
-pub(crate) fn resize_embedded_terminal(
+pub(crate) async fn resize_embedded_terminal(
     registry: State<'_, TerminalRegistry>,
     session_id: String,
     columns: u16,
     rows: u16,
 ) -> Result<(), TerminalError> {
-    registry.resize(
-        &session_id,
-        portable_pty::PtySize {
-            rows,
-            cols: columns,
-            pixel_width: 0,
-            pixel_height: 0,
-        },
-    )
+    registry
+        .resize(
+            &session_id,
+            portable_pty::PtySize {
+                rows,
+                cols: columns,
+                pixel_width: 0,
+                pixel_height: 0,
+            },
+        )
+        .await
 }
 
 #[derive(Debug, thiserror::Error)]

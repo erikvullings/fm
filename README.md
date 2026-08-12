@@ -232,11 +232,15 @@ passphrase or token directly - only an opaque reference into a `CredentialStore`
 macOS Keychain or Windows Credential Manager (an in-memory store is used on other hosts and in
 tests only).
 
-SSH/SFTP is implemented by `fm-ssh` (session/authentication/host-key verification, reusable later
-by an SSH terminal) and `fm-vfs-sftp` (the `FileSystemProvider`, registered under the `sftp`
-scheme). A saved connection's `connect`/`test` now perform a real SSH handshake through a
-registered dialer; browsing an `sftp://<connection-id>/path` location pools and transparently
-reconnects sessions per connection. SSH host keys are never auto-accepted, first use or on change:
+SSH/SFTP is implemented by `fm-ssh` (session/authentication/host-key verification, plus a remote
+shell channel for the embedded terminal) and `fm-vfs-sftp` (the `FileSystemProvider`, registered
+under the `sftp` scheme). A saved connection's `connect`/`test` now perform a real SSH handshake
+through a registered dialer; browsing an `sftp://<connection-id>/path` location pools and
+transparently reconnects sessions per connection. The embedded terminal drawer (`Ctrl+\``/`F12`)
+reuses that same pooled session for a location backed by an SSH connection - opening a terminal
+there starts a real remote shell (`cd <path> && exec $SHELL -l` over an SSH `exec` channel,
+client-side quoted) instead of a local one, while `core.openTerminal`'s external-terminal launch
+remains local-machine-only. SSH host keys are never auto-accepted, first use or on change:
 an unverified or changed key surfaces as a distinct connection status
 (`hostKeyUnverified`/`hostKeyMismatch`), and `POST /api/v1/connections/{id}/hostKey/probe`/`accept`
 (and the equivalent Tauri commands) let a caller inspect the presented fingerprint and explicitly

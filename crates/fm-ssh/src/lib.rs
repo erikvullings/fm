@@ -12,9 +12,8 @@
 //! types.
 //!
 //! Consumers built on top of this crate's session/auth layer: `fm-vfs-sftp`
-//! (task 0104, the only consumer implemented so far), and, per spec §7,
-//! future SSH-terminal and remote-command consumers - kept out of this
-//! crate's scope today but the module boundary already leaves room for them.
+//! (task 0104, file browsing) and, per spec §7, the embedded-terminal remote
+//! shell channel ([`shell`], task 0105).
 
 mod error;
 mod fingerprint;
@@ -22,6 +21,7 @@ pub mod fixture;
 mod known_hosts;
 mod manager;
 mod session;
+mod shell;
 mod types;
 
 pub use error::SshError;
@@ -32,4 +32,5 @@ pub use known_hosts::{
 };
 pub use manager::SshConnectionManager;
 pub use session::SshSession;
+pub use shell::{RemoteShellChannel, RemoteShellEvent, RemoteShellReader, RemoteShellWriter};
 pub use types::{SshConnectTarget, SshConnectionParameters, SshCredential, SshHostKeyPolicy};

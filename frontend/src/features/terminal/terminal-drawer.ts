@@ -22,7 +22,7 @@ type LiveTerminal = {
   terminal: Terminal;
   fit: FitAddon;
   surface: HTMLElement;
-  sessionId?: string;
+  sessionId?: string | undefined;
 };
 
 export interface TerminalKeyHandlers {
@@ -118,6 +118,13 @@ export const TerminalDrawer: FactoryComponent<TerminalDrawerAttrs> = () => {
       void attrs.client
         .open(location, live.terminal.cols, live.terminal.rows, (event) => {
           if (event.type === 'output') live?.terminal.write(new Uint8Array(event.data));
+          else if (event.type === 'exited') {
+            live?.terminal.write('\r\n\x1b[90m[Terminal session ended]\x1b[0m\r\n');
+            // Clear the dead session id so the next toggle/reopen redials
+            // instead of silently reusing a session the backend already
+            // discarded (the backend removes it from its own registry too).
+            if (live !== undefined) live.sessionId = undefined;
+          }
         })
         .then((id) => {
           if (live !== undefined) live.sessionId = id;
@@ -173,7 +180,7 @@ export const TerminalDrawer: FactoryComponent<TerminalDrawerAttrs> = () => {
           },
         }),
         attrs.location === undefined
-          ? m('.fm-terminal-unavailable', 'Select a local directory to open a terminal.')
+          ? m('.fm-terminal-unavailable', 'Select a directory to open a terminal.')
           : m('.fm-terminal-host', {
               oncreate: ({ dom }) => {
                 ensure(attrs, dom as HTMLElement);

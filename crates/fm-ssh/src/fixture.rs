@@ -40,7 +40,7 @@ use russh::server::{
     Auth, ChannelOpenHandle, Config as ServerConfig, Handler as ServerHandler, Msg,
     Server as ServerTrait,
 };
-use russh::{Channel, ChannelId};
+use russh::{Channel, ChannelId, Pty};
 use russh_sftp::protocol::{
     Attrs, Data, File as SftpFile, FileAttributes, Handle as SftpHandle, Name, OpenFlags, Status,
     StatusCode,
@@ -69,6 +69,10 @@ pub struct SshFixture {
     /// A client private key the fixture accepts for public-key
     /// authentication.
     pub authorized_client_key: PrivateKey,
+    /// The most recent `exec` request's command bytes, if any (task 0105's
+    /// shell-channel tests use this to verify a `cd <dir>`-prefixed command
+    /// was sent, and that it was quoted correctly).
+    pub last_exec_command: Arc<std::sync::Mutex<Option<Vec<u8>>>>,
     accept_task: JoinHandle<()>,
 }
 
@@ -102,8 +106,10 @@ impl SshFixture {
         });
 
         let authorized_public_key = authorized_client_key.public_key().clone();
+        let last_exec_command = Arc::new(std::sync::Mutex::new(None));
         let mut server = FixtureServer {
             authorized_public_key,
+            last_exec_command: last_exec_command.clone(),
         };
 
         let accept_task = tokio::spawn(async move {
@@ -116,6 +122,7 @@ impl SshFixture {
             host_key,
             host_key_fingerprint,
             authorized_client_key,
+            last_exec_command,
             accept_task,
         }
     }
@@ -136,6 +143,7 @@ impl SshFixture {
 #[derive(Clone)]
 struct FixtureServer {
     authorized_public_key: PublicKey,
+    last_exec_command: Arc<std::sync::Mutex<Option<Vec<u8>>>>,
 }
 
 impl ServerTrait for FixtureServer {
@@ -145,6 +153,7 @@ impl ServerTrait for FixtureServer {
         FixtureSshHandler {
             authorized_public_key: self.authorized_public_key.clone(),
             channels: Arc::new(AsyncMutex::new(HashMap::new())),
+            last_exec_command: self.last_exec_command.clone(),
         }
     }
 }
@@ -152,6 +161,7 @@ impl ServerTrait for FixtureServer {
 struct FixtureSshHandler {
     authorized_public_key: PublicKey,
     channels: Arc<AsyncMutex<HashMap<ChannelId, Channel<Msg>>>>,
+    last_exec_command: Arc<std::sync::Mutex<Option<Vec<u8>>>>,
 }
 
 impl ServerHandler for FixtureSshHandler {
@@ -204,6 +214,78 @@ impl ServerHandler for FixtureSshHandler {
         };
         session.channel_success(channel_id)?;
         russh_sftp::server::run(channel.into_stream(), FixtureSftpHandler::default()).await;
+        Ok(())
+    }
+
+    /// Accepts any PTY request unconditionally (task 0105's shell-channel
+    /// tests only care that the request round-trips, not real terminal
+    /// semantics).
+    async fn pty_request(
+        &mut self,
+        channel: ChannelId,
+        _term: &str,
+        _col_width: u32,
+        _row_height: u32,
+        _pix_width: u32,
+        _pix_height: u32,
+        _modes: &[(Pty, u32)],
+        session: &mut russh::server::Session,
+    ) -> Result<(), Self::Error> {
+        session.channel_success(channel)?;
+        Ok(())
+    }
+
+    /// Accepts a shell request; the fixture never actually spawns a real
+    /// login shell process (see [`Self::data`]'s echo behavior below).
+    async fn shell_request(
+        &mut self,
+        channel: ChannelId,
+        session: &mut russh::server::Session,
+    ) -> Result<(), Self::Error> {
+        session.channel_success(channel)?;
+        Ok(())
+    }
+
+    /// Records the `exec` command text (for `cd <dir> && exec $SHELL`
+    /// quoting assertions) and accepts the request.
+    async fn exec_request(
+        &mut self,
+        channel: ChannelId,
+        data: &[u8],
+        session: &mut russh::server::Session,
+    ) -> Result<(), Self::Error> {
+        *self
+            .last_exec_command
+            .lock()
+            .expect("fixture exec-command lock poisoned") = Some(data.to_vec());
+        session.channel_success(channel)?;
+        Ok(())
+    }
+
+    async fn window_change_request(
+        &mut self,
+        channel: ChannelId,
+        _col_width: u32,
+        _row_height: u32,
+        _pix_width: u32,
+        _pix_height: u32,
+        session: &mut russh::server::Session,
+    ) -> Result<(), Self::Error> {
+        session.channel_success(channel)?;
+        Ok(())
+    }
+
+    /// Echoes every byte back on the same channel, standing in for a real
+    /// remote shell so tests can verify the client's read/write plumbing
+    /// against a genuine `russh` server without needing an actual login
+    /// shell subprocess.
+    async fn data(
+        &mut self,
+        channel: ChannelId,
+        data: &[u8],
+        session: &mut russh::server::Session,
+    ) -> Result<(), Self::Error> {
+        session.data(channel, data.to_vec())?;
         Ok(())
     }
 }

@@ -49,6 +49,7 @@ use crate::error::ApplicationError;
 use crate::file_editor::{read_stream_error, FileEditorService};
 use crate::operation_planner::OperationPlanner;
 use crate::plugin_manager::PluginManager;
+use crate::remote_terminal::RemoteTerminalService;
 use crate::DirectoryService;
 use crate::workspace::{JsonFileWorkspaceRepository, WorkspaceService, WorkspaceSummary};
 
@@ -68,6 +69,7 @@ pub struct FileManagerService {
     platform: Arc<dyn PlatformAdapter>,
     workspaces: WorkspaceService<JsonFileWorkspaceRepository>,
     connections: ConnectionFacade,
+    remote_terminals: RemoteTerminalService,
     directories: DirectoryService,
     editor: FileEditorService,
     providers: ProviderRegistry,
@@ -398,6 +400,18 @@ impl FileManagerService {
                 credential_store.clone(),
             )),
         )));
+        // A second, independently-constructed `SshResolver` for the embedded
+        // terminal's remote shell channel (task 0105) - safe to construct
+        // separately for the same reason `SshResolver::new` above is: a
+        // stateless, file-per-connection repository with no in-memory cache
+        // to desynchronize.
+        let remote_terminals = RemoteTerminalService::new(
+            ssh_connections.clone(),
+            Arc::new(crate::ssh::SshResolver::new(
+                JsonFileConnectionRepository::new(settings_directory.join("connections")),
+                credential_store.clone(),
+            )),
+        );
         let settings_store = SettingsStore::new(&settings_directory);
         let loaded = settings_store
             .load()
@@ -455,6 +469,7 @@ impl FileManagerService {
                 ),
                 ssh_connections,
             ),
+            remote_terminals,
             directories,
             editor: FileEditorService::new(providers.clone(), audit_log_path.clone()),
             providers,
@@ -1316,6 +1331,27 @@ impl FileManagerService {
         fingerprint: String,
     ) -> Result<(), ApplicationError> {
         self.connections.accept_ssh_host_key(id, fingerprint).await
+    }
+
+    /// Opens an interactive remote shell channel on an SSH connection for
+    /// the embedded terminal drawer (task 0105, extending task 0126),
+    /// starting in `remote_path` if given.
+    ///
+    /// Reuses the same pooled SSH session an open SFTP browse for
+    /// `connection_id` already established rather than dialing again, and
+    /// reports [`ApplicationError::InvalidRequest`] (not a silent local
+    /// fallback) if `connection_id` does not name an SSH connection.
+    pub async fn open_remote_shell(
+        &self,
+        connection_id: Uuid,
+        remote_path: Option<&str>,
+        term: &str,
+        cols: u16,
+        rows: u16,
+    ) -> Result<fm_ssh::RemoteShellChannel, ApplicationError> {
+        self.remote_terminals
+            .open_shell(connection_id, remote_path, term, cols, rows)
+            .await
     }
 }
 
