@@ -1,6 +1,6 @@
 # 0125 Make Search Engine VFS-provider agnostic
 
-Status: open
+Status: done
 Priority: medium
 Subsystem: backend
 Depends on: none
