@@ -585,13 +585,18 @@ impl FileSystemProvider for LocalFileSystemProvider {
         let destination_path = destination_directory
             .to_native_path()
             .map_err(|_| invalid_location(destination_directory))?;
-        let source_metadata = tokio::fs::symlink_metadata(source_path)
+        let source_metadata = tokio::fs::symlink_metadata(&source_path)
             .await
             .map_err(|error| map_io_error(error, &source.location.uri))?;
-        let destination_metadata = tokio::fs::symlink_metadata(destination_path)
+        let destination_metadata = tokio::fs::symlink_metadata(&destination_path)
             .await
             .map_err(|error| map_io_error(error, &destination_directory.uri))?;
-        Ok(same_device(&source_metadata, &destination_metadata))
+        Ok(same_device(
+            &source_metadata,
+            &source_path,
+            &destination_metadata,
+            &destination_path,
+        ))
     }
 
     async fn watch(
@@ -843,13 +848,13 @@ fn stable_entry_id(metadata: &std::fs::Metadata, _location: &Location) -> EntryI
         format!("local:{}:{}", metadata.dev(), metadata.ino())
     };
     #[cfg(windows)]
-    let identity = {
-        use std::os::windows::fs::MetadataExt;
-        format!(
-            "local:{}:{}",
-            metadata.volume_serial_number().unwrap_or_default(),
-            metadata.file_index().unwrap_or_default()
-        )
+    let identity = match _location
+        .to_native_path()
+        .ok()
+        .and_then(|path| windows_file_identity(&path))
+    {
+        Some((volume, index)) => format!("local:{volume}:{index}"),
+        None => format!("local:{}", _location.uri),
     };
     #[cfg(not(any(unix, windows)))]
     let identity = format!("local:{}", _location.uri);
@@ -858,20 +863,83 @@ fn stable_entry_id(metadata: &std::fs::Metadata, _location: &Location) -> EntryI
 }
 
 #[cfg(unix)]
-fn same_device(left: &std::fs::Metadata, right: &std::fs::Metadata) -> bool {
+fn same_device(
+    left: &std::fs::Metadata,
+    _left_path: &Path,
+    right: &std::fs::Metadata,
+    _right_path: &Path,
+) -> bool {
     use std::os::unix::fs::MetadataExt;
     left.dev() == right.dev()
 }
 
 #[cfg(windows)]
-fn same_device(left: &std::fs::Metadata, right: &std::fs::Metadata) -> bool {
-    use std::os::windows::fs::MetadataExt;
-    left.volume_serial_number() == right.volume_serial_number()
+fn same_device(
+    _left: &std::fs::Metadata,
+    left_path: &Path,
+    _right: &std::fs::Metadata,
+    right_path: &Path,
+) -> bool {
+    match (
+        windows_file_identity(left_path),
+        windows_file_identity(right_path),
+    ) {
+        (Some((left_volume, _)), Some((right_volume, _))) => left_volume == right_volume,
+        _ => false,
+    }
 }
 
 #[cfg(not(any(unix, windows)))]
-fn same_device(_left: &std::fs::Metadata, _right: &std::fs::Metadata) -> bool {
+fn same_device(
+    _left: &std::fs::Metadata,
+    _left_path: &Path,
+    _right: &std::fs::Metadata,
+    _right_path: &Path,
+) -> bool {
     false
+}
+
+/// Queries the volume serial number and file index for a path via the raw Win32 API,
+/// since `std::os::windows::fs::MetadataExt::{volume_serial_number,file_index}` are
+/// gated behind the unstable `windows_by_handle` feature (rust-lang/rust#63010).
+#[cfg(windows)]
+#[allow(unsafe_code)]
+fn windows_file_identity(path: &Path) -> Option<(u32, u64)> {
+    use std::os::windows::ffi::OsStrExt;
+
+    use windows_sys::Win32::Foundation::{CloseHandle, INVALID_HANDLE_VALUE};
+    use windows_sys::Win32::Storage::FileSystem::{
+        BY_HANDLE_FILE_INFORMATION, CreateFileW, FILE_FLAG_BACKUP_SEMANTICS, FILE_SHARE_DELETE,
+        FILE_SHARE_READ, FILE_SHARE_WRITE, GetFileInformationByHandle, OPEN_EXISTING,
+    };
+
+    let wide: Vec<u16> = path
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+    unsafe {
+        let handle = CreateFileW(
+            wide.as_ptr(),
+            0,
+            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+            std::ptr::null(),
+            OPEN_EXISTING,
+            FILE_FLAG_BACKUP_SEMANTICS,
+            0,
+        );
+        if handle == INVALID_HANDLE_VALUE {
+            return None;
+        }
+        let mut info: BY_HANDLE_FILE_INFORMATION = std::mem::zeroed();
+        let succeeded = GetFileInformationByHandle(handle, &mut info) != 0;
+        CloseHandle(handle);
+        if !succeeded {
+            return None;
+        }
+        let file_index = (u64::from(info.nFileIndexHigh) << 32) | u64::from(info.nFileIndexLow);
+        Some((info.dwVolumeSerialNumber, file_index))
+    }
 }
 
 fn watch_error(error: notify::Error, location: &Location) -> VfsError {
