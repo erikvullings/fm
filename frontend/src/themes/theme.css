@@ -14,8 +14,7 @@
   --fm-error: #b42318;
   --fm-warning: #8a4b08;
   --fm-success: #18723c;
-  --fm-selected-row-bg: #d46b18;
-  --fm-selected-row-text: #ffffff;
+  --fm-selected-row-text: #b45309;
   --fm-row-height: 20px;
   --fm-header-height: 20px;
   --fm-font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -63,8 +62,7 @@
   --fm-error: #ff8a80;
   --fm-warning: #ffc46b;
   --fm-success: #72d69a;
-  --fm-selected-row-bg: #b35510;
-  --fm-selected-row-text: #ffffff;
+  --fm-selected-row-text: #fbbf24;
   --fm-shadow: 0 8px 24px rgb(0 0 0 / 45%);
   --fm-directory-row-base: #21252d;
   --fm-directory-row-highlight: #232730;
@@ -786,16 +784,13 @@ input[type="text"].fm-command-palette-input {
 }
 
 .fm-pane[data-active="true"] .fm-selected-row {
-  background-color: var(--fm-selected-row-bg);
+  background: var(--fm-selection);
   color: var(--fm-selected-row-text);
+  box-shadow: inset 3px 0 var(--fm-accent);
 }
 
 .fm-pane[data-active="true"] .fm-cursor-row {
-  box-shadow: inset 2px 0 var(--fm-accent);
-}
-
-.fm-pane[data-active="true"] .fm-cursor-row:not(.fm-selected-row) {
-  background-color: color-mix(in srgb, var(--fm-accent) 20%, transparent);
+  background-color: color-mix(in srgb, var(--fm-accent) 25%, transparent);
 }
 
 .fm-plugin-list {

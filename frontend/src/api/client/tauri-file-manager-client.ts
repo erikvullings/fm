@@ -235,7 +235,13 @@ export class TauriFileManagerClient implements FileManagerClient {
   }
 
   async resolveConflict(request: ResolveConflictRequest, _signal?: AbortSignal): Promise<void> {
-    await invoke('resolve_operation_conflict', { request });
+    await invoke('resolve_operation_conflict', {
+      operationId: request.operationId,
+      request: {
+        resolution: request.resolution,
+        applyToAllSimilar: request.applyToAllSimilar,
+      },
+    });
   }
 
   startSearch(request: StartSearchRequest, _signal?: AbortSignal): Promise<StartSearchResult> {

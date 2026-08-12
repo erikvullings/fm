@@ -242,8 +242,6 @@ export function renderAppDialogs(
       onConfirm: () => {
         if (pendingDelete !== undefined) {
           const id = pendingDelete.id;
-          // Optimistically transition to running so the dialog closes immediately;
-          // the backend's stateChanged event will confirm (or overwrite) shortly.
           ctx.setOperations(transitionOperationState(ctx.getOperations(), id, 'running'));
           ctx.redraw();
           void client
@@ -254,6 +252,12 @@ export function renderAppDialogs(
             })
             .then(() => {
               ctx.refetchAffectedPanes();
+              ctx.redraw();
+            })
+            .catch(() => {
+              ctx.setOperations(
+                transitionOperationState(ctx.getOperations(), id, 'waitingForConflictResolution'),
+              );
               ctx.redraw();
             });
         }
