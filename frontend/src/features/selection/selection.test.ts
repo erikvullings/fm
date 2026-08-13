@@ -354,7 +354,7 @@ describe('getSelectedEntryLocations', () => {
       { id: 'c', locationUri: '/dir/c' },
     );
     const locations = getSelectedEntryLocations(selection, entries);
-    expect(locations).toEqual([entries[1]!.location, entries[2]!.location]);
+    expect(locations).toEqual(entries.slice(1, 3).map((entry) => entry.location));
   });
 
   it('is equivalent to getSelectedEntries().map(entry => entry.location)', () => {

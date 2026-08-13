@@ -1139,7 +1139,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       clipboardMessage = msg;
     },
     setArchiveCreateRequest: (req) => {
-      dialogs.openArchiveCreate(req!);
+      if (req !== undefined) dialogs.openArchiveCreate(req);
     },
     setCreateDirectoryOpen: (open) => {
       if (open) dialogs.openCreateDirectory();

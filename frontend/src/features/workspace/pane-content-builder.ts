@@ -449,9 +449,9 @@ export function createPaneContentBuilder(
       },
       onFilterQueryChange: (query) => {
         if (key === undefined) return;
-        context.setAppState(
-          applyAppPatches(context.getAppState()!, setQuickFilterDraftPatch(key, query)),
-        );
+        const appState = context.getAppState();
+        if (appState === undefined) return;
+        context.setAppState(applyAppPatches(appState, setQuickFilterDraftPatch(key, query)));
         m.redraw();
       },
       onFilterCommit: () => {
@@ -480,9 +480,10 @@ export function createPaneContentBuilder(
       onFilterClose: () => {
         if (key !== undefined) {
           context.setQuickFilterOpen(key, false);
-          context.setAppState(
-            applyAppPatches(context.getAppState()!, deleteQuickFilterDraftPatch(key)),
-          );
+          const appState = context.getAppState();
+          if (appState !== undefined) {
+            context.setAppState(applyAppPatches(appState, deleteQuickFilterDraftPatch(key)));
+          }
         }
         const liveWorkspace = context.getWorkspace();
         if (liveWorkspace !== undefined && tab !== undefined && tab.view.quickFilter != null) {

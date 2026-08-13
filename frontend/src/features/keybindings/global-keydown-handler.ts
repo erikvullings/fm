@@ -477,13 +477,14 @@ export function createGlobalKeydownHandler(
       const key = context.activeTabKey(active.paneId);
       context.setQuickFilterOpen(key, true);
       const appState = context.getAppState();
+      if (appState === undefined) return;
       if (!(key in (appState?.quickFilterDrafts.byTabKey ?? {}))) {
         const workspace = context.getWorkspace();
         const pane = workspace?.panesById[active.paneId];
         const tab = pane?.tabsById[pane.activeTabId];
         context.setAppState(
           applyAppPatches(
-            appState!,
+            appState,
             setQuickFilterDraftPatch(key, tab?.view.quickFilter?.query ?? ''),
           ),
         );

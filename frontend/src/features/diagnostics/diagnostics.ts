@@ -50,33 +50,65 @@ export interface OperationQueueStatus {
   totalPendingSize: number;
 }
 
+interface DiagnosticsDto
+  extends Partial<
+    Omit<
+      DiagnosticsView,
+      'connectionState' | 'loadedPlugins' | 'recentErrors' | 'operationQueueStatus'
+    >
+  > {
+  connectionState?: Partial<ConnectionState>;
+  loadedPlugins?: PluginStatus[] | null;
+  recentErrors?: DiagnosticError[] | null;
+  operationQueueStatus?: Partial<OperationQueueStatus>;
+}
+
 /** Convert DTO to domain model. */
-export function diagnosticsFromDto(dto: any): DiagnosticsView {
+export function diagnosticsFromDto(input: unknown): DiagnosticsView {
+  const dto =
+    typeof input === 'object' && input !== null
+      ? (input as DiagnosticsDto)
+      : ({} as DiagnosticsDto);
   return {
     frontendVersion: dto.frontendVersion ?? '',
     backendVersion: dto.backendVersion ?? '',
-    tauriVersion: dto.tauriVersion,
+    ...(dto.tauriVersion === undefined ? {} : { tauriVersion: dto.tauriVersion }),
     platform: dto.platform ?? 'Unknown',
-    runtimeCapabilities: dto.runtimeCapabilities ?? {},
+    runtimeCapabilities: dto.runtimeCapabilities ?? {
+      runtime: 'browserServer',
+      platform: 'unknown',
+      nativeMenus: false,
+      nativeFileIcons: false,
+      nativeThumbnails: false,
+      nativeDragOut: false,
+      systemTrash: false,
+      revealInSystemFileManager: false,
+      openTerminal: false,
+      clipboard: false,
+      plugins: false,
+      serverAdministration: false,
+    },
     connectionState: {
       connected: dto.connectionState?.connected ?? false,
-      lastEventReceived: dto.connectionState?.lastEventReceived,
+      ...(dto.connectionState?.lastEventReceived === undefined
+        ? {}
+        : { lastEventReceived: dto.connectionState.lastEventReceived }),
       uptimeSeconds: dto.connectionState?.uptimeSeconds ?? 0,
       eventsReceived: dto.connectionState?.eventsReceived ?? 0,
       statusMessage: dto.connectionState?.statusMessage ?? 'Unknown',
     },
-    loadedPlugins: (dto.loadedPlugins ?? []).map((p: any) => ({
+    loadedPlugins: (dto.loadedPlugins ?? []).map((p) => ({
       pluginId: p.pluginId,
       name: p.name,
       enabled: p.enabled,
       version: p.version,
       errorCount: p.errorCount,
     })),
-    recentErrors: (dto.recentErrors ?? []).map((e: any) => ({
+    recentErrors: (dto.recentErrors ?? []).map((e) => ({
       timestamp: e.timestamp,
       message: e.message,
       code: e.code,
-      context: e.context,
+      ...(e.context === undefined ? {} : { context: e.context }),
     })),
     operationQueueStatus: {
       queuedCount: dto.operationQueueStatus?.queuedCount ?? 0,
