@@ -2735,6 +2735,16 @@
             },
             "type": "object"
           },
+          "fileNames": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Exact file name to icon definition key, matched before `file_extensions`.",
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
           "folder": {
             "description": "Default icon definition key for `directory` entries.",
             "type": [
@@ -2773,6 +2783,7 @@
         "required": [
           "iconDefinitions",
           "fileExtensions",
+          "fileNames",
           "mimePrefixes"
         ],
         "type": "object"

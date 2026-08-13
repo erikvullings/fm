@@ -83,6 +83,11 @@ export async function installPluginIconTheme(
     if (renderer !== undefined) registry.extensionIcons.set(extension, renderer);
   }
 
+  for (const [fileName, definitionKey] of Object.entries(iconTheme.fileNames)) {
+    const renderer = await rendererFor(definitionKey);
+    if (renderer !== undefined) registry.fileNameIcons.set(fileName, renderer);
+  }
+
   for (const [prefix, definitionKey] of Object.entries(iconTheme.mimePrefixes)) {
     const renderer = await rendererFor(definitionKey);
     if (renderer !== undefined) registry.mimePrefixIcons.set(prefix, renderer);

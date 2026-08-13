@@ -44,6 +44,7 @@ export interface PluginIconTheme {
   folder?: string;
   symlink?: string;
   fileExtensions: Readonly<Record<string, string>>;
+  fileNames: Readonly<Record<string, string>>;
   mimePrefixes: Readonly<Record<string, string>>;
 }
 

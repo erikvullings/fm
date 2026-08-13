@@ -39,6 +39,22 @@ describe('resolveEntryIcon', () => {
     expect(resolveEntryIcon(entry({ extension: 'ZIP' }), registry)).toBe(archiveIcon);
   });
 
+  it('prefers an exact file-name icon over the extension icon', () => {
+    const named = createDefaultEntryIconRegistry();
+    named.fileNameIcons.set('Cargo.lock', folderIcon);
+
+    expect(resolveEntryIcon(entry({ name: 'Cargo.lock', extension: 'lock' }), named)).toBe(
+      folderIcon,
+    );
+    // Exact means exact: a different casing keeps the extension icon.
+    expect(resolveEntryIcon(entry({ name: 'other.zip', extension: 'zip' }), named)).toBe(
+      archiveIcon,
+    );
+    expect(hasSpecificEntryIcon(entry({ name: 'Cargo.lock', extension: 'lock' }), named)).toBe(
+      true,
+    );
+  });
+
   it('falls back to a MIME type prefix when the extension has no registered icon', () => {
     expect(
       resolveEntryIcon(entry({ extension: 'bin', mimeType: 'image/x-custom' }), registry),

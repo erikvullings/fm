@@ -300,8 +300,8 @@ file-manager/
 │   ├── directories/
 │   └── mock-responses/
 └── scripts/
-    ├── export-openapi.sh
-    ├── generate-api.sh
+    ├── export-openapi.mjs
+    ├── generate-api.mjs
     └── create-large-directory-fixture.rs
 ```
 

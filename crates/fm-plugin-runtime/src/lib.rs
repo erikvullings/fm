@@ -770,7 +770,12 @@ mod tests {
             icon_theme.mime_prefixes.get("image/").map(String::as_str),
             Some("image")
         );
-        assert_eq!(icon_theme.icon_definitions.len(), 32);
+        assert_eq!(
+            icon_theme.file_names.get("Cargo.toml").map(String::as_str),
+            Some("cargo")
+        );
+        // Deliberately not an exact count: the theme grows as icons are vendored.
+        assert!(icon_theme.icon_definitions.len() >= 32);
     }
 
     #[test]

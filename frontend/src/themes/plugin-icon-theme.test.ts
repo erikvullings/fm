@@ -34,6 +34,7 @@ const SAMPLE_THEME: PluginIconTheme = {
   folder: 'folder',
   file: 'file',
   fileExtensions: { ts: 'typescript' },
+  fileNames: { 'Cargo.toml': 'typescript' },
   mimePrefixes: { 'image/': 'file' },
 };
 
@@ -52,6 +53,7 @@ describe('installPluginIconTheme', () => {
     expect(registry.kindIcons.get('directory')).not.toBe(defaultFolderIcon);
     expect(registry.kindIcons.get('file')).toBeDefined();
     expect(registry.extensionIcons.get('ts')).toBeDefined();
+    expect(registry.fileNameIcons.get('Cargo.toml')).toBeDefined();
     expect(registry.mimePrefixIcons.get('image/')).toBeDefined();
     expect(client.getPluginIconThemeAsset).toHaveBeenCalledWith('sample.icons', 'icons/folder.svg');
   });
@@ -77,6 +79,7 @@ describe('installPluginIconTheme', () => {
       iconDefinitions: { folder: { iconPath: 'icons/folder.svg' } },
       folder: 'folder',
       fileExtensions: {},
+      fileNames: {},
       mimePrefixes: {},
     };
 
@@ -97,6 +100,7 @@ describe('installPluginIconTheme', () => {
     const theme: PluginIconTheme = {
       iconDefinitions: { file: { iconPath: 'icons/file.svg' } },
       fileExtensions: { rs: 'missing-definition' },
+      fileNames: {},
       mimePrefixes: {},
     };
 
@@ -113,6 +117,7 @@ describe('installPluginIconTheme', () => {
       iconDefinitions: { folder: { iconPath: 'icons/folder.svg' } },
       folder: 'folder',
       fileExtensions: {},
+      fileNames: {},
       mimePrefixes: {},
     };
 

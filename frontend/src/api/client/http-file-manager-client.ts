@@ -781,6 +781,7 @@ function pluginIconThemeFromDto(dto: PluginIconThemeDto): PluginIconTheme {
     ...(dto.folder == null ? {} : { folder: dto.folder }),
     ...(dto.symlink == null ? {} : { symlink: dto.symlink }),
     fileExtensions: dto.fileExtensions,
+    fileNames: dto.fileNames,
     mimePrefixes: dto.mimePrefixes,
   };
 }

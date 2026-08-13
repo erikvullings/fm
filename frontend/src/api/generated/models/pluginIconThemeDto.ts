@@ -3,6 +3,7 @@
  * Run `pnpm api:generate` (or `pnpm api:check`) to regenerate.
  */
 import type { PluginIconThemeDtoFileExtensions } from './pluginIconThemeDtoFileExtensions.ts';
+import type { PluginIconThemeDtoFileNames } from './pluginIconThemeDtoFileNames.ts';
 import type { PluginIconThemeDtoIconDefinitions } from './pluginIconThemeDtoIconDefinitions.ts';
 import type { PluginIconThemeDtoMimePrefixes } from './pluginIconThemeDtoMimePrefixes.ts';
 
@@ -18,6 +19,8 @@ export interface PluginIconThemeDto {
   file?: string | null;
   /** Lowercased, dot-less file extension to icon definition key. */
   fileExtensions: PluginIconThemeDtoFileExtensions;
+  /** Exact file name to icon definition key, matched before `file_extensions`. */
+  fileNames: PluginIconThemeDtoFileNames;
   /**
      * Default icon definition key for `directory` entries.
      * @nullable

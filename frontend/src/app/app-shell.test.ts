@@ -1732,6 +1732,7 @@ describe('AppShell', () => {
         iconTheme: {
           iconDefinitions: { file: { iconPath: 'icons/file.svg' } },
           fileExtensions: {},
+          fileNames: {},
           mimePrefixes: {},
         },
       },
@@ -1776,6 +1777,7 @@ describe('AppShell', () => {
     const iconTheme = {
       iconDefinitions: { file: { iconPath: 'icons/file.svg' } },
       fileExtensions: {},
+      fileNames: {},
       mimePrefixes: {},
     };
     const enabledDescriptor = {

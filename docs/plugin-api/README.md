@@ -107,6 +107,7 @@ icon_theme = true
   "file": "file",
   "symlink": "symlink",
   "fileExtensions": { "rs": "rust" },
+  "fileNames": { "Cargo.toml": "rust" },
   "mimePrefixes": { "image/": "file" }
 }
 ```
@@ -117,14 +118,16 @@ icon_theme = true
   only ever reference its own files.
 - `folder`, `file`, and `symlink` set the default icon definition key used for each entry kind.
   `fileExtensions` maps a lowercased, dot-less extension (e.g. `"rs"`, not `".rs"` or `"RS"`) to a
-  definition key; `mimePrefixes` maps a MIME type prefix (e.g. `"image/"`) to one. Every key
-  referenced by any of these five fields must exist in `iconDefinitions`, and `iconDefinitions`
-  must not be empty — both reject the manifest otherwise.
-- All five top-level fields besides `iconDefinitions` are optional; omit whichever kinds/mappings
+  definition key; `fileNames` maps an exact file name (e.g. `"Cargo.toml"`, matched case-sensitively
+  so a theme can distinguish `Cargo.lock` from `cargo.lock`) to one; `mimePrefixes` maps a MIME type
+  prefix (e.g. `"image/"`) to one. Every key referenced by any of these six fields must exist in
+  `iconDefinitions`, and `iconDefinitions` must not be empty — both reject the manifest otherwise.
+- All top-level fields besides `iconDefinitions` are optional; omit whichever kinds/mappings
   your theme doesn't customize; the built-in default is used for anything left unset.
 - Resolution precedence in the frontend (`resolveEntryIcon`, `entry-icons.ts`): directories and
-  symlinks always use `folder`/`symlink`. Files try `fileExtensions` first, then the first
-  `mimePrefixes` entry whose prefix matches the entry's MIME type (insertion order), then `file`.
+  symlinks always use `folder`/`symlink`. Files try `fileNames` first, then `fileExtensions`, then
+  the first `mimePrefixes` entry whose prefix matches the entry's MIME type (insertion order), then
+  `file`.
 - Icon assets must be SVG. They are fetched over the plugin icon-theme asset endpoint (HTTP route
   and Tauri command, both path-contained to the plugin's own directory) and sanitized in the
   frontend (`svg-sanitizer.ts`) before rendering — only `<svg>`, `<path>`, `<g>`, `<circle>`,

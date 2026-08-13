@@ -27,6 +27,8 @@ export interface EntryIconRegistry {
   readonly kindIcons: Map<EntryKind, EntryIconRenderer>;
   /** Icon for `file` entries, keyed by lowercased extension without the leading dot. */
   readonly extensionIcons: Map<string, EntryIconRenderer>;
+  /** Icon for `file` entries, keyed by exact file name, matched before {@link extensionIcons}. */
+  readonly fileNameIcons: Map<string, EntryIconRenderer>;
   /** Icon for `file` entries with no extension match, keyed by a MIME type prefix (e.g. `image/`). */
   readonly mimePrefixIcons: Map<string, EntryIconRenderer>;
 }
@@ -72,7 +74,12 @@ export function createDefaultEntryIconRegistry(): EntryIconRegistry {
     ['file', fileIcon],
   ]);
 
-  return { kindIcons, extensionIcons, mimePrefixIcons };
+  return {
+    kindIcons,
+    extensionIcons,
+    fileNameIcons: new Map<string, EntryIconRenderer>(),
+    mimePrefixIcons,
+  };
 }
 
 /**
@@ -92,6 +99,7 @@ export function hasSpecificEntryIcon(
     entry.kind === 'directory' ? folderIcon : entry.kind === 'symlink' ? symlinkIcon : fileIcon;
   if ((registry.kindIcons.get(entry.kind) ?? fileIcon) !== defaultKindRenderer) return true;
   if (entry.kind !== 'file') return false;
+  if (registry.fileNameIcons.has(entry.name)) return true;
   const extension = entry.extension?.toLowerCase();
   if (extension !== undefined && registry.extensionIcons.has(extension)) return true;
   return (
@@ -111,6 +119,7 @@ export function restoreDefaultIconTheme(registry: EntryIconRegistry = entryIconR
   for (const [extension, renderer] of defaults.extensionIcons) {
     registry.extensionIcons.set(extension, renderer);
   }
+  registry.fileNameIcons.clear();
   registry.mimePrefixIcons.clear();
   for (const [prefix, renderer] of defaults.mimePrefixIcons) {
     registry.mimePrefixIcons.set(prefix, renderer);
@@ -124,6 +133,10 @@ export function resolveEntryIcon(
 ): EntryIconRenderer {
   if (entry.kind !== 'file') {
     return registry.kindIcons.get(entry.kind) ?? fileIcon;
+  }
+  const byFileName = registry.fileNameIcons.get(entry.name);
+  if (byFileName !== undefined) {
+    return byFileName;
   }
   const extension = entry.extension?.toLowerCase();
   const byExtension = extension === undefined ? undefined : registry.extensionIcons.get(extension);
