@@ -949,6 +949,7 @@
           "totalKnownEntries": 0,
           "totalKnownFileCount": 0,
           "totalKnownSize": 0,
+          "volumeCapacity": null,
           "writable": true
         },
         "properties": {
@@ -1019,6 +1020,17 @@
             "type": [
               "integer",
               "null"
+            ]
+          },
+          "volumeCapacity": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/VolumeCapacityDto",
+                "description": "Total/available capacity for the volume backing this location, when known\n(task 0096); absent for non-local providers or unsupported platforms."
+              }
             ]
           },
           "writable": {
@@ -3701,6 +3713,28 @@
           "name",
           "kind",
           "configuration"
+        ],
+        "type": "object"
+      },
+      "VolumeCapacityDto": {
+        "description": "Total and available capacity for the volume backing a directory\nsnapshot's location (task 0096), when the platform adapter and provider\nsupport reporting it.",
+        "properties": {
+          "availableBytes": {
+            "description": "Currently available (free) capacity of the volume, in bytes.",
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "totalBytes": {
+            "description": "Total capacity of the volume, in bytes.",
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "totalBytes",
+          "availableBytes"
         ],
         "type": "object"
       },

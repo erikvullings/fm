@@ -288,7 +288,6 @@ pub(crate) async fn list_directory(
         .service
         .list_directory(request)
         .await
-        .map(Into::into)
         .map_err(|error| error.into_dto(Uuid::new_v4()))
 }
 
@@ -302,7 +301,6 @@ pub(crate) async fn refresh_directory(
         .service
         .refresh_directory(request)
         .await
-        .map(Into::into)
         .map_err(|error| error.into_dto(Uuid::new_v4()))
 }
 
@@ -316,7 +314,6 @@ pub(crate) async fn navigate_pane(
         .service
         .navigate_pane(request)
         .await
-        .map(Into::into)
         .map_err(|error| error.into_dto(Uuid::new_v4()))
 }
 

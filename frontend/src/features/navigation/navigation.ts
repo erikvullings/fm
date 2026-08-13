@@ -8,6 +8,7 @@ import type {
   PaneId,
   TabId,
   TabProjection,
+  VolumeCapacity,
   WorkspaceCommand,
   WorkspaceProjection,
 } from '../../models';
@@ -35,6 +36,8 @@ export interface PaneDirectoryView {
   readonly totalKnownSize?: number;
   /** Number of file/symlink entries (directories excluded), known from the first page's response. */
   readonly totalKnownFileCount?: number;
+  /** Backing volume's total/available capacity, when known (task 0096). */
+  readonly volumeCapacity?: VolumeCapacity;
 }
 
 /** Integration callbacks kept outside the navigation module. */
@@ -307,6 +310,7 @@ export function createNavigationController(
       ...(snapshot.totalKnownFileCount === undefined
         ? {}
         : { totalKnownFileCount: snapshot.totalKnownFileCount }),
+      ...(snapshot.volumeCapacity === undefined ? {} : { volumeCapacity: snapshot.volumeCapacity }),
     };
   }
 

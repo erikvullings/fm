@@ -47,6 +47,18 @@ impl From<LoadingStateDto> for LoadingState {
     }
 }
 
+/// Total and available capacity for the volume backing a directory
+/// snapshot's location (task 0096), when the platform adapter and provider
+/// support reporting it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct VolumeCapacityDto {
+    /// Total capacity of the volume, in bytes.
+    pub total_bytes: u64,
+    /// Currently available (free) capacity of the volume, in bytes.
+    pub available_bytes: u64,
+}
+
 /// A batch of directory entries for one pane, at a specific revision.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
@@ -62,7 +74,8 @@ impl From<LoadingStateDto> for LoadingState {
     "totalKnownFileCount": 0,
     "hasMore": false,
     "continuationToken": null,
-    "loadingState": {"type": "loaded"}
+    "loadingState": {"type": "loaded"},
+    "volumeCapacity": null
 }))]
 pub struct DirectorySnapshotDto {
     /// The pane this snapshot belongs to.
@@ -91,6 +104,9 @@ pub struct DirectorySnapshotDto {
     pub continuation_token: Option<String>,
     /// The current loading state.
     pub loading_state: LoadingStateDto,
+    /// Total/available capacity for the volume backing this location, when known
+    /// (task 0096); absent for non-local providers or unsupported platforms.
+    pub volume_capacity: Option<VolumeCapacityDto>,
 }
 
 impl From<DirectorySnapshot> for DirectorySnapshotDto {
@@ -108,6 +124,10 @@ impl From<DirectorySnapshot> for DirectorySnapshotDto {
             has_more: snapshot.has_more,
             continuation_token: snapshot.continuation_token,
             loading_state: snapshot.loading_state.into(),
+            // Volume capacity is not part of the domain snapshot (it comes from
+            // the platform adapter, which the domain layer has no dependency
+            // on) - callers attach it afterward, e.g. `FileManagerService`.
+            volume_capacity: None,
         }
     }
 }
@@ -154,6 +174,10 @@ mod tests {
             has_more: false,
             continuation_token: None,
             loading_state: LoadingStateDto::Loaded,
+            volume_capacity: Some(VolumeCapacityDto {
+                total_bytes: 1_000_000_000_000,
+                available_bytes: 616_040_000_000,
+            }),
         }
     }
 
@@ -178,6 +202,7 @@ mod tests {
             "\"hasMore\"",
             "\"continuationToken\"",
             "\"loadingState\"",
+            "\"volumeCapacity\"",
         ] {
             assert!(json.contains(field), "expected {json} to contain {field}");
         }

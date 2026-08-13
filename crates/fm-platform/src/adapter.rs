@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use crate::{MountedVolume, PlatformCapabilities, PlatformError, SystemLocation};
+use crate::{MountedVolume, PlatformCapabilities, PlatformError, SystemLocation, VolumeCapacity};
 
 /// Native OS integrations the application calls into: file icons,
 /// thumbnails, revealing entries in the system file manager, trash, opening
@@ -132,6 +132,15 @@ pub trait PlatformAdapter: Send + Sync {
     fn mounted_volumes(&self) -> Result<Vec<MountedVolume>, PlatformError> {
         Err(PlatformError::Unsupported {
             capability: PlatformCapabilities::MOUNTED_VOLUMES,
+        })
+    }
+
+    /// Reports total/available capacity for the volume containing `path`
+    /// (task 0096), used to render a Marta/Finder-style status bar segment.
+    fn volume_capacity(&self, path: &Path) -> Result<VolumeCapacity, PlatformError> {
+        let _ = path;
+        Err(PlatformError::Unsupported {
+            capability: PlatformCapabilities::VOLUME_CAPACITY,
         })
     }
 

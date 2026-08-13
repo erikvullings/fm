@@ -14,6 +14,15 @@ export type LoadingState =
   | { type: 'error'; message: string };
 
 /**
+ * Total/available capacity for the volume backing a directory snapshot's
+ * location (task 0096), mirroring `fm_transport_dto::VolumeCapacityDto`.
+ */
+export interface VolumeCapacity {
+  totalBytes: number;
+  availableBytes: number;
+}
+
+/**
  * A batch of directory entries for one pane, at a specific revision (spec
  * §5.4), mirroring `fm_transport_dto::DirectorySnapshotDto`.
  */
@@ -33,6 +42,8 @@ export interface DirectorySnapshot {
   hasMore: boolean;
   continuationToken?: string;
   loadingState: LoadingState;
+  /** Backing volume's total/available capacity, when known (task 0096). */
+  volumeCapacity?: VolumeCapacity;
 }
 
 /**
@@ -54,6 +65,14 @@ export function directorySnapshotFromDto(dto: DirectorySnapshotDto): DirectorySn
     ...(dto.totalKnownSize == null ? {} : { totalKnownSize: dto.totalKnownSize }),
     ...(dto.totalKnownFileCount == null ? {} : { totalKnownFileCount: dto.totalKnownFileCount }),
     ...(dto.continuationToken == null ? {} : { continuationToken: dto.continuationToken }),
+    ...(dto.volumeCapacity == null
+      ? {}
+      : {
+          volumeCapacity: {
+            totalBytes: dto.volumeCapacity.totalBytes,
+            availableBytes: dto.volumeCapacity.availableBytes,
+          },
+        }),
   };
 }
 

@@ -51,7 +51,7 @@ pub(crate) async fn list_directory(
                 elapsed_ms = started.elapsed().as_millis(),
                 "list_directory honored"
             );
-            Ok(Json(DirectorySnapshotDto::from(snapshot)))
+            Ok(Json(snapshot))
         }
         Err(error) => {
             warn!(
@@ -100,7 +100,7 @@ pub(crate) async fn refresh_directory(
                 elapsed_ms = started.elapsed().as_millis(),
                 "refresh_directory honored"
             );
-            Ok(Json(DirectorySnapshotDto::from(snapshot)))
+            Ok(Json(snapshot))
         }
         Err(error) => {
             warn!(
@@ -149,7 +149,7 @@ pub(crate) async fn navigate_pane(
                 elapsed_ms = started.elapsed().as_millis(),
                 "navigate_pane honored"
             );
-            Ok(Json(DirectorySnapshotDto::from(snapshot)))
+            Ok(Json(snapshot))
         }
         Err(error) => {
             warn!(

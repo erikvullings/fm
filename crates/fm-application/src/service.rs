@@ -28,14 +28,15 @@ use fm_settings::{
 };
 use fm_transport_dto::{
     ActionDescriptorDto, ActionResultDto, ConflictPolicyDto, ConflictResolutionDto, ConnectionDto,
-    CreateConnectionRequestDto, DateFormatDto, DefaultPaneLayoutDto, EntryMetadataRequest,
-    InvokeActionRequestDto, ListDirectoryRequest, NavigateRequest, OperationConflictPolicyDto,
-    OperationDto, OperationKindDto, OperationProgressDto, OperationStateDto, PlatformKindDto,
-    PluginDescriptorDto, PluginLogEntryDto, ReadFileRangeRequestDto, ReadFileRangeResponseDto,
-    ResolveOperationConflictRequestDto, RuntimeCapabilitiesDto, RuntimeKindDto,
-    SearchInFileMatchDto, SearchInFileRequestDto, SearchInFileResponseDto, SettingsDto,
-    SizeFormatDto, StartOperationRequestDto, StartSearchRequestDto, StartSearchResponseDto,
-    ThemeDto, UpdateConnectionRequestDto, WorkspaceCommandDto, WorkspaceDto, WorkspaceSummaryDto,
+    CreateConnectionRequestDto, DateFormatDto, DefaultPaneLayoutDto, DirectorySnapshotDto,
+    EntryMetadataRequest, InvokeActionRequestDto, ListDirectoryRequest, NavigateRequest,
+    OperationConflictPolicyDto, OperationDto, OperationKindDto, OperationProgressDto,
+    OperationStateDto, PlatformKindDto, PluginDescriptorDto, PluginLogEntryDto,
+    ReadFileRangeRequestDto, ReadFileRangeResponseDto, ResolveOperationConflictRequestDto,
+    RuntimeCapabilitiesDto, RuntimeKindDto, SearchInFileMatchDto, SearchInFileRequestDto,
+    SearchInFileResponseDto, SettingsDto, SizeFormatDto, StartOperationRequestDto,
+    StartSearchRequestDto, StartSearchResponseDto, ThemeDto, UpdateConnectionRequestDto,
+    VolumeCapacityDto, WorkspaceCommandDto, WorkspaceDto, WorkspaceSummaryDto,
 };
 use fm_vfs::{EntryRef, ProviderCapabilities, ProviderReadStream, ProviderRegistry};
 use fm_vfs_local::LocalFileSystemProvider;
@@ -903,24 +904,61 @@ impl FileManagerService {
     pub async fn list_directory(
         &self,
         request: ListDirectoryRequest,
-    ) -> Result<DirectorySnapshot, ApplicationError> {
-        self.directories.list(request).await
+    ) -> Result<DirectorySnapshotDto, ApplicationError> {
+        let snapshot = self.directories.list(request).await?;
+        Ok(self.enrich_snapshot(snapshot).await)
     }
 
     /// Refreshes a directory using the same options as a listing.
     pub async fn refresh_directory(
         &self,
         request: ListDirectoryRequest,
-    ) -> Result<DirectorySnapshot, ApplicationError> {
-        self.directories.refresh(request).await
+    ) -> Result<DirectorySnapshotDto, ApplicationError> {
+        let snapshot = self.directories.refresh(request).await?;
+        Ok(self.enrich_snapshot(snapshot).await)
     }
 
     /// Navigates a pane and lists its first page.
     pub async fn navigate_pane(
         &self,
         request: NavigateRequest,
-    ) -> Result<DirectorySnapshot, ApplicationError> {
-        self.directories.navigate(request).await
+    ) -> Result<DirectorySnapshotDto, ApplicationError> {
+        let snapshot = self.directories.navigate(request).await?;
+        Ok(self.enrich_snapshot(snapshot).await)
+    }
+
+    /// Converts a domain snapshot to its wire DTO, attaching the backing
+    /// volume's total/available capacity (task 0096) when the platform
+    /// adapter and location support it.
+    async fn enrich_snapshot(&self, snapshot: DirectorySnapshot) -> DirectorySnapshotDto {
+        let volume_capacity = self.volume_capacity(&snapshot.location).await;
+        DirectorySnapshotDto {
+            volume_capacity,
+            ..DirectorySnapshotDto::from(snapshot)
+        }
+    }
+
+    /// Reports the backing volume's total/available capacity for a location
+    /// (task 0096), or `None` when the platform adapter doesn't support it,
+    /// the location isn't a local filesystem path, or the native call fails.
+    async fn volume_capacity(&self, location: &Location) -> Option<VolumeCapacityDto> {
+        if !self
+            .platform
+            .capabilities()
+            .contains(PlatformCapabilities::VOLUME_CAPACITY)
+        {
+            return None;
+        }
+        let path = location.to_native_path().ok()?;
+        let platform = Arc::clone(&self.platform);
+        let capacity = tokio::task::spawn_blocking(move || platform.volume_capacity(&path))
+            .await
+            .ok()?
+            .ok()?;
+        Some(VolumeCapacityDto {
+            total_bytes: capacity.total_bytes,
+            available_bytes: capacity.available_bytes,
+        })
     }
 
     /// Fetches detailed metadata for one entry.
@@ -2548,6 +2586,116 @@ mod tests {
         assert!(!capabilities.native_file_icons);
         assert!(!capabilities.native_thumbnails);
         assert!(!capabilities.reveal_in_system_file_manager);
+    }
+
+    /// A platform adapter test double reporting a fixed volume capacity
+    /// (task 0096), so `list_directory` tests can distinguish "the service
+    /// actually calls into the adapter and forwards its result" from a
+    /// coincidentally-passing empty default.
+    #[derive(Debug, Clone, Copy)]
+    struct VolumeCapacityPlatformAdapter {
+        capabilities: PlatformCapabilities,
+    }
+
+    impl fm_platform::PlatformAdapter for VolumeCapacityPlatformAdapter {
+        fn capabilities(&self) -> PlatformCapabilities {
+            self.capabilities
+        }
+
+        fn volume_capacity(
+            &self,
+            _path: &Path,
+        ) -> Result<fm_platform::VolumeCapacity, fm_platform::PlatformError> {
+            Ok(fm_platform::VolumeCapacity {
+                total_bytes: 1_000_000_000_000,
+                available_bytes: 616_040_000_000,
+            })
+        }
+    }
+
+    fn list_directory_request(location: Location) -> ListDirectoryRequest {
+        ListDirectoryRequest {
+            workspace_id: fm_domain::WorkspaceId::new().into(),
+            pane_id: fm_domain::PaneId::new().into(),
+            request_id: Uuid::new_v4(),
+            location: location.into(),
+            continuation_token: None,
+            sort: Vec::new(),
+            show_hidden: false,
+            folders_first: true,
+        }
+    }
+
+    #[tokio::test]
+    async fn list_directory_attaches_volume_capacity_when_the_platform_adapter_supports_it() {
+        let dir = tempfile::tempdir().expect("must create a temp dir");
+        let service = FileManagerService::with_platform_adapter(
+            RuntimeKindDto::BrowserServer,
+            dir.path(),
+            dir.path().join("settings"),
+            EventBus::default(),
+            Arc::new(VolumeCapacityPlatformAdapter {
+                capabilities: PlatformCapabilities::VOLUME_CAPACITY,
+            }),
+        );
+        let location = Location::from_native_path(dir.path()).expect("native path location");
+
+        let snapshot = service
+            .list_directory(list_directory_request(location))
+            .await
+            .expect("list directory");
+
+        let capacity = snapshot
+            .volume_capacity
+            .expect("volume capacity must be attached");
+        assert_eq!(capacity.total_bytes, 1_000_000_000_000);
+        assert_eq!(capacity.available_bytes, 616_040_000_000);
+    }
+
+    #[tokio::test]
+    async fn list_directory_omits_volume_capacity_when_the_adapter_lacks_the_capability() {
+        let dir = tempfile::tempdir().expect("must create a temp dir");
+        let service = FileManagerService::with_platform_adapter(
+            RuntimeKindDto::BrowserServer,
+            dir.path(),
+            dir.path().join("settings"),
+            EventBus::default(),
+            Arc::new(VolumeCapacityPlatformAdapter {
+                capabilities: PlatformCapabilities::empty(),
+            }),
+        );
+        let location = Location::from_native_path(dir.path()).expect("native path location");
+
+        let snapshot = service
+            .list_directory(list_directory_request(location))
+            .await
+            .expect("list directory");
+
+        assert!(snapshot.volume_capacity.is_none());
+    }
+
+    #[tokio::test]
+    async fn list_directory_omits_volume_capacity_for_a_non_local_location() {
+        let dir = tempfile::tempdir().expect("must create a temp dir");
+        let service = FileManagerService::with_platform_adapter(
+            RuntimeKindDto::BrowserServer,
+            dir.path(),
+            dir.path().join("settings"),
+            EventBus::default(),
+            Arc::new(VolumeCapacityPlatformAdapter {
+                capabilities: PlatformCapabilities::VOLUME_CAPACITY,
+            }),
+        );
+        // A search location has no backing native path, so capacity lookup must
+        // degrade gracefully rather than erroring the whole listing.
+        let location = Location::new(
+            fm_domain::ProviderId::new("search"),
+            "search://local/example-search",
+        );
+
+        let capacity = service.volume_capacity(&location).await;
+
+        assert!(capacity.is_none());
     }
 
     /// A platform adapter test double that records every call it receives

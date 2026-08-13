@@ -72,7 +72,7 @@ pub use settings::{
     ConflictPolicyDto, DateFormatDto, DefaultPaneLayoutDto, FavouriteLocationDto, SettingsDto,
     SizeFormatDto, ThemeDto,
 };
-pub use snapshot::{DirectorySnapshotDto, LoadingStateDto};
+pub use snapshot::{DirectorySnapshotDto, LoadingStateDto, VolumeCapacityDto};
 pub use system_location::{SystemLocationDto, SystemLocationKindDto};
 pub use workspace::{
     ColumnConfigurationDto, CreateWorkspaceRequestDto, DirectoryViewConfigurationDto,

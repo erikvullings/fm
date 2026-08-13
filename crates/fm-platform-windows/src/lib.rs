@@ -8,15 +8,17 @@
 #![allow(unsafe_code)]
 
 use std::ffi::OsString;
-use std::os::windows::ffi::OsStringExt;
+use std::os::windows::ffi::{OsStrExt, OsStringExt};
 use std::path::{Path, PathBuf};
 
 use fm_platform::{
     FallbackPlatformAdapter, MountedVolume, PlatformAdapter, PlatformCapabilities, PlatformError,
-    SystemLocation, SystemLocationKind,
+    SystemLocation, SystemLocationKind, VolumeCapacity,
 };
 use windows_sys::Win32::NetworkManagement::WNet::WNetGetConnectionW;
-use windows_sys::Win32::Storage::FileSystem::{GetDriveTypeW, GetLogicalDrives};
+use windows_sys::Win32::Storage::FileSystem::{
+    GetDiskFreeSpaceExW, GetDriveTypeW, GetLogicalDrives,
+};
 
 fn mapped_network_locations() -> Vec<SystemLocation> {
     let drives = unsafe { GetLogicalDrives() };
@@ -125,7 +127,9 @@ impl PlatformAdapter for WindowsPlatformAdapter {
     }
 
     fn capabilities(&self) -> PlatformCapabilities {
-        self.fallback.capabilities() | PlatformCapabilities::NATIVE_DRAG_OUT
+        self.fallback.capabilities()
+            | PlatformCapabilities::NATIVE_DRAG_OUT
+            | PlatformCapabilities::VOLUME_CAPACITY
     }
 
     fn file_icon(&self, path: &Path) -> Result<Vec<u8>, PlatformError> {
@@ -180,6 +184,29 @@ impl PlatformAdapter for WindowsPlatformAdapter {
         self.fallback.mounted_volumes()
     }
 
+    fn volume_capacity(&self, path: &Path) -> Result<VolumeCapacity, PlatformError> {
+        let wide_path: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
+        let mut available_bytes: u64 = 0;
+        let mut total_bytes: u64 = 0;
+        let succeeded = unsafe {
+            GetDiskFreeSpaceExW(
+                wide_path.as_ptr(),
+                &raw mut available_bytes,
+                &raw mut total_bytes,
+                std::ptr::null_mut(),
+            )
+        };
+        if succeeded == 0 {
+            return Err(PlatformError::NotFound {
+                path: path.display().to_string(),
+            });
+        }
+        Ok(VolumeCapacity {
+            total_bytes,
+            available_bytes,
+        })
+    }
+
     fn install_native_menu(&self) -> Result<(), PlatformError> {
         self.fallback.install_native_menu()
     }
@@ -192,11 +219,28 @@ mod tests {
     use super::*;
 
     #[test]
-    fn capabilities_include_native_drag_out() {
+    fn capabilities_include_native_drag_out_and_volume_capacity() {
         assert_eq!(
             WindowsPlatformAdapter::new().capabilities(),
-            PlatformCapabilities::NATIVE_DRAG_OUT
+            PlatformCapabilities::NATIVE_DRAG_OUT | PlatformCapabilities::VOLUME_CAPACITY
         );
+    }
+
+    #[test]
+    fn volume_capacity_reports_plausible_totals_for_the_system_drive() {
+        let capacity = WindowsPlatformAdapter::new()
+            .volume_capacity(&std::env::temp_dir())
+            .expect("query system drive capacity");
+        assert!(capacity.total_bytes > 0);
+        assert!(capacity.available_bytes <= capacity.total_bytes);
+    }
+
+    #[test]
+    fn volume_capacity_reports_not_found_for_a_missing_drive() {
+        let error = WindowsPlatformAdapter::new()
+            .volume_capacity(Path::new("Z:\\no-such-fm-platform-windows-test-path"))
+            .unwrap_err();
+        assert!(matches!(error, PlatformError::NotFound { .. }));
     }
 
     #[test]

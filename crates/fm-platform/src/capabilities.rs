@@ -27,6 +27,8 @@ bitflags::bitflags! {
         const NATIVE_MENUS = 1 << 8;
         /// Support dragging entries out to another application.
         const NATIVE_DRAG_OUT = 1 << 9;
+        /// Report total/available capacity for the volume backing a path.
+        const VOLUME_CAPACITY = 1 << 10;
     }
 }
 

@@ -1161,6 +1161,13 @@ export class MockFileManagerClient implements FileManagerClient {
       : this.loadingLocations.has(request.location.uri)
         ? ({ type: 'loading' } as const)
         : ({ type: 'loaded' } as const);
+    // A plausible synthetic capacity so the status bar's "available" segment is
+    // exercisable in mock mode; omitted for search results, which mirror the real
+    // backend's non-local-provider gap (no backing volume to report).
+    const volumeCapacity =
+      searchId === undefined
+        ? { totalBytes: 2_000_000_000_000, availableBytes: 616_040_000_000 }
+        : undefined;
 
     return this.perform(method, signal, () => ({
       paneId: request.paneId,
@@ -1175,6 +1182,7 @@ export class MockFileManagerClient implements FileManagerClient {
       hasMore: nextOffset < totalEntries,
       ...(nextOffset < totalEntries ? { continuationToken: String(nextOffset) } : {}),
       loadingState,
+      ...(volumeCapacity === undefined ? {} : { volumeCapacity }),
     }));
   }
 

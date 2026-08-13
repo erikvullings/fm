@@ -12,6 +12,7 @@ import type {
   SortDescriptor,
   SystemLocation,
   TabId,
+  VolumeCapacity,
 } from '../../models';
 import type { DirectoryColumnDescriptor } from '../directory-table/directory-table';
 import type { NativeIconLoader } from '../directory-table/native-icon-loader';
@@ -178,6 +179,7 @@ type FlatAttrsInput = Partial<{
   totalKnownEntries: number;
   totalKnownSize: number;
   totalKnownFileCount: number;
+  volumeCapacity: VolumeCapacity;
   hiddenSelectedCount: number;
   // Filter props
   filterOpen: boolean;
@@ -262,6 +264,7 @@ function attrs(input: FlatAttrsInput = {}): PaneAttrs {
       totalKnownEntries: input.totalKnownEntries,
       totalKnownSize: input.totalKnownSize,
       totalKnownFileCount: input.totalKnownFileCount,
+      volumeCapacity: input.volumeCapacity,
       hiddenSelectedCount: input.hiddenSelectedCount ?? 0,
     },
     filter: {
@@ -797,6 +800,24 @@ describe('Pane status bar', () => {
 
     expect(root.querySelector('.fm-pane')?.getAttribute('data-active')).toBe('false');
     expect(root.querySelector('.fm-selected-row')).not.toBeNull();
+  });
+
+  it('appends a Marta/Finder-style available-capacity segment when the backend reports one', () => {
+    mount(
+      attrs({
+        volumeCapacity: { totalBytes: 2_053_470_000_000, availableBytes: 616_040_000_000 },
+      }),
+    );
+
+    const capacity = root.querySelector('.fm-pane-volume-capacity');
+    expect(capacity).not.toBeNull();
+    expect(capacity?.textContent).toBe('573.7 GB (30%) available');
+  });
+
+  it('omits the available-capacity segment (not a broken placeholder) when unsupported', () => {
+    mount(attrs());
+
+    expect(root.querySelector('.fm-pane-volume-capacity')).toBeNull();
   });
 });
 

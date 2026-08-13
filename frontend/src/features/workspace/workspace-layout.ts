@@ -13,6 +13,7 @@ import type {
   SortDescriptor,
   SystemLocation,
   TabId,
+  VolumeCapacity,
   WorkspaceLayout,
   WorkspaceProjection,
 } from '../../models';
@@ -46,6 +47,8 @@ export interface WorkspacePaneContent {
   readonly totalKnownEntries?: number;
   readonly totalKnownSize?: number;
   readonly totalKnownFileCount?: number;
+  /** Backing volume's total/available capacity, when known (task 0096). */
+  readonly volumeCapacity?: VolumeCapacity;
   readonly hiddenSelectedCount: number;
   readonly filterOpen: boolean;
   readonly filterQuery: string;
@@ -493,6 +496,7 @@ export const WorkspaceLayoutView: FactoryComponent<WorkspaceLayoutViewAttrs> = (
           totalKnownEntries: content.totalKnownEntries,
           totalKnownSize: content.totalKnownSize,
           totalKnownFileCount: content.totalKnownFileCount,
+          volumeCapacity: content.volumeCapacity,
           hiddenSelectedCount: content.hiddenSelectedCount,
         } satisfies DirectorySummaryAttrs,
         filter: {

@@ -17,6 +17,7 @@ import type {
   SortDescriptor,
   SystemLocation,
   TabId,
+  VolumeCapacity,
 } from '../../models';
 import {
   connectionStatusGlyph,
@@ -86,6 +87,8 @@ export interface DirectorySummaryAttrs {
   readonly totalKnownEntries?: number | undefined;
   readonly totalKnownSize?: number | undefined;
   readonly totalKnownFileCount?: number | undefined;
+  /** Backing volume's total/available capacity, when known (task 0096). */
+  readonly volumeCapacity?: VolumeCapacity | undefined;
   readonly hiddenSelectedCount: number;
 }
 
@@ -220,6 +223,12 @@ function formatListingSummary(fileCount: number, folderCount: number, totalSize:
         ? foldersPart
         : `${filesPart}, and ${foldersPart}`;
   return `${sizeLabel(totalSize)} in ${countsText}`;
+}
+
+function volumeCapacityLabel(capacity: VolumeCapacity): string | undefined {
+  if (capacity.totalBytes <= 0) return undefined;
+  const percentAvailable = Math.round((capacity.availableBytes / capacity.totalBytes) * 100);
+  return `${sizeLabel(capacity.availableBytes)} (${percentAvailable}%) available`;
 }
 
 function listingSummary(entries: readonly EntrySummary[]): string {
@@ -434,6 +443,8 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
               ds.totalKnownSize,
             )
           : undefined;
+      const volumeCapacityText =
+        ds.volumeCapacity === undefined ? undefined : volumeCapacityLabel(ds.volumeCapacity);
 
       return m(
         'section.fm-pane',
@@ -1132,6 +1143,9 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
                   `span.fm-typeahead-status${typeaheadCtrl.hasError ? '.fm-typeahead-status-error' : ''}`,
                   typeaheadCtrl.prefix,
                 ),
+            volumeCapacityText === undefined
+              ? undefined
+              : m('span.fm-pane-volume-capacity', volumeCapacityText),
           ]),
         ],
       );
