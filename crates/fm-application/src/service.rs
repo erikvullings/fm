@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex};
 
 use fm_archive::ArchiveFileSystemProvider;
 use fm_connections::{ConnectionService, JsonFileConnectionRepository};
-use fm_credentials::{CredentialStore, InMemoryCredentialStore};
+use fm_credentials::{CredentialStore, InMemoryCredentialStore, SessionCredentialStore};
 use fm_domain::OperationId;
 use fm_domain::{ActionId, DirectorySnapshot, EntryId, EntryMetadata, Location};
 use fm_events::{
@@ -375,6 +375,8 @@ impl FileManagerService {
         credential_store: Arc<dyn CredentialStore>,
     ) -> Self {
         let settings_directory = settings_directory.into();
+        let credential_store: Arc<dyn CredentialStore> =
+            Arc::new(SessionCredentialStore::new(credential_store));
         let mut providers = ProviderRegistry::new();
         providers.register(Arc::new(LocalFileSystemProvider));
         let archive_provider = Arc::new(ArchiveFileSystemProvider::new());

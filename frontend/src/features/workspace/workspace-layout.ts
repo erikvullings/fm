@@ -191,6 +191,16 @@ function bareTabTitle(uri: string, title: string, query: string | undefined): st
   return uri.startsWith('search://') && query !== undefined ? query : title;
 }
 
+function connectionRootTitle(
+  uri: string,
+  fallback: string,
+  connections: readonly Connection[] | undefined,
+): string {
+  if (!/^(sftp|ftp|ftps):\/\//.test(uri) || pathFromUri(uri) !== '/') return fallback;
+  const authority = uri.slice(uri.indexOf('://') + 3).split('/', 1)[0];
+  return connections?.find((connection) => connection.id === authority)?.name ?? fallback;
+}
+
 function paneIdsInLayout(layout: WorkspaceLayout): readonly PaneId[] {
   if (layout.type === 'pane') {
     return [layout.paneId];
@@ -321,6 +331,7 @@ export const WorkspaceLayoutView: FactoryComponent<WorkspaceLayoutViewAttrs> = (
       return undefined;
     }
     const content = attrs.paneContent(paneId);
+    const tabTitle = connectionRootTitle(tab.location.uri, tab.title, content.connections);
     const active = attrs.workspace.activePaneId === paneId;
     return m(
       '.fm-workspace-pane',
@@ -409,7 +420,7 @@ export const WorkspaceLayoutView: FactoryComponent<WorkspaceLayoutViewAttrs> = (
         locationUri: tab.location.uri,
         tabTitle: displayTabTitle(
           tab.location.uri,
-          tab.title,
+          tabTitle,
           attrs.searchQueryForLocationUri?.(tab.location.uri),
         ),
         ...(tab.location.uri.startsWith('search://')
@@ -424,7 +435,14 @@ export const WorkspaceLayoutView: FactoryComponent<WorkspaceLayoutViewAttrs> = (
           const query = uri === undefined ? undefined : attrs.searchQueryForLocationUri?.(uri);
           return {
             id: tabId,
-            title: paneTab === undefined ? '' : bareTabTitle(uri ?? '', paneTab.title, query),
+            title:
+              paneTab === undefined
+                ? ''
+                : bareTabTitle(
+                    uri ?? '',
+                    connectionRootTitle(uri ?? '', paneTab.title, content.connections),
+                    query,
+                  ),
             path: paneTab === undefined ? '' : displayPathFromUri(paneTab.location.uri, query),
             ...(uri === undefined ? {} : { locationUri: uri }),
             isSearchTab: uri?.startsWith('search://') ?? false,

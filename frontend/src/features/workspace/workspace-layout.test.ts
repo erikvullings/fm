@@ -161,6 +161,49 @@ afterEach(() => {
 });
 
 describe('WorkspaceLayoutView pane focus', () => {
+  it('uses the saved connection name for a remote root title', () => {
+    const workspace = projection();
+    const left = workspace.panesById.left;
+    const tab = left?.tabsById['left-tab'];
+    if (tab === undefined) throw new Error('left tab fixture missing');
+    tab.location = {
+      providerId: 'ftp',
+      uri: 'ftps://11111111-1111-4111-8111-111111111111/',
+    };
+    tab.title = '11111111-1111-4111-8111-111111111111';
+    const base = attrs({ workspace });
+    const basePaneContent = base.paneContent;
+
+    mount({
+      ...base,
+      paneContent: (paneId) => ({
+        ...basePaneContent(paneId),
+        connections: [
+          {
+            id: '11111111-1111-4111-8111-111111111111',
+            name: 'Rebex demo',
+            kind: 'ftps',
+            configuration: {
+              kind: 'ftps',
+              host: 'test.rebex.net',
+              port: 21,
+              username: 'demo',
+              startPath: '/',
+            },
+            hasCredential: true,
+            status: 'connected',
+            createdAt: '2026-08-13T00:00:00Z',
+            updatedAt: '2026-08-13T00:00:00Z',
+          },
+        ],
+      }),
+    });
+
+    expect(root.querySelector('[data-pane-id="left"] .fm-pane-tab-title')?.textContent).toBe(
+      'Rebex demo',
+    );
+  });
+
   it('activates a pane when anywhere inside it is clicked', () => {
     const onActivatePane = vi.fn<(paneId: PaneId) => void>();
     mount(attrs({ onActivatePane }));

@@ -19,10 +19,12 @@ mod error;
 mod ids;
 mod memory;
 mod secret;
+mod session;
 mod store;
 
 pub use error::CredentialError;
 pub use ids::{CredentialRef, CredentialRefParseError};
 pub use memory::InMemoryCredentialStore;
 pub use secret::SecretMaterial;
+pub use session::SessionCredentialStore;
 pub use store::{CredentialStore, ResolvedCredential, StoreCredentialRequest};
