@@ -112,6 +112,7 @@ import type { InvokeActionRequestDtoParameters } from '../generated/models/invok
 import type { OperationDto } from '../generated/models/operationDto';
 import type { PluginIconThemeDto } from '../generated/models/pluginIconThemeDto';
 import type { SettingsDto } from '../generated/models/settingsDto';
+import { getSessionToken } from '../session-token';
 import type { FileManagerClient, NativeFileDrop } from './file-manager-client';
 
 /**
@@ -125,7 +126,7 @@ import type { FileManagerClient, NativeFileDrop } from './file-manager-client';
  * shared module so the Tauri/mock adapters can reuse it.
  */
 export class HttpFileManagerClient implements FileManagerClient {
-  private readonly eventStream = new SseEventStream();
+  private readonly eventStream = new SseEventStream({ tokenProvider: getSessionToken });
   readonly connection = this.eventStream.status;
 
   startNativeDrag(_locations: readonly FileLocation[], _signal?: AbortSignal): Promise<void> {
@@ -781,6 +782,7 @@ function pluginIconThemeFromDto(dto: PluginIconThemeDto): PluginIconTheme {
     ...(dto.folder == null ? {} : { folder: dto.folder }),
     ...(dto.symlink == null ? {} : { symlink: dto.symlink }),
     fileExtensions: dto.fileExtensions,
+    fileNames: dto.fileNames,
     mimePrefixes: dto.mimePrefixes,
   };
 }

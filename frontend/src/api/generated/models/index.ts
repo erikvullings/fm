@@ -172,6 +172,7 @@ export * from './pluginIconThemeDto.ts';
 export * from './pluginIconThemeDto';
 export * from './pluginIconThemeDtoFileExtensions.ts';
 export * from './pluginIconThemeDtoFileExtensions';
+export * from './pluginIconThemeDtoFileNames.ts';
 export * from './pluginIconThemeDtoIconDefinitions.ts';
 export * from './pluginIconThemeDtoIconDefinitions';
 export * from './pluginIconThemeDtoMimePrefixes.ts';

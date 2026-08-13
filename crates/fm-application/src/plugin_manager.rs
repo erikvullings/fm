@@ -400,6 +400,7 @@ fn plugin_icon_theme_dto(icon_theme: &IconThemeManifest) -> fm_transport_dto::Pl
         folder: icon_theme.folder.clone(),
         symlink: icon_theme.symlink.clone(),
         file_extensions: icon_theme.file_extensions.clone(),
+        file_names: icon_theme.file_names.clone(),
         mime_prefixes: icon_theme.mime_prefixes.clone(),
     }
 }

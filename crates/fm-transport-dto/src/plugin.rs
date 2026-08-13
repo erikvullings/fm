@@ -63,6 +63,8 @@ pub struct PluginIconThemeDto {
     pub symlink: Option<String>,
     /// Lowercased, dot-less file extension to icon definition key.
     pub file_extensions: BTreeMap<String, String>,
+    /// Exact file name to icon definition key, matched before `file_extensions`.
+    pub file_names: BTreeMap<String, String>,
     /// MIME type prefix (e.g. `"image/"`) to icon definition key.
     pub mime_prefixes: BTreeMap<String, String>,
 }

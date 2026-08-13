@@ -215,6 +215,10 @@ pub struct IconThemeManifest {
     /// Lowercased, dot-less file extension to icon definition key.
     #[serde(default)]
     pub file_extensions: BTreeMap<String, String>,
+    /// Exact file name (e.g. `"Cargo.toml"`) to icon definition key, matched before
+    /// [`Self::file_extensions`] so `Cargo.lock` can differ from every other `.lock`.
+    #[serde(default)]
+    pub file_names: BTreeMap<String, String>,
     /// MIME type prefix (e.g. `"image/"`) to icon definition key.
     #[serde(default)]
     pub mime_prefixes: BTreeMap<String, String>,
@@ -248,6 +252,7 @@ impl IconThemeManifest {
         for key in self
             .file_extensions
             .values()
+            .chain(self.file_names.values())
             .chain(self.mime_prefixes.values())
         {
             self.require_known_key(key)?;
@@ -435,6 +440,7 @@ actions = true
                 },
                 "folder": "folder",
                 "fileExtensions": {"psd": "psd"},
+                "fileNames": {"Cargo.lock": "psd"},
                 "mimePrefixes": {"image/": "psd"}
             }"#,
         )
@@ -445,6 +451,26 @@ actions = true
             icon_theme.file_extensions.get("psd").map(String::as_str),
             Some("psd")
         );
+        assert_eq!(
+            icon_theme.file_names.get("Cargo.lock").map(String::as_str),
+            Some("psd")
+        );
+    }
+
+    #[test]
+    fn rejects_a_file_name_pointing_at_an_undeclared_definition() {
+        let error = IconThemeManifest::parse(
+            r#"{
+                "iconDefinitions": {"folder": {"iconPath": "folder.svg"}},
+                "fileNames": {"Cargo.lock": "missing"}
+            }"#,
+        )
+        .expect_err("unknown definition key must be rejected");
+
+        assert!(matches!(
+            error,
+            IconThemeManifestError::UnknownIconDefinition(key) if key == "missing"
+        ));
     }
 
     #[test]
