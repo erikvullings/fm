@@ -200,6 +200,46 @@ describe('AppShell', () => {
     expect(activePane.querySelector('.fm-cursor-row')?.textContent).toContain('generated-0000999');
   });
 
+  it('does not snap the cursor back to the last entry if ArrowUp is pressed while End is still loading pages', async () => {
+    // Regression test: End on a directory with unloaded pages kicks off a background
+    // `loadAllPages` fetch and only lands the cursor on the true last entry once it resolves. If
+    // the user presses ArrowUp in the meantime, that newer action must win — the background
+    // resolution must not overwrite it and silently snap the cursor back to the last entry.
+    const client = new MockFileManagerClient({ pageSize: 100, latencyMs: 20 });
+    m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
+    await vi.waitFor(() => expect(root.textContent).toContain('Documents'));
+    const activePane = root.querySelector<HTMLElement>('[data-active="true"] > .fm-pane');
+    if (activePane === null) throw new Error('no active pane');
+
+    activePane
+      .querySelector<HTMLElement>('.fm-breadcrumb-segments')
+      ?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+    m.redraw.sync();
+    const pathInput = activePane.querySelector<HTMLInputElement>('.fm-path-input');
+    if (pathInput === null) throw new Error('path input missing');
+    pathInput.value = '/large/1000';
+    pathInput.dispatchEvent(new InputEvent('input', { bubbles: true }));
+    pathInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    await vi.waitFor(() => expect(activePane.textContent).toContain('generated-0000000'));
+
+    activePane.dispatchEvent(new KeyboardEvent('keydown', { key: 'End', bubbles: true }));
+    // The background load hasn't resolved yet (each page is delayed by `latencyMs`), so the
+    // cursor is still wherever it was before End — pressing ArrowUp now moves it from there.
+    activePane.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }));
+    m.redraw.sync();
+    const cursorAfterArrowUp = activePane.querySelector('.fm-cursor-row')?.textContent;
+    expect(cursorAfterArrowUp).not.toContain('generated-0000999');
+
+    // Give the background load every chance to resolve (10 pages * 20ms latency) and redraw.
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    m.redraw.sync();
+
+    expect(activePane.querySelector('.fm-cursor-row')?.textContent).toBe(cursorAfterArrowUp);
+    expect(activePane.querySelector('.fm-cursor-row')?.textContent).not.toContain(
+      'generated-0000999',
+    );
+  });
+
   it('End on a directory large enough to use the responsive background sort still highlights the true last entry', async () => {
     const client = new MockFileManagerClient({ pageSize: 1_000 });
     m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
@@ -2748,7 +2788,10 @@ describe('workspace management (task 0084)', () => {
 
     await vi.waitFor(() =>
       expect(
-        root.querySelector('.fm-workspace-switcher-button')?.getAttribute('data-tooltip'),
+        root
+          .querySelector('.fm-workspace-switcher-button')
+          ?.closest('.fm-tooltip')
+          ?.getAttribute('data-tooltip'),
       ).toBe('Switch workspace — current: Bravo'),
     );
     await vi.waitFor(() => expect(row(root, second.id)?.getAttribute('data-active')).toBe('true'));
@@ -2782,7 +2825,10 @@ describe('workspace management (task 0084)', () => {
     );
     await vi.waitFor(() =>
       expect(
-        root.querySelector('.fm-workspace-switcher-button')?.getAttribute('data-tooltip'),
+        root
+          .querySelector('.fm-workspace-switcher-button')
+          ?.closest('.fm-tooltip')
+          ?.getAttribute('data-tooltip'),
       ).toBe('Switch workspace — current: Default'),
     );
   });
@@ -2809,7 +2855,10 @@ describe('workspace management (task 0084)', () => {
 
     await vi.waitFor(() =>
       expect(
-        root.querySelector('.fm-workspace-switcher-button')?.getAttribute('data-tooltip'),
+        root
+          .querySelector('.fm-workspace-switcher-button')
+          ?.closest('.fm-tooltip')
+          ?.getAttribute('data-tooltip'),
       ).toBe('Switch workspace — current: Renamed workspace'),
     );
   });
@@ -2858,7 +2907,10 @@ describe('workspace management (task 0084)', () => {
 
     await vi.waitFor(() =>
       expect(
-        root.querySelector('.fm-workspace-switcher-button')?.getAttribute('data-tooltip'),
+        root
+          .querySelector('.fm-workspace-switcher-button')
+          ?.closest('.fm-tooltip')
+          ?.getAttribute('data-tooltip'),
       ).toBe('Switch workspace — current: Bravo'),
     );
     expect(root.textContent).toContain('copy · running');
