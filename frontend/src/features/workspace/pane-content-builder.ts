@@ -94,9 +94,14 @@ export interface PaneContentContext {
     }
   >;
   getSortRequests(): Map<string, object>;
-  getViewerByPane(): Map<
-    PaneId,
-    { readonly controller: FileViewerController; state: FileViewerState }
+  getViewerByTab(): Map<
+    string,
+    {
+      readonly paneId: PaneId;
+      readonly tabId: TabId;
+      readonly controller: FileViewerController;
+      state: FileViewerState;
+    }
   >;
   getEditorByPane(): Map<
     PaneId,
@@ -210,8 +215,15 @@ export function createPaneContentBuilder(
     const currentSettings = context.getCurrentSettings();
     const systemLocationsError = context.getSystemLocationsError();
     const nativeIconLoader = context.getNativeIconLoader();
+    const viewerTitles = new Map(
+      (pane?.tabOrder ?? []).flatMap((tabId) => {
+        const title = context.getViewerByTab().get(context.tabKey(paneId, tabId))?.state.entry.name;
+        return title === undefined ? [] : [[tabId, title] as const];
+      }),
+    );
     return {
       ...directory,
+      viewerTitles,
       ...(tab === undefined ? {} : { location: tab.location }),
       favouriteLocations: currentSettings?.favouriteLocations ?? [],
       recentLocations:
@@ -606,10 +618,10 @@ export function createPaneContentBuilder(
                   });
             })(),
           }
-        : context.getViewerByPane().has(paneId)
+        : key !== undefined && context.getViewerByTab().has(key)
           ? {
               viewerContent: (() => {
-                const viewer = context.getViewerByPane().get(paneId);
+                const viewer = context.getViewerByTab().get(key);
                 if (viewer === undefined) return undefined;
                 return m(FileViewer, {
                   state: viewer.state,

@@ -697,11 +697,13 @@ export function createGlobalKeydownHandler(
         active === undefined
           ? undefined
           : context.getDirectories().get(context.activeTabKey(active.paneId));
-      const selected = getSelectedEntries(selection, directory?.entries ?? []);
-      const viewEntry = selected?.length === 1 ? selected[0] : undefined;
+      const viewEntry =
+        selection?.cursorEntryId === undefined
+          ? undefined
+          : directory?.entries.find((entry) => entry.id === selection.cursorEntryId);
       const otherPaneId = workspace?.paneOrder.find((paneId) => paneId !== active?.paneId);
-      // Only intercept single-file selections into the in-app viewer (task 0088); directories,
-      // multi-selections, and single-pane workspaces (no opposite pane to open into) fall through
+      // F3 acts on the cursor file regardless of the wider selection. Directories and
+      // single-pane workspaces (no opposite pane to open into) fall through
       // to the generic core.view/core.edit/core.openWith block below, which opens the OS default
       // application instead. The viewer itself closes and shows a toast for content that turns
       // out to be binary once its first chunk is fetched, rather than falling back further.

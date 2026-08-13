@@ -155,14 +155,20 @@ describe('theme stylesheet', () => {
     }
   });
 
-  it('only paints selection in the active pane and keeps cursor styling distinct', () => {
+  it('uses subtle selection backgrounds and a distinct brighter cursor highlight', () => {
     expect(themeCss).not.toMatch(/(?:^|\n)\.fm-selected-row\s*\{/);
     expect(themeCss).not.toMatch(/(?:^|\n)\.fm-cursor-row\s*\{/);
     expect(themeCss).toMatch(
-      /\.fm-pane\[data-active="true"\]\s+\.fm-selected-row\s*\{[^}]*box-shadow:\s*inset/s,
+      /\.fm-pane\[data-active="true"\]\s+\.fm-selected-row\s*\{[^}]*color:\s*var\(--fm-selected-row-text\)/s,
     );
     expect(themeCss).toMatch(
-      /\.fm-pane\[data-active="true"\]\s+\.fm-cursor-row\s*\{[^}]*background-color:/s,
+      /\.fm-pane\[data-active="true"\]\s+\.fm-selected-row\s*\{[^}]*background:[^}]*18%/s,
+    );
+    expect(themeCss).toMatch(
+      /\.fm-pane\[data-active="true"\]\s+\.fm-cursor-row\s*\{[^}]*background-color:[^}]*48%[^}]*color:\s*var\(--fm-cursor-row-text\)/s,
+    );
+    expect(themeCss).toMatch(
+      /\[data-theme="dark"\][^}]*\.fm-pane\[data-active="true"\]\s+\.fm-selected-row\s*\{[^}]*background:/s,
     );
   });
 
@@ -177,5 +183,20 @@ describe('theme stylesheet', () => {
   it('keeps directory and viewer content inside its pane grid track', () => {
     expect(paneCss).toMatch(/\.fm-pane\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)/s);
     expect(fileViewerCss).toMatch(/\.fm-file-viewer\s*\{[^}]*min-width:\s*0/s);
+  });
+
+  it('keeps Markdown body and headings on the compact application scale', () => {
+    expect(fileViewerCss).toMatch(
+      /\.fm-file-viewer-markdown\s*\{[^}]*font-size:\s*var\(--fm-font-size\)/s,
+    );
+    expect(fileViewerCss).toMatch(/\.fm-file-viewer-markdown h1\s*\{\s*font-size:\s*1\.5em;/);
+    expect(fileViewerCss).toMatch(/\.fm-file-viewer-markdown h6\s*\{\s*font-size:\s*0\.92em;/);
+    expect(fileViewerCss).toMatch(/\.fm-file-viewer-markdown code\s*\{[^}]*font-size:\s*0\.92em/s);
+    expect(fileViewerCss).toMatch(
+      /\.fm-file-viewer-markdown sub,[^}]*\{[^}]*vertical-align:\s*baseline/s,
+    );
+    expect(fileViewerCss).toMatch(
+      /\.fm-file-viewer-markdown ul[^}]*\{[^}]*list-style-type:\s*disc !important/s,
+    );
   });
 });

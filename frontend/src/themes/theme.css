@@ -15,6 +15,7 @@
   --fm-warning: #8a4b08;
   --fm-success: #18723c;
   --fm-selected-row-text: #b45309;
+  --fm-cursor-row-text: #475467;
   --fm-row-height: 20px;
   --fm-header-height: 20px;
   --fm-font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -63,6 +64,7 @@
   --fm-warning: #ffc46b;
   --fm-success: #72d69a;
   --fm-selected-row-text: #fbbf24;
+  --fm-cursor-row-text: #f2f4f7;
   --fm-shadow: 0 8px 24px rgb(0 0 0 / 45%);
   --fm-directory-row-base: #21252d;
   --fm-directory-row-highlight: #232730;
@@ -123,6 +125,8 @@
     --fm-error: #ff8a80;
     --fm-warning: #ffc46b;
     --fm-success: #72d69a;
+    --fm-selected-row-text: #fbbf24;
+    --fm-cursor-row-text: #f2f4f7;
     --fm-shadow: 0 8px 24px rgb(0 0 0 / 45%);
     --fm-directory-row-base: #21252d;
     --fm-directory-row-highlight: #232730;
@@ -784,13 +788,31 @@ input[type="text"].fm-command-palette-input {
 }
 
 .fm-pane[data-active="true"] .fm-selected-row {
-  background: var(--fm-selection);
+  background: color-mix(in srgb, var(--fm-selection) 18%, transparent);
   color: var(--fm-selected-row-text);
-  box-shadow: inset 3px 0 var(--fm-accent);
 }
 
 .fm-pane[data-active="true"] .fm-cursor-row {
-  background-color: color-mix(in srgb, var(--fm-accent) 25%, transparent);
+  background-color: color-mix(in srgb, var(--fm-accent) 48%, transparent);
+  color: var(--fm-cursor-row-text);
+}
+
+[data-theme="dark"] .fm-pane[data-active="true"] .fm-selected-row {
+  background: color-mix(in srgb, var(--fm-background) 55%, var(--fm-surface));
+}
+
+[data-theme="dark"] .fm-pane[data-active="true"] .fm-selected-row.fm-cursor-row {
+  background: color-mix(in srgb, var(--fm-accent) 48%, transparent);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) .fm-pane[data-active="true"] .fm-selected-row {
+    background: color-mix(in srgb, var(--fm-background) 55%, var(--fm-surface));
+  }
+
+  :root:not([data-theme]) .fm-pane[data-active="true"] .fm-selected-row.fm-cursor-row {
+    background: color-mix(in srgb, var(--fm-accent) 48%, transparent);
+  }
 }
 
 .fm-plugin-list {

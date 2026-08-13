@@ -385,7 +385,22 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
         return m(
           'section.fm-pane.fm-pane-viewer',
           { 'data-active': String(attrs.active), tabindex: -1 },
-          attrs.viewerContent,
+          [
+            m(TabStrip, {
+              tabs: attrs.tabs,
+              activeTabId: attrs.activeTabId,
+              onSelectTab: attrs.onSelectTab,
+              onCloseTab: attrs.onCloseTab,
+              onNewTab: attrs.onNewTab,
+              onReorderTabs: attrs.onReorderTabs,
+              onTabDragOver: attrs.onTabDragOver,
+              onTabDrop: attrs.onTabDrop,
+              favouritesOpen: false,
+              canAddFavourite: false,
+              onToggleFavourites: () => undefined,
+            }),
+            attrs.viewerContent,
+          ],
         );
       }
       if (attrs.filter.filterOpen && editing) {

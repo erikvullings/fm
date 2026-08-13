@@ -98,6 +98,8 @@ export interface WorkspacePaneContent {
   readonly onTabDrop?: (tabId: TabId, event: DragEvent) => void;
   /** When set, replaces the pane's directory-listing surface with this content (task 0088). */
   readonly viewerContent?: m.Children;
+  /** Filenames displayed for Lister-owned tabs. */
+  readonly viewerTitles?: ReadonlyMap<TabId, string>;
 }
 
 /** Inputs for the recursive workspace layout renderer. */
@@ -418,11 +420,13 @@ export const WorkspaceLayoutView: FactoryComponent<WorkspaceLayoutViewAttrs> = (
       m(Pane, {
         path: pathFromUri(tab.location.uri),
         locationUri: tab.location.uri,
-        tabTitle: displayTabTitle(
-          tab.location.uri,
-          tabTitle,
-          attrs.searchQueryForLocationUri?.(tab.location.uri),
-        ),
+        tabTitle:
+          content.viewerTitles?.get(tab.id) ??
+          displayTabTitle(
+            tab.location.uri,
+            tabTitle,
+            attrs.searchQueryForLocationUri?.(tab.location.uri),
+          ),
         ...(tab.location.uri.startsWith('search://')
           ? (() => {
               const searchQuery = attrs.searchQueryForLocationUri?.(tab.location.uri);
@@ -436,13 +440,15 @@ export const WorkspaceLayoutView: FactoryComponent<WorkspaceLayoutViewAttrs> = (
           return {
             id: tabId,
             title:
-              paneTab === undefined
-                ? ''
-                : bareTabTitle(
-                    uri ?? '',
-                    connectionRootTitle(uri ?? '', paneTab.title, content.connections),
-                    query,
-                  ),
+              content.viewerTitles?.get(tabId) !== undefined
+                ? (content.viewerTitles.get(tabId) ?? '')
+                : paneTab === undefined
+                  ? ''
+                  : bareTabTitle(
+                      uri ?? '',
+                      connectionRootTitle(uri ?? '', paneTab.title, content.connections),
+                      query,
+                    ),
             path: paneTab === undefined ? '' : displayPathFromUri(paneTab.location.uri, query),
             ...(uri === undefined ? {} : { locationUri: uri }),
             isSearchTab: uri?.startsWith('search://') ?? false,

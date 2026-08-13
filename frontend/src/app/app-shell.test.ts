@@ -678,13 +678,63 @@ describe('AppShell', () => {
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'F3', bubbles: true }));
 
     await vi.waitFor(() => expect(root.querySelector('.fm-file-viewer')).not.toBeNull());
-    // The viewer replaces the OPPOSITE pane's surface, leaving the active pane's directory
-    // listing (and its selection) untouched, and never falls back to the OS-open action.
+    // The viewer occupies a tab in the OPPOSITE pane, leaving the active pane's directory
+    // listing (and its selection) untouched, and never falling back to the OS-open action.
     expect(root.querySelector('[data-active="true"] > .fm-pane .fm-file-viewer')).toBeNull();
     const inactivePane = root.querySelector('[data-active="false"] > .fm-pane');
     expect(inactivePane?.classList.contains('fm-pane-viewer')).toBe(true);
+    expect(inactivePane?.querySelectorAll('.fm-pane-tab')).toHaveLength(2);
     expect(inactivePane?.querySelector('.fm-file-viewer')?.textContent).toContain('.env');
     expect(invokeAction).not.toHaveBeenCalled();
+  });
+
+  it('toggles an existing Lister tab for the cursor file and ignores other selected files', async () => {
+    const client = new MockFileManagerClient();
+    m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
+    await vi.waitFor(() => expect(root.textContent).toContain('.env'));
+    const activePane = root.querySelector<HTMLElement>('[data-active="true"] > .fm-pane');
+    const rows = [...(activePane?.querySelectorAll<HTMLElement>('.fm-directory-row') ?? [])];
+    const first = rows.find((row) => row.textContent?.includes('.env'));
+    const second = rows.find((row) => row.textContent?.includes('日本語.txt'));
+    first?.click();
+    second?.dispatchEvent(new MouseEvent('click', { ctrlKey: true, bubbles: true }));
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'F3', bubbles: true }));
+    await vi.waitFor(() => expect(root.querySelector('.fm-file-viewer')).not.toBeNull());
+    expect(root.querySelector('.fm-file-viewer-title')?.textContent).toContain(
+      second?.querySelector('.fm-directory-name')?.textContent?.trim(),
+    );
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'F3', bubbles: true }));
+    await vi.waitFor(() => expect(root.querySelector('.fm-file-viewer')).toBeNull());
+  });
+
+  it('reuses the Lister tab for a different cursor file and toggles the new file closed', async () => {
+    const client = new MockFileManagerClient();
+    m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
+    await vi.waitFor(() => expect(root.textContent).toContain('.env'));
+    const sourcePane = root.querySelector<HTMLElement>('[data-active="true"] > .fm-pane');
+    const rows = [...(sourcePane?.querySelectorAll<HTMLElement>('.fm-directory-row') ?? [])];
+    const first = rows.find((row) => row.textContent?.includes('.env'));
+    const second = rows.find((row) => row.textContent?.includes('日本語.txt'));
+    const secondName = second?.querySelector('.fm-directory-name')?.textContent?.trim();
+
+    first?.click();
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'F3', bubbles: true }));
+    await vi.waitFor(() =>
+      expect(root.querySelector('.fm-file-viewer-title')?.textContent).toContain('.env'),
+    );
+
+    second?.click();
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'F3', bubbles: true }));
+    await vi.waitFor(() =>
+      expect(root.querySelector('.fm-file-viewer-title')?.textContent).toContain(secondName),
+    );
+    const viewerPane = root.querySelector<HTMLElement>('.fm-pane-viewer');
+    expect(viewerPane?.querySelectorAll('.fm-pane-tab')).toHaveLength(2);
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'F3', bubbles: true }));
+    await vi.waitFor(() => expect(root.querySelector('.fm-file-viewer')).toBeNull());
   });
 
   it('pre-populates and highlights the content-search term in the viewer when F3-ing a content-search result (task 0089 follow-up)', async () => {
@@ -742,11 +792,22 @@ describe('AppShell', () => {
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'F3', bubbles: true }));
     await vi.waitFor(() => expect(root.querySelector('.fm-file-viewer')).not.toBeNull());
 
+    const viewerPane = root.querySelector<HTMLElement>('[data-active="false"] > .fm-pane');
+    const tabs = viewerPane?.querySelectorAll<HTMLButtonElement>('.fm-pane-tab');
+    expect(tabs).toHaveLength(2);
+    expect(tabs?.[1]?.textContent).toContain('.env');
+
+    tabs?.[0]?.click();
+    await vi.waitFor(() => expect(root.querySelector('.fm-file-viewer')).toBeNull());
+    expect(viewerPane?.querySelector('.fm-directory-table')).not.toBeNull();
+    viewerPane?.querySelectorAll<HTMLButtonElement>('.fm-pane-tab')[1]?.click();
+    await vi.waitFor(() => expect(root.querySelector('.fm-file-viewer')).not.toBeNull());
+
     root.querySelector<HTMLButtonElement>('.fm-file-viewer-close')?.click();
 
     await vi.waitFor(() => expect(root.querySelector('.fm-file-viewer')).toBeNull());
-    const inactivePane = root.querySelector('[data-active="false"] > .fm-pane');
-    expect(inactivePane?.classList.contains('fm-pane-viewer')).toBe(false);
+    expect(viewerPane?.classList.contains('fm-pane-viewer')).toBe(false);
+    expect(viewerPane?.querySelectorAll('.fm-pane-tab')).toHaveLength(1);
   });
 
   it('closes the Lister viewer and toasts instead of leaving a manual-dismiss message when the content is unsupported', async () => {

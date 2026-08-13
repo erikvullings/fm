@@ -342,13 +342,15 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
    */
   const directories = new Map<string, PaneDirectoryView>();
   const selections = new Map<string, SelectionState>();
-  /**
-   * The Lister-style viewer (task 0088) opened for a pane via F3 `core.view` — keyed by `PaneId`
-   * (not `${paneId}:${tabId}`) since it replaces the whole pane's surface regardless of tab.
-   */
-  const viewerByPane = new Map<
-    PaneId,
-    { readonly controller: FileViewerController; state: FileViewerState }
+  /** Lister sessions are owned by tabs, so switching tabs never closes or obscures them. */
+  const viewerByTab = new Map<
+    string,
+    {
+      readonly paneId: PaneId;
+      readonly tabId: TabId;
+      readonly controller: FileViewerController;
+      state: FileViewerState;
+    }
   >();
   const editorByPane = new Map<
     PaneId,
@@ -593,8 +595,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     };
   }
 
-  /** Opens the Lister-style viewer (task 0088) for `entry` in `paneId`, replacing any viewer
-   * already open there. */
+  /** Opens the Lister-style viewer in a new tab in `paneId`. */
   function openViewer(
     client: FileManagerClient,
     paneId: PaneId,
@@ -606,36 +607,99 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       readonly wholeWord: boolean;
     },
   ): void {
-    viewerByPane.get(paneId)?.controller.dispose();
-    const controller = createFileViewerController({
+    const existingViewer = [...viewerByTab.entries()][0];
+    if (existingViewer !== undefined) {
+      const [key, viewer] = existingViewer;
+      if (viewer.state.entry.location.uri === entry.location.uri) {
+        closeViewer(viewer.paneId, viewer.tabId);
+        return;
+      }
+      viewer.controller.dispose();
+      viewerByTab.delete(key);
+      const controller = createFileViewerController({
+        client,
+        entry,
+        ...(initialSearch ? { initialSearch } : {}),
+        update: (state) => {
+          const current = viewerByTab.get(key);
+          if (current === undefined) return;
+          if (state.status === 'unsupported') {
+            closeViewer(viewer.paneId, viewer.tabId);
+            toast({
+              html: `Preview not available for "${entry.name}". Press Alt+F3 to open it in the default application.`,
+            });
+            return;
+          }
+          current.state = state;
+          m.redraw();
+        },
+      });
+      viewerByTab.set(key, {
+        paneId: viewer.paneId,
+        tabId: viewer.tabId,
+        controller,
+        state: { status: 'loading', entry },
+      });
+      tabController.activateTab(viewer.paneId, viewer.tabId);
+      m.redraw();
+      return;
+    }
+    const currentWorkspace = workspace;
+    const pane = currentWorkspace?.panesById[paneId];
+    const activeTab = pane?.tabsById[pane.activeTabId];
+    if (currentWorkspace === undefined || activeTab === undefined) return;
+    void dispatchWorkspaceCommand(
       client,
-      entry,
-      ...(initialSearch ? { initialSearch } : {}),
-      update: (state) => {
-        const existing = viewerByPane.get(paneId);
-        if (existing === undefined) return;
-        if (state.status === 'unsupported') {
-          // Leaving an empty viewer pane open just for the user to close it manually is
-          // pointless busywork; dismiss it immediately and use a self-disappearing toast
-          // instead (Alt+F3 opens the same file in the OS default application).
-          closeViewer(paneId);
-          toast({
-            html: `Preview not available for "${entry.name}". Press Alt+F3 to open it in the default application.`,
-          });
-          return;
-        }
-        existing.state = state;
+      {
+        type: 'addTab',
+        workspaceId: currentWorkspace.id,
+        paneId,
+        location: activeTab.location,
+        expectedRevision: currentWorkspace.revision,
+      },
+      (next) => {
+        replaceWorkspace(next);
+        const tabId = next.panesById[paneId]?.activeTabId;
+        if (tabId === undefined) return;
+        const key = tabKey(paneId, tabId);
+        const controller = createFileViewerController({
+          client,
+          entry,
+          ...(initialSearch ? { initialSearch } : {}),
+          update: (state) => {
+            const existing = viewerByTab.get(key);
+            if (existing === undefined) return;
+            if (state.status === 'unsupported') {
+              closeViewer(paneId, tabId);
+              toast({
+                html: `Preview not available for "${entry.name}". Press Alt+F3 to open it in the default application.`,
+              });
+              return;
+            }
+            existing.state = state;
+            m.redraw();
+          },
+        });
+        viewerByTab.set(key, {
+          paneId,
+          tabId,
+          controller,
+          state: { status: 'loading', entry },
+        });
         m.redraw();
       },
-    });
-    viewerByPane.set(paneId, { controller, state: { status: 'loading', entry } });
-    m.redraw();
+    ).catch(() => undefined);
   }
 
-  function closeViewer(paneId: PaneId): void {
-    viewerByPane.get(paneId)?.controller.dispose();
-    viewerByPane.delete(paneId);
-    m.redraw();
+  function closeViewer(paneId: PaneId, tabId?: TabId): void {
+    const resolvedTabId = tabId ?? workspace?.panesById[paneId]?.activeTabId;
+    if (resolvedTabId === undefined) return;
+    const key = tabKey(paneId, resolvedTabId);
+    const viewer = viewerByTab.get(key);
+    if (viewer === undefined) return;
+    viewer.controller.dispose();
+    viewerByTab.delete(key);
+    tabController.performCloseTab(paneId, resolvedTabId);
   }
 
   function openEditor(client: FileManagerClient, paneId: PaneId, entry: EntrySummary): void {
@@ -667,6 +731,8 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
   /** Clears every per-tab runtime cache for a closed tab, cancelling its in-flight request. */
   function clearTabState(paneId: PaneId, tabId: TabId): void {
     const key = tabKey(paneId, tabId);
+    viewerByTab.get(key)?.controller.dispose();
+    viewerByTab.delete(key);
     navigation.abort(paneId, tabId);
     directories.delete(key);
     selections.delete(key);
@@ -684,8 +750,6 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       for (const tabId of outgoing.panesById[paneId]?.tabOrder ?? []) {
         clearTabState(paneId, tabId);
       }
-      viewerByPane.get(paneId)?.controller.dispose();
-      viewerByPane.delete(paneId);
       editorByPane.get(paneId)?.controller.dispose();
       editorByPane.delete(paneId);
     }
@@ -1058,7 +1122,10 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     getRegisteredActions: () => registeredActions,
     clipboard,
     getFindFilesOpen: () => findFilesOpen,
-    getViewer: (paneId) => viewerByPane.get(paneId),
+    getViewer: (paneId) => {
+      const tabId = workspace?.panesById[paneId]?.activeTabId;
+      return tabId === undefined ? undefined : viewerByTab.get(tabKey(paneId, tabId));
+    },
     getArchiveCreateRequest: () => dialogs.getState().archiveCreateRequest,
     getCreateDirectoryOpen: () => dialogs.getState().createDirectoryOpen,
     getCreateFileOpen: () => dialogs.getState().createFileOpen,
@@ -1338,7 +1405,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     getSelections: () => selections,
     getSortedEntries: () => sortedEntries,
     getSortRequests: () => sortRequests,
-    getViewerByPane: () => viewerByPane,
+    getViewerByTab: () => viewerByTab,
     getEditorByPane: () => editorByPane,
     setConnections: (conns) => {
       connections = conns;

@@ -84,15 +84,33 @@ describe('selection reducer', () => {
       { type: 'extendRange', offset: 1 },
       ids('a', 'b', 'c', 'd'),
     );
-    expect(extended.selectedEntryIds).toEqual(['b', 'c']);
+    expect(extended.selectedEntryIds).toEqual(['b']);
 
     expect(
       reduceSelection(extended, { type: 'extendRange', offset: -1 }, ids('d', 'b', 'a', 'c')),
     ).toEqual({
-      selectedEntryIds: ['b', 'a'],
+      selectedEntryIds: ['b'],
       cursorEntryId: 'a',
       anchorEntryId: 'b',
     });
+  });
+
+  it('selects rows departed by Shift+Down but not the cursor destination', () => {
+    let state: SelectionState = {
+      selectedEntryIds: ['0'],
+      cursorEntryId: '0',
+      anchorEntryId: '0',
+    };
+    const ordered = ids('0', '1', '2', '3', '4', '5', '6', '7', '8', '9');
+    for (let press = 0; press < 3; press += 1) {
+      state = reduceSelection(state, { type: 'extendRange', offset: 1 }, ordered);
+    }
+    expect(state.selectedEntryIds).toEqual(['0', '1', '2']);
+    expect(state.cursorEntryId).toBe('3');
+
+    state = reduceSelection(state, { type: 'moveCursor', offset: 1 }, ordered);
+    expect(state.selectedEntryIds).toEqual(['0', '1', '2']);
+    expect(state.cursorEntryId).toBe('4');
   });
 
   it('extends a range to a clicked entry and keeps the anchor when clicking back and forth', () => {
@@ -249,15 +267,15 @@ describe('selection reducer', () => {
     expect(afterMove.selectedEntryIds).toEqual(['a', 'b', 'c']);
     expect(afterMove.cursorEntryId).toBe('d');
 
-    // Shift+Down from 'd': unions base {a,b,c} with range [d,e]
+    // Shift+Down from 'd': unions base {a,b,c} with the departed row d.
     const extended = reduceSelection(
       afterMove,
       { type: 'extendRange', offset: 1 },
       ids('a', 'b', 'c', 'd', 'e'),
     );
-    expect(extended.selectedEntryIds).toEqual(['a', 'b', 'c', 'd', 'e']);
+    expect(extended.selectedEntryIds).toEqual(['a', 'b', 'c', 'd']);
 
-    // Shift+Up from 'e': shrinks range back to [d,d], base stays {a,b,c}
+    // Shift+Up returns the cursor to d; the anchor row remains selected with the base.
     const shrunk = reduceSelection(
       extended,
       { type: 'extendRange', offset: -1 },

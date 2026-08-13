@@ -141,8 +141,77 @@
 .fm-file-viewer-markdown {
   padding: 1rem;
   color: var(--fm-text);
+  font-family: var(--fm-font-family);
+  font-size: var(--fm-font-size);
+  line-height: 1.45;
   user-select: text;
   -webkit-user-select: text;
+}
+
+.fm-file-viewer-markdown h1,
+.fm-file-viewer-markdown h2,
+.fm-file-viewer-markdown h3,
+.fm-file-viewer-markdown h4,
+.fm-file-viewer-markdown h5,
+.fm-file-viewer-markdown h6 {
+  margin: 0.8em 0 0.35em;
+  line-height: 1.2;
+}
+
+.fm-file-viewer-markdown h1 {
+  font-size: 1.5em;
+}
+
+.fm-file-viewer-markdown h2 {
+  font-size: 1.35em;
+}
+
+.fm-file-viewer-markdown h3 {
+  font-size: 1.2em;
+}
+
+.fm-file-viewer-markdown h4 {
+  font-size: 1.1em;
+}
+
+.fm-file-viewer-markdown h5 {
+  font-size: 1em;
+}
+
+.fm-file-viewer-markdown h6 {
+  font-size: 0.92em;
+}
+
+.fm-file-viewer-markdown code {
+  font-size: 0.92em;
+}
+
+.fm-file-viewer-markdown sub,
+.fm-file-viewer-markdown sup {
+  position: static;
+  font-size: inherit;
+  line-height: inherit;
+  vertical-align: baseline;
+}
+
+.fm-file-viewer-markdown ul,
+.fm-file-viewer-markdown ul.browser-default {
+  padding-inline-start: 2em;
+  list-style-type: disc !important;
+}
+
+.fm-file-viewer-markdown ol,
+.fm-file-viewer-markdown ol.browser-default {
+  padding-inline-start: 2em;
+  list-style-type: decimal !important;
+}
+
+.fm-file-viewer-markdown ul > li {
+  list-style-type: disc !important;
+}
+
+.fm-file-viewer-markdown ol > li {
+  list-style-type: decimal !important;
 }
 
 .fm-file-viewer-loading-more {
