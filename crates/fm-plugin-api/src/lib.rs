@@ -67,7 +67,9 @@ impl PluginManifest {
         }
         let runs_code = self.contributions.actions || self.contributions.columns;
         match &self.entrypoint {
-            Some(entrypoint) if entrypoint.as_os_str().is_empty() || entrypoint.is_absolute() => {
+            Some(entrypoint)
+                if entrypoint.as_os_str().is_empty() || is_absolute_on_any_platform(entrypoint) =>
+            {
                 return Err(ManifestError::InvalidField("entrypoint"));
             }
             None if runs_code => return Err(ManifestError::InvalidField("entrypoint")),
@@ -267,11 +269,25 @@ impl IconThemeManifest {
 
     fn is_safe_relative_path(path: &Path) -> bool {
         !path.as_os_str().is_empty()
-            && !path.is_absolute()
+            && !is_absolute_on_any_platform(path)
             && !path
                 .components()
                 .any(|component| component == Component::ParentDir)
     }
+}
+
+/// A manifest is portable data, so "absolute" must not depend on the host's
+/// path rules: `Path::is_absolute` accepts `/etc/passwd` as relative on
+/// Windows and `C:\secrets` as relative on Unix.
+fn is_absolute_on_any_platform(path: &Path) -> bool {
+    if path.is_absolute() {
+        return true;
+    }
+    let text = path.to_string_lossy();
+    let bytes = text.as_bytes();
+    text.starts_with('/')
+        || text.starts_with('\\')
+        || matches!(bytes, [drive, b':', ..] if drive.is_ascii_alphabetic())
 }
 
 /// Icon theme manifest parsing or validation failure.

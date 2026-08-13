@@ -223,6 +223,7 @@
         "enum": [
           "notFound",
           "permissionDenied",
+          "fileLocked",
           "invalidRequest",
           "destinationAlreadyExists",
           "providerUnavailable",

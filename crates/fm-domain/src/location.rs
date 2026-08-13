@@ -135,7 +135,13 @@ impl Location {
         // file scheme (fallthrough)
         let parsed = ParsedFileUri::parse(uri)?;
         parsed.validate_segments()?;
-        Ok(Self::new(ProviderId::new(provider_id), uri))
+        // A directory's trailing slash is dropped so one directory has one URI.
+        let canonical = if parsed.segments.is_empty() {
+            uri
+        } else {
+            uri.strip_suffix('/').unwrap_or(uri)
+        };
+        Ok(Self::new(ProviderId::new(provider_id), canonical))
     }
 
     /// Creates a validated location and verifies its provider matches the URI.
@@ -547,6 +553,15 @@ impl ParsedFileUri {
         } else {
             remainder.split_once('/').ok_or(LocationError::InvalidUri)?
         };
+        if path.is_empty() {
+            return Ok(Self {
+                authority: authority.to_owned(),
+                segments: Vec::new(),
+            });
+        }
+        // A single trailing slash is the natural way to write a directory,
+        // and the only way to write a Windows drive root (`C:\` -> `file:///C:/`).
+        let path = path.strip_suffix('/').unwrap_or(path);
         if path.is_empty() {
             return Ok(Self {
                 authority: authority.to_owned(),

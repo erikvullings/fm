@@ -39,6 +39,7 @@ pub(super) fn migrate_workspace_json(mut value: Value) -> Result<Value, Workspac
         value = match version {
             0 => migrate_v0_to_v1(value)?,
             1 => migrate_v1_to_v2(value)?,
+            2 => migrate_v2_to_v3(value)?,
             other => {
                 return Err(WorkspaceError::UnsupportedSchemaVersion {
                     schema_version: other,
@@ -83,6 +84,63 @@ fn migrate_v1_to_v2(mut value: Value) -> Result<Value, WorkspaceError> {
     }
 
     Ok(value)
+}
+
+/// Repairs locations written before task 0060, when the default workspace
+/// built its URI as `format!("file://{path}")`. That only produced a valid URI
+/// for POSIX paths; a Windows path became `file://C:\Users\erik`, which every
+/// later listing rejected as an invalid URI.
+fn migrate_v2_to_v3(mut value: Value) -> Result<Value, WorkspaceError> {
+    let object = value.as_object_mut().ok_or_else(|| {
+        WorkspaceError::Serialization("workspace JSON is not an object".to_owned())
+    })?;
+    object.insert("schema_version".to_owned(), json!(3));
+
+    if let Some(panes) = object.get_mut("panes").and_then(Value::as_array_mut) {
+        for pane in panes {
+            let Some(tabs) = pane.get_mut("tabs").and_then(Value::as_array_mut) else {
+                continue;
+            };
+            for tab in tabs {
+                repair_native_path_location(&mut tab["location"]);
+                if let Some(history) = tab.get_mut("history") {
+                    for direction in ["back", "forward"] {
+                        if let Some(locations) =
+                            history.get_mut(direction).and_then(Value::as_array_mut)
+                        {
+                            for location in locations {
+                                repair_native_path_location(location);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(value)
+}
+
+/// A `file:` URI whose path does not start with `/` is a raw native path that
+/// was concatenated rather than encoded. Reconversion uses the host's own
+/// path rules, which is correct because a workspace file is only ever read on
+/// the machine that wrote it.
+fn repair_native_path_location(location: &mut Value) {
+    let Some(object) = location.as_object_mut() else {
+        return;
+    };
+    let Some(uri) = object.get("uri").and_then(Value::as_str) else {
+        return;
+    };
+    let Some(path) = uri.strip_prefix("file://") else {
+        return;
+    };
+    if path.is_empty() || path.starts_with('/') {
+        return;
+    }
+    if let Ok(repaired) = fm_domain::Location::from_native_path(std::path::Path::new(path)) {
+        object.insert("uri".to_owned(), json!(repaired.uri));
+    }
 }
 
 fn normalize_local_location(location: &mut Value) {
@@ -240,7 +298,7 @@ mod tests {
 
         let migrated = migrate_workspace_json(value).expect("alias migration must succeed");
 
-        assert_eq!(migrated["schema_version"], json!(2));
+        assert_eq!(migrated["schema_version"], json!(3));
         assert_eq!(
             migrated["panes"][0]["tabs"][0]["location"]["provider_id"],
             json!("local")
@@ -248,6 +306,43 @@ mod tests {
         assert_eq!(
             migrated["panes"][0]["tabs"][0]["history"]["back"][0]["provider_id"],
             json!("local")
+        );
+    }
+
+    /// Workspaces written before task 0060 stored the home directory as
+    /// `format!("file://{path}")`, which produced an unparseable URI on Windows.
+    #[cfg(windows)]
+    #[test]
+    fn repairs_windows_native_paths_stored_as_malformed_file_uris() {
+        let mut value = migrate_v0_to_v1(v0_fixture()).expect("v1 fixture must migrate");
+        value["panes"][0]["tabs"][0]["location"] =
+            json!({ "provider_id": "local", "uri": r"file://C:\Users\erik" });
+        value["panes"][0]["tabs"][0]["history"]["back"] =
+            json!([{ "provider_id": "local", "uri": r"file://C:\Users" }]);
+
+        let migrated = migrate_workspace_json(value).expect("repair migration must succeed");
+
+        assert_eq!(
+            migrated["panes"][0]["tabs"][0]["location"]["uri"],
+            json!("file:///C:/Users/erik")
+        );
+        assert_eq!(
+            migrated["panes"][0]["tabs"][0]["history"]["back"][0]["uri"],
+            json!("file:///C:/Users")
+        );
+    }
+
+    #[test]
+    fn already_valid_locations_are_left_untouched_by_the_repair() {
+        let mut value = migrate_v0_to_v1(v0_fixture()).expect("v1 fixture must migrate");
+        value["panes"][0]["tabs"][0]["location"] =
+            json!({ "provider_id": "local", "uri": "file:///Users/erik" });
+
+        let migrated = migrate_workspace_json(value).expect("repair migration must succeed");
+
+        assert_eq!(
+            migrated["panes"][0]["tabs"][0]["location"]["uri"],
+            json!("file:///Users/erik")
         );
     }
 

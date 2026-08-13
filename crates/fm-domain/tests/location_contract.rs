@@ -261,6 +261,30 @@ fn windows_drive_unc_and_long_paths_round_trip() {
     assert_eq!(location.to_native_path().unwrap(), Path::new(&long));
 }
 
+#[cfg(windows)]
+#[test]
+fn windows_drive_and_share_roots_are_navigable_locations() {
+    let drive = Location::from_native_path(Path::new(r"C:\")).unwrap();
+    assert_eq!(drive.uri, "file:///C:");
+    assert_eq!(drive.to_native_path().unwrap(), Path::new(r"C:\"));
+
+    let share = Location::from_native_path(Path::new(r"\\server\share")).unwrap();
+    assert_eq!(
+        share.to_native_path().unwrap(),
+        Path::new(r"\\server\share")
+    );
+}
+
+#[test]
+fn a_trailing_slash_addresses_the_same_directory_as_its_bare_form() {
+    assert_eq!(Location::parse("file:///C:/").unwrap().uri, "file:///C:");
+    assert_eq!(
+        Location::parse("file:///home/erik/").unwrap().uri,
+        "file:///home/erik"
+    );
+    assert!(Location::parse("file:///home//erik").is_err());
+}
+
 proptest! {
     #[test]
     fn native_path_location_round_trip_is_lossless(

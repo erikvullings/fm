@@ -15,6 +15,7 @@ export type ApplicationErrorCode = typeof ApplicationErrorCode[keyof typeof Appl
 export const ApplicationErrorCode = {
   notFound: 'notFound',
   permissionDenied: 'permissionDenied',
+  fileLocked: 'fileLocked',
   invalidRequest: 'invalidRequest',
   destinationAlreadyExists: 'destinationAlreadyExists',
   providerUnavailable: 'providerUnavailable',

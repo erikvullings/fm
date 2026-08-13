@@ -15,6 +15,8 @@ pub enum ApplicationErrorCode {
     NotFound,
     /// The current user is not permitted to perform this action.
     PermissionDenied,
+    /// The entry is held open by another program (task 0060, spec §8/§23).
+    FileLocked,
     /// The request itself was malformed or failed validation.
     InvalidRequest,
     /// The operation's destination already exists.
@@ -122,6 +124,7 @@ mod tests {
         for code in [
             ApplicationErrorCode::NotFound,
             ApplicationErrorCode::PermissionDenied,
+            ApplicationErrorCode::FileLocked,
             ApplicationErrorCode::InvalidRequest,
             ApplicationErrorCode::DestinationAlreadyExists,
             ApplicationErrorCode::ProviderUnavailable,

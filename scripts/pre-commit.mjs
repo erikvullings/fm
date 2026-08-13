@@ -11,10 +11,9 @@ import process from 'node:process';
 
 const repositoryRoot = path.resolve(import.meta.dirname, '..');
 
-/** npm-installed CLIs are `.cmd` shims on Windows, which `spawn` cannot exec directly. */
-function executable(name) {
-  return process.platform === 'win32' ? `${name}.cmd` : name;
-}
+/** Biome's own JS entry point. Spawning the `.cmd` shim `pnpm exec` would use is
+ * rejected by Node on Windows unless a shell is involved. */
+const biomeEntry = 'node_modules/@biomejs/biome/bin/biome';
 
 function run(command, args) {
   const result = spawnSync(command, args, {
@@ -67,7 +66,15 @@ if (stagedRust.length > 0) {
       run('cargo', ['clippy', '--workspace', '--all-targets', '--', '-D', 'warnings']);
       run('cargo', ['test', '--workspace']);
     } else {
-      run('cargo', ['clippy', '--manifest-path', manifest, '--all-targets', '--', '-D', 'warnings']);
+      run('cargo', [
+        'clippy',
+        '--manifest-path',
+        manifest,
+        '--all-targets',
+        '--',
+        '-D',
+        'warnings',
+      ]);
       run('cargo', ['test', '--manifest-path', manifest]);
     }
   }
@@ -82,6 +89,12 @@ const stagedBiome = stagedFiles([
   '*.json',
 ]).filter((file) => !file.startsWith('frontend/src/api/generated/'));
 if (stagedBiome.length > 0) {
-  run(executable('pnpm'), ['exec', 'biome', 'check', '--write', '--no-errors-on-unmatched', ...stagedBiome]);
+  run(process.execPath, [
+    biomeEntry,
+    'check',
+    '--write',
+    '--no-errors-on-unmatched',
+    ...stagedBiome,
+  ]);
   run('git', ['add', ...stagedBiome]);
 }

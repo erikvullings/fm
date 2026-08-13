@@ -52,6 +52,8 @@ fn status_for(error: &ApplicationError) -> StatusCode {
     match error {
         ApplicationError::NotFound => StatusCode::NOT_FOUND,
         ApplicationError::PermissionDenied => StatusCode::FORBIDDEN,
+        // The request is valid and may succeed once the holder releases the file.
+        ApplicationError::FileLocked => StatusCode::CONFLICT,
         ApplicationError::InvalidRequest(_) => StatusCode::BAD_REQUEST,
         ApplicationError::DestinationAlreadyExists => StatusCode::CONFLICT,
         ApplicationError::ProviderUnavailable => StatusCode::SERVICE_UNAVAILABLE,

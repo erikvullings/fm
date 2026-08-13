@@ -22,6 +22,10 @@ pub enum ApplicationError {
     /// The current caller is not permitted to perform this action.
     #[error("permission denied")]
     PermissionDenied,
+    /// The entry is held open by another program and cannot be read or
+    /// modified until that program releases it (task 0060, spec §8/§23).
+    #[error("The file is in use by another program.")]
+    FileLocked,
     /// The request failed validation.
     #[error("invalid request: {0}")]
     InvalidRequest(String),
@@ -103,6 +107,7 @@ impl ApplicationError {
         match self {
             Self::NotFound => ApplicationErrorCode::NotFound,
             Self::PermissionDenied => ApplicationErrorCode::PermissionDenied,
+            Self::FileLocked => ApplicationErrorCode::FileLocked,
             Self::InvalidRequest(_) => ApplicationErrorCode::InvalidRequest,
             Self::DestinationAlreadyExists => ApplicationErrorCode::DestinationAlreadyExists,
             Self::ProviderUnavailable => ApplicationErrorCode::ProviderUnavailable,
@@ -237,6 +242,7 @@ impl From<VfsError> for ApplicationError {
         match error {
             VfsError::NotFound { .. } => Self::NotFound,
             VfsError::PermissionDenied { .. } => Self::PermissionDenied,
+            VfsError::Locked { .. } => Self::FileLocked,
             VfsError::AlreadyExists { .. } => Self::DestinationAlreadyExists,
             VfsError::Cancelled => Self::OperationCancelled,
             VfsError::UnknownProvider { .. } => Self::ProviderUnavailable,

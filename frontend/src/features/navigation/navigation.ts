@@ -93,8 +93,15 @@ interface ActiveRequest {
   readonly kind: RequestKind;
 }
 
+/** Tauri's `invoke` rejects with the serialized `ApplicationErrorDto` rather than an `Error`,
+ * so a plain object carrying a `message` must not collapse into the generic fallback. */
 function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : 'Unable to load directory';
+  if (error instanceof Error) return error.message;
+  if (typeof error === 'object' && error !== null) {
+    const { message } = error as { readonly message?: unknown };
+    if (typeof message === 'string' && message.length > 0) return message;
+  }
+  return 'Unable to load directory';
 }
 
 function applicationErrorCode(error: unknown): string | undefined {

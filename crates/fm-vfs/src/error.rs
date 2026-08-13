@@ -17,6 +17,15 @@ pub enum VfsError {
         /// Provider-neutral URI that could not be accessed.
         location: String,
     },
+    /// Another process holds the entry open without sharing it, so the
+    /// operation cannot proceed until that process releases it. Distinct
+    /// from [`Self::PermissionDenied`], which is about access rights
+    /// (specification §8/§23; Windows sharing and lock violations).
+    #[error("file is in use by another program: {location}")]
+    Locked {
+        /// Provider-neutral URI that is currently locked.
+        location: String,
+    },
     /// Creating or moving an entry would overwrite an existing entry.
     #[error("location already exists: {location}")]
     AlreadyExists {
@@ -98,6 +107,7 @@ impl VfsError {
         match self {
             Self::NotFound { .. } => "notFound",
             Self::PermissionDenied { .. } => "permissionDenied",
+            Self::Locked { .. } => "locked",
             Self::AlreadyExists { .. } => "alreadyExists",
             Self::EmptyName => "emptyName",
             Self::InvalidNameCharacters => "invalidNameCharacters",
