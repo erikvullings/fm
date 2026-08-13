@@ -10,9 +10,22 @@ import { fileURLToPath } from 'node:url';
 
 const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 
+/** On Windows `bash` on PATH is usually WSL, a different machine with none of
+ * this toolchain installed, so use the Git Bash shipped alongside git itself. */
+function bashCommand() {
+  if (process.platform !== 'win32') {
+    return 'bash';
+  }
+  const gitExecPath = execFileSync('git', ['--exec-path'], { encoding: 'utf8' }).trim();
+  return join(gitExecPath, '..', '..', '..', 'bin', 'bash.exe');
+}
+
 function runScript(scriptName, args = []) {
+  // bash resolves `\` as an escape, so every path it receives must be POSIX-style
+  // even when the test itself is running on Windows.
+  const posix = (value) => value.replaceAll('\\', '/');
   try {
-    const stdout = execFileSync('bash', [join('scripts', scriptName), ...args], {
+    const stdout = execFileSync(bashCommand(), [`scripts/${scriptName}`, ...args.map(posix)], {
       cwd: repoRoot,
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -37,9 +50,14 @@ function snapshotDir(dir) {
 }
 
 test('scripts/export-openapi.sh, generate-api.sh and not-implemented.sh are executable', () => {
+  // Windows has no execute bit, so assert the mode git has recorded - that is
+  // what actually makes the scripts runnable once checked out on macOS/Linux.
   for (const name of ['export-openapi.sh', 'generate-api.sh', 'not-implemented.sh']) {
-    const mode = statSync(join(repoRoot, 'scripts', name)).mode;
-    assert.ok(mode & 0o111, `${name} should be executable`);
+    const entry = execFileSync('git', ['ls-files', '-s', `scripts/${name}`], {
+      cwd: repoRoot,
+      encoding: 'utf8',
+    });
+    assert.match(entry, /^100755 /, `${name} should be committed executable`);
   }
 });
 

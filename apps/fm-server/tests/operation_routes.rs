@@ -24,8 +24,8 @@ async fn start_retry_uses_stable_id_and_copy_emits_full_lifecycle() {
     let client = reqwest::Client::new();
     let request = json!({
         "type": "copy",
-        "sources": [{"providerId":"local","uri": format!("file://{}", source.display())}],
-        "destination": {"providerId":"local","uri": format!("file://{}", destination.display())},
+        "sources": [{"providerId":"local","uri": common::file_uri(&source)}],
+        "destination": {"providerId":"local","uri": common::file_uri(&destination)},
         "conflictPolicy": "ask"
     });
     let first: serde_json::Value = client
@@ -161,8 +161,8 @@ async fn resolve_conflict_route_applies_the_requested_decision() {
         .post(format!("{}/api/v1/operations", server.base_url))
         .json(&json!({
             "type": "copy",
-            "sources": [{"providerId":"local","uri": format!("file://{}", source.display())}],
-            "destination": {"providerId":"local","uri": format!("file://{}", destination.display())},
+            "sources": [{"providerId":"local","uri": common::file_uri(&source)}],
+            "destination": {"providerId":"local","uri": common::file_uri(&destination)},
             "conflictPolicy": "ask"
         }))
         .send()
@@ -236,7 +236,7 @@ async fn resolve_conflict_route_confirms_a_permanent_directory_delete() {
         .post(format!("{}/api/v1/operations", server.base_url))
         .json(&json!({
             "type": "delete",
-            "sources": [{"providerId":"local","uri": format!("file://{}", source.display())}],
+            "sources": [{"providerId":"local","uri": common::file_uri(&source)}],
             "conflictPolicy": "ask"
         }))
         .send()

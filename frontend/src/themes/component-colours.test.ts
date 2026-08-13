@@ -9,6 +9,8 @@ describe('component theme boundaries', () => {
     const sourceDirectory = join(process.cwd(), 'src');
     const sourceFiles = readdirSync(sourceDirectory, { recursive: true })
       .map(String)
+      // `readdirSync` yields the platform separator, so compare in POSIX form.
+      .map((path) => path.replaceAll('\\', '/'))
       .filter((path) => /\.(?:css|ts)$/.test(path))
       .filter((path) => !path.startsWith('themes/'))
       .filter((path) => !path.startsWith('api/generated/'))

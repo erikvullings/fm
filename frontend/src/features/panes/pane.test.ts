@@ -29,6 +29,11 @@ import {
 
 let root: HTMLElement;
 
+/** The pane formats sizes for the host locale, so the decimal separator is not
+ * a fixed `.` - assert through the same formatter rather than a literal. */
+const decimal = (value: number): string =>
+  new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 }).format(value);
+
 const entries: readonly EntrySummary[] = [
   {
     id: 'one' as EntryId,
@@ -812,7 +817,7 @@ describe('Pane status bar', () => {
 
     const capacity = root.querySelector('.fm-pane-volume-capacity');
     expect(capacity).not.toBeNull();
-    expect(capacity?.textContent).toBe('573.7 GB (30%) available');
+    expect(capacity?.textContent).toBe(`${decimal(573.7)} GB (30%) available`);
   });
 
   it('omits the available-capacity segment (not a broken placeholder) when unsupported', () => {
@@ -903,7 +908,7 @@ describe('Pane quick filter', () => {
       }),
     );
     const status = root.querySelector('.fm-pane-status')?.textContent;
-    expect(status).toContain('7.6 GB in 445 files, and 23 folders');
+    expect(status).toContain(`${decimal(7.6)} GB in 445 files, and 23 folders`);
     expect(status).not.toContain('3 KB in 2 files');
   });
 
