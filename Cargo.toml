@@ -115,7 +115,7 @@ tracing-appender = "0.2.5"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 utoipa = { version = "5.5.0", features = ["chrono", "uuid"] }
 utoipa-axum = "0.2.0"
-utoipa-swagger-ui = { version = "9.0.2", features = ["axum"] }
+utoipa-swagger-ui = { version = "9.0.2", features = ["axum", "vendored"] }
 uuid = { version = "1.24.0", features = ["serde", "v4", "v5"] }
 zip = { version = "8.6.0", default-features = false, features = [
   "aes-crypto",

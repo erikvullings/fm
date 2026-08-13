@@ -25,9 +25,14 @@
 //! ## Filesystem model
 //!
 //! The fixture serves real files under a real temporary directory
-//! ([`SshFixture::root`]) using the client-presented path *as-is* - no
-//! virtual-root translation. Tests address files by joining real paths under
-//! `root`, exactly like a real SFTP server rooted at `/`.
+//! ([`SshFixture::root`]), translating client-presented paths the way a
+//! real SFTP server does: the wire protocol is always Unix-style
+//! (forward-slash-separated, rooted at `/`), so every incoming path is
+//! resolved relative to `root` regardless of the host OS's native path
+//! syntax (this matters on Windows, where `root`'s real path has a drive
+//! letter and backslashes that can't appear in an SFTP wire path). Tests
+//! address files with root-relative Unix-style segments (see
+//! `SshFixture::path`'s callers), not `root`'s native path.
 
 use std::collections::HashMap;
 use std::io::SeekFrom;
@@ -105,9 +110,11 @@ impl SshFixture {
             ..Default::default()
         });
 
+        let root = tempfile::tempdir().expect("creating a fixture root directory must succeed");
         let authorized_public_key = authorized_client_key.public_key().clone();
         let last_exec_command = Arc::new(std::sync::Mutex::new(None));
         let mut server = FixtureServer {
+            root: root.path().to_path_buf(),
             authorized_public_key,
             last_exec_command: last_exec_command.clone(),
         };
@@ -118,7 +125,7 @@ impl SshFixture {
 
         Self {
             addr,
-            root: tempfile::tempdir().expect("creating a fixture root directory must succeed"),
+            root,
             host_key,
             host_key_fingerprint,
             authorized_client_key,
@@ -133,15 +140,18 @@ impl SshFixture {
         self.root.path().join(relative)
     }
 
-    /// The fixture root as a string, for building remote-path text.
+    /// The virtual SFTP root path (`/`), for building remote-path text -
+    /// see the module doc's "Filesystem model" section for why this is
+    /// `/` rather than `root`'s real, host-native path.
     #[must_use]
     pub fn root_path_string(&self) -> String {
-        self.root.path().to_string_lossy().into_owned()
+        "/".to_owned()
     }
 }
 
 #[derive(Clone)]
 struct FixtureServer {
+    root: PathBuf,
     authorized_public_key: PublicKey,
     last_exec_command: Arc<std::sync::Mutex<Option<Vec<u8>>>>,
 }
@@ -151,6 +161,7 @@ impl ServerTrait for FixtureServer {
 
     fn new_client(&mut self, _peer_addr: Option<SocketAddr>) -> Self::Handler {
         FixtureSshHandler {
+            root: self.root.clone(),
             authorized_public_key: self.authorized_public_key.clone(),
             channels: Arc::new(AsyncMutex::new(HashMap::new())),
             last_exec_command: self.last_exec_command.clone(),
@@ -159,6 +170,7 @@ impl ServerTrait for FixtureServer {
 }
 
 struct FixtureSshHandler {
+    root: PathBuf,
     authorized_public_key: PublicKey,
     channels: Arc<AsyncMutex<HashMap<ChannelId, Channel<Msg>>>>,
     last_exec_command: Arc<std::sync::Mutex<Option<Vec<u8>>>>,
@@ -213,7 +225,11 @@ impl ServerHandler for FixtureSshHandler {
             return Ok(());
         };
         session.channel_success(channel_id)?;
-        russh_sftp::server::run(channel.into_stream(), FixtureSftpHandler::default()).await;
+        russh_sftp::server::run(
+            channel.into_stream(),
+            FixtureSftpHandler::new(self.root.clone()),
+        )
+        .await;
         Ok(())
     }
 
@@ -298,18 +314,36 @@ enum FixtureHandle {
     },
 }
 
-#[derive(Default)]
 struct FixtureSftpHandler {
+    root: PathBuf,
     handles: HashMap<String, FixtureHandle>,
     next_handle_id: u64,
 }
 
 impl FixtureSftpHandler {
+    fn new(root: PathBuf) -> Self {
+        Self {
+            root,
+            handles: HashMap::new(),
+            next_handle_id: 0,
+        }
+    }
+
     fn allocate_handle(&mut self, handle: FixtureHandle) -> String {
         self.next_handle_id += 1;
         let id = self.next_handle_id.to_string();
         self.handles.insert(id.clone(), handle);
         id
+    }
+
+    /// Resolves an SFTP wire path (always Unix-style, rooted at `/`) to a
+    /// real path under [`Self::root`] - see the module doc's "Filesystem
+    /// model" section.
+    fn resolve(&self, path: &str) -> PathBuf {
+        match path.trim_start_matches('/') {
+            "" => self.root.clone(),
+            relative => self.root.join(relative),
+        }
     }
 }
 
@@ -358,7 +392,7 @@ impl russh_sftp::server::Handler for FixtureSftpHandler {
         options.truncate(pflags.contains(OpenFlags::TRUNCATE));
 
         let file = options
-            .open(&filename)
+            .open(self.resolve(&filename))
             .await
             .map_err(|error| map_io_error(&error))?;
         let handle = self.allocate_handle(FixtureHandle::File(file));
@@ -415,7 +449,7 @@ impl russh_sftp::server::Handler for FixtureSftpHandler {
     }
 
     async fn lstat(&mut self, id: u32, path: String) -> Result<Attrs, Self::Error> {
-        let metadata = tokio::fs::symlink_metadata(&path)
+        let metadata = tokio::fs::symlink_metadata(self.resolve(&path))
             .await
             .map_err(|error| map_io_error(&error))?;
         Ok(Attrs {
@@ -425,7 +459,7 @@ impl russh_sftp::server::Handler for FixtureSftpHandler {
     }
 
     async fn stat(&mut self, id: u32, path: String) -> Result<Attrs, Self::Error> {
-        let metadata = tokio::fs::metadata(&path)
+        let metadata = tokio::fs::metadata(self.resolve(&path))
             .await
             .map_err(|error| map_io_error(&error))?;
         Ok(Attrs {
@@ -449,7 +483,7 @@ impl russh_sftp::server::Handler for FixtureSftpHandler {
     }
 
     async fn opendir(&mut self, id: u32, path: String) -> Result<SftpHandle, Self::Error> {
-        let mut reader = tokio::fs::read_dir(&path)
+        let mut reader = tokio::fs::read_dir(self.resolve(&path))
             .await
             .map_err(|error| map_io_error(&error))?;
         let mut entries = Vec::new();
@@ -487,7 +521,7 @@ impl russh_sftp::server::Handler for FixtureSftpHandler {
     }
 
     async fn remove(&mut self, id: u32, filename: String) -> Result<Status, Self::Error> {
-        tokio::fs::remove_file(&filename)
+        tokio::fs::remove_file(self.resolve(&filename))
             .await
             .map_err(|error| map_io_error(&error))?;
         Ok(ok_status(id))
@@ -499,14 +533,14 @@ impl russh_sftp::server::Handler for FixtureSftpHandler {
         path: String,
         _attrs: FileAttributes,
     ) -> Result<Status, Self::Error> {
-        tokio::fs::create_dir(&path)
+        tokio::fs::create_dir(self.resolve(&path))
             .await
             .map_err(|error| map_io_error(&error))?;
         Ok(ok_status(id))
     }
 
     async fn rmdir(&mut self, id: u32, path: String) -> Result<Status, Self::Error> {
-        tokio::fs::remove_dir(&path)
+        tokio::fs::remove_dir(self.resolve(&path))
             .await
             .map_err(|error| map_io_error(&error))?;
         Ok(ok_status(id))
@@ -518,17 +552,23 @@ impl russh_sftp::server::Handler for FixtureSftpHandler {
         oldpath: String,
         newpath: String,
     ) -> Result<Status, Self::Error> {
-        tokio::fs::rename(&oldpath, &newpath)
+        tokio::fs::rename(self.resolve(&oldpath), self.resolve(&newpath))
             .await
             .map_err(|error| map_io_error(&error))?;
         Ok(ok_status(id))
     }
 
     async fn realpath(&mut self, id: u32, path: String) -> Result<Name, Self::Error> {
-        let canonical = tokio::fs::canonicalize(&path)
-            .await
-            .map(|resolved| resolved.to_string_lossy().into_owned())
-            .unwrap_or(path);
+        let resolved = self.resolve(&path);
+        let canonical = match tokio::fs::canonicalize(&resolved).await {
+            Ok(canonical) => {
+                let relative = canonical.strip_prefix(&self.root).unwrap_or(&canonical);
+                let mut virtual_path = String::from("/");
+                virtual_path.push_str(&relative.to_string_lossy().replace('\\', "/"));
+                virtual_path
+            }
+            Err(_) => path,
+        };
         Ok(Name {
             id,
             files: vec![SftpFile::dummy(canonical)],

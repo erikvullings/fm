@@ -108,12 +108,14 @@ async fn register_and_trust_connection(
     created.id
 }
 
-fn sftp_location(connection_id: uuid::Uuid, remote_path: &std::path::Path) -> Location {
-    Location::parse(&format!(
-        "sftp://{connection_id}{}",
-        remote_path.to_string_lossy()
-    ))
-    .expect("sftp location must parse")
+/// Builds an `sftp://` location from a root-relative Unix-style path (empty
+/// for the fixture root itself). The fixture's wire protocol is always
+/// Unix-style, independent of the host OS - see `fm_ssh::fixture`'s module
+/// doc for why this must not be a native OS path (as `fixture.path()`
+/// returns).
+fn sftp_location(connection_id: uuid::Uuid, remote_path: &str) -> Location {
+    Location::parse(&format!("sftp://{connection_id}/{remote_path}"))
+        .expect("sftp location must parse")
 }
 
 async fn run_copy(
@@ -171,7 +173,7 @@ async fn local_to_sftp_copy_streams_through_the_real_operation_engine() {
     let operation = run_copy(
         &service,
         Location::from_native_path(&local_source).unwrap(),
-        sftp_location(connection_id, fixture.root.path()),
+        sftp_location(connection_id, ""),
     )
     .await;
 
@@ -203,7 +205,7 @@ async fn sftp_to_local_copy_streams_through_the_real_operation_engine() {
 
     let operation = run_copy(
         &service,
-        sftp_location(connection_id, &fixture.path("remote.txt")),
+        sftp_location(connection_id, "remote.txt"),
         Location::from_native_path(&local_destination).unwrap(),
     )
     .await;
@@ -226,8 +228,8 @@ async fn same_connection_sftp_to_sftp_copy_streams_through_the_real_operation_en
 
     let operation = run_copy(
         &service,
-        sftp_location(connection_id, &fixture.path("source.txt")),
-        sftp_location(connection_id, &fixture.path("nested")),
+        sftp_location(connection_id, "source.txt"),
+        sftp_location(connection_id, "nested"),
     )
     .await;
 
@@ -251,8 +253,8 @@ async fn same_connection_sftp_move_uses_the_shared_operation_engine_and_the_serv
         .start_operation(
             StartOperationRequestDto {
                 operation_type: OperationKindDto::Move,
-                sources: vec![sftp_location(connection_id, &fixture.path("move-me.txt")).into()],
-                destination: Some(sftp_location(connection_id, &fixture.path("elsewhere")).into()),
+                sources: vec![sftp_location(connection_id, "move-me.txt").into()],
+                destination: Some(sftp_location(connection_id, "elsewhere").into()),
                 destinations: vec![],
                 conflict_policy: OperationConflictPolicyDto::Ask,
                 name: None,
@@ -309,7 +311,7 @@ async fn cancelling_a_local_to_sftp_copy_mid_transfer_leaves_no_partial_file_any
             StartOperationRequestDto {
                 operation_type: OperationKindDto::Copy,
                 sources: vec![Location::from_native_path(&source_path).unwrap().into()],
-                destination: Some(sftp_location(connection_id, fixture.root.path()).into()),
+                destination: Some(sftp_location(connection_id, "").into()),
                 destinations: vec![],
                 conflict_policy: OperationConflictPolicyDto::Ask,
                 name: None,
