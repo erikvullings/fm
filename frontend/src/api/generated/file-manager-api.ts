@@ -7,7 +7,10 @@ import type {
   ActionDescriptorDto,
   ActionResultDto,
   ApplicationErrorDto,
+  ApplySyncPlanRequestDto,
+  ApplySyncPlanResponseDto,
   ArchiveCredentialRequestDto,
+  ComparisonPageDto,
   ConnectionDto,
   CreateConnectionRequestDto,
   CreateWorkspaceRequestDto,
@@ -16,6 +19,8 @@ import type {
   DirectorySnapshotDto,
   EntryMetadataDto,
   EntryMetadataRequest,
+  GenerateSyncPlanRequestDto,
+  GetComparisonParams,
   GetFileIconParams,
   GetPluginIconThemeAssetParams,
   HealthDto,
@@ -39,9 +44,12 @@ import type {
   SearchInFileRequestDto,
   SearchInFileResponseDto,
   SettingsDto,
+  StartComparisonRequestDto,
+  StartComparisonResponseDto,
   StartOperationRequestDto,
   StartSearchRequestDto,
   StartSearchResponseDto,
+  SyncPlanDto,
   SystemLocationDto,
   UpdateConnectionRequestDto,
   WorkspaceCommandDto,
@@ -173,6 +181,222 @@ export const cacheArchivePassword = async (archiveCredentialRequestDto: ArchiveC
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
     body: JSON.stringify(archiveCredentialRequestDto)
+  }
+);}
+
+
+
+export type startComparisonResponse201 = {
+  data: StartComparisonResponseDto
+  status: 201
+}
+
+export type startComparisonResponse400 = {
+  data: ApplicationErrorDto
+  status: 400
+}
+
+export type startComparisonResponseSuccess = (startComparisonResponse201) & {
+  headers: Headers;
+};
+export type startComparisonResponseError = (startComparisonResponse400) & {
+  headers: Headers;
+};
+
+export type startComparisonResponse = (startComparisonResponseSuccess | startComparisonResponseError)
+
+export const getStartComparisonUrl = () => {
+
+
+
+
+  return `/api/v1/comparisons`
+}
+
+export const startComparison = async (startComparisonRequestDto: StartComparisonRequestDto, options?: Parameters<typeof fetchMutator>[1]): Promise<startComparisonResponse> => {
+
+  return fetchMutator<startComparisonResponse>(getStartComparisonUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(startComparisonRequestDto)
+  }
+);}
+
+
+
+export type getComparisonResponse200 = {
+  data: ComparisonPageDto
+  status: 200
+}
+
+export type getComparisonResponse404 = {
+  data: ApplicationErrorDto
+  status: 404
+}
+
+export type getComparisonResponseSuccess = (getComparisonResponse200) & {
+  headers: Headers;
+};
+export type getComparisonResponseError = (getComparisonResponse404) & {
+  headers: Headers;
+};
+
+export type getComparisonResponse = (getComparisonResponseSuccess | getComparisonResponseError)
+
+export const getGetComparisonUrl = (comparisonId: string,
+    params?: GetComparisonParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/comparisons/${comparisonId}?${stringifiedParams}` : `/api/v1/comparisons/${comparisonId}`
+}
+
+export const getComparison = async (comparisonId: string,
+    params?: GetComparisonParams, options?: Parameters<typeof fetchMutator>[1]): Promise<getComparisonResponse> => {
+
+  return fetchMutator<getComparisonResponse>(getGetComparisonUrl(comparisonId,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+export type applySyncPlanResponse201 = {
+  data: ApplySyncPlanResponseDto
+  status: 201
+}
+
+export type applySyncPlanResponse400 = {
+  data: ApplicationErrorDto
+  status: 400
+}
+
+export type applySyncPlanResponse404 = {
+  data: ApplicationErrorDto
+  status: 404
+}
+
+export type applySyncPlanResponseSuccess = (applySyncPlanResponse201) & {
+  headers: Headers;
+};
+export type applySyncPlanResponseError = (applySyncPlanResponse400 | applySyncPlanResponse404) & {
+  headers: Headers;
+};
+
+export type applySyncPlanResponse = (applySyncPlanResponseSuccess | applySyncPlanResponseError)
+
+export const getApplySyncPlanUrl = (comparisonId: string,) => {
+
+
+
+
+  return `/api/v1/comparisons/${comparisonId}/apply-sync-plan`
+}
+
+export const applySyncPlan = async (comparisonId: string,
+    applySyncPlanRequestDto: ApplySyncPlanRequestDto, options?: Parameters<typeof fetchMutator>[1]): Promise<applySyncPlanResponse> => {
+
+  return fetchMutator<applySyncPlanResponse>(getApplySyncPlanUrl(comparisonId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(applySyncPlanRequestDto)
+  }
+);}
+
+
+
+export type cancelComparisonResponse204 = {
+  data: void
+  status: 204
+}
+
+export type cancelComparisonResponse404 = {
+  data: ApplicationErrorDto
+  status: 404
+}
+
+export type cancelComparisonResponseSuccess = (cancelComparisonResponse204) & {
+  headers: Headers;
+};
+export type cancelComparisonResponseError = (cancelComparisonResponse404) & {
+  headers: Headers;
+};
+
+export type cancelComparisonResponse = (cancelComparisonResponseSuccess | cancelComparisonResponseError)
+
+export const getCancelComparisonUrl = (comparisonId: string,) => {
+
+
+
+
+  return `/api/v1/comparisons/${comparisonId}/cancel`
+}
+
+export const cancelComparison = async (comparisonId: string, options?: Parameters<typeof fetchMutator>[1]): Promise<cancelComparisonResponse> => {
+
+  return fetchMutator<cancelComparisonResponse>(getCancelComparisonUrl(comparisonId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+export type generateSyncPlanResponse200 = {
+  data: SyncPlanDto
+  status: 200
+}
+
+export type generateSyncPlanResponse404 = {
+  data: ApplicationErrorDto
+  status: 404
+}
+
+export type generateSyncPlanResponseSuccess = (generateSyncPlanResponse200) & {
+  headers: Headers;
+};
+export type generateSyncPlanResponseError = (generateSyncPlanResponse404) & {
+  headers: Headers;
+};
+
+export type generateSyncPlanResponse = (generateSyncPlanResponseSuccess | generateSyncPlanResponseError)
+
+export const getGenerateSyncPlanUrl = (comparisonId: string,) => {
+
+
+
+
+  return `/api/v1/comparisons/${comparisonId}/sync-plan`
+}
+
+export const generateSyncPlan = async (comparisonId: string,
+    generateSyncPlanRequestDto: GenerateSyncPlanRequestDto, options?: Parameters<typeof fetchMutator>[1]): Promise<generateSyncPlanResponse> => {
+
+  return fetchMutator<generateSyncPlanResponse>(getGenerateSyncPlanUrl(comparisonId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(generateSyncPlanRequestDto)
   }
 );}
 

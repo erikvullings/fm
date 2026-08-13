@@ -1,8 +1,11 @@
 import type {
   ActionDescriptor,
   ActionResult,
+  ApplySyncPlanRequest,
+  ApplySyncPlanResult,
   ArchiveCredentialRequest,
   BackendEvent,
+  ComparisonPage,
   Connection,
   ConnectionId,
   CreateConnectionRequest,
@@ -14,6 +17,7 @@ import type {
   EntryMetadataRequest,
   Location as FileLocation,
   FileRangeChunk,
+  GenerateSyncPlanRequest,
   HostKeyProbe,
   InvokeActionRequest,
   ListDirectoryRequest,
@@ -32,9 +36,12 @@ import type {
   SearchInFileRequest,
   SearchInFileResult,
   Settings,
+  StartComparisonRequest,
+  StartComparisonResult,
   StartOperationRequest,
   StartSearchRequest,
   StartSearchResult,
+  SyncPlan,
   SystemLocation,
   Unsubscribe,
   UpdateConnectionRequest,
@@ -43,7 +50,9 @@ import type {
   WorkspaceProjection,
   WorkspaceSummary,
 } from '../../models';
+import { syncPlanItemToDto } from '../../models/comparison';
 import { entryMetadataFromDto } from '../../models/entry';
+import { comparisonPageFromDto, syncPlanFromDto } from '../../models/requests';
 import { directorySnapshotFromDto } from '../../models/snapshot';
 import { workspaceProjectionFromDto } from '../../models/workspace';
 import { SseEventStream } from '../events/sse-event-stream';
@@ -51,6 +60,9 @@ import {
   invokeAction as requestActionInvocation,
   listActions as requestActions,
   cacheArchivePassword as requestArchivePasswordCache,
+  cancelComparison as requestComparisonCancel,
+  getComparison as requestComparisonGet,
+  startComparison as requestComparisonStart,
   resolveOperationConflict as requestConflictResolution,
   getConnection as requestConnection,
   connectConnection as requestConnectionConnect,
@@ -85,6 +97,8 @@ import {
   updateSettings as requestSettingsUpdate,
   acceptSshHostKey as requestSshHostKeyAcceptance,
   probeSshHostKey as requestSshHostKeyProbe,
+  applySyncPlan as requestSyncPlanApply,
+  generateSyncPlan as requestSyncPlanGenerate,
   getSystemLocations as requestSystemLocations,
   getWorkspace as requestWorkspace,
   applyWorkspaceCommand as requestWorkspaceCommand,
@@ -458,6 +472,89 @@ export class HttpFileManagerClient implements FileManagerClient {
     );
     if (response.status !== 204)
       throw new Error(`Unexpected cancelSearch response status: ${response.status}`);
+  }
+
+  async startComparison(
+    request: StartComparisonRequest,
+    signal?: AbortSignal,
+  ): Promise<StartComparisonResult> {
+    const response = await requestComparisonStart(
+      {
+        workspaceId: request.workspaceId,
+        left: request.left,
+        right: request.right,
+        criteria: request.criteria,
+        ...(request.showHidden === undefined ? {} : { showHidden: request.showHidden }),
+      },
+      signal === undefined ? undefined : { signal },
+    );
+    if (response.status !== 201) {
+      throw new Error(`Unexpected startComparison response status: ${response.status}`);
+    }
+    return { comparisonId: response.data.comparisonId };
+  }
+
+  async getComparison(
+    comparisonId: string,
+    options?: { offset?: number; limit?: number; differencesOnly?: boolean },
+    signal?: AbortSignal,
+  ): Promise<ComparisonPage> {
+    const response = await requestComparisonGet(
+      comparisonId,
+      {
+        ...(options?.offset === undefined ? {} : { offset: options.offset }),
+        ...(options?.limit === undefined ? {} : { limit: options.limit }),
+        ...(options?.differencesOnly === undefined
+          ? {}
+          : { differencesOnly: options.differencesOnly }),
+      },
+      signal === undefined ? undefined : { signal },
+    );
+    if (response.status !== 200) {
+      throw new Error(`Unexpected getComparison response status: ${response.status}`);
+    }
+    return comparisonPageFromDto(response.data);
+  }
+
+  async cancelComparison(comparisonId: string, signal?: AbortSignal): Promise<void> {
+    const response = await requestComparisonCancel(
+      comparisonId,
+      signal === undefined ? undefined : { signal },
+    );
+    if (response.status !== 204)
+      throw new Error(`Unexpected cancelComparison response status: ${response.status}`);
+  }
+
+  async generateSyncPlan(
+    comparisonId: string,
+    request: GenerateSyncPlanRequest,
+    signal?: AbortSignal,
+  ): Promise<SyncPlan> {
+    const response = await requestSyncPlanGenerate(
+      comparisonId,
+      { mode: request.mode },
+      signal === undefined ? undefined : { signal },
+    );
+    if (response.status !== 200) {
+      throw new Error(`Unexpected generateSyncPlan response status: ${response.status}`);
+    }
+    return syncPlanFromDto(response.data);
+  }
+
+  async applySyncPlan(
+    comparisonId: string,
+    request: ApplySyncPlanRequest,
+    signal?: AbortSignal,
+  ): Promise<ApplySyncPlanResult> {
+    const response = await requestSyncPlanApply(
+      comparisonId,
+      { items: request.items.map(syncPlanItemToDto) },
+      signal === undefined ? undefined : { signal },
+    );
+    if (response.status !== 201) {
+      throw new Error(`Unexpected applySyncPlan response status: ${response.status}`);
+    }
+    return { operationIds: response.data.operationIds as OperationId[] };
   }
 
   listActions(signal?: AbortSignal): Promise<ActionDescriptor[]> {

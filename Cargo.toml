@@ -24,6 +24,7 @@ debug = "line-tables-only"
 # Internal crates, versioned together with the rest of the workspace.
 fm-application = { path = "crates/fm-application" }
 fm-archive = { path = "crates/fm-archive" }
+fm-comparison = { path = "crates/fm-comparison" }
 fm-connections = { path = "crates/fm-connections" }
 fm-credentials = { path = "crates/fm-credentials" }
 fm-credentials-macos = { path = "crates/fm-credentials-macos" }

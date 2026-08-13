@@ -130,9 +130,14 @@ export function reduceSelection(
         state.anchorEntryId ?? state.cursorEntryId ?? orderedEntryIds[currentIndex];
       const anchorIndex =
         anchorEntryId === undefined ? currentIndex : orderedEntryIds.indexOf(anchorEntryId);
-      const rangeStart = Math.min(anchorIndex < 0 ? currentIndex : anchorIndex, nextIndex);
-      const rangeEnd = Math.max(anchorIndex < 0 ? currentIndex : anchorIndex, nextIndex);
-      const rangeIds = orderedEntryIds.slice(rangeStart, rangeEnd + 1);
+      const resolvedAnchorIndex = anchorIndex < 0 ? currentIndex : anchorIndex;
+      // Shift+Arrow selects the row being departed and leaves the destination as a bare cursor.
+      const rangeIds =
+        nextIndex > resolvedAnchorIndex
+          ? orderedEntryIds.slice(resolvedAnchorIndex, nextIndex)
+          : nextIndex < resolvedAnchorIndex
+            ? orderedEntryIds.slice(nextIndex + 1, resolvedAnchorIndex + 1)
+            : orderedEntryIds.slice(resolvedAnchorIndex, resolvedAnchorIndex + 1);
       const base = state.baseSelectedEntryIds;
       const baseSet = base !== undefined ? new Set(base) : undefined;
       const merged =

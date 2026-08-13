@@ -128,6 +128,9 @@ export interface GlobalKeydownContext {
   openMultiRenameForActivePane(): void;
   /** Closes the desktop window (Alt+F4); a no-op in browser runtime. */
   quitApplication(): void;
+  /** Starts (or re-runs) a directory comparison of the first two panes (Shift+F2, task 0075).
+   * Self-guards on fewer than two open panes, same as the toolbar's Compare button. */
+  startComparison(): void;
 }
 
 function isEditableTarget(target: EventTarget | null): boolean {
@@ -477,13 +480,14 @@ export function createGlobalKeydownHandler(
       const key = context.activeTabKey(active.paneId);
       context.setQuickFilterOpen(key, true);
       const appState = context.getAppState();
+      if (appState === undefined) return;
       if (!(key in (appState?.quickFilterDrafts.byTabKey ?? {}))) {
         const workspace = context.getWorkspace();
         const pane = workspace?.panesById[active.paneId];
         const tab = pane?.tabsById[pane.activeTabId];
         context.setAppState(
           applyAppPatches(
-            appState!,
+            appState,
             setQuickFilterDraftPatch(key, tab?.view.quickFilter?.query ?? ''),
           ),
         );
@@ -579,6 +583,11 @@ export function createGlobalKeydownHandler(
       if (otherPaneId === undefined) return;
       event.preventDefault();
       void context.getNavigation().navigate(otherPaneId, active.location);
+      return;
+    }
+    if (dispatchedAction === 'core.compareDirectories') {
+      event.preventDefault();
+      context.startComparison();
       return;
     }
     if (dispatchedAction === 'core.swapPanes') {
@@ -697,11 +706,13 @@ export function createGlobalKeydownHandler(
         active === undefined
           ? undefined
           : context.getDirectories().get(context.activeTabKey(active.paneId));
-      const selected = getSelectedEntries(selection, directory?.entries ?? []);
-      const viewEntry = selected?.length === 1 ? selected[0] : undefined;
+      const viewEntry =
+        selection?.cursorEntryId === undefined
+          ? undefined
+          : directory?.entries.find((entry) => entry.id === selection.cursorEntryId);
       const otherPaneId = workspace?.paneOrder.find((paneId) => paneId !== active?.paneId);
-      // Only intercept single-file selections into the in-app viewer (task 0088); directories,
-      // multi-selections, and single-pane workspaces (no opposite pane to open into) fall through
+      // F3 acts on the cursor file regardless of the wider selection. Directories and
+      // single-pane workspaces (no opposite pane to open into) fall through
       // to the generic core.view/core.edit/core.openWith block below, which opens the OS default
       // application instead. The viewer itself closes and shows a toast for content that turns
       // out to be binary once its first chunk is fetched, rather than falling back further.

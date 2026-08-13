@@ -6,6 +6,7 @@
 //! byte-for-byte compatible.
 
 pub mod action;
+pub mod comparison;
 pub mod connection;
 pub mod diagnostics;
 pub mod entry;
@@ -28,6 +29,12 @@ pub mod workspace_command;
 pub use action::{
     ActionContextRequirementsDto, ActionDescriptorDto, ActionInvocationContextDto, ActionResultDto,
     ActionSourceDto, InvokeActionRequestDto, KeyChordDto,
+};
+pub use comparison::{
+    ApplySyncPlanRequestDto, ApplySyncPlanResponseDto, ComparisonCriteriaDto, ComparisonEntryDto,
+    ComparisonEntrySideDto, ComparisonPageDto, ComparisonStatusDto, GenerateSyncPlanRequestDto,
+    StartComparisonRequestDto, StartComparisonResponseDto, SyncActionDto, SyncModeDto, SyncPlanDto,
+    SyncPlanItemDto,
 };
 pub use connection::{
     AcceptSshHostKeyRequestDto, ConnectionConfigurationDto, ConnectionDto, ConnectionKindDto,
@@ -72,7 +79,7 @@ pub use settings::{
     ConflictPolicyDto, DateFormatDto, DefaultPaneLayoutDto, FavouriteLocationDto, SettingsDto,
     SizeFormatDto, ThemeDto,
 };
-pub use snapshot::{DirectorySnapshotDto, LoadingStateDto};
+pub use snapshot::{DirectorySnapshotDto, LoadingStateDto, VolumeCapacityDto};
 pub use system_location::{SystemLocationDto, SystemLocationKindDto};
 pub use workspace::{
     ColumnConfigurationDto, CreateWorkspaceRequestDto, DirectoryViewConfigurationDto,

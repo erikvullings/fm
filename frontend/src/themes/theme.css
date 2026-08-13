@@ -15,6 +15,7 @@
   --fm-warning: #8a4b08;
   --fm-success: #18723c;
   --fm-selected-row-text: #b45309;
+  --fm-cursor-row-text: #475467;
   --fm-row-height: 20px;
   --fm-header-height: 20px;
   --fm-font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -63,6 +64,7 @@
   --fm-warning: #ffc46b;
   --fm-success: #72d69a;
   --fm-selected-row-text: #fbbf24;
+  --fm-cursor-row-text: #f2f4f7;
   --fm-shadow: 0 8px 24px rgb(0 0 0 / 45%);
   --fm-directory-row-base: #21252d;
   --fm-directory-row-highlight: #232730;
@@ -123,6 +125,8 @@
     --fm-error: #ff8a80;
     --fm-warning: #ffc46b;
     --fm-success: #72d69a;
+    --fm-selected-row-text: #fbbf24;
+    --fm-cursor-row-text: #f2f4f7;
     --fm-shadow: 0 8px 24px rgb(0 0 0 / 45%);
     --fm-directory-row-base: #21252d;
     --fm-directory-row-highlight: #232730;
@@ -312,29 +316,32 @@ main.fm-workspace {
   font-weight: 700;
 }
 
-.fm-workspace-toolbar > span {
+/* Excludes `.fm-tooltip`: every toolbar icon button is now wrapped in a `span.fm-tooltip`
+   (components/tooltip.ts), so an unscoped `> span` selector here would match each one and push
+   every button to the far right instead of just the intended trailing status span. */
+.fm-workspace-toolbar > span:not(.fm-tooltip) {
   margin-left: auto;
   color: var(--fm-text-muted);
 }
 
 /*
- * Custom tooltip: native `title` tooltips are unreliable across browsers/webviews
- * (delay and support vary a lot), so icon-only toolbar controls carry their label
- * in `data-tooltip` and render it themselves on hover/focus instead.
+ * Custom tooltip: native `title` tooltips are unreliable across browsers/webviews (delay and
+ * support vary a lot), so icon-only controls are wrapped in `.fm-tooltip` (see
+ * `components/tooltip.ts`), which shows the label on hover/focus. The visible tooltip itself is
+ * a single `body`-level portal element (`.fm-tooltip-portal`), positioned in JS rather than
+ * painted in place as a `::after` on the wrapper - several ancestors a tooltip-bearing control
+ * can live inside (an icon button's own ripple-clipping class, the pane tab strip's
+ * horizontally-scrolling container) clip an in-place tooltip via `overflow: hidden`, and a portal
+ * outside that DOM subtree sidesteps it entirely.
  */
-.fm-workspace-toolbar [data-tooltip] {
-  position: relative;
+.fm-tooltip {
+  display: inline-flex;
 }
 
-.fm-workspace-toolbar [data-tooltip]:hover::after,
-.fm-workspace-toolbar [data-tooltip]:focus-visible::after {
-  content: attr(data-tooltip);
-  position: absolute;
-  top: 100%;
-  left: 50%;
-  transform: translateX(-50%);
-  margin-top: 0.35rem;
-  z-index: 110;
+.fm-tooltip-portal {
+  display: none;
+  position: fixed;
+  z-index: 1000;
   border-radius: var(--fm-radius);
   padding: 0.2rem 0.5rem;
   background: var(--fm-text);
@@ -353,7 +360,9 @@ main.fm-workspace {
 .fm-navigation-controls button,
 .fm-workspace-toolbar > button,
 .fm-settings-button,
-.fm-settings-editor button {
+.fm-settings-editor button,
+.fm-diagnostics-button,
+.fm-diagnostics-editor button {
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
@@ -369,7 +378,9 @@ main.fm-workspace {
 .fm-navigation-controls button:hover:not(:disabled),
 .fm-workspace-toolbar > button:hover:not(:disabled),
 .fm-settings-button:hover,
-.fm-settings-editor button:hover:not(:disabled) {
+.fm-settings-editor button:hover:not(:disabled),
+.fm-diagnostics-button:hover,
+.fm-diagnostics-editor button:hover:not(:disabled) {
   background: var(--fm-hover);
   color: var(--fm-text);
 }
@@ -418,6 +429,32 @@ main.fm-workspace {
 }
 
 .fm-settings-button::-webkit-details-marker {
+  display: none;
+}
+
+.fm-diagnostics-editor {
+  position: fixed;
+  z-index: 20;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgb(0 0 0 / 35%);
+}
+
+.fm-diagnostics-disclosure {
+  display: contents;
+}
+
+.fm-diagnostics-button {
+  display: flex;
+  min-height: var(--fm-row-height);
+  align-items: center;
+  cursor: pointer;
+  list-style: none;
+}
+
+.fm-diagnostics-button::-webkit-details-marker {
   display: none;
 }
 
@@ -784,13 +821,31 @@ input[type="text"].fm-command-palette-input {
 }
 
 .fm-pane[data-active="true"] .fm-selected-row {
-  background: var(--fm-selection);
+  background: color-mix(in srgb, var(--fm-selection) 18%, transparent);
   color: var(--fm-selected-row-text);
-  box-shadow: inset 3px 0 var(--fm-accent);
 }
 
 .fm-pane[data-active="true"] .fm-cursor-row {
-  background-color: color-mix(in srgb, var(--fm-accent) 25%, transparent);
+  background-color: color-mix(in srgb, var(--fm-accent) 48%, transparent);
+  color: var(--fm-cursor-row-text);
+}
+
+[data-theme="dark"] .fm-pane[data-active="true"] .fm-selected-row {
+  background: color-mix(in srgb, var(--fm-background) 55%, var(--fm-surface));
+}
+
+[data-theme="dark"] .fm-pane[data-active="true"] .fm-selected-row.fm-cursor-row {
+  background: color-mix(in srgb, var(--fm-accent) 48%, transparent);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) .fm-pane[data-active="true"] .fm-selected-row {
+    background: color-mix(in srgb, var(--fm-background) 55%, var(--fm-surface));
+  }
+
+  :root:not([data-theme]) .fm-pane[data-active="true"] .fm-selected-row.fm-cursor-row {
+    background: color-mix(in srgb, var(--fm-accent) 48%, transparent);
+  }
 }
 
 .fm-plugin-list {
@@ -1124,6 +1179,41 @@ input[type="text"].fm-command-palette-input {
 
 .fm-multi-rename-row--problem td {
   background: var(--fm-error-surface, rgb(255 0 0 / 8%));
+}
+
+/* Sync-plan review table (task 0075), mirroring `.fm-multi-rename-preview` above. */
+.fm-sync-plan-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-height: 60vh;
+}
+
+.fm-sync-plan-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 0.85rem;
+  overflow-y: auto;
+}
+
+.fm-sync-plan-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--fm-surface);
+}
+
+.fm-sync-plan-table th,
+.fm-sync-plan-table td {
+  padding: 0.3rem 0.5rem;
+  text-align: left;
+  border-bottom: 1px solid var(--fm-border);
+}
+
+.fm-sync-plan-path {
+  font-family: var(--fm-font-mono, monospace);
+  word-break: break-all;
 }
 
 /* Uses the same input-styling approach as `.fm-create-directory-field` above. */

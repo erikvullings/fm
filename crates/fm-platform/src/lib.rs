@@ -16,5 +16,6 @@ pub use capabilities::PlatformCapabilities;
 pub use error::PlatformError;
 pub use fallback::FallbackPlatformAdapter;
 pub use types::{
-    MountedVolume, SystemLocation, SystemLocationKind, SystemLocationProvider, cloud_provider_hint,
+    MountedVolume, SystemLocation, SystemLocationKind, SystemLocationProvider, VolumeCapacity,
+    cloud_provider_hint,
 };

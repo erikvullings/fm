@@ -65,7 +65,7 @@ describe('Accessibility: Basic DOM structure checks', () => {
         <main id="main"></main>
       </div>
     `);
-    const duplicateIdIssues = violations.violations.filter((v: any) => v.id === 'duplicate-id');
+    const duplicateIdIssues = violations.violations.filter((v) => v.id === 'duplicate-id');
     expect(duplicateIdIssues).toHaveLength(0);
   });
 
@@ -76,7 +76,7 @@ describe('Accessibility: Basic DOM structure checks', () => {
         <button aria-label="Close">×</button>
       </div>
     `);
-    const buttonIssues = violations.violations.filter((v: any) => v.id === 'button-name');
+    const buttonIssues = violations.violations.filter((v) => v.id === 'button-name');
     expect(buttonIssues).toHaveLength(0);
   });
 
@@ -87,7 +87,7 @@ describe('Accessibility: Basic DOM structure checks', () => {
         <a href="/about" aria-label="About page">About</a>
       </div>
     `);
-    const linkIssues = violations.violations.filter((v: any) => v.id === 'link-name');
+    const linkIssues = violations.violations.filter((v) => v.id === 'link-name');
     expect(linkIssues).toHaveLength(0);
   });
 
@@ -100,7 +100,7 @@ describe('Accessibility: Basic DOM structure checks', () => {
         <button>Visible</button>
       </div>
     `);
-    const focusIssues = violations.violations.filter((v: any) => v.id === 'aria-hidden-focus');
+    const focusIssues = violations.violations.filter((v) => v.id === 'aria-hidden-focus');
     // Note: aria-hidden-focus is complex; this is a basic smoke test
     // Real testing requires manual focus management verification
     expect(focusIssues.length).toBeLessThanOrEqual(1);
@@ -116,7 +116,7 @@ describe('Accessibility: Basic DOM structure checks', () => {
       </div>
     `);
     const ariaIssues = violations.violations.filter(
-      (v: any) => v.id === 'aria-allowed-attr' || v.id === 'aria-required-attr',
+      (v) => v.id === 'aria-allowed-attr' || v.id === 'aria-required-attr',
     );
     expect(ariaIssues).toHaveLength(0);
   });

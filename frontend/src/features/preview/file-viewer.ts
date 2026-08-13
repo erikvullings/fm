@@ -140,7 +140,9 @@ function renderTextBody(
     },
     [
       editableLanguage === 'markdown'
-        ? m('.fm-file-viewer-markdown', { innerHTML: safeMarkdownHtml(content.text) })
+        ? m('.fm-file-viewer-markdown.browser-default', {
+            innerHTML: safeMarkdownHtml(content.text),
+          })
         : m(CodeMirrorEditor, {
             content: content.text,
             readOnly: true,

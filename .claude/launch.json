@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "fm-frontend-mock",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": ["-lc", "cd frontend && VITE_RUNTIME=mock npx vite"],
+      "port": 5180
+    }
+  ]
+}

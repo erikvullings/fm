@@ -4,8 +4,15 @@ import pluginFixtures from '../../../../fixtures/mock-responses/plugins.json';
 import type {
   ActionDescriptor,
   ActionResult,
+  ApplySyncPlanRequest,
+  ApplySyncPlanResult,
   ArchiveCredentialRequest,
   BackendEvent,
+  ComparisonCriteria,
+  ComparisonEntry,
+  ComparisonEntrySide,
+  ComparisonPage,
+  ComparisonStatus,
   Connection,
   ConnectionId,
   CreateConnectionRequest,
@@ -17,6 +24,7 @@ import type {
   EntryMetadataRequest,
   EntrySummary,
   FileRangeChunk,
+  GenerateSyncPlanRequest,
   HostKeyProbe,
   InvokeActionRequest,
   ListDirectoryRequest,
@@ -36,9 +44,12 @@ import type {
   SearchInFileRequest,
   SearchInFileResult,
   Settings,
+  StartComparisonRequest,
+  StartComparisonResult,
   StartOperationRequest,
   StartSearchRequest,
   StartSearchResult,
+  SyncPlan,
   SystemLocation,
   Unsubscribe,
   UpdateConnectionRequest,
@@ -101,6 +112,11 @@ export type MockClientMethod =
   | 'getPluginIconThemeAsset'
   | 'startSearch'
   | 'cancelSearch'
+  | 'startComparison'
+  | 'getComparison'
+  | 'cancelComparison'
+  | 'generateSyncPlan'
+  | 'applySyncPlan'
   | 'listConnections'
   | 'createConnection'
   | 'getConnection'
@@ -244,6 +260,112 @@ function collectMatches(
   return results;
 }
 
+/**
+ * Recursively walks a fixture subtree from `rootUri`, keyed by path relative
+ * to that root (task 0075). Reduced fidelity vs. the real `fm-comparison`
+ * traversal, same trade-off `collectMatches` above documents for search.
+ */
+function walkFixtureTree(rootUri: string, showHidden: boolean): Map<string, EntrySummary> {
+  const result = new Map<string, EntrySummary>();
+  const pending: { uri: string; relativePath: string }[] = [{ uri: rootUri, relativePath: '' }];
+  while (pending.length > 0) {
+    const current = pending.pop();
+    if (current === undefined || current.uri === 'mock:///Unreadable') continue;
+    const fixtures = directories[current.uri];
+    if (fixtures === undefined) continue;
+    for (const fixture of fixtures) {
+      const entry = fixtureEntry(current.uri, fixture);
+      if (entry.hidden && !showHidden) continue;
+      const relativePath =
+        current.relativePath === '' ? fixture.name : `${current.relativePath}/${fixture.name}`;
+      result.set(relativePath, entry);
+      if (fixture.kind === 'directory') {
+        pending.push({ uri: entry.location.uri, relativePath });
+      }
+    }
+  }
+  return result;
+}
+
+function comparisonEntrySideFor(entry: EntrySummary): ComparisonEntrySide {
+  return {
+    kind: entry.kind,
+    ...(entry.size === undefined ? {} : { size: entry.size }),
+  };
+}
+
+/**
+ * Builds a plausible comparison between two fixture subtrees. Directories
+ * are always reported identical (matching the real engine's rule that a
+ * matched directory pair defers entirely to its children); matched files
+ * compare by size once `criteria` is not `nameOnly`.
+ */
+function buildMockComparisonEntries(
+  leftRootUri: string,
+  rightRootUri: string,
+  criteria: ComparisonCriteria,
+  showHidden: boolean,
+): ComparisonEntry[] {
+  const left = walkFixtureTree(leftRootUri, showHidden);
+  const right = walkFixtureTree(rightRootUri, showHidden);
+  const relativePaths = [...new Set([...left.keys(), ...right.keys()])].sort();
+  return relativePaths.map((relativePath) => {
+    const leftEntry = left.get(relativePath);
+    const rightEntry = right.get(relativePath);
+    let status: ComparisonStatus;
+    if (leftEntry === undefined) {
+      status = 'onlyRight';
+    } else if (rightEntry === undefined) {
+      status = 'onlyLeft';
+    } else if (leftEntry.kind !== rightEntry.kind) {
+      status = 'typeMismatch';
+    } else if (leftEntry.kind === 'directory' || criteria === 'nameOnly') {
+      status = 'identical';
+    } else {
+      status = (leftEntry.size ?? 0) === (rightEntry.size ?? 0) ? 'identical' : 'differentSize';
+    }
+    return {
+      relativePath,
+      ...(leftEntry === undefined ? {} : { left: comparisonEntrySideFor(leftEntry) }),
+      ...(rightEntry === undefined ? {} : { right: comparisonEntrySideFor(rightEntry) }),
+      status,
+    };
+  });
+}
+
+/** Mirrors `fm_comparison::sync::default_action`'s per-status proposal rules. */
+function defaultSyncAction(
+  status: ComparisonStatus,
+  mode: GenerateSyncPlanRequest['mode'],
+): SyncPlan['items'][number]['action'] {
+  if (mode === 'mirrorLeftToRight') {
+    if (status === 'onlyRight') return 'deleteRight';
+    if (
+      status === 'onlyLeft' ||
+      status === 'newer' ||
+      status === 'older' ||
+      status === 'differentSize'
+    )
+      return 'copyLeftToRight';
+    return 'skip';
+  }
+  if (mode === 'mirrorRightToLeft') {
+    if (status === 'onlyLeft') return 'deleteLeft';
+    if (
+      status === 'onlyRight' ||
+      status === 'newer' ||
+      status === 'older' ||
+      status === 'differentSize'
+    )
+      return 'copyRightToLeft';
+    return 'skip';
+  }
+  // twoWayUpdate
+  if (status === 'onlyLeft' || status === 'newer') return 'copyLeftToRight';
+  if (status === 'onlyRight' || status === 'older') return 'copyRightToLeft';
+  return 'skip';
+}
+
 function createMockWorkspace(id: WorkspaceId, name = 'Mock Workspace'): WorkspaceProjection {
   return {
     id,
@@ -378,6 +500,17 @@ export class MockFileManagerClient implements FileManagerClient {
   private readonly searches = new Map<
     string,
     { cancelled: boolean; entries: readonly EntrySummary[] }
+  >();
+  private comparisonSequence = 0;
+  private readonly comparisons = new Map<
+    string,
+    {
+      cancelled: boolean;
+      entries: readonly ComparisonEntry[];
+      left: Location;
+      right: Location;
+      criteria: ComparisonCriteria;
+    }
   >();
   private readonly fileContents = new Map<string, Uint8Array>();
   // Generated directories are recreated per request, but their aggregate totals are a pure
@@ -958,6 +1091,140 @@ export class MockFileManagerClient implements FileManagerClient {
     });
   }
 
+  startComparison(
+    request: StartComparisonRequest,
+    signal?: AbortSignal,
+  ): Promise<StartComparisonResult> {
+    return this.perform('startComparison', signal, () => {
+      this.comparisonSequence += 1;
+      const comparisonId = `mock-comparison-${this.seed}-${this.comparisonSequence}`;
+      const entries = buildMockComparisonEntries(
+        request.left.uri,
+        request.right.uri,
+        request.criteria,
+        request.showHidden ?? false,
+      );
+      this.comparisons.set(comparisonId, {
+        cancelled: false,
+        entries,
+        left: request.left,
+        right: request.right,
+        criteria: request.criteria,
+      });
+      // Deferred with a macrotask so it always runs after this method's own
+      // promise resolves and the caller has recorded `comparisonId`,
+      // mirroring `startSearch`'s race-avoidance for its results-batch event.
+      setTimeout(() => {
+        if (this.comparisons.get(comparisonId)?.cancelled ?? true) return;
+        this.eventSequence += 1;
+        this.emit({
+          eventId: this.eventSequence,
+          timestamp: '2026-01-01T00:00:00.000Z',
+          workspaceId: request.workspaceId,
+          payload: {
+            type: 'comparison.resultsBatch',
+            comparisonId,
+            entries,
+            isComplete: true,
+            warningsCount: 0,
+          },
+        });
+      }, 0);
+      return { comparisonId };
+    });
+  }
+
+  getComparison(
+    comparisonId: string,
+    options?: { offset?: number; limit?: number; differencesOnly?: boolean },
+    signal?: AbortSignal,
+  ): Promise<ComparisonPage> {
+    return this.perform('getComparison', signal, () => {
+      const comparison = this.requireComparison(comparisonId);
+      const offset = options?.offset ?? 0;
+      const limit = options?.limit ?? 200;
+      const filtered =
+        (options?.differencesOnly ?? false)
+          ? comparison.entries.filter((entry) => entry.status !== 'identical')
+          : comparison.entries;
+      return {
+        comparisonId,
+        left: comparison.left,
+        right: comparison.right,
+        criteria: comparison.criteria,
+        offset,
+        limit,
+        total: filtered.length,
+        entries: filtered.slice(offset, offset + limit),
+        isComplete: true,
+        warningsCount: 0,
+      };
+    });
+  }
+
+  cancelComparison(comparisonId: string, signal?: AbortSignal): Promise<void> {
+    return this.perform('cancelComparison', signal, () => {
+      this.requireComparison(comparisonId).cancelled = true;
+    });
+  }
+
+  generateSyncPlan(
+    comparisonId: string,
+    request: GenerateSyncPlanRequest,
+    signal?: AbortSignal,
+  ): Promise<SyncPlan> {
+    return this.perform('generateSyncPlan', signal, () => {
+      const comparison = this.requireComparison(comparisonId);
+      const items = comparison.entries
+        .filter((entry) => entry.status !== 'identical')
+        .map((entry) => ({
+          relativePath: entry.relativePath,
+          status: entry.status,
+          action: defaultSyncAction(entry.status, request.mode),
+          ...(entry.left === undefined ? {} : { left: entry.left }),
+          ...(entry.right === undefined ? {} : { right: entry.right }),
+        }));
+      return { comparisonId, items };
+    });
+  }
+
+  applySyncPlan(
+    comparisonId: string,
+    request: ApplySyncPlanRequest,
+    signal?: AbortSignal,
+  ): Promise<ApplySyncPlanResult> {
+    return this.perform('applySyncPlan', signal, () => {
+      const comparison = this.requireComparison(comparisonId);
+      const operationIds: OperationId[] = [];
+      for (const item of request.items) {
+        if (item.action === 'skip') continue;
+        this.operationSequence += 1;
+        const operationId = `mock-operation-${this.seed}-${this.operationSequence}`;
+        const isDelete = item.action === 'deleteLeft' || item.action === 'deleteRight';
+        const sourceRoot =
+          item.action === 'copyRightToLeft' || item.action === 'deleteRight'
+            ? comparison.right
+            : comparison.left;
+        const source: Location = {
+          providerId: sourceRoot.providerId,
+          uri: `${sourceRoot.uri}/${item.relativePath}`,
+        };
+        this.operations.set(operationId, {
+          id: operationId,
+          kind: isDelete ? 'delete' : 'copy',
+          state: 'completed',
+          sources: [{ id: source.uri, location: source }],
+          progress: { completedItems: 1, completedBytes: 0 },
+          conflictPolicy: 'overwrite',
+          createdAt: '2026-01-01T00:00:00.000Z',
+          startedAt: '2026-01-01T00:00:00.000Z',
+        });
+        operationIds.push(operationId);
+      }
+      return { operationIds };
+    });
+  }
+
   subscribe(listener: (event: BackendEvent) => void): Promise<Unsubscribe> {
     this.connection.set('open');
     this.listeners.add(listener);
@@ -1161,6 +1428,13 @@ export class MockFileManagerClient implements FileManagerClient {
       : this.loadingLocations.has(request.location.uri)
         ? ({ type: 'loading' } as const)
         : ({ type: 'loaded' } as const);
+    // A plausible synthetic capacity so the status bar's "available" segment is
+    // exercisable in mock mode; omitted for search results, which mirror the real
+    // backend's non-local-provider gap (no backing volume to report).
+    const volumeCapacity =
+      searchId === undefined
+        ? { totalBytes: 2_000_000_000_000, availableBytes: 616_040_000_000 }
+        : undefined;
 
     return this.perform(method, signal, () => ({
       paneId: request.paneId,
@@ -1175,6 +1449,7 @@ export class MockFileManagerClient implements FileManagerClient {
       hasMore: nextOffset < totalEntries,
       ...(nextOffset < totalEntries ? { continuationToken: String(nextOffset) } : {}),
       loadingState,
+      ...(volumeCapacity === undefined ? {} : { volumeCapacity }),
     }));
   }
 
@@ -1217,6 +1492,20 @@ export class MockFileManagerClient implements FileManagerClient {
       throw new MockClientError('operationNotFound', `No mock operation with id ${operationId}`);
     }
     return operation;
+  }
+
+  private requireComparison(comparisonId: string): {
+    cancelled: boolean;
+    entries: readonly ComparisonEntry[];
+    left: Location;
+    right: Location;
+    criteria: ComparisonCriteria;
+  } {
+    const comparison = this.comparisons.get(comparisonId);
+    if (comparison === undefined) {
+      throw new MockClientError('comparisonNotFound', `No mock comparison with id ${comparisonId}`);
+    }
+    return comparison;
   }
 
   private fileContentFor(uri: string): Uint8Array {

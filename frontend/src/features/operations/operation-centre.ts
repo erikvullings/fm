@@ -50,11 +50,21 @@ function searchProgressSummary(operation: Operation): string {
   return `${count} ${count === 1 ? 'file' : 'files'} found…`;
 }
 
+/** Directory comparisons never transfer bytes, so - like search - they show a running compared
+ * count instead of byte/rate progress. */
+function compareProgressSummary(operation: Operation): string {
+  const count = operation.progress.completedItems;
+  return `${count} ${count === 1 ? 'entry' : 'entries'} compared…`;
+}
+
 function cancelledResult(operation: Operation): string {
   const { completedItems, totalItems, completedBytes, totalBytes } = operation.progress;
   const items = `${completedItems}${hasValue(totalItems) ? ` / ${totalItems}` : ''}`;
   if (operation.kind === 'search') {
     return operation.result?.message ?? `Cancelled after finding ${items} files.`;
+  }
+  if (operation.kind === 'compare') {
+    return operation.result?.message ?? `Cancelled after comparing ${items} entries.`;
   }
   const bytes = `${formatBytes(completedBytes)}${
     hasValue(totalBytes) ? ` / ${formatBytes(totalBytes)}` : ''
@@ -83,6 +93,8 @@ export const OperationCentre: Component<OperationCentreAttrs> = {
         const failure = attrs.state.failuresById[operation.id];
         const warnings = operation.errors ?? [];
         const isSearch = operation.kind === 'search';
+        const isCompare = operation.kind === 'compare';
+        const hidesByteProgress = isSearch || isCompare;
         const terminal =
           operation.state === 'completed' ||
           operation.state === 'completedWithWarnings' ||
@@ -98,22 +110,25 @@ export const OperationCentre: Component<OperationCentreAttrs> = {
             isSearch && operation.state === 'running'
               ? m('span', searchProgressSummary(operation))
               : undefined,
-            !isSearch && currentEntryName(operation) !== undefined
+            isCompare && operation.state === 'running'
+              ? m('span', compareProgressSummary(operation))
+              : undefined,
+            !hidesByteProgress && currentEntryName(operation) !== undefined
               ? m('span', currentEntryName(operation))
               : undefined,
-            isSearch
+            hidesByteProgress
               ? undefined
               : m(
                   'span',
                   `${progress.completedItems}${hasValue(progress.totalItems) ? ` / ${progress.totalItems}` : ''} items`,
                 ),
-            isSearch
+            hidesByteProgress
               ? undefined
               : m(
                   'span',
                   `${formatBytes(progress.completedBytes)}${hasValue(progress.totalBytes) ? ` / ${formatBytes(progress.totalBytes)}` : ''}`,
                 ),
-            hasValue(progress.bytesPerSecond) && !isSearch
+            hasValue(progress.bytesPerSecond) && !hidesByteProgress
               ? m('span', `${formatBytes(progress.bytesPerSecond)}/s`)
               : undefined,
           ]),
@@ -135,7 +150,9 @@ export const OperationCentre: Component<OperationCentreAttrs> = {
                   : (operation.result?.message ??
                       (isSearch
                         ? `Found ${operation.progress.completedItems} files.`
-                        : `Completed ${operation.progress.completedItems} items (${formatBytes(operation.progress.completedBytes)}).`)),
+                        : isCompare
+                          ? `Compared ${operation.progress.completedItems} entries.`
+                          : `Completed ${operation.progress.completedItems} items (${formatBytes(operation.progress.completedBytes)}).`)),
               ),
           operation.state !== 'completedWithWarnings' || warnings.length === 0
             ? undefined

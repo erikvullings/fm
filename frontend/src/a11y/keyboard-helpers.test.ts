@@ -65,9 +65,7 @@ export function getFocusableElements(container: HTMLElement): HTMLElement[] {
       // Exclude elements hidden from accessibility
       const computed = window.getComputedStyle(el);
       const isVisible =
-        computed.visibility !== 'hidden' &&
-        computed.display !== 'none' &&
-        (el as any).offsetParent !== null;
+        computed.visibility !== 'hidden' && computed.display !== 'none' && el.offsetParent !== null;
 
       // Check aria-hidden
       const isAriaHidden = el.getAttribute('aria-hidden') === 'true';
@@ -85,8 +83,9 @@ export function isFocusTrapWorking(container: HTMLElement): boolean {
   const focusableElements = getFocusableElements(container);
   if (focusableElements.length === 0) return false;
 
-  const firstElement = focusableElements[0]!;
-  const lastElement = focusableElements[focusableElements.length - 1]!;
+  const firstElement = focusableElements[0];
+  const lastElement = focusableElements.at(-1);
+  if (firstElement === undefined || lastElement === undefined) return false;
 
   // Simulate Shift+Tab on first element
   firstElement.focus();

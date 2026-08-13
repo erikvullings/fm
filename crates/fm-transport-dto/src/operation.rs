@@ -77,6 +77,8 @@ pub enum OperationKindDto {
     Delete,
     /// Search files.
     Search,
+    /// Compare two directory trees (task 0075).
+    Compare,
 }
 
 /// Supported formats for archive creation.

@@ -173,6 +173,20 @@ describe('workspaceProjectionFromDto', () => {
     });
   });
 
+  it('titles a filesystem root tab "/" instead of the bare "file:" scheme', () => {
+    const withRootTab = workspaceWithSingleTab({
+      id: 'tab-root',
+      titleOverride: null,
+      location: { providerId: 'local', uri: 'file:///' },
+      history: { back: [], forward: [] },
+      pinned: false,
+    });
+
+    const projection = workspaceProjectionFromDto(withRootTab);
+
+    expect(projection.panesById['pane-left']?.tabsById['tab-root']?.title).toBe('/');
+  });
+
   it('redirects a persisted search:// tab to the folder it was originally searched from', () => {
     const withSearchTab = workspaceWithSingleTab({
       id: 'tab-search',

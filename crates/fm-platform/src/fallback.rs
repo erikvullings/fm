@@ -100,6 +100,12 @@ mod tests {
             })
         ));
         assert!(matches!(
+            adapter.volume_capacity(path),
+            Err(PlatformError::Unsupported {
+                capability: PlatformCapabilities::VOLUME_CAPACITY
+            })
+        ));
+        assert!(matches!(
             adapter.install_native_menu(),
             Err(PlatformError::Unsupported {
                 capability: PlatformCapabilities::NATIVE_MENUS
@@ -125,6 +131,7 @@ mod tests {
             PlatformCapabilities::MOUNTED_VOLUMES,
             PlatformCapabilities::NATIVE_MENUS,
             PlatformCapabilities::NATIVE_DRAG_OUT,
+            PlatformCapabilities::VOLUME_CAPACITY,
         ] {
             assert!(!capabilities.contains(capability), "{capability:?}");
         }

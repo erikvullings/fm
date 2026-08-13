@@ -94,9 +94,16 @@ export interface PaneContentContext {
     }
   >;
   getSortRequests(): Map<string, object>;
-  getViewerByPane(): Map<
-    PaneId,
-    { readonly controller: FileViewerController; state: FileViewerState }
+  /** Tokens guarding the async "moveCursorTo last" flow — see onSelectionAction below. */
+  getCursorLoadTokens(): Map<string, object>;
+  getViewerByTab(): Map<
+    string,
+    {
+      readonly paneId: PaneId;
+      readonly tabId: TabId;
+      readonly controller: FileViewerController;
+      state: FileViewerState;
+    }
   >;
   getEditorByPane(): Map<
     PaneId,
@@ -210,8 +217,15 @@ export function createPaneContentBuilder(
     const currentSettings = context.getCurrentSettings();
     const systemLocationsError = context.getSystemLocationsError();
     const nativeIconLoader = context.getNativeIconLoader();
+    const viewerTitles = new Map(
+      (pane?.tabOrder ?? []).flatMap((tabId) => {
+        const title = context.getViewerByTab().get(context.tabKey(paneId, tabId))?.state.entry.name;
+        return title === undefined ? [] : [[tabId, title] as const];
+      }),
+    );
     return {
       ...directory,
+      viewerTitles,
       ...(tab === undefined ? {} : { location: tab.location }),
       favouriteLocations: currentSettings?.favouriteLocations ?? [],
       recentLocations:
@@ -246,8 +260,8 @@ export function createPaneContentBuilder(
       filterQuery: quickFilterQuery,
       formatSettings: entryFormatSettings,
       ...(nativeIconLoader === undefined ? {} : { nativeIconLoader }),
-      pluginColumns:
-        context
+      pluginColumns: [
+        ...(context
           .getPlugins()
           .some(
             (plugin) =>
@@ -255,7 +269,8 @@ export function createPaneContentBuilder(
           ) &&
         tab?.view.columns.some((column) => column.columnId === 'sample.fileAge' && column.visible)
           ? [SAMPLE_FILE_AGE_COLUMN]
-          : [],
+          : []),
+      ],
       platform: context.getPlatform(),
       keybindingRuntime: context.getKeybindingRuntime(),
       actions: context.getRegisteredActions(),
@@ -348,6 +363,8 @@ export function createPaneContentBuilder(
           // The loaded prefix doesn't include the real last entry yet: fetch every remaining
           // page (cheap, cache-backed slices on the backend) before landing the cursor, rather
           // than jumping to the last entry loaded so far.
+          const loadToken = {};
+          context.getCursorLoadTokens().set(key, loadToken);
           void context
             .getNavigation()
             .loadAllPages(paneId)
@@ -403,6 +420,10 @@ export function createPaneContentBuilder(
                   ? filteredFresh
                   : withParentEntry(pathFromUri(tab.location.uri), filteredFresh);
               const loadedEntryIds = loadedEntries.map((entry) => entry.id);
+              // Drop this resolution if the user has since taken another selection action (e.g.
+              // pressed Up while the pages were still loading) — applying it now would silently
+              // snap the cursor back to the last entry and undo their more recent navigation.
+              if (context.getCursorLoadTokens().get(key) !== loadToken) return;
               const next = reduceSelection(
                 context.getSelections().get(key) ?? selection,
                 action,
@@ -413,6 +434,7 @@ export function createPaneContentBuilder(
             });
           return;
         }
+        context.getCursorLoadTokens().delete(key);
         const next = reduceSelection(selection, action, entryIds);
         context.getSelections().set(key, next);
         m.redraw();
@@ -437,9 +459,9 @@ export function createPaneContentBuilder(
       },
       onFilterQueryChange: (query) => {
         if (key === undefined) return;
-        context.setAppState(
-          applyAppPatches(context.getAppState()!, setQuickFilterDraftPatch(key, query)),
-        );
+        const appState = context.getAppState();
+        if (appState === undefined) return;
+        context.setAppState(applyAppPatches(appState, setQuickFilterDraftPatch(key, query)));
         m.redraw();
       },
       onFilterCommit: () => {
@@ -468,9 +490,10 @@ export function createPaneContentBuilder(
       onFilterClose: () => {
         if (key !== undefined) {
           context.setQuickFilterOpen(key, false);
-          context.setAppState(
-            applyAppPatches(context.getAppState()!, deleteQuickFilterDraftPatch(key)),
-          );
+          const appState = context.getAppState();
+          if (appState !== undefined) {
+            context.setAppState(applyAppPatches(appState, deleteQuickFilterDraftPatch(key)));
+          }
         }
         const liveWorkspace = context.getWorkspace();
         if (liveWorkspace !== undefined && tab !== undefined && tab.view.quickFilter != null) {
@@ -606,10 +629,10 @@ export function createPaneContentBuilder(
                   });
             })(),
           }
-        : context.getViewerByPane().has(paneId)
+        : key !== undefined && context.getViewerByTab().has(key)
           ? {
               viewerContent: (() => {
-                const viewer = context.getViewerByPane().get(paneId);
+                const viewer = context.getViewerByTab().get(key);
                 if (viewer === undefined) return undefined;
                 return m(FileViewer, {
                   state: viewer.state,

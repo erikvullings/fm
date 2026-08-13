@@ -146,7 +146,7 @@ the workspace-service tasks; see Step 2b above).
 - [x] 0093 Copy filename and path actions
 - [x] 0094 Tabler icons toolbar
 - [x] 0095 Distributable icon theme plugins *(after 0053, 0085, 0092)*
-- [ ] 0096 Mounted volume capacity
+- [x] 0096 Mounted volume capacity
 - [x] 0097 Directory aggregate totals
 - [ ] 0098 Frontend i18n with translate.js
 - [x] 0099 In-app text file editor with Markdown preview *(after 0088)*
@@ -164,7 +164,7 @@ the workspace-service tasks; see Step 2b above).
 
 ## Milestone 5 backlog (§16.5, §37)
 
-- [ ] 0075 Directory comparison and synchronization
+- [x] 0075 Directory comparison and synchronization
 - [x] 0076 Archive provider: browse, mutate and passwords
 - [ ] 0077 Checksums and duplicate-file detection
 

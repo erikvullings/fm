@@ -1,6 +1,7 @@
 import m, { type FactoryComponent, type VnodeDOM } from 'mithril';
 import { IconButton } from 'mithril-materialized';
 import { plusIcon } from '../../components/tabler-icons';
+import { tooltip } from '../../components/tooltip';
 import {
   dispatchKeybinding,
   hasPrimaryModifier,
@@ -17,6 +18,7 @@ import type {
   SortDescriptor,
   SystemLocation,
   TabId,
+  VolumeCapacity,
 } from '../../models';
 import {
   connectionStatusGlyph,
@@ -86,6 +88,8 @@ export interface DirectorySummaryAttrs {
   readonly totalKnownEntries?: number | undefined;
   readonly totalKnownSize?: number | undefined;
   readonly totalKnownFileCount?: number | undefined;
+  /** Backing volume's total/available capacity, when known (task 0096). */
+  readonly volumeCapacity?: VolumeCapacity | undefined;
   readonly hiddenSelectedCount: number;
 }
 
@@ -220,6 +224,12 @@ function formatListingSummary(fileCount: number, folderCount: number, totalSize:
         ? foldersPart
         : `${filesPart}, and ${foldersPart}`;
   return `${sizeLabel(totalSize)} in ${countsText}`;
+}
+
+function volumeCapacityLabel(capacity: VolumeCapacity): string | undefined {
+  if (capacity.totalBytes <= 0) return undefined;
+  const percentAvailable = Math.round((capacity.availableBytes / capacity.totalBytes) * 100);
+  return `${sizeLabel(capacity.availableBytes)} (${percentAvailable}%) available`;
 }
 
 function listingSummary(entries: readonly EntrySummary[]): string {
@@ -385,7 +395,22 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
         return m(
           'section.fm-pane.fm-pane-viewer',
           { 'data-active': String(attrs.active), tabindex: -1 },
-          attrs.viewerContent,
+          [
+            m(TabStrip, {
+              tabs: attrs.tabs,
+              activeTabId: attrs.activeTabId,
+              onSelectTab: attrs.onSelectTab,
+              onCloseTab: attrs.onCloseTab,
+              onNewTab: attrs.onNewTab,
+              onReorderTabs: attrs.onReorderTabs,
+              onTabDragOver: attrs.onTabDragOver,
+              onTabDrop: attrs.onTabDrop,
+              favouritesOpen: false,
+              canAddFavourite: false,
+              onToggleFavourites: () => undefined,
+            }),
+            attrs.viewerContent,
+          ],
         );
       }
       if (attrs.filter.filterOpen && editing) {
@@ -419,6 +444,8 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
               ds.totalKnownSize,
             )
           : undefined;
+      const volumeCapacityText =
+        ds.volumeCapacity === undefined ? undefined : volumeCapacityLabel(ds.volumeCapacity);
 
       return m(
         'section.fm-pane',
@@ -825,15 +852,17 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
                             favouriteLabel = (event.currentTarget as HTMLInputElement).value;
                           },
                         }),
-                        m(
-                          IconButton,
-                          {
-                            className: 'fm-favourites-add-button',
-                            'aria-label': 'Add current location',
-                            'data-tooltip': 'Add current location',
-                            onclick: () => addCurrentFavourite(attrs),
-                          },
-                          plusIcon(),
+                        tooltip(
+                          'Add current location',
+                          m(
+                            IconButton,
+                            {
+                              className: 'fm-favourites-add-button',
+                              'aria-label': 'Add current location',
+                              onclick: () => addCurrentFavourite(attrs),
+                            },
+                            plusIcon(),
+                          ),
                         ),
                       ],
                     )
@@ -1117,6 +1146,9 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
                   `span.fm-typeahead-status${typeaheadCtrl.hasError ? '.fm-typeahead-status-error' : ''}`,
                   typeaheadCtrl.prefix,
                 ),
+            volumeCapacityText === undefined
+              ? undefined
+              : m('span.fm-pane-volume-capacity', volumeCapacityText),
           ]),
         ],
       );

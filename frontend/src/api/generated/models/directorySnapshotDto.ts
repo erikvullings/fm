@@ -5,6 +5,7 @@
 import type { EntrySummaryDto } from './entrySummaryDto.ts';
 import type { LoadingStateDto } from './loadingStateDto.ts';
 import type { LocationDto } from './locationDto.ts';
+import type { VolumeCapacityDto } from './volumeCapacityDto.ts';
 
 /**
  * A batch of directory entries for one pane, at a specific revision.
@@ -52,6 +53,7 @@ export interface DirectorySnapshotDto {
      * @nullable
      */
   totalKnownSize?: number | null;
+  volumeCapacity?: null | VolumeCapacityDto;
   /** Whether the current user may create entries in this directory. */
   writable: boolean;
 }

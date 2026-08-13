@@ -221,6 +221,19 @@ img.fm-native-entry-icon {
   opacity: 0.72;
 }
 
+/* Directory-comparison status (task 0075). Text-labelled, not colour-only (spec §29): the label
+   itself ("newer", "size ≠", ...) carries the meaning, with a border/background as a secondary,
+   non-essential cue. */
+.fm-comparison-badge {
+  display: inline-block;
+  padding: 0 0.4rem;
+  border: 1px solid var(--fm-border);
+  border-radius: 0.25rem;
+  font-size: 0.75rem;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
 .fm-typeahead-match {
   color: var(--fm-error);
   font-weight: 700;

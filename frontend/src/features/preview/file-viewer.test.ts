@@ -110,6 +110,7 @@ describe('FileViewer', () => {
     );
 
     expect(root.querySelector('.fm-file-viewer-markdown h1')?.textContent).toBe('Title');
+    expect(root.querySelector('.fm-file-viewer-markdown')?.classList).toContain('browser-default');
     expect(root.querySelector('.cm-editor')).toBeNull();
   });
 

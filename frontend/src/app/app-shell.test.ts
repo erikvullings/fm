@@ -200,6 +200,46 @@ describe('AppShell', () => {
     expect(activePane.querySelector('.fm-cursor-row')?.textContent).toContain('generated-0000999');
   });
 
+  it('does not snap the cursor back to the last entry if ArrowUp is pressed while End is still loading pages', async () => {
+    // Regression test: End on a directory with unloaded pages kicks off a background
+    // `loadAllPages` fetch and only lands the cursor on the true last entry once it resolves. If
+    // the user presses ArrowUp in the meantime, that newer action must win — the background
+    // resolution must not overwrite it and silently snap the cursor back to the last entry.
+    const client = new MockFileManagerClient({ pageSize: 100, latencyMs: 20 });
+    m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
+    await vi.waitFor(() => expect(root.textContent).toContain('Documents'));
+    const activePane = root.querySelector<HTMLElement>('[data-active="true"] > .fm-pane');
+    if (activePane === null) throw new Error('no active pane');
+
+    activePane
+      .querySelector<HTMLElement>('.fm-breadcrumb-segments')
+      ?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+    m.redraw.sync();
+    const pathInput = activePane.querySelector<HTMLInputElement>('.fm-path-input');
+    if (pathInput === null) throw new Error('path input missing');
+    pathInput.value = '/large/1000';
+    pathInput.dispatchEvent(new InputEvent('input', { bubbles: true }));
+    pathInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    await vi.waitFor(() => expect(activePane.textContent).toContain('generated-0000000'));
+
+    activePane.dispatchEvent(new KeyboardEvent('keydown', { key: 'End', bubbles: true }));
+    // The background load hasn't resolved yet (each page is delayed by `latencyMs`), so the
+    // cursor is still wherever it was before End — pressing ArrowUp now moves it from there.
+    activePane.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }));
+    m.redraw.sync();
+    const cursorAfterArrowUp = activePane.querySelector('.fm-cursor-row')?.textContent;
+    expect(cursorAfterArrowUp).not.toContain('generated-0000999');
+
+    // Give the background load every chance to resolve (10 pages * 20ms latency) and redraw.
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    m.redraw.sync();
+
+    expect(activePane.querySelector('.fm-cursor-row')?.textContent).toBe(cursorAfterArrowUp);
+    expect(activePane.querySelector('.fm-cursor-row')?.textContent).not.toContain(
+      'generated-0000999',
+    );
+  });
+
   it('End on a directory large enough to use the responsive background sort still highlights the true last entry', async () => {
     const client = new MockFileManagerClient({ pageSize: 1_000 });
     m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
@@ -678,13 +718,63 @@ describe('AppShell', () => {
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'F3', bubbles: true }));
 
     await vi.waitFor(() => expect(root.querySelector('.fm-file-viewer')).not.toBeNull());
-    // The viewer replaces the OPPOSITE pane's surface, leaving the active pane's directory
-    // listing (and its selection) untouched, and never falls back to the OS-open action.
+    // The viewer occupies a tab in the OPPOSITE pane, leaving the active pane's directory
+    // listing (and its selection) untouched, and never falling back to the OS-open action.
     expect(root.querySelector('[data-active="true"] > .fm-pane .fm-file-viewer')).toBeNull();
     const inactivePane = root.querySelector('[data-active="false"] > .fm-pane');
     expect(inactivePane?.classList.contains('fm-pane-viewer')).toBe(true);
+    expect(inactivePane?.querySelectorAll('.fm-pane-tab')).toHaveLength(2);
     expect(inactivePane?.querySelector('.fm-file-viewer')?.textContent).toContain('.env');
     expect(invokeAction).not.toHaveBeenCalled();
+  });
+
+  it('toggles an existing Lister tab for the cursor file and ignores other selected files', async () => {
+    const client = new MockFileManagerClient();
+    m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
+    await vi.waitFor(() => expect(root.textContent).toContain('.env'));
+    const activePane = root.querySelector<HTMLElement>('[data-active="true"] > .fm-pane');
+    const rows = [...(activePane?.querySelectorAll<HTMLElement>('.fm-directory-row') ?? [])];
+    const first = rows.find((row) => row.textContent?.includes('.env'));
+    const second = rows.find((row) => row.textContent?.includes('日本語.txt'));
+    first?.click();
+    second?.dispatchEvent(new MouseEvent('click', { ctrlKey: true, bubbles: true }));
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'F3', bubbles: true }));
+    await vi.waitFor(() => expect(root.querySelector('.fm-file-viewer')).not.toBeNull());
+    expect(root.querySelector('.fm-file-viewer-title')?.textContent).toContain(
+      second?.querySelector('.fm-directory-name')?.textContent?.trim(),
+    );
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'F3', bubbles: true }));
+    await vi.waitFor(() => expect(root.querySelector('.fm-file-viewer')).toBeNull());
+  });
+
+  it('reuses the Lister tab for a different cursor file and toggles the new file closed', async () => {
+    const client = new MockFileManagerClient();
+    m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
+    await vi.waitFor(() => expect(root.textContent).toContain('.env'));
+    const sourcePane = root.querySelector<HTMLElement>('[data-active="true"] > .fm-pane');
+    const rows = [...(sourcePane?.querySelectorAll<HTMLElement>('.fm-directory-row') ?? [])];
+    const first = rows.find((row) => row.textContent?.includes('.env'));
+    const second = rows.find((row) => row.textContent?.includes('日本語.txt'));
+    const secondName = second?.querySelector('.fm-directory-name')?.textContent?.trim();
+
+    first?.click();
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'F3', bubbles: true }));
+    await vi.waitFor(() =>
+      expect(root.querySelector('.fm-file-viewer-title')?.textContent).toContain('.env'),
+    );
+
+    second?.click();
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'F3', bubbles: true }));
+    await vi.waitFor(() =>
+      expect(root.querySelector('.fm-file-viewer-title')?.textContent).toContain(secondName),
+    );
+    const viewerPane = root.querySelector<HTMLElement>('.fm-pane-viewer');
+    expect(viewerPane?.querySelectorAll('.fm-pane-tab')).toHaveLength(2);
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'F3', bubbles: true }));
+    await vi.waitFor(() => expect(root.querySelector('.fm-file-viewer')).toBeNull());
   });
 
   it('pre-populates and highlights the content-search term in the viewer when F3-ing a content-search result (task 0089 follow-up)', async () => {
@@ -742,11 +832,22 @@ describe('AppShell', () => {
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'F3', bubbles: true }));
     await vi.waitFor(() => expect(root.querySelector('.fm-file-viewer')).not.toBeNull());
 
+    const viewerPane = root.querySelector<HTMLElement>('[data-active="false"] > .fm-pane');
+    const tabs = viewerPane?.querySelectorAll<HTMLButtonElement>('.fm-pane-tab');
+    expect(tabs).toHaveLength(2);
+    expect(tabs?.[1]?.textContent).toContain('.env');
+
+    tabs?.[0]?.click();
+    await vi.waitFor(() => expect(root.querySelector('.fm-file-viewer')).toBeNull());
+    expect(viewerPane?.querySelector('.fm-directory-table')).not.toBeNull();
+    viewerPane?.querySelectorAll<HTMLButtonElement>('.fm-pane-tab')[1]?.click();
+    await vi.waitFor(() => expect(root.querySelector('.fm-file-viewer')).not.toBeNull());
+
     root.querySelector<HTMLButtonElement>('.fm-file-viewer-close')?.click();
 
     await vi.waitFor(() => expect(root.querySelector('.fm-file-viewer')).toBeNull());
-    const inactivePane = root.querySelector('[data-active="false"] > .fm-pane');
-    expect(inactivePane?.classList.contains('fm-pane-viewer')).toBe(false);
+    expect(viewerPane?.classList.contains('fm-pane-viewer')).toBe(false);
+    expect(viewerPane?.querySelectorAll('.fm-pane-tab')).toHaveLength(1);
   });
 
   it('closes the Lister viewer and toasts instead of leaving a manual-dismiss message when the content is unsupported', async () => {
@@ -2687,7 +2788,10 @@ describe('workspace management (task 0084)', () => {
 
     await vi.waitFor(() =>
       expect(
-        root.querySelector('.fm-workspace-switcher-button')?.getAttribute('data-tooltip'),
+        root
+          .querySelector('.fm-workspace-switcher-button')
+          ?.closest('.fm-tooltip')
+          ?.getAttribute('data-tooltip'),
       ).toBe('Switch workspace — current: Bravo'),
     );
     await vi.waitFor(() => expect(row(root, second.id)?.getAttribute('data-active')).toBe('true'));
@@ -2721,7 +2825,10 @@ describe('workspace management (task 0084)', () => {
     );
     await vi.waitFor(() =>
       expect(
-        root.querySelector('.fm-workspace-switcher-button')?.getAttribute('data-tooltip'),
+        root
+          .querySelector('.fm-workspace-switcher-button')
+          ?.closest('.fm-tooltip')
+          ?.getAttribute('data-tooltip'),
       ).toBe('Switch workspace — current: Default'),
     );
   });
@@ -2748,7 +2855,10 @@ describe('workspace management (task 0084)', () => {
 
     await vi.waitFor(() =>
       expect(
-        root.querySelector('.fm-workspace-switcher-button')?.getAttribute('data-tooltip'),
+        root
+          .querySelector('.fm-workspace-switcher-button')
+          ?.closest('.fm-tooltip')
+          ?.getAttribute('data-tooltip'),
       ).toBe('Switch workspace — current: Renamed workspace'),
     );
   });
@@ -2797,7 +2907,10 @@ describe('workspace management (task 0084)', () => {
 
     await vi.waitFor(() =>
       expect(
-        root.querySelector('.fm-workspace-switcher-button')?.getAttribute('data-tooltip'),
+        root
+          .querySelector('.fm-workspace-switcher-button')
+          ?.closest('.fm-tooltip')
+          ?.getAttribute('data-tooltip'),
       ).toBe('Switch workspace — current: Bravo'),
     );
     expect(root.textContent).toContain('copy · running');

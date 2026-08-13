@@ -9,6 +9,16 @@ pub struct MountedVolume {
     pub mount_point: PathBuf,
 }
 
+/// Total and available capacity for the volume backing a filesystem path
+/// (task 0096), used to render a Marta/Finder-style status bar segment.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct VolumeCapacity {
+    /// Total capacity of the volume, in bytes.
+    pub total_bytes: u64,
+    /// Currently available (free) capacity of the volume, in bytes.
+    pub available_bytes: u64,
+}
+
 /// Broad presentation category for an operating-system-managed location.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SystemLocationKind {

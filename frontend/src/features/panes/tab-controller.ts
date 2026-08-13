@@ -230,8 +230,8 @@ export function createTabController(
       const workspace = context.getWorkspace();
       let appState = context.getAppState();
       const closed = appState?.closedTabStacks.byPaneId[paneId];
-      if (workspace === undefined || closed === undefined) return;
-      appState = applyAppPatches(appState!, deleteClosedTabStackPatch(paneId));
+      if (workspace === undefined || appState === undefined || closed === undefined) return;
+      appState = applyAppPatches(appState, deleteClosedTabStackPatch(paneId));
       context.setAppState(appState);
       void dispatchWorkspaceCommand(
         client,

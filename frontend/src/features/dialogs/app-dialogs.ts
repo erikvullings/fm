@@ -239,15 +239,21 @@ export function renderAppDialogs(
       onProbeHostKey: (id) => probeSshHostKeyRequest(client, id),
       onAcceptHostKey: (id, fingerprint) => acceptSshHostKeyRequest(client, id, fingerprint),
     }),
-    m(FindFilesDialog, {
-      open: ctx.getFindFilesOpen(),
-      scopeLabel:
-        ctx.getFindFilesRoot() === undefined ? '' : pathFromUri(ctx.getFindFilesRoot()!.uri),
-      ...(ctx.getFindFilesError() === undefined ? {} : { error: ctx.getFindFilesError()! }),
-      onSearch: (params: FindFilesSearchParams) =>
-        ctx.getFindFilesController().startFindFilesSearch(params),
-      onCancel: () => ctx.getFindFilesController().closeFindFiles(),
-    }),
+    m(
+      FindFilesDialog,
+      (() => {
+        const findFilesRoot = ctx.getFindFilesRoot();
+        const findFilesError = ctx.getFindFilesError();
+        return {
+          open: ctx.getFindFilesOpen(),
+          scopeLabel: findFilesRoot === undefined ? '' : pathFromUri(findFilesRoot.uri),
+          ...(findFilesError === undefined ? {} : { error: findFilesError }),
+          onSearch: (params: FindFilesSearchParams) =>
+            ctx.getFindFilesController().startFindFilesSearch(params),
+          onCancel: () => ctx.getFindFilesController().closeFindFiles(),
+        };
+      })(),
+    ),
     m(PermanentDeleteDialog, {
       open: pendingDelete !== undefined,
       itemCount: pendingDelete?.progress.totalItems ?? 0,

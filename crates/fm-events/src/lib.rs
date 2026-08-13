@@ -135,6 +135,61 @@ pub struct ContentMatchSummary {
     pub length: u32,
 }
 
+/// Per-entry comparison outcome (task 0075).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ComparisonStatusPayload {
+    /// Present only under the left root.
+    OnlyLeft,
+    /// Present only under the right root.
+    OnlyRight,
+    /// Present on both sides; the left entry is the more recently modified.
+    Newer,
+    /// Present on both sides; the left entry is the less recently modified.
+    Older,
+    /// Present on both sides with the same kind, but they differ without a
+    /// determinable newer/older direction.
+    DifferentSize,
+    /// Present on both sides and considered equal under the active criteria.
+    Identical,
+    /// Present on both sides at the same relative path but as different
+    /// kinds.
+    TypeMismatch,
+}
+
+/// One side's metadata for a compared entry (task 0075).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ComparisonEntrySidePayload {
+    /// File, directory or symlink.
+    pub kind: EntryKindPayload,
+    /// Size in bytes, when known.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub size: Option<u64>,
+    /// Last modification time, when known.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub modified_at: Option<DateTime<Utc>>,
+    /// Streamed content hash, present only under content-hash criteria.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub content_hash: Option<String>,
+}
+
+/// One compared path carried by a comparison results batch (task 0075).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ComparisonEntryPayload {
+    /// Path relative to both roots, using `/` separators.
+    pub relative_path: String,
+    /// Left-side metadata, absent when [`ComparisonStatusPayload::OnlyRight`].
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub left: Option<ComparisonEntrySidePayload>,
+    /// Right-side metadata, absent when [`ComparisonStatusPayload::OnlyLeft`].
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub right: Option<ComparisonEntrySidePayload>,
+    /// The computed outcome for this path.
+    pub status: ComparisonStatusPayload,
+}
+
 /// Directory loading state.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
@@ -395,6 +450,8 @@ pub enum OperationKindPayload {
     Delete,
     /// Search files.
     Search,
+    /// Compare two directory trees (task 0075).
+    Compare,
 }
 
 /// Operation lifecycle states from specification §17.
@@ -836,6 +893,23 @@ pub enum BackendEventPayload {
         /// Cumulative count of unreadable directories skipped so far.
         warnings_count: u32,
     },
+    /// A batch of streamed directory-comparison results is available (spec
+    /// §16 milestone 5, task 0075).
+    ///
+    /// Scoped by `comparison_id` rather than `pane_id`, matching
+    /// `search.resultsBatch` above.
+    #[serde(rename = "comparison.resultsBatch")]
+    ComparisonResultsBatch {
+        /// The comparison this batch belongs to.
+        comparison_id: Uuid,
+        /// Newly compared entries since the previous batch.
+        entries: Vec<ComparisonEntryPayload>,
+        /// Whether the backend has stopped producing further batches for
+        /// this comparison (either finished or cancelled).
+        is_complete: bool,
+        /// Cumulative count of unreadable directories skipped so far.
+        warnings_count: u32,
+    },
     /// A new connection profile was created (task 0103).
     #[serde(rename = "connection.created")]
     ConnectionCreated {
@@ -893,6 +967,7 @@ impl BackendEventPayload {
             Self::PluginChanged { .. } => "plugin.changed",
             Self::NotificationCreated { .. } => "notification.created",
             Self::SearchResultsBatch { .. } => "search.resultsBatch",
+            Self::ComparisonResultsBatch { .. } => "comparison.resultsBatch",
             Self::ConnectionCreated { .. } => "connection.created",
             Self::ConnectionUpdated { .. } => "connection.updated",
             Self::ConnectionStatusChanged { .. } => "connection.statusChanged",
@@ -1168,6 +1243,7 @@ mod tests {
                 "plugin.changed",
                 "notification.created",
                 "search.resultsBatch",
+                "comparison.resultsBatch",
                 "connection.created",
                 "connection.updated",
                 "connection.statusChanged",
@@ -1359,6 +1435,13 @@ mod tests {
                 },
                 Self::SearchResultsBatch {
                     search_id: Uuid::from_str(OPERATION_ID)
+                        .expect("fixture operation id must be valid"),
+                    entries: vec![],
+                    is_complete: true,
+                    warnings_count: 0,
+                },
+                Self::ComparisonResultsBatch {
+                    comparison_id: Uuid::from_str(OPERATION_ID)
                         .expect("fixture operation id must be valid"),
                     entries: vec![],
                     is_complete: true,

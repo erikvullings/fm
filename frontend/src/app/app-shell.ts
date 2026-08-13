@@ -8,11 +8,13 @@ import {
   arrowRightIcon,
   closeIcon,
   commandIcon,
+  compareIcon,
   cornerLeftUpIcon,
   layoutGridIcon,
   searchIcon,
   settingsIcon,
 } from '../components/tabler-icons';
+import { tooltip } from '../components/tooltip';
 import {
   type ActionCommandController,
   type ActionCommandControllerContext,
@@ -25,6 +27,16 @@ import {
   menuActionsForContext,
 } from '../features/commands/availability';
 import { ContextMenu as DirectoryContextMenu } from '../features/commands/context-menu';
+import {
+  type ComparisonController,
+  type ComparisonControllerContext,
+  createComparisonController,
+} from '../features/comparison/comparison-controller';
+import {
+  type ComparisonState,
+  differingEntryIds,
+  initialComparisonState,
+} from '../features/comparison/comparison-state';
 import { DiagnosticsViewComponent } from '../features/diagnostics/diagnostics-view';
 import { type AppDialogsContext, renderAppDialogs } from '../features/dialogs/app-dialogs';
 import { createDialogUIController } from '../features/dialogs/dialog-ui-controller';
@@ -317,6 +329,10 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
   /** Panes with a `search.resultsBatch`-triggered reload already in flight - see the handler
    * below for why this debounce is needed to make results stream in incrementally. */
   const searchBatchReloadInFlight = new Set<PaneId>();
+  /** Live directory-comparison overlay state (task 0075). Marks differing entries selected in
+   * both panes once a comparison completes, Total-Commander-style, rather than surfacing a
+   * separate review dialog. */
+  let comparisonState: ComparisonState = initialComparisonState();
   /** Registered by `WorkspaceLayoutView` (task 0089): moves DOM focus into a pane so keyboard
    * cursor navigation works immediately, e.g. right after a filename search closes its dialog. */
   let focusPane: ((paneId: PaneId) => void) | undefined;
@@ -342,13 +358,15 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
    */
   const directories = new Map<string, PaneDirectoryView>();
   const selections = new Map<string, SelectionState>();
-  /**
-   * The Lister-style viewer (task 0088) opened for a pane via F3 `core.view` — keyed by `PaneId`
-   * (not `${paneId}:${tabId}`) since it replaces the whole pane's surface regardless of tab.
-   */
-  const viewerByPane = new Map<
-    PaneId,
-    { readonly controller: FileViewerController; state: FileViewerState }
+  /** Lister sessions are owned by tabs, so switching tabs never closes or obscures them. */
+  const viewerByTab = new Map<
+    string,
+    {
+      readonly paneId: PaneId;
+      readonly tabId: TabId;
+      readonly controller: FileViewerController;
+      state: FileViewerState;
+    }
   >();
   const editorByPane = new Map<
     PaneId,
@@ -363,6 +381,11 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     }
   >();
   const sortRequests = new Map<string, object>();
+  // Tokens guarding the async "moveCursorTo last" flow (pane-content-builder's onSelectionAction):
+  // loading every page before landing the cursor takes real time, and if the user issues another
+  // selection action (e.g. presses Up) before it resolves, the stale resolution must not clobber
+  // whatever the newer action already set. Cleared/replaced by pane-content-builder itself.
+  const cursorLoadTokens = new Map<string, object>();
   /** Whether the inline quick-filter box is shown for a pane, independent of a persisted query. */
   const quickFilterOpen = new Map<string, boolean>();
   const filteredEntries = new Map<
@@ -593,8 +616,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     };
   }
 
-  /** Opens the Lister-style viewer (task 0088) for `entry` in `paneId`, replacing any viewer
-   * already open there. */
+  /** Opens the Lister-style viewer in a new tab in `paneId`. */
   function openViewer(
     client: FileManagerClient,
     paneId: PaneId,
@@ -606,36 +628,99 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       readonly wholeWord: boolean;
     },
   ): void {
-    viewerByPane.get(paneId)?.controller.dispose();
-    const controller = createFileViewerController({
+    const existingViewer = [...viewerByTab.entries()][0];
+    if (existingViewer !== undefined) {
+      const [key, viewer] = existingViewer;
+      if (viewer.state.entry.location.uri === entry.location.uri) {
+        closeViewer(viewer.paneId, viewer.tabId);
+        return;
+      }
+      viewer.controller.dispose();
+      viewerByTab.delete(key);
+      const controller = createFileViewerController({
+        client,
+        entry,
+        ...(initialSearch ? { initialSearch } : {}),
+        update: (state) => {
+          const current = viewerByTab.get(key);
+          if (current === undefined) return;
+          if (state.status === 'unsupported') {
+            closeViewer(viewer.paneId, viewer.tabId);
+            toast({
+              html: `Preview not available for "${entry.name}". Press Alt+F3 to open it in the default application.`,
+            });
+            return;
+          }
+          current.state = state;
+          m.redraw();
+        },
+      });
+      viewerByTab.set(key, {
+        paneId: viewer.paneId,
+        tabId: viewer.tabId,
+        controller,
+        state: { status: 'loading', entry },
+      });
+      tabController.activateTab(viewer.paneId, viewer.tabId);
+      m.redraw();
+      return;
+    }
+    const currentWorkspace = workspace;
+    const pane = currentWorkspace?.panesById[paneId];
+    const activeTab = pane?.tabsById[pane.activeTabId];
+    if (currentWorkspace === undefined || activeTab === undefined) return;
+    void dispatchWorkspaceCommand(
       client,
-      entry,
-      ...(initialSearch ? { initialSearch } : {}),
-      update: (state) => {
-        const existing = viewerByPane.get(paneId);
-        if (existing === undefined) return;
-        if (state.status === 'unsupported') {
-          // Leaving an empty viewer pane open just for the user to close it manually is
-          // pointless busywork; dismiss it immediately and use a self-disappearing toast
-          // instead (Alt+F3 opens the same file in the OS default application).
-          closeViewer(paneId);
-          toast({
-            html: `Preview not available for "${entry.name}". Press Alt+F3 to open it in the default application.`,
-          });
-          return;
-        }
-        existing.state = state;
+      {
+        type: 'addTab',
+        workspaceId: currentWorkspace.id,
+        paneId,
+        location: activeTab.location,
+        expectedRevision: currentWorkspace.revision,
+      },
+      (next) => {
+        replaceWorkspace(next);
+        const tabId = next.panesById[paneId]?.activeTabId;
+        if (tabId === undefined) return;
+        const key = tabKey(paneId, tabId);
+        const controller = createFileViewerController({
+          client,
+          entry,
+          ...(initialSearch ? { initialSearch } : {}),
+          update: (state) => {
+            const existing = viewerByTab.get(key);
+            if (existing === undefined) return;
+            if (state.status === 'unsupported') {
+              closeViewer(paneId, tabId);
+              toast({
+                html: `Preview not available for "${entry.name}". Press Alt+F3 to open it in the default application.`,
+              });
+              return;
+            }
+            existing.state = state;
+            m.redraw();
+          },
+        });
+        viewerByTab.set(key, {
+          paneId,
+          tabId,
+          controller,
+          state: { status: 'loading', entry },
+        });
         m.redraw();
       },
-    });
-    viewerByPane.set(paneId, { controller, state: { status: 'loading', entry } });
-    m.redraw();
+    ).catch(() => undefined);
   }
 
-  function closeViewer(paneId: PaneId): void {
-    viewerByPane.get(paneId)?.controller.dispose();
-    viewerByPane.delete(paneId);
-    m.redraw();
+  function closeViewer(paneId: PaneId, tabId?: TabId): void {
+    const resolvedTabId = tabId ?? workspace?.panesById[paneId]?.activeTabId;
+    if (resolvedTabId === undefined) return;
+    const key = tabKey(paneId, resolvedTabId);
+    const viewer = viewerByTab.get(key);
+    if (viewer === undefined) return;
+    viewer.controller.dispose();
+    viewerByTab.delete(key);
+    tabController.performCloseTab(paneId, resolvedTabId);
   }
 
   function openEditor(client: FileManagerClient, paneId: PaneId, entry: EntrySummary): void {
@@ -667,6 +752,8 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
   /** Clears every per-tab runtime cache for a closed tab, cancelling its in-flight request. */
   function clearTabState(paneId: PaneId, tabId: TabId): void {
     const key = tabKey(paneId, tabId);
+    viewerByTab.get(key)?.controller.dispose();
+    viewerByTab.delete(key);
     navigation.abort(paneId, tabId);
     directories.delete(key);
     selections.delete(key);
@@ -684,8 +771,6 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       for (const tabId of outgoing.panesById[paneId]?.tabOrder ?? []) {
         clearTabState(paneId, tabId);
       }
-      viewerByPane.get(paneId)?.controller.dispose();
-      viewerByPane.delete(paneId);
       editorByPane.get(paneId)?.controller.dispose();
       editorByPane.delete(paneId);
     }
@@ -895,6 +980,29 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       connections = next;
     },
     getConnection: (id) => attrsClient.getConnection(id),
+    getComparisonState: () => comparisonState,
+    setComparisonState: (next) => {
+      comparisonState = next;
+    },
+    markComparisonDifferences: (state) => {
+      for (const paneId of [state.leftPaneId, state.rightPaneId]) {
+        if (paneId === undefined) continue;
+        const key = activeTabKey(paneId);
+        const directory = directories.get(key);
+        if (directory === undefined) continue;
+        const matchingIds = differingEntryIds(state, paneId, directory.entries);
+        if (matchingIds.length === 0) continue;
+        const orderedEntryIds = directory.entries.map((entry) => entry.id);
+        selections.set(
+          key,
+          reduceSelection(
+            selections.get(key) ?? emptySelection,
+            { type: 'restore', entryIds: matchingIds },
+            orderedEntryIds,
+          ),
+        );
+      }
+    },
     getFindFilesSearchId: () => findFilesSearchId,
     getSearchBatchReloadInFlight: () => searchBatchReloadInFlight,
     cacheContentMatches: (uri, matches) => {
@@ -923,6 +1031,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
   let settingsController: SettingsController;
   let globalKeydownHandler: (event: KeyboardEvent) => void;
   let findFilesController: FindFilesController;
+  let comparisonController: ComparisonController;
   let actionCommandController: ActionCommandController;
 
   const workspaceControllerContext: WorkspaceControllerContext = {
@@ -1058,7 +1167,10 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     getRegisteredActions: () => registeredActions,
     clipboard,
     getFindFilesOpen: () => findFilesOpen,
-    getViewer: (paneId) => viewerByPane.get(paneId),
+    getViewer: (paneId) => {
+      const tabId = workspace?.panesById[paneId]?.activeTabId;
+      return tabId === undefined ? undefined : viewerByTab.get(tabKey(paneId, tabId));
+    },
     getArchiveCreateRequest: () => dialogs.getState().archiveCreateRequest,
     getCreateDirectoryOpen: () => dialogs.getState().createDirectoryOpen,
     getCreateFileOpen: () => dialogs.getState().createFileOpen,
@@ -1072,7 +1184,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       clipboardMessage = msg;
     },
     setArchiveCreateRequest: (req) => {
-      dialogs.openArchiveCreate(req!);
+      if (req !== undefined) dialogs.openArchiveCreate(req);
     },
     setCreateDirectoryOpen: (open) => {
       if (open) dialogs.openCreateDirectory();
@@ -1248,6 +1360,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       if (keybindingRuntime !== 'desktop') return;
       void attrsClient.quit?.();
     },
+    startComparison: () => comparisonController.startComparison('sizeAndTimestamp'),
   };
 
   const findFilesControllerContext: FindFilesControllerContext = {
@@ -1279,6 +1392,16 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     getNavigation: () => navigation,
     getClient: () => attrsClient,
     getFocusPane: () => focusPane,
+    redraw: () => m.redraw(),
+  };
+
+  const comparisonControllerContext: ComparisonControllerContext = {
+    getState: () => comparisonState,
+    setState: (next) => {
+      comparisonState = next;
+    },
+    getWorkspace: () => workspace,
+    getClient: () => attrsClient,
     redraw: () => m.redraw(),
   };
 
@@ -1338,7 +1461,8 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     getSelections: () => selections,
     getSortedEntries: () => sortedEntries,
     getSortRequests: () => sortRequests,
-    getViewerByPane: () => viewerByPane,
+    getCursorLoadTokens: () => cursorLoadTokens,
+    getViewerByTab: () => viewerByTab,
     getEditorByPane: () => editorByPane,
     setConnections: (conns) => {
       connections = conns;
@@ -1517,6 +1641,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       settingsController = createSettingsController(settingsControllerContext);
       globalKeydownHandler = createGlobalKeydownHandler(globalKeydownHandlerContext);
       findFilesController = createFindFilesController(findFilesControllerContext);
+      comparisonController = createComparisonController(comparisonControllerContext);
       actionCommandController = createActionCommandController(actionCommandControllerContext);
       paneContentBuilder = createPaneContentBuilder(paneContentBuilderContext);
       keybindingRuntime = attrs.runtime === 'http' ? 'browser' : 'desktop';
@@ -1675,81 +1800,105 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
             : null,
           m('.fm-workspace-toolbar', [
             m('.fm-navigation-controls', { 'aria-label': 'Active pane navigation' }, [
-              m(
-                IconButton,
-                {
-                  disabled:
-                    workspace?.panesById[workspace.activePaneId]?.tabsById[
-                      workspace.panesById[workspace.activePaneId]?.activeTabId ?? ''
-                    ]?.canNavigateBack !== true,
-                  'aria-label': 'Back',
-                  'data-tooltip': 'Back',
-                  onclick: () => void navigation.back(workspace?.activePaneId ?? ''),
-                },
-                arrowLeftIcon(),
+              tooltip(
+                'Back',
+                m(
+                  IconButton,
+                  {
+                    disabled:
+                      workspace?.panesById[workspace.activePaneId]?.tabsById[
+                        workspace.panesById[workspace.activePaneId]?.activeTabId ?? ''
+                      ]?.canNavigateBack !== true,
+                    'aria-label': 'Back',
+                    onclick: () => void navigation.back(workspace?.activePaneId ?? ''),
+                  },
+                  arrowLeftIcon(),
+                ),
               ),
-              m(
-                IconButton,
-                {
-                  disabled:
-                    workspace?.panesById[workspace.activePaneId]?.tabsById[
-                      workspace.panesById[workspace.activePaneId]?.activeTabId ?? ''
-                    ]?.canNavigateForward !== true,
-                  'aria-label': 'Forward',
-                  'data-tooltip': 'Forward',
-                  onclick: () => void navigation.forward(workspace?.activePaneId ?? ''),
-                },
-                arrowRightIcon(),
+              tooltip(
+                'Forward',
+                m(
+                  IconButton,
+                  {
+                    disabled:
+                      workspace?.panesById[workspace.activePaneId]?.tabsById[
+                        workspace.panesById[workspace.activePaneId]?.activeTabId ?? ''
+                      ]?.canNavigateForward !== true,
+                    'aria-label': 'Forward',
+                    onclick: () => void navigation.forward(workspace?.activePaneId ?? ''),
+                  },
+                  arrowRightIcon(),
+                ),
               ),
-              m(
-                IconButton,
-                {
-                  disabled: workspace === undefined,
-                  'aria-label': 'Parent directory',
-                  'data-tooltip': 'Parent directory',
-                  onclick: () => void navigation.parent(workspace?.activePaneId ?? ''),
-                },
-                cornerLeftUpIcon(),
+              tooltip(
+                'Parent directory',
+                m(
+                  IconButton,
+                  {
+                    disabled: workspace === undefined,
+                    'aria-label': 'Parent directory',
+                    onclick: () => void navigation.parent(workspace?.activePaneId ?? ''),
+                  },
+                  cornerLeftUpIcon(),
+                ),
               ),
             ]),
-            m(
-              IconButton,
-              {
-                disabled: activeDirectory() === undefined,
-                'aria-label': 'Find files',
-                'data-tooltip': 'Find files',
-                onclick: () => {
-                  findFilesController.openFindFiles();
+            tooltip(
+              'Find files',
+              m(
+                IconButton,
+                {
+                  disabled: activeDirectory() === undefined,
+                  'aria-label': 'Find files',
+                  onclick: () => {
+                    findFilesController.openFindFiles();
+                  },
                 },
-              },
-              searchIcon(),
+                searchIcon(),
+              ),
             ),
-            m(
-              IconButton,
-              {
-                className: 'fm-command-palette-trigger',
-                disabled: registeredActions.length === 0,
-                'aria-label': 'Command palette',
-                'data-tooltip': 'Command palette',
-                onclick: () => {
-                  commandPaletteOpen = true;
+            tooltip(
+              'Select the entries that differ between the two panes (Shift+F2)',
+              m(
+                IconButton,
+                {
+                  disabled: (workspace?.paneOrder.length ?? 0) < 2,
+                  'aria-label': 'Compare panes',
+                  onclick: () => comparisonController.startComparison('sizeAndTimestamp'),
                 },
-              },
-              commandIcon(),
+                compareIcon(),
+              ),
             ),
-            m(
-              IconButton,
-              {
-                className: 'fm-workspace-switcher-button',
-                'aria-label': `Workspace switcher, current workspace: ${workspace?.name ?? 'none'}`,
-                tooltip: `Switch workspace — current: ${workspace?.name ?? 'none'}`,
-                onclick: () => {
-                  if (workspaceDisclosureElement !== undefined) {
-                    workspaceDisclosureElement.open = !workspaceDisclosureElement.open;
-                  }
+            tooltip(
+              'Command palette',
+              m(
+                IconButton,
+                {
+                  className: 'fm-command-palette-trigger',
+                  disabled: registeredActions.length === 0,
+                  'aria-label': 'Command palette',
+                  onclick: () => {
+                    commandPaletteOpen = true;
+                  },
                 },
-              },
-              layoutGridIcon(),
+                commandIcon(),
+              ),
+            ),
+            tooltip(
+              `Switch workspace — current: ${workspace?.name ?? 'none'}`,
+              m(
+                IconButton,
+                {
+                  className: 'fm-workspace-switcher-button',
+                  'aria-label': `Workspace switcher, current workspace: ${workspace?.name ?? 'none'}`,
+                  onclick: () => {
+                    if (workspaceDisclosureElement !== undefined) {
+                      workspaceDisclosureElement.open = !workspaceDisclosureElement.open;
+                    }
+                  },
+                },
+                layoutGridIcon(),
+              ),
             ),
             m(
               'details.fm-workspace-disclosure',
@@ -1803,20 +1952,22 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
                 ]),
               ],
             ),
-            m(
-              IconButton,
-              {
-                className: 'fm-diagnostics-button',
-                'aria-label': 'Diagnostics',
-                tooltip: 'Show system diagnostics',
-                onclick: () => {
-                  if (diagnosticsDisclosureElement === undefined) return;
-                  diagnosticsDisclosureElement.open = !diagnosticsDisclosureElement.open;
-                  diagnosticsDialogOpen = diagnosticsDisclosureElement.open;
-                  m.redraw();
+            tooltip(
+              'Show system diagnostics',
+              m(
+                IconButton,
+                {
+                  className: 'fm-diagnostics-button',
+                  'aria-label': 'Diagnostics',
+                  onclick: () => {
+                    if (diagnosticsDisclosureElement === undefined) return;
+                    diagnosticsDisclosureElement.open = !diagnosticsDisclosureElement.open;
+                    diagnosticsDialogOpen = diagnosticsDisclosureElement.open;
+                    m.redraw();
+                  },
                 },
-              },
-              activityIcon(),
+                activityIcon(),
+              ),
             ),
             m(
               'details.fm-diagnostics-disclosure',
@@ -1867,23 +2018,25 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
                 ),
               ],
             ),
-            m(
-              IconButton,
-              {
-                className: 'fm-settings-button',
-                'aria-label': 'Settings',
-                tooltip: 'Open settings',
-                onclick: () => {
-                  if (settingsDisclosureElement === undefined) return;
-                  settingsDisclosureElement.open = !settingsDisclosureElement.open;
-                  settingsDialogOpen = settingsDisclosureElement.open;
-                  if (!settingsDialogOpen && currentSettings !== undefined) {
-                    applyAppearance(currentSettings);
-                  }
-                  m.redraw();
+            tooltip(
+              'Open settings',
+              m(
+                IconButton,
+                {
+                  className: 'fm-settings-button',
+                  'aria-label': 'Settings',
+                  onclick: () => {
+                    if (settingsDisclosureElement === undefined) return;
+                    settingsDisclosureElement.open = !settingsDisclosureElement.open;
+                    settingsDialogOpen = settingsDisclosureElement.open;
+                    if (!settingsDialogOpen && currentSettings !== undefined) {
+                      applyAppearance(currentSettings);
+                    }
+                    m.redraw();
+                  },
                 },
-              },
-              settingsIcon(),
+                settingsIcon(),
+              ),
             ),
             m(
               'details.fm-settings-disclosure',

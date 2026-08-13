@@ -40,14 +40,15 @@ use std::sync::Mutex;
 
 use fm_platform::{
     FallbackPlatformAdapter, MountedVolume, PlatformAdapter, PlatformCapabilities, PlatformError,
-    SystemLocation, SystemLocationKind, cloud_provider_hint,
+    SystemLocation, SystemLocationKind, VolumeCapacity, cloud_provider_hint,
 };
 use objc2::MainThreadMarker;
+use objc2::runtime::AnyObject;
 use objc2_app_kit::{NSApplication, NSBitmapImageFileType, NSBitmapImageRep, NSMenu, NSWorkspace};
 use objc2_foundation::{
-    NSArray, NSDictionary, NSFileManager, NSNumber, NSString, NSURL, NSURLResourceKey,
-    NSURLVolumeIsLocalKey, NSURLVolumeIsReadOnlyKey, NSURLVolumeMountFromLocationKey,
-    NSVolumeEnumerationOptions,
+    NSArray, NSDictionary, NSFileAttributeKey, NSFileManager, NSFileSystemFreeSize,
+    NSFileSystemSize, NSNumber, NSString, NSURL, NSURLResourceKey, NSURLVolumeIsLocalKey,
+    NSURLVolumeIsReadOnlyKey, NSURLVolumeMountFromLocationKey, NSVolumeEnumerationOptions,
 };
 
 /// macOS implementation of [`PlatformAdapter`].
@@ -392,6 +393,17 @@ fn network_location_from_metadata(
     })
 }
 
+fn file_system_attribute_bytes(
+    attributes: &NSDictionary<NSFileAttributeKey, AnyObject>,
+    key: &NSFileAttributeKey,
+) -> Option<u64> {
+    attributes
+        .objectForKey(key)?
+        .downcast::<NSNumber>()
+        .ok()
+        .map(|value| value.unsignedLongLongValue())
+}
+
 fn bool_resource_value(url: &NSURL, key: &NSURLResourceKey) -> Option<bool> {
     let mut value = None;
     unsafe { url.getResourceValue_forKey_error(&mut value, key).ok()? };
@@ -477,6 +489,7 @@ impl PlatformAdapter for MacosPlatformAdapter {
             | PlatformCapabilities::NATIVE_MENUS
             | PlatformCapabilities::NATIVE_DRAG_OUT
             | PlatformCapabilities::OPEN_WITH_DEFAULT_APPLICATION
+            | PlatformCapabilities::VOLUME_CAPACITY
     }
 
     fn file_icon(&self, path: &Path) -> Result<Vec<u8>, PlatformError> {
@@ -658,6 +671,29 @@ impl PlatformAdapter for MacosPlatformAdapter {
         Ok(volumes)
     }
 
+    fn volume_capacity(&self, path: &Path) -> Result<VolumeCapacity, PlatformError> {
+        let path_string = NSString::from_str(path_to_str(path)?);
+        let attributes = NSFileManager::defaultManager()
+            .attributesOfFileSystemForPath_error(&path_string)
+            .map_err(|_| PlatformError::NotFound {
+                path: path.display().to_string(),
+            })?;
+        let total_bytes = file_system_attribute_bytes(&attributes, unsafe { NSFileSystemSize })
+            .ok_or_else(|| PlatformError::Io {
+                message: "missing NSFileSystemSize attribute".to_owned(),
+            })?;
+        let available_bytes =
+            file_system_attribute_bytes(&attributes, unsafe { NSFileSystemFreeSize }).ok_or_else(
+                || PlatformError::Io {
+                    message: "missing NSFileSystemFreeSize attribute".to_owned(),
+                },
+            )?;
+        Ok(VolumeCapacity {
+            total_bytes,
+            available_bytes,
+        })
+    }
+
     /// Installs an empty native main menu.
     ///
     /// Deliberately minimal: menu *content* is out of scope here (mirroring
@@ -799,6 +835,7 @@ mod tests {
             PlatformCapabilities::MOUNTED_VOLUMES,
             PlatformCapabilities::NATIVE_MENUS,
             PlatformCapabilities::NATIVE_DRAG_OUT,
+            PlatformCapabilities::VOLUME_CAPACITY,
         ] {
             assert!(capabilities.contains(expected), "{expected:?}");
         }
@@ -913,6 +950,23 @@ mod tests {
         for volume in &volumes {
             assert!(volume.mount_point.is_absolute());
         }
+    }
+
+    #[test]
+    fn volume_capacity_reports_plausible_totals_for_the_boot_volume() {
+        let capacity = MacosPlatformAdapter::new()
+            .volume_capacity(Path::new("/"))
+            .expect("query boot volume capacity");
+        assert!(capacity.total_bytes > 0);
+        assert!(capacity.available_bytes <= capacity.total_bytes);
+    }
+
+    #[test]
+    fn volume_capacity_reports_not_found_for_a_missing_path() {
+        let error = MacosPlatformAdapter::new()
+            .volume_capacity(Path::new("/no/such/path/fm-platform-macos-test"))
+            .unwrap_err();
+        assert!(matches!(error, PlatformError::NotFound { .. }));
     }
 
     #[test]
