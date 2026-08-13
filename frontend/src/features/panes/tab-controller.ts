@@ -112,7 +112,15 @@ export function createTabController(
       const workspace = context.getWorkspace();
       if (workspace === undefined) return;
       const pane = workspace.panesById[paneId];
-      if (pane === undefined || pane.activeTabId === tabId) return;
+      if (pane === undefined) return;
+      if (pane.activeTabId === tabId) {
+        // Re-clicking the tab that's already active isn't a tab switch, so there's no workspace
+        // state to change - but the user is deliberately revisiting this listing (e.g. after an
+        // external change like a browser download landed while it sat idle), so still refresh it
+        // rather than silently no-op-ing and leaving stale entries on screen.
+        void context.getNavigation().load(paneId, { background: true });
+        return;
+      }
       const previousTabId = pane.activeTabId;
       context.setWorkspace({
         ...workspace,

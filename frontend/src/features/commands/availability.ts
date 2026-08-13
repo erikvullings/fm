@@ -1,4 +1,5 @@
 import type { ActionDescriptor, EntrySummary } from '../../models';
+import { archiveRootForEntry } from '../navigation/archive-location';
 
 /** Context the frontend uses to advise which registered commands can run. */
 export interface CommandAvailabilityContext {
@@ -35,6 +36,9 @@ const SELECTION_ACTION_IDS = new Set([
   'core.copyName',
   'core.copyPath',
   'core.copyRelativePath',
+  'core.pack',
+  'core.moveToArchive',
+  'core.extract',
 ]);
 
 const CONTEXT_MENU_SELECTION_ORDER = new Map([
@@ -67,6 +71,15 @@ export function evaluateActionAvailability(
   }
   if (requirements.requiresSelection && context.selectedEntries.length === 0) {
     return unavailable(action, 'Select an item first');
+  }
+  const soleSelectedEntry =
+    context.selectedEntries.length === 1 ? context.selectedEntries[0] : undefined;
+  if (
+    action.id === 'core.extract' &&
+    soleSelectedEntry !== undefined &&
+    archiveRootForEntry(soleSelectedEntry) === undefined
+  ) {
+    return unavailable(action, 'Select an archive file');
   }
   if (action.id === 'core.openTerminal' && !context.openTerminalSupported) {
     return unavailable(action, 'Terminal is not supported by this host');

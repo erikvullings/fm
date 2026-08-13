@@ -1140,15 +1140,15 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
                       : ''
                   }`,
                 ),
+            volumeCapacityText === undefined
+              ? undefined
+              : m('span.fm-pane-volume-capacity', volumeCapacityText),
             typeaheadCtrl.prefix === undefined
               ? undefined
               : m(
                   `span.fm-typeahead-status${typeaheadCtrl.hasError ? '.fm-typeahead-status-error' : ''}`,
                   typeaheadCtrl.prefix,
                 ),
-            volumeCapacityText === undefined
-              ? undefined
-              : m('span.fm-pane-volume-capacity', volumeCapacityText),
           ]),
         ],
       );
