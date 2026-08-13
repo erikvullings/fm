@@ -822,7 +822,7 @@ async fn summarize_entry(
         size: (kind == EntryKind::File).then_some(metadata.len()),
         modified_at: metadata.modified().ok().map(DateTime::<Utc>::from),
         created_at: metadata.created().ok().map(DateTime::<Utc>::from),
-        read_only: metadata.permissions().readonly(),
+        read_only: is_read_only(&metadata),
         mime_type: None,
         icon_key: None,
         metadata_revision: 0,
@@ -859,7 +859,7 @@ async fn summarize_path(path: &Path, location: &Location) -> Result<EntrySummary
         size: (kind == EntryKind::File).then_some(metadata.len()),
         modified_at: metadata.modified().ok().map(DateTime::<Utc>::from),
         created_at: metadata.created().ok().map(DateTime::<Utc>::from),
-        read_only: metadata.permissions().readonly(),
+        read_only: is_read_only(&metadata),
         mime_type: None,
         icon_key: None,
         metadata_revision: 0,
@@ -1025,10 +1025,22 @@ fn empty_page() -> DirectoryPage {
 fn permissions(metadata: &std::fs::Metadata) -> PermissionsInfo {
     PermissionsInfo {
         readable: true,
-        writable: !metadata.permissions().readonly(),
+        writable: !is_read_only(metadata),
         executable: executable(metadata),
         unix_mode: unix_mode(metadata),
     }
+}
+
+/// Windows sets `FILE_ATTRIBUTE_READONLY` on directories to flag folder customisation rather than
+/// write protection, so honouring it there would wrongly block renaming ordinary folders.
+#[cfg(windows)]
+fn is_read_only(metadata: &std::fs::Metadata) -> bool {
+    !metadata.is_dir() && metadata.permissions().readonly()
+}
+
+#[cfg(not(windows))]
+fn is_read_only(metadata: &std::fs::Metadata) -> bool {
+    metadata.permissions().readonly()
 }
 
 #[cfg(unix)]

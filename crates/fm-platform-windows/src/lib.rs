@@ -15,8 +15,36 @@ use fm_platform::{
     FallbackPlatformAdapter, MountedVolume, PlatformAdapter, PlatformCapabilities, PlatformError,
     SystemLocation, SystemLocationKind,
 };
+use windows_sys::Win32::Foundation::HWND;
+use windows_sys::Win32::Graphics::Dwm::{
+    DWMWA_CAPTION_COLOR, DWMWA_TEXT_COLOR, DwmSetWindowAttribute,
+};
 use windows_sys::Win32::NetworkManagement::WNet::WNetGetConnectionW;
 use windows_sys::Win32::Storage::FileSystem::{GetDriveTypeW, GetLogicalDrives};
+
+/// Paints a window's caption bar and title text, so the OS-drawn title bar can match the
+/// application chrome instead of the system light/dark chrome colour.
+///
+/// `hwnd` is the raw window handle owned by the window host; colours are `COLORREF` values
+/// (`0x00bbggrr`). Pre-22H2 Windows rejects the attributes, leaving the OS-themed caption in
+/// place, which is why failures are ignored.
+pub fn set_caption_colours(hwnd: isize, background: u32, foreground: u32) {
+    let handle = hwnd as HWND;
+    for (attribute, value) in [
+        (DWMWA_CAPTION_COLOR, background),
+        (DWMWA_TEXT_COLOR, foreground),
+    ] {
+        let size = u32::try_from(size_of::<u32>()).expect("u32 size fits u32");
+        unsafe {
+            DwmSetWindowAttribute(
+                handle,
+                attribute as u32,
+                std::ptr::from_ref(&value).cast(),
+                size,
+            )
+        };
+    }
+}
 
 fn mapped_network_locations() -> Vec<SystemLocation> {
     let drives = unsafe { GetLogicalDrives() };

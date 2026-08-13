@@ -1297,6 +1297,14 @@ describe('Pane tab strip', () => {
     expect(tabElements[0]?.textContent).toContain('erik');
   });
 
+  it('marks a lone tab so its trailing divider can be dropped', () => {
+    mount(attrs({ tabs, activeTabId: 'tab-1' as TabId }));
+    expect(root.querySelector('[role="tab"]')?.classList.contains('fm-pane-tab-only')).toBe(false);
+
+    mount(attrs({ tabs: [tabs[0] as PaneTab], activeTabId: 'tab-1' as TabId }));
+    expect(root.querySelector('[role="tab"]')?.classList.contains('fm-pane-tab-only')).toBe(true);
+  });
+
   it('selects a tab on click and creates a new tab from the trailing button', () => {
     const onSelectTab = vi.fn();
     const onNewTab = vi.fn();

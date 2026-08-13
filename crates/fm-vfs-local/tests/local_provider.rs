@@ -681,6 +681,47 @@ async fn lists_a_directory_at_a_very_long_path() {
 
 #[cfg(windows)]
 #[tokio::test]
+async fn windows_read_only_directories_stay_writable() {
+    use std::process::Command;
+
+    // Explorer sets +R on folders to mark customisation, not write protection, and user profile
+    // folders such as Documents ship that way -- honouring it would block renaming them.
+    let root = tempdir().expect("temporary directory");
+    let folder = root.path().join("Documents");
+    fs::create_dir(&folder).expect("create folder fixture");
+    let read_only_file = root.path().join("locked.txt");
+    fs::write(&read_only_file, []).expect("create file fixture");
+    for path in [&folder, &read_only_file] {
+        let status = Command::new("attrib")
+            .arg("+R")
+            .arg(path)
+            .status()
+            .expect("run attrib");
+        assert!(status.success());
+    }
+    let location = Location::from_native_path(root.path()).expect("local location");
+
+    let page = LocalFileSystemProvider::new()
+        .list(&location, ListOptions::default(), CancellationToken::new())
+        .await
+        .expect("list directory");
+
+    let folder_entry = page
+        .entries
+        .iter()
+        .find(|entry| entry.name == "Documents")
+        .expect("folder entry");
+    assert!(!folder_entry.read_only);
+    let file_entry = page
+        .entries
+        .iter()
+        .find(|entry| entry.name == "locked.txt")
+        .expect("file entry");
+    assert!(file_entry.read_only);
+}
+
+#[cfg(windows)]
+#[tokio::test]
 async fn windows_hidden_attribute_and_directory_reparse_points_are_flagged() {
     use std::os::windows::fs::symlink_dir;
     use std::process::Command;

@@ -122,6 +122,7 @@ pub fn run() {
             commands::open_embedded_terminal,
             commands::write_embedded_terminal,
             commands::resize_embedded_terminal,
+            commands::set_caption_colours,
         ])
         .run(build_context())
         .expect("error while running the Tauri application");
