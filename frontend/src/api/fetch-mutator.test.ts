@@ -5,6 +5,7 @@ import {
   fetchMutator,
   setBaseUrlOverride,
   setSessionHeaderProvider,
+  setUnauthorizedHandler,
 } from './fetch-mutator';
 
 function jsonResponse(
@@ -21,6 +22,7 @@ function jsonResponse(
 afterEach(() => {
   setBaseUrlOverride(undefined);
   setSessionHeaderProvider(undefined);
+  setUnauthorizedHandler(undefined);
   vi.restoreAllMocks();
 });
 
@@ -102,6 +104,37 @@ describe('fetchMutator', () => {
     const [, options] = fetchSpy.mock.calls[0] as [string, RequestInit];
     const headers = new Headers(options.headers);
     expect(headers.get('Authorization')).toBe('Bearer token123');
+  });
+
+  it('invokes the unauthorized handler on a 401 response before throwing', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        jsonResponse(401, {
+          code: 'unauthorized',
+          message: 'A valid session token is required.',
+        }),
+      ),
+    );
+    const handler = vi.fn();
+    setUnauthorizedHandler(handler);
+
+    await expect(fetchMutator('/api/v1/workspaces', {})).rejects.toMatchObject({ status: 401 });
+
+    expect(handler).toHaveBeenCalledOnce();
+  });
+
+  it('does not invoke the unauthorized handler for other error statuses', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(jsonResponse(403, { code: 'forbidden', message: 'Forbidden.' })),
+    );
+    const handler = vi.fn();
+    setUnauthorizedHandler(handler);
+
+    await expect(fetchMutator('/api/v1/workspaces', {})).rejects.toMatchObject({ status: 403 });
+
+    expect(handler).not.toHaveBeenCalled();
   });
 
   it('maps a non-2xx JSON error body into a typed ApiError', async () => {

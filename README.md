@@ -109,8 +109,10 @@ The Vite server starts at <http://127.0.0.1:5180>.
 **Authentication:** every `/api/v1` route except `/health` and the Swagger/OpenAPI docs requires a
 session token by default (task 0064); `fm-server` prints one to stdout at startup. Local dev passes
 `--dev-mode-auth-disabled` above because the Vite proxy doesn't attach one — that flag is explicit,
-logged at startup, and refused outright if you also try to bind to a non-loopback address. See
-[docs/architecture/security.md](docs/architecture/security.md) for the full model.
+logged at startup, and refused outright if you also try to bind to a non-loopback address. The
+frontend probes for this at startup and steps aside automatically when dev mode is active, so local
+dev never shows a sign-in prompt; without the flag, it shows one and expects the token printed
+above. See [docs/architecture/security.md](docs/architecture/security.md) for the full model.
 
 **How the proxy works:** Vite forwards every `/api/*` request to `http://127.0.0.1:8787`. For SSE
 (`GET /api/v1/events`), the proxy configuration in `frontend/config/api-proxy.ts` disables
@@ -137,11 +139,6 @@ OpenAPI documentation. The raw OpenAPI JSON is at <http://127.0.0.1:8787/api/v1/
 `fm-server` binds to loopback only by default, so it isn't reachable from another machine out of
 the box — this is deliberate (spec §22, task 0064). To reach it from another device, e.g. a home
 automation server you want to browse from your laptop:
-
-> **The backend security model (auth, roots, TLS, rate limiting) is fully implemented and tested,
-> but the frontend does not yet send the session token it requires** — see step 3 below. Until that
-> follow-up lands, a remote deployment reachable from a browser will authenticate every request as
-> unauthenticated and reject it with `401`. The steps below describe the intended end state.
 
 **1. `fm-server` is API-only — it doesn't serve the frontend.** Build the frontend
 (`pnpm build:frontend`, output in `frontend/dist/`) and serve those static files from a web server
@@ -181,15 +178,15 @@ terminate TLS itself and skip the reverse proxy — see
 [docs/architecture/security.md](docs/architecture/security.md#7-tlshttps-task-0064) — but fronting
 it is simpler for a home box).
 
-**3. The frontend does not yet send the access token.** `fm-server` prints one token to stdout at
-startup (never pass `--dev-mode-auth-disabled` here — it's refused outright the moment `--bind`
-isn't loopback, but don't rely on that guard as your only line of defense) — but as of task 0064,
-the frontend has no UI to enter it and never attaches it to requests, so **every request will
-currently get `401 Unauthorized` once you deploy this way**. `frontend/src/api/fetch-mutator.ts`
-already exposes `setSessionHeaderProvider()` for exactly this purpose (built in an earlier task,
-never wired up), and the SSE client in `frontend/src/api/events/sse-event-stream.ts` would need a
-`?token=` query parameter added to its `EventSource` URL. Wiring a token-entry UI and both of these
-call sites through to `sessionStorage` is tracked as follow-up work, not yet implemented.
+**3. Copy the access token to your laptop.** `fm-server` prints one token to stdout at startup
+(never pass `--dev-mode-auth-disabled` here — it's refused outright the moment `--bind` isn't
+loopback, but don't rely on that guard as your only line of defense). Copy it over SSH or a
+password manager, not chat/email. The first time you open `https://files.home.example` from your
+laptop, the frontend shows a "Sign in to fm-server" prompt — paste the token there. It's kept in
+that browser tab's `sessionStorage` only (never `localStorage`), attached as an `Authorization:
+Bearer` header on REST calls and a `?token=` query parameter on the SSE connection (browser
+`EventSource` can't set custom headers). If the server restarts — issuing a new token — the next
+request gets `401`, which clears the stored token and re-shows the prompt automatically.
 
 **4. If you'd rather skip the reverse proxy entirely** and hit `fm-server` directly from a
 separately-hosted frontend (a different origin), bind it to a real interface and set

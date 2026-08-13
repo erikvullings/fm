@@ -66,6 +66,15 @@ export interface SseEventStreamOptions {
   readonly reconnectMaxMs?: number;
   readonly staleTimeoutMs?: number;
   readonly requestFrame?: (callback: FrameRequestCallback) => number;
+  /**
+   * Supplies the current session token, appended as `?token=` on every
+   * (re)connect. Browser `EventSource` connections can't set custom headers,
+   * so the token travels in the query string instead of `Authorization`
+   * (task 0064 backend, frontend follow-up). Read fresh on every connect
+   * attempt so a token entered after construction, or rotated between
+   * reconnects, is picked up.
+   */
+  readonly tokenProvider?: () => string | undefined;
 }
 
 /** Returns exponential backoff with ±50% jitter, capped before jitter is applied. */
@@ -97,6 +106,7 @@ export class SseEventStream implements EventStream {
       | 'requestFrame'
     >
   >;
+  private readonly tokenProvider: (() => string | undefined) | undefined;
   private source: EventSourceLike | undefined;
   private reconnectTimer: ReturnType<typeof setTimeout> | undefined;
   private staleTimer: ReturnType<typeof setTimeout> | undefined;
@@ -117,6 +127,7 @@ export class SseEventStream implements EventStream {
       requestFrame:
         options.requestFrame ?? ((callback) => globalThis.requestAnimationFrame(callback)),
     };
+    this.tokenProvider = options.tokenProvider;
   }
 
   async connect(): Promise<void> {
@@ -140,6 +151,8 @@ export class SseEventStream implements EventStream {
     const url = new URL(this.options.url, globalThis.location?.href ?? 'http://localhost');
     if (this.lastEventId !== undefined)
       url.searchParams.set('lastEventId', String(this.lastEventId));
+    const token = this.tokenProvider?.();
+    if (token !== undefined && token.length > 0) url.searchParams.set('token', token);
     const source = new this.options.eventSource(url);
     this.source = source;
     source.addEventListener('open', this.handleOpen);

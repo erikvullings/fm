@@ -79,3 +79,48 @@ anything beyond local development.
   - Not attempted: per-client (vs. server-wide) rate limiting — the server-wide limiter matches the
     single-operator loopback deployment this task targets; a multi-tenant deployment behind a
     reverse proxy should add per-IP limiting there instead (documented in the security doc).
+- 2026-08-13: Closed the frontend half of the gap noted above. The backend enforced tokens but the
+  frontend never sent one, so `README.md`'s "Running fm-server on a remote host" section (added
+  earlier this session) initially had to document that fact as a known limitation. Fixed instead of
+  left documented:
+  - `frontend/src/api/session-token.ts` (new): `sessionStorage`-backed token storage (never
+    `localStorage`, per the security doc's own recommendation), with an in-memory cache so reads
+    don't hit storage on every request.
+  - `frontend/src/api/fetch-mutator.ts`: added `setUnauthorizedHandler()`, invoked on every `401`
+    response before the `ApiError` propagates, so the app can react (clear the stale token,
+    re-prompt) without every call site special-casing 401.
+  - `frontend/src/api/events/sse-event-stream.ts`: `SseEventStreamOptions.tokenProvider` appends
+    `?token=` on every (re)connect, since browser `EventSource` can't set an `Authorization` header
+    — re-read fresh each attempt so a token entered after construction, or rotated between
+    reconnects, is picked up.
+  - `frontend/src/api/client/http-file-manager-client.ts`: wires `getSessionToken` in as the SSE
+    stream's `tokenProvider`.
+  - `frontend/src/app/session-token-gate.ts` (new): the one UI surface that collects the token,
+    gating `AppShell` behind a "Sign in to fm-server" form. Deferred child rendering (`children: ()
+    => m.Children`) means `AppShell`'s `oninit` — and its first API calls — never run until the
+    token requirement is resolved, not just visually hidden.
+  - **Caught before shipping**: an initial version of the gate always prompted for a token,
+    including under `--dev-mode-auth-disabled` — but dev mode never prints a token (there's nothing
+    to enforce), so that would have permanently blocked the documented local-dev flow. Fixed by
+    having the gate probe a harmless authenticated endpoint (`GET /api/v1/runtime`) once on mount:
+    a `200` means auth isn't enforced and the gate steps aside for the session; a `401` shows the
+    prompt. Verified against a real running `fm-server` in both modes via the Browser pane, not
+    just unit tests: with `--dev-mode-auth-disabled` the app loads directly with no prompt; without
+    it, the prompt appears, the printed token is accepted, and an authenticated directory listing
+    (with live SSE events) renders end-to-end.
+  - Verified: `pnpm vitest run` — 999 of 999 frontend tests pass (25 new across
+    `session-token.test.ts`, `fetch-mutator.test.ts`, `sse-event-stream.test.ts`, and
+    `session-token-gate.test.ts`). `tsc --noEmit` and `biome check` are clean.
+  - Updated `README.md`'s remote-host section (step 3) and dev-flow note to describe the
+    implemented behavior instead of the gap; removed the now-stale "not yet implemented" callout.
+  - Added a `fm-frontend-http` entry to `.claude/launch.json` for future browser-driven verification
+    of the HTTP runtime against a real `fm-server` (the existing entry was mock-only).
+  - Unrelated blocker hit and resolved separately (not part of this task): the pre-commit hook's
+    `cargo test --workspace` failed on `tests::discovers_the_real_catppuccin_icons_plugin_package`
+    because a just-committed expanded icon theme (`plugins/catppuccin-icons/icon-theme.json`, from
+    a separate, unrelated commit) declared a `fileNames` map that `IconThemeManifest` didn't
+    support and denied as an unknown field. Fixed in its own commit
+    (`feat(plugins): support exact file-name icon-theme mappings`), matching the design already
+    in progress on `feature/0060-windows-platform-integration` (case-sensitive file-name matching,
+    since the theme relies on `Cargo.lock` vs `cargo.lock` resolving differently) rather than
+    inventing a divergent one.

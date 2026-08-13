@@ -53,6 +53,19 @@ export function setSessionHeaderProvider(provider: SessionHeaderProvider | undef
   sessionHeaderProvider = provider;
 }
 
+type UnauthorizedHandler = () => void;
+
+let unauthorizedHandler: UnauthorizedHandler | undefined;
+
+/**
+ * Lets bootstrap code react to a `401` response (e.g. clear a stored session
+ * token and re-prompt) before {@link ApiError} propagates to the caller
+ * (task 0064 frontend follow-up).
+ */
+export function setUnauthorizedHandler(handler: UnauthorizedHandler | undefined): void {
+  unauthorizedHandler = handler;
+}
+
 let baseUrlOverride: string | undefined;
 
 /** Overrides the resolved base URL; used by tests. Production reads `VITE_API_BASE_URL`. */
@@ -129,6 +142,9 @@ export async function fetchMutator<T>(url: string, options: RequestInit = {}): P
   });
 
   if (!response.ok) {
+    if (response.status === 401) {
+      unauthorizedHandler?.();
+    }
     throw await toApiError(response);
   }
 

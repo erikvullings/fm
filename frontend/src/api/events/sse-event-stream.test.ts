@@ -64,6 +64,30 @@ describe('SseEventStream', () => {
     expect(first?.closed).toBe(true);
   });
 
+  it('appends the current token as a query parameter on every connect', async () => {
+    let token: string | undefined = 'first-token';
+    const stream = new SseEventStream({
+      eventSource: FakeEventSource,
+      tokenProvider: () => token,
+    });
+    await stream.connect();
+    expect(FakeEventSource.instances[0]?.url).toContain('token=first-token');
+
+    stream.close();
+    token = 'second-token';
+    await stream.connect();
+    expect(FakeEventSource.instances[1]?.url).toContain('token=second-token');
+  });
+
+  it('omits the token query parameter when no token is available', async () => {
+    const stream = new SseEventStream({
+      eventSource: FakeEventSource,
+      tokenProvider: () => undefined,
+    });
+    await stream.connect();
+    expect(FakeEventSource.instances[0]?.url).not.toContain('token=');
+  });
+
   it('forces a reconnect when no observable event or keep-alive arrives', async () => {
     vi.useFakeTimers();
     const stream = new SseEventStream({
