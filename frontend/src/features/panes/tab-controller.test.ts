@@ -62,6 +62,27 @@ function makeContext(workspace: WorkspaceProjection): TabControllerContext {
 }
 
 describe('createTabController', () => {
+  it('activateTab refreshes the listing instead of no-opping when the tab is already active', () => {
+    // Regression test: re-clicking a tab that's already active used to be a pure no-op, so an
+    // external filesystem change (e.g. a browser download landing in a folder the user is already
+    // looking at) never showed up without a manual hard reload.
+    const workspace = projection({ activeTabIdByPane: { 'pane-1': 'tab-1' } });
+    const context = makeContext(workspace);
+    const loadSpy = vi.fn().mockResolvedValue(undefined);
+    context.getNavigation = () =>
+      ({ load: loadSpy, abort: vi.fn() }) as unknown as NavigationController;
+    const client = {
+      dispatchWorkspaceCommand: vi.fn(),
+      getWorkspace: vi.fn(),
+    } as unknown as FileManagerClient;
+    const controller = createTabController(client, context);
+
+    controller.activateTab('pane-1' as PaneId, 'tab-1' as TabId);
+
+    expect(loadSpy).toHaveBeenCalledWith('pane-1', { background: true });
+    expect(client.dispatchWorkspaceCommand).not.toHaveBeenCalled();
+  });
+
   it('openTabAt adds a tab at an arbitrary location rather than duplicating the active tab', async () => {
     const workspace = projection();
     const context = makeContext(workspace);

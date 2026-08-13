@@ -1561,7 +1561,11 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
 
   function selectTab(client: FileManagerClient, paneId: PaneId, tabId: TabId): void {
     if (workspace?.panesById[paneId]?.activeTabId === tabId) {
+      // Already the active tab - no tab switch, but still worth refreshing: the user is
+      // deliberately revisiting this listing (e.g. clicking back onto it after an external change
+      // like a browser download landed while it sat idle), so `activateTab` refreshes it too.
       void activatePane(client, paneId).catch(() => undefined);
+      tabController.activateTab(paneId, tabId);
       return;
     }
     tabController.activateTab(paneId, tabId);

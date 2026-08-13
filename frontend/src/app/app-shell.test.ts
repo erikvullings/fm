@@ -850,6 +850,26 @@ describe('AppShell', () => {
     expect(viewerPane?.querySelectorAll('.fm-pane-tab')).toHaveLength(1);
   });
 
+  it('re-fetches the listing when clicking a tab that is already active', async () => {
+    // Regression test: clicking a tab that's already the active one used to be a pure no-op, so
+    // an external filesystem change (e.g. a browser download landing in a folder the user is
+    // already looking at) never showed up without a manual hard reload.
+    const client = new MockFileManagerClient();
+    const listDirectory = vi.spyOn(client, 'listDirectory');
+    m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
+    await vi.waitFor(() => expect(root.textContent).toContain('Documents'));
+    const activePane = root.querySelector<HTMLElement>('[data-active="true"] > .fm-pane');
+    const activeTab = activePane?.querySelector<HTMLButtonElement>(
+      '.fm-pane-tab[aria-selected="true"]',
+    );
+    expect(activeTab).not.toBeUndefined();
+    const callsBefore = listDirectory.mock.calls.length;
+
+    activeTab?.click();
+
+    await vi.waitFor(() => expect(listDirectory.mock.calls.length).toBeGreaterThan(callsBefore));
+  });
+
   it('closes the Lister viewer and toasts instead of leaving a manual-dismiss message when the content is unsupported', async () => {
     const client = new MockFileManagerClient();
     vi.spyOn(client, 'readFileRange').mockResolvedValue({
