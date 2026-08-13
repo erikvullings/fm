@@ -7,6 +7,7 @@ import type {
   OperationConflict,
   WorkspaceProjection,
 } from '../../models';
+import { type ComparisonState, initialComparisonState } from '../comparison/comparison-state';
 import { createOperationsState } from '../operations/operation-state';
 import { type BackendEventContext, createBackendEventHandler } from './backend-event-handler';
 
@@ -32,7 +33,12 @@ function makeEvent(payload: BackendEvent['payload'], workspaceId?: string): Back
 
 function makeContext(overrides: Partial<BackendEventContext> = {}): BackendEventContext {
   const searchBatchReloadInFlight = new Set<PaneId>();
+  let comparisonState = initialComparisonState();
   return {
+    getComparisonState: vi.fn(() => comparisonState),
+    setComparisonState: vi.fn((next: ComparisonState) => {
+      comparisonState = next;
+    }),
     getWorkspaceId: vi.fn(() => WS_ID),
     getWorkspaceRevision: vi.fn(() => 5),
     replaceWorkspace: vi.fn(),
@@ -306,6 +312,51 @@ describe('createBackendEventHandler', () => {
 
       expect(ctx.cacheContentMatches).not.toHaveBeenCalled();
       expect(ctx.loadPane).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('comparison.resultsBatch', () => {
+    it('merges the batch into comparison state and redraws', () => {
+      const ctx = makeContext();
+      const handler = createBackendEventHandler(ctx);
+
+      handler(
+        makeEvent(
+          {
+            type: 'comparison.resultsBatch',
+            comparisonId: 'comparison-1',
+            entries: [{ relativePath: 'a.txt', status: 'onlyLeft' }],
+            isComplete: true,
+            warningsCount: 0,
+          },
+          WS_ID,
+        ),
+      );
+
+      expect(ctx.setComparisonState).toHaveBeenCalledOnce();
+      expect(ctx.getComparisonState().statusByRelativePath.size).toBe(0);
+      expect(ctx.redraw).toHaveBeenCalled();
+    });
+
+    it('is a no-op for a batch belonging to a comparison no longer tracked', () => {
+      const ctx = makeContext();
+      const handler = createBackendEventHandler(ctx);
+
+      handler(
+        makeEvent(
+          {
+            type: 'comparison.resultsBatch',
+            comparisonId: 'stale-comparison',
+            entries: [{ relativePath: 'a.txt', status: 'onlyLeft' }],
+            isComplete: true,
+            warningsCount: 0,
+          },
+          WS_ID,
+        ),
+      );
+
+      expect(ctx.setComparisonState).toHaveBeenCalledOnce();
+      expect(ctx.redraw).toHaveBeenCalled();
     });
   });
 

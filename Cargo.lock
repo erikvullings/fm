@@ -1677,6 +1677,7 @@ dependencies = [
  "chrono",
  "dirs",
  "fm-archive",
+ "fm-comparison",
  "fm-connections",
  "fm-credentials",
  "fm-domain",
@@ -1739,6 +1740,24 @@ dependencies = [
  "rand 0.10.2",
  "tempfile",
  "walkdir",
+]
+
+[[package]]
+name = "fm-comparison"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "fm-domain",
+ "fm-events",
+ "fm-vfs",
+ "fm-vfs-local",
+ "serde",
+ "sha2 0.11.0",
+ "tempfile",
+ "thiserror 2.0.19",
+ "tokio",
+ "tokio-util",
+ "uuid",
 ]
 
 [[package]]

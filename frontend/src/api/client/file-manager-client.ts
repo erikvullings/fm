@@ -1,8 +1,11 @@
 import type {
   ActionDescriptor,
   ActionResult,
+  ApplySyncPlanRequest,
+  ApplySyncPlanResult,
   ArchiveCredentialRequest,
   BackendEvent,
+  ComparisonPage,
   Connection,
   ConnectionId,
   CreateConnectionRequest,
@@ -13,6 +16,7 @@ import type {
   EntryMetadata,
   EntryMetadataRequest,
   FileRangeChunk,
+  GenerateSyncPlanRequest,
   HostKeyProbe,
   InvokeActionRequest,
   ListDirectoryRequest,
@@ -31,9 +35,12 @@ import type {
   SearchInFileRequest,
   SearchInFileResult,
   Settings,
+  StartComparisonRequest,
+  StartComparisonResult,
   StartOperationRequest,
   StartSearchRequest,
   StartSearchResult,
+  SyncPlan,
   SystemLocation,
   Unsubscribe,
   UpdateConnectionRequest,
@@ -152,6 +159,35 @@ export interface FileManagerClient {
   startSearch(request: StartSearchRequest, signal?: AbortSignal): Promise<StartSearchResult>;
 
   cancelSearch(searchId: string, signal?: AbortSignal): Promise<void>;
+
+  /** Starts a cancellable directory comparison (spec §16 milestone 5, task 0075). */
+  startComparison(
+    request: StartComparisonRequest,
+    signal?: AbortSignal,
+  ): Promise<StartComparisonResult>;
+
+  /** Pages through a comparison's streamed results, optionally differences-only. */
+  getComparison(
+    comparisonId: string,
+    options?: { offset?: number; limit?: number; differencesOnly?: boolean },
+    signal?: AbortSignal,
+  ): Promise<ComparisonPage>;
+
+  cancelComparison(comparisonId: string, signal?: AbortSignal): Promise<void>;
+
+  /** Proposes a sync plan from a comparison's current results; never mutates anything. */
+  generateSyncPlan(
+    comparisonId: string,
+    request: GenerateSyncPlanRequest,
+    signal?: AbortSignal,
+  ): Promise<SyncPlan>;
+
+  /** Applies a (possibly user-edited) sync plan through the operation engine. */
+  applySyncPlan(
+    comparisonId: string,
+    request: ApplySyncPlanRequest,
+    signal?: AbortSignal,
+  ): Promise<ApplySyncPlanResult>;
 
   listActions(signal?: AbortSignal): Promise<ActionDescriptor[]>;
 

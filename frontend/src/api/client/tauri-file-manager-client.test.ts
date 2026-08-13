@@ -222,6 +222,91 @@ describe('TauriFileManagerClient', () => {
     });
   });
 
+  describe('comparison methods', () => {
+    it('invokes start_comparison and returns the comparisonId', async () => {
+      const request = {
+        workspaceId: 'workspace-1',
+        left: { providerId: 'local', uri: 'file:///left' },
+        right: { providerId: 'local', uri: 'file:///right' },
+        criteria: 'sizeAndTimestamp' as const,
+      };
+      const result = { comparisonId: 'comparison-1' };
+      invoke.mockResolvedValue(result);
+      const client = new TauriFileManagerClient();
+
+      await expect(client.startComparison(request)).resolves.toEqual(result);
+      expect(invoke).toHaveBeenCalledWith('start_comparison', { request });
+    });
+
+    it('invokes get_comparison with paging and filter options', async () => {
+      const page = {
+        comparisonId: 'comparison-1',
+        left: { providerId: 'local', uri: 'file:///left' },
+        right: { providerId: 'local', uri: 'file:///right' },
+        criteria: 'nameOnly' as const,
+        offset: 5,
+        limit: 50,
+        total: 1,
+        entries: [],
+        isComplete: true,
+        warningsCount: 0,
+      };
+      invoke.mockResolvedValue(page);
+      const client = new TauriFileManagerClient();
+
+      await expect(
+        client.getComparison('comparison-1', { offset: 5, limit: 50, differencesOnly: true }),
+      ).resolves.toEqual(page);
+      expect(invoke).toHaveBeenCalledWith('get_comparison', {
+        comparisonId: 'comparison-1',
+        offset: 5,
+        limit: 50,
+        differencesOnly: true,
+      });
+    });
+
+    it('invokes cancel_comparison with the comparisonId', async () => {
+      invoke.mockResolvedValue(undefined);
+      const client = new TauriFileManagerClient();
+
+      await client.cancelComparison('comparison-1');
+
+      expect(invoke).toHaveBeenCalledWith('cancel_comparison', { comparisonId: 'comparison-1' });
+    });
+
+    it('invokes generate_sync_plan with the mode', async () => {
+      const plan = { comparisonId: 'comparison-1', items: [] };
+      invoke.mockResolvedValue(plan);
+      const client = new TauriFileManagerClient();
+
+      await expect(
+        client.generateSyncPlan('comparison-1', { mode: 'twoWayUpdate' }),
+      ).resolves.toEqual(plan);
+      expect(invoke).toHaveBeenCalledWith('generate_sync_plan', {
+        comparisonId: 'comparison-1',
+        request: { mode: 'twoWayUpdate' },
+      });
+    });
+
+    it('invokes apply_sync_plan, omitting undefined sides from the wire request', async () => {
+      const result = { operationIds: ['operation-1'] };
+      invoke.mockResolvedValue(result);
+      const client = new TauriFileManagerClient();
+
+      await expect(
+        client.applySyncPlan('comparison-1', {
+          items: [{ relativePath: 'a.txt', status: 'onlyLeft', action: 'copyLeftToRight' }],
+        }),
+      ).resolves.toEqual(result);
+      expect(invoke).toHaveBeenCalledWith('apply_sync_plan', {
+        comparisonId: 'comparison-1',
+        request: {
+          items: [{ relativePath: 'a.txt', status: 'onlyLeft', action: 'copyLeftToRight' }],
+        },
+      });
+    });
+  });
+
   describe('file range and content search methods', () => {
     it('invokes read_file_range and returns the chunk', async () => {
       const request = {

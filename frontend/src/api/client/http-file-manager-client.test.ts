@@ -21,6 +21,11 @@ const requestResumeOperation = vi.fn();
 const requestResolveOperationConflict = vi.fn();
 const requestStartSearch = vi.fn();
 const requestCancelSearch = vi.fn();
+const requestStartComparison = vi.fn();
+const requestGetComparison = vi.fn();
+const requestCancelComparison = vi.fn();
+const requestGenerateSyncPlan = vi.fn();
+const requestApplySyncPlan = vi.fn();
 const requestListPlugins = vi.fn();
 const requestEnablePlugin = vi.fn();
 const requestDisablePlugin = vi.fn();
@@ -49,6 +54,11 @@ vi.mock('../generated/file-manager-api', () => ({
   resolveOperationConflict: (...args: unknown[]) => requestResolveOperationConflict(...args),
   startSearch: (...args: unknown[]) => requestStartSearch(...args),
   cancelSearch: (...args: unknown[]) => requestCancelSearch(...args),
+  startComparison: (...args: unknown[]) => requestStartComparison(...args),
+  getComparison: (...args: unknown[]) => requestGetComparison(...args),
+  cancelComparison: (...args: unknown[]) => requestCancelComparison(...args),
+  generateSyncPlan: (...args: unknown[]) => requestGenerateSyncPlan(...args),
+  applySyncPlan: (...args: unknown[]) => requestApplySyncPlan(...args),
   listPlugins: (...args: unknown[]) => requestListPlugins(...args),
   enablePlugin: (...args: unknown[]) => requestEnablePlugin(...args),
   disablePlugin: (...args: unknown[]) => requestDisablePlugin(...args),
@@ -105,6 +115,11 @@ afterEach(() => {
   requestResolveOperationConflict.mockReset();
   requestStartSearch.mockReset();
   requestCancelSearch.mockReset();
+  requestStartComparison.mockReset();
+  requestGetComparison.mockReset();
+  requestCancelComparison.mockReset();
+  requestGenerateSyncPlan.mockReset();
+  requestApplySyncPlan.mockReset();
   requestListPlugins.mockReset();
   requestEnablePlugin.mockReset();
   requestDisablePlugin.mockReset();
@@ -504,6 +519,202 @@ describe('HttpFileManagerClient', () => {
 
       await expect(client.cancelSearch('search-1')).rejects.toThrow(
         'Unexpected cancelSearch response status: 404',
+      );
+    });
+  });
+
+  describe('comparison methods', () => {
+    it('starts a comparison and returns its id', async () => {
+      requestStartComparison.mockResolvedValue({
+        status: 201,
+        headers: new Headers(),
+        data: { comparisonId: 'comparison-1' },
+      });
+      const client = new HttpFileManagerClient();
+      const controller = new AbortController();
+
+      await expect(
+        client.startComparison(
+          {
+            workspaceId: 'workspace-1',
+            left: { providerId: 'local', uri: 'file:///left' },
+            right: { providerId: 'local', uri: 'file:///right' },
+            criteria: 'sizeAndTimestamp',
+            showHidden: true,
+          },
+          controller.signal,
+        ),
+      ).resolves.toEqual({ comparisonId: 'comparison-1' });
+      expect(requestStartComparison).toHaveBeenCalledWith(
+        {
+          workspaceId: 'workspace-1',
+          left: { providerId: 'local', uri: 'file:///left' },
+          right: { providerId: 'local', uri: 'file:///right' },
+          criteria: 'sizeAndTimestamp',
+          showHidden: true,
+        },
+        expect.objectContaining({ signal: controller.signal }),
+      );
+    });
+
+    it('rejects an unexpected startComparison response status', async () => {
+      requestStartComparison.mockResolvedValue({ status: 400, headers: new Headers(), data: {} });
+      const client = new HttpFileManagerClient();
+
+      await expect(
+        client.startComparison({
+          workspaceId: 'workspace-1',
+          left: { providerId: 'local', uri: 'file:///left' },
+          right: { providerId: 'local', uri: 'file:///right' },
+          criteria: 'nameOnly',
+        }),
+      ).rejects.toThrow('Unexpected startComparison response status: 400');
+    });
+
+    it('pages a comparison, normalizing null DTO fields and forwarding filter params', async () => {
+      requestGetComparison.mockResolvedValue({
+        status: 200,
+        headers: new Headers(),
+        data: {
+          comparisonId: 'comparison-1',
+          left: { providerId: 'local', uri: 'file:///left' },
+          right: { providerId: 'local', uri: 'file:///right' },
+          criteria: 'nameOnly',
+          offset: 0,
+          limit: 200,
+          total: 1,
+          isComplete: true,
+          warningsCount: 0,
+          entries: [
+            {
+              relativePath: 'a.txt',
+              status: 'onlyLeft',
+              left: { kind: 'file', size: 10, modifiedAt: null, contentHash: null },
+              right: null,
+            },
+          ],
+        },
+      });
+      const client = new HttpFileManagerClient();
+      const controller = new AbortController();
+
+      const page = await client.getComparison(
+        'comparison-1',
+        { offset: 5, limit: 50, differencesOnly: true },
+        controller.signal,
+      );
+
+      expect(page.entries).toEqual([
+        { relativePath: 'a.txt', status: 'onlyLeft', left: { kind: 'file', size: 10 } },
+      ]);
+      expect(requestGetComparison).toHaveBeenCalledWith(
+        'comparison-1',
+        { offset: 5, limit: 50, differencesOnly: true },
+        expect.objectContaining({ signal: controller.signal }),
+      );
+    });
+
+    it('rejects an unexpected getComparison response status', async () => {
+      requestGetComparison.mockResolvedValue({ status: 404, headers: new Headers(), data: {} });
+      const client = new HttpFileManagerClient();
+
+      await expect(client.getComparison('comparison-1')).rejects.toThrow(
+        'Unexpected getComparison response status: 404',
+      );
+    });
+
+    it('cancels a comparison', async () => {
+      requestCancelComparison.mockResolvedValue({ status: 204, headers: new Headers() });
+      const client = new HttpFileManagerClient();
+      const controller = new AbortController();
+
+      await client.cancelComparison('comparison-1', controller.signal);
+
+      expect(requestCancelComparison).toHaveBeenCalledWith(
+        'comparison-1',
+        expect.objectContaining({ signal: controller.signal }),
+      );
+    });
+
+    it('rejects an unexpected cancelComparison response status', async () => {
+      requestCancelComparison.mockResolvedValue({ status: 404, headers: new Headers() });
+      const client = new HttpFileManagerClient();
+
+      await expect(client.cancelComparison('comparison-1')).rejects.toThrow(
+        'Unexpected cancelComparison response status: 404',
+      );
+    });
+
+    it('generates a sync plan', async () => {
+      requestGenerateSyncPlan.mockResolvedValue({
+        status: 200,
+        headers: new Headers(),
+        data: {
+          comparisonId: 'comparison-1',
+          items: [
+            {
+              relativePath: 'a.txt',
+              status: 'onlyLeft',
+              action: 'copyLeftToRight',
+              left: { kind: 'file', size: 10, modifiedAt: null, contentHash: null },
+              right: null,
+            },
+          ],
+        },
+      });
+      const client = new HttpFileManagerClient();
+
+      const plan = await client.generateSyncPlan('comparison-1', { mode: 'mirrorLeftToRight' });
+
+      expect(plan.items).toEqual([
+        {
+          relativePath: 'a.txt',
+          status: 'onlyLeft',
+          action: 'copyLeftToRight',
+          left: { kind: 'file', size: 10 },
+        },
+      ]);
+      expect(requestGenerateSyncPlan).toHaveBeenCalledWith(
+        'comparison-1',
+        { mode: 'mirrorLeftToRight' },
+        undefined,
+      );
+    });
+
+    it('applies a sync plan, omitting undefined sides from the wire request', async () => {
+      requestApplySyncPlan.mockResolvedValue({
+        status: 201,
+        headers: new Headers(),
+        data: { operationIds: ['operation-1'] },
+      });
+      const client = new HttpFileManagerClient();
+
+      const result = await client.applySyncPlan('comparison-1', {
+        items: [
+          { relativePath: 'a.txt', status: 'onlyLeft', action: 'copyLeftToRight' },
+          { relativePath: 'b.txt', status: 'identical', action: 'skip' },
+        ],
+      });
+
+      expect(result).toEqual({ operationIds: ['operation-1'] });
+      expect(requestApplySyncPlan).toHaveBeenCalledWith(
+        'comparison-1',
+        {
+          items: [
+            { relativePath: 'a.txt', status: 'onlyLeft', action: 'copyLeftToRight' },
+            { relativePath: 'b.txt', status: 'identical', action: 'skip' },
+          ],
+        },
+        undefined,
+      );
+    });
+
+    it('rejects an unexpected applySyncPlan response status', async () => {
+      requestApplySyncPlan.mockResolvedValue({ status: 400, headers: new Headers(), data: {} });
+      const client = new HttpFileManagerClient();
+
+      await expect(client.applySyncPlan('comparison-1', { items: [] })).rejects.toThrow(
+        'Unexpected applySyncPlan response status: 400',
       );
     });
   });

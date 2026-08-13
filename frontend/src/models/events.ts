@@ -1,3 +1,4 @@
+import type { ComparisonEntry } from './comparison';
 import type { ConnectionStatus } from './connection';
 import type { EntrySummary } from './entry';
 import type { ConnectionId, OperationId, PaneId, TabId, WorkspaceId } from './ids';
@@ -91,6 +92,13 @@ export type BackendEventPayload =
       type: 'search.resultsBatch';
       searchId: string;
       entries: EntrySummary[];
+      isComplete: boolean;
+      warningsCount: number;
+    }
+  | {
+      type: 'comparison.resultsBatch';
+      comparisonId: string;
+      entries: ComparisonEntry[];
       isComplete: boolean;
       warningsCount: number;
     }

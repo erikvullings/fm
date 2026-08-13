@@ -8,13 +8,15 @@ use uuid::Uuid;
 use fm_domain::OperationId;
 use fm_transport_dto::{
     AcceptSshHostKeyRequestDto, ActionDescriptorDto, ActionResultDto, ApplicationErrorDto,
-    ArchiveCredentialRequestDto, ConnectionDto, CreateConnectionRequestDto,
-    CreateWorkspaceRequestDto, DirectorySnapshotDto, EntryMetadataDto, EntryMetadataRequest,
+    ApplySyncPlanRequestDto, ApplySyncPlanResponseDto, ArchiveCredentialRequestDto,
+    ComparisonPageDto, ConnectionDto, CreateConnectionRequestDto, CreateWorkspaceRequestDto,
+    DirectorySnapshotDto, EntryMetadataDto, EntryMetadataRequest, GenerateSyncPlanRequestDto,
     HostKeyProbeDto, InvokeActionRequestDto, ListDirectoryRequest, LocationDto, NavigateRequest,
     OperationDto, PluginDescriptorDto, PluginLogEntryDto, ReadFileRangeRequestDto,
     ReadFileRangeResponseDto, ResolveOperationConflictRequestDto, RuntimeCapabilitiesDto,
-    SearchInFileRequestDto, SearchInFileResponseDto, SettingsDto, StartOperationRequestDto,
-    StartSearchRequestDto, StartSearchResponseDto, UpdateConnectionRequestDto, WorkspaceCommandDto,
+    SearchInFileRequestDto, SearchInFileResponseDto, SettingsDto, StartComparisonRequestDto,
+    StartComparisonResponseDto, StartOperationRequestDto, StartSearchRequestDto,
+    StartSearchResponseDto, SyncPlanDto, UpdateConnectionRequestDto, WorkspaceCommandDto,
     WorkspaceDto, WorkspaceSummaryDto,
 };
 
@@ -636,6 +638,81 @@ pub(crate) fn cancel_search(
     state
         .service
         .cancel_search(search_id)
+        .map_err(|error| error.into_dto(Uuid::new_v4()))
+}
+
+/// Starts a cancellable directory comparison through the same service
+/// method as REST (task 0075).
+#[tauri::command]
+pub(crate) fn start_comparison(
+    state: State<'_, AppState>,
+    request: StartComparisonRequestDto,
+) -> Result<StartComparisonResponseDto, ApplicationErrorDto> {
+    state
+        .service
+        .start_comparison(request)
+        .map_err(|error| error.into_dto(Uuid::new_v4()))
+}
+
+/// Returns a bounded, optionally differences-only page of a comparison's
+/// results, identical in shape to `GET /api/v1/comparisons/{comparisonId}`.
+#[tauri::command]
+pub(crate) fn get_comparison(
+    state: State<'_, AppState>,
+    comparison_id: Uuid,
+    offset: Option<u64>,
+    limit: Option<u16>,
+    differences_only: Option<bool>,
+) -> Result<ComparisonPageDto, ApplicationErrorDto> {
+    state
+        .service
+        .get_comparison_page(
+            comparison_id,
+            offset.unwrap_or(0),
+            limit.unwrap_or(200),
+            differences_only.unwrap_or(false),
+        )
+        .map_err(|error| error.into_dto(Uuid::new_v4()))
+}
+
+/// Cancels a running comparison through the shared service.
+#[tauri::command]
+pub(crate) fn cancel_comparison(
+    state: State<'_, AppState>,
+    comparison_id: Uuid,
+) -> Result<(), ApplicationErrorDto> {
+    state
+        .service
+        .cancel_comparison(comparison_id)
+        .map_err(|error| error.into_dto(Uuid::new_v4()))
+}
+
+/// Proposes a sync plan from a comparison's current results, identical in
+/// shape to `POST /api/v1/comparisons/{comparisonId}/sync-plan`.
+#[tauri::command]
+pub(crate) fn generate_sync_plan(
+    state: State<'_, AppState>,
+    comparison_id: Uuid,
+    request: GenerateSyncPlanRequestDto,
+) -> Result<SyncPlanDto, ApplicationErrorDto> {
+    state
+        .service
+        .generate_sync_plan(comparison_id, request)
+        .map_err(|error| error.into_dto(Uuid::new_v4()))
+}
+
+/// Applies a (possibly user-edited) sync plan through the shared service,
+/// identical in shape to
+/// `POST /api/v1/comparisons/{comparisonId}/apply-sync-plan`.
+#[tauri::command]
+pub(crate) fn apply_sync_plan(
+    state: State<'_, AppState>,
+    comparison_id: Uuid,
+    request: ApplySyncPlanRequestDto,
+) -> Result<ApplySyncPlanResponseDto, ApplicationErrorDto> {
+    state
+        .service
+        .apply_sync_plan(comparison_id, request)
         .map_err(|error| error.into_dto(Uuid::new_v4()))
 }
 

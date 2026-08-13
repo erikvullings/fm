@@ -8,6 +8,7 @@ import {
   arrowRightIcon,
   closeIcon,
   commandIcon,
+  compareIcon,
   cornerLeftUpIcon,
   layoutGridIcon,
   searchIcon,
@@ -25,6 +26,16 @@ import {
   menuActionsForContext,
 } from '../features/commands/availability';
 import { ContextMenu as DirectoryContextMenu } from '../features/commands/context-menu';
+import {
+  type ComparisonController,
+  type ComparisonControllerContext,
+  createComparisonController,
+} from '../features/comparison/comparison-controller';
+import {
+  type ComparisonState,
+  initialComparisonState,
+} from '../features/comparison/comparison-state';
+import { SyncPlanDialog } from '../features/comparison/sync-plan-dialog';
 import { DiagnosticsViewComponent } from '../features/diagnostics/diagnostics-view';
 import { type AppDialogsContext, renderAppDialogs } from '../features/dialogs/app-dialogs';
 import { createDialogUIController } from '../features/dialogs/dialog-ui-controller';
@@ -132,6 +143,7 @@ import type {
   PluginLogEntry,
   Settings,
   SortDescriptor,
+  SyncPlanItem,
   SystemLocation,
   TabId,
   TabProjection,
@@ -317,6 +329,12 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
   /** Panes with a `search.resultsBatch`-triggered reload already in flight - see the handler
    * below for why this debounce is needed to make results stream in incrementally. */
   const searchBatchReloadInFlight = new Set<PaneId>();
+  /** Live directory-comparison overlay and sync-plan review state (task 0075). */
+  let comparisonState: ComparisonState = initialComparisonState();
+  let syncPlanDialogOpen = false;
+  let syncPlanItems: readonly SyncPlanItem[] = [];
+  let syncPlanApplying = false;
+  let syncPlanError: string | undefined;
   /** Registered by `WorkspaceLayoutView` (task 0089): moves DOM focus into a pane so keyboard
    * cursor navigation works immediately, e.g. right after a filename search closes its dialog. */
   let focusPane: ((paneId: PaneId) => void) | undefined;
@@ -365,6 +383,11 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     }
   >();
   const sortRequests = new Map<string, object>();
+  // Tokens guarding the async "moveCursorTo last" flow (pane-content-builder's onSelectionAction):
+  // loading every page before landing the cursor takes real time, and if the user issues another
+  // selection action (e.g. presses Up) before it resolves, the stale resolution must not clobber
+  // whatever the newer action already set. Cleared/replaced by pane-content-builder itself.
+  const cursorLoadTokens = new Map<string, object>();
   /** Whether the inline quick-filter box is shown for a pane, independent of a persisted query. */
   const quickFilterOpen = new Map<string, boolean>();
   const filteredEntries = new Map<
@@ -959,6 +982,10 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       connections = next;
     },
     getConnection: (id) => attrsClient.getConnection(id),
+    getComparisonState: () => comparisonState,
+    setComparisonState: (next) => {
+      comparisonState = next;
+    },
     getFindFilesSearchId: () => findFilesSearchId,
     getSearchBatchReloadInFlight: () => searchBatchReloadInFlight,
     cacheContentMatches: (uri, matches) => {
@@ -987,6 +1014,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
   let settingsController: SettingsController;
   let globalKeydownHandler: (event: KeyboardEvent) => void;
   let findFilesController: FindFilesController;
+  let comparisonController: ComparisonController;
   let actionCommandController: ActionCommandController;
 
   const workspaceControllerContext: WorkspaceControllerContext = {
@@ -1349,6 +1377,16 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     redraw: () => m.redraw(),
   };
 
+  const comparisonControllerContext: ComparisonControllerContext = {
+    getState: () => comparisonState,
+    setState: (next) => {
+      comparisonState = next;
+    },
+    getWorkspace: () => workspace,
+    getClient: () => attrsClient,
+    redraw: () => m.redraw(),
+  };
+
   const actionCommandControllerContext: ActionCommandControllerContext = {
     getCommandPaletteOpen: () => commandPaletteOpen,
     setCommandPaletteOpen: (open) => {
@@ -1400,11 +1438,13 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     getNativeDragOutSupported: () => nativeDragOutSupported,
     getNativeDropInProgress: () => nativeDropInProgress,
     getAppState: () => appState,
+    getComparisonState: () => comparisonState,
     clipboard,
     getDirectories: () => directories,
     getSelections: () => selections,
     getSortedEntries: () => sortedEntries,
     getSortRequests: () => sortRequests,
+    getCursorLoadTokens: () => cursorLoadTokens,
     getViewerByTab: () => viewerByTab,
     getEditorByPane: () => editorByPane,
     setConnections: (conns) => {
@@ -1584,6 +1624,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       settingsController = createSettingsController(settingsControllerContext);
       globalKeydownHandler = createGlobalKeydownHandler(globalKeydownHandlerContext);
       findFilesController = createFindFilesController(findFilesControllerContext);
+      comparisonController = createComparisonController(comparisonControllerContext);
       actionCommandController = createActionCommandController(actionCommandControllerContext);
       paneContentBuilder = createPaneContentBuilder(paneContentBuilderContext);
       keybindingRuntime = attrs.runtime === 'http' ? 'browser' : 'desktop';
@@ -1791,6 +1832,74 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
               },
               searchIcon(),
             ),
+            m(
+              IconButton,
+              {
+                disabled: (workspace?.paneOrder.length ?? 0) < 2,
+                'aria-label':
+                  comparisonState.comparisonId === undefined ? 'Compare panes' : 'Re-compare panes',
+                'data-tooltip': 'Compare the two panes’ directories',
+                onclick: () => comparisonController.startComparison('sizeAndTimestamp'),
+              },
+              compareIcon(),
+            ),
+            comparisonState.comparisonId === undefined
+              ? undefined
+              : m('.fm-comparison-toolbar', [
+                  m(
+                    'span.fm-comparison-toolbar-status',
+                    comparisonState.isComplete
+                      ? `Compared ${comparisonState.statusByRelativePath.size} entries.`
+                      : `Comparing… ${comparisonState.statusByRelativePath.size} so far.`,
+                  ),
+                  m('label.fm-comparison-differences-only', [
+                    m('input', {
+                      type: 'checkbox',
+                      checked: comparisonState.differencesOnly,
+                      onchange: (event: Event) =>
+                        comparisonController.setDifferencesOnly(
+                          (event.currentTarget as HTMLInputElement).checked,
+                        ),
+                    }),
+                    m('span', 'Differences only'),
+                  ]),
+                  m(
+                    'button.fm-comparison-sync-button',
+                    {
+                      type: 'button',
+                      disabled: !comparisonState.isComplete,
+                      onclick: () => {
+                        const comparisonId = comparisonState.comparisonId;
+                        if (comparisonId === undefined) return;
+                        syncPlanError = undefined;
+                        void attrsClient
+                          .generateSyncPlan(comparisonId, { mode: 'mirrorLeftToRight' })
+                          .then((plan) => {
+                            syncPlanItems = plan.items;
+                            syncPlanDialogOpen = true;
+                            m.redraw();
+                          })
+                          .catch((error: unknown) => {
+                            syncPlanError =
+                              error instanceof Error
+                                ? error.message
+                                : 'Unable to generate a sync plan';
+                            m.redraw();
+                          });
+                      },
+                    },
+                    'Sync…',
+                  ),
+                  m(
+                    IconButton,
+                    {
+                      'aria-label': 'Close comparison',
+                      'data-tooltip': 'Close comparison',
+                      onclick: () => comparisonController.cancelComparison(),
+                    },
+                    closeIcon({ size: 14 }),
+                  ),
+                ]),
             m(
               IconButton,
               {
@@ -2132,6 +2241,35 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
             },
           }),
           ...renderAppDialogs(attrs.client, pendingDelete, appDialogsContext),
+          m(SyncPlanDialog, {
+            open: syncPlanDialogOpen,
+            items: syncPlanItems,
+            applying: syncPlanApplying,
+            ...(syncPlanError === undefined ? {} : { error: syncPlanError }),
+            onCancel: () => {
+              syncPlanDialogOpen = false;
+              syncPlanError = undefined;
+            },
+            onApply: (items) => {
+              const comparisonId = comparisonState.comparisonId;
+              if (comparisonId === undefined) return;
+              syncPlanApplying = true;
+              syncPlanError = undefined;
+              void attrsClient
+                .applySyncPlan(comparisonId, { items })
+                .then(() => {
+                  syncPlanApplying = false;
+                  syncPlanDialogOpen = false;
+                  m.redraw();
+                })
+                .catch((error: unknown) => {
+                  syncPlanApplying = false;
+                  syncPlanError =
+                    error instanceof Error ? error.message : 'Unable to apply the sync plan';
+                  m.redraw();
+                });
+            },
+          }),
           m(
             '.fm-function-key-bar',
             footerFunctionKeyBindings(

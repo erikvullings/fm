@@ -13,6 +13,7 @@ const HIGH_FREQUENCY_TYPES = new Set<string>([
   'operation.progress',
   'directory.delta',
   'search.resultsBatch',
+  'comparison.resultsBatch',
 ]);
 
 export interface TauriChannelLike<T> {

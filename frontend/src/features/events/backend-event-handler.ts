@@ -14,6 +14,7 @@ import type {
   WorkspaceProjection,
   WorkspaceSummary,
 } from '../../models';
+import { type ComparisonState, withComparisonBatch } from '../comparison/comparison-state';
 import { upsertConnection, withoutConnection } from '../connections/connections-model';
 import {
   dismissOperation,
@@ -34,7 +35,7 @@ function isAutoDismissibleState(state: OperationState): boolean {
 }
 
 function shouldRefreshOnTerminalOperation(operation: Operation): boolean {
-  if (operation.kind === 'search') return false;
+  if (operation.kind === 'search' || operation.kind === 'compare') return false;
   return (
     operation.state === 'completed' ||
     operation.state === 'completedWithWarnings' ||
@@ -95,6 +96,10 @@ export interface BackendEventContext {
   getConnections(): readonly Connection[];
   setConnections(next: readonly Connection[]): void;
   getConnection(id: ConnectionId): Promise<Connection>;
+
+  // Comparison
+  getComparisonState(): ComparisonState;
+  setComparisonState(next: ComparisonState): void;
 
   // Search
   getFindFilesSearchId(): string | undefined;
@@ -272,6 +277,20 @@ export function createBackendEventHandler(ctx: BackendEventContext): (event: Bac
         inFlight.add(paneId);
         void ctx.loadPane(paneId, { background: true }).finally(() => inFlight.delete(paneId));
       }
+      ctx.redraw();
+      return;
+    }
+
+    if (payload.type === 'comparison.resultsBatch') {
+      ctx.setComparisonState(
+        withComparisonBatch(
+          ctx.getComparisonState(),
+          payload.comparisonId,
+          payload.entries,
+          payload.isComplete,
+          payload.warningsCount,
+        ),
+      );
       ctx.redraw();
       return;
     }

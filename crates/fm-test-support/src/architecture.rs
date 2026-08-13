@@ -39,6 +39,7 @@ const CRATE_LAYERS: &[(&str, u8)] = &[
     ("fm-vfs", 1),
     // Layer 2 - implementations of those contracts.
     ("fm-archive", 2),
+    ("fm-comparison", 2),
     ("fm-connections", 2),
     ("fm-credentials-macos", 2),
     ("fm-credentials-windows", 2),

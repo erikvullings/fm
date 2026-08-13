@@ -8,6 +8,11 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use fm_archive::ArchiveFileSystemProvider;
+use fm_comparison::{
+    ComparisonCriteria, ComparisonEngine, ComparisonEntry, ComparisonEntrySide,
+    ComparisonResultsStore, ComparisonStatus, SyncAction, SyncMode, SyncPlanItem,
+    generate_sync_plan as compute_sync_plan, relative_parent, resolve_relative,
+};
 use fm_connections::{ConnectionService, JsonFileConnectionRepository};
 use fm_credentials::{CredentialStore, InMemoryCredentialStore, SessionCredentialStore};
 use fm_domain::OperationId;
@@ -27,16 +32,20 @@ use fm_settings::{
     ConflictPolicy, DateFormat, DefaultPaneLayout, Settings, SettingsStore, SizeFormat, Theme,
 };
 use fm_transport_dto::{
-    ActionDescriptorDto, ActionResultDto, ConflictPolicyDto, ConflictResolutionDto, ConnectionDto,
+    ActionDescriptorDto, ActionResultDto, ApplySyncPlanRequestDto, ApplySyncPlanResponseDto,
+    ComparisonCriteriaDto, ComparisonEntryDto, ComparisonEntrySideDto, ComparisonPageDto,
+    ComparisonStatusDto, ConflictPolicyDto, ConflictResolutionDto, ConnectionDto,
     CreateConnectionRequestDto, DateFormatDto, DefaultPaneLayoutDto, DirectorySnapshotDto,
-    EntryMetadataRequest, InvokeActionRequestDto, ListDirectoryRequest, NavigateRequest,
-    OperationConflictPolicyDto, OperationDto, OperationKindDto, OperationProgressDto,
-    OperationStateDto, PlatformKindDto, PluginDescriptorDto, PluginLogEntryDto,
-    ReadFileRangeRequestDto, ReadFileRangeResponseDto, ResolveOperationConflictRequestDto,
-    RuntimeCapabilitiesDto, RuntimeKindDto, SearchInFileMatchDto, SearchInFileRequestDto,
-    SearchInFileResponseDto, SettingsDto, SizeFormatDto, StartOperationRequestDto,
-    StartSearchRequestDto, StartSearchResponseDto, ThemeDto, UpdateConnectionRequestDto,
-    VolumeCapacityDto, WorkspaceCommandDto, WorkspaceDto, WorkspaceSummaryDto,
+    EntryMetadataRequest, GenerateSyncPlanRequestDto, InvokeActionRequestDto, ListDirectoryRequest,
+    NavigateRequest, OperationConflictPolicyDto, OperationDto, OperationKindDto,
+    OperationProgressDto, OperationStateDto, PlatformKindDto, PluginDescriptorDto,
+    PluginLogEntryDto, ReadFileRangeRequestDto, ReadFileRangeResponseDto,
+    ResolveOperationConflictRequestDto, RuntimeCapabilitiesDto, RuntimeKindDto,
+    SearchInFileMatchDto, SearchInFileRequestDto, SearchInFileResponseDto, SettingsDto,
+    SizeFormatDto, StartComparisonRequestDto, StartComparisonResponseDto, StartOperationRequestDto,
+    StartSearchRequestDto, StartSearchResponseDto, SyncActionDto, SyncModeDto, SyncPlanDto,
+    SyncPlanItemDto, ThemeDto, UpdateConnectionRequestDto, VolumeCapacityDto, WorkspaceCommandDto,
+    WorkspaceDto, WorkspaceSummaryDto,
 };
 use fm_vfs::{EntryRef, ProviderCapabilities, ProviderReadStream, ProviderRegistry};
 use fm_vfs_local::LocalFileSystemProvider;
@@ -86,6 +95,8 @@ pub struct FileManagerService {
     force_cross_volume_moves: Arc<AtomicBool>,
     actions: ActionRegistry,
     search: SearchEngine,
+    comparison: ComparisonEngine,
+    comparison_store: Arc<ComparisonResultsStore>,
 }
 
 const OPERATION_HISTORY_FILE_NAME: &str = "operation-history.json";
@@ -451,6 +462,12 @@ impl FileManagerService {
         });
         let platform_capabilities = platform.capabilities();
         let search = SearchEngine::new(search_store, events.clone(), providers.clone());
+        let comparison_store = Arc::new(ComparisonResultsStore::new());
+        let comparison = ComparisonEngine::new(
+            Arc::clone(&comparison_store),
+            events.clone(),
+            providers.clone(),
+        );
         let audit_log_path = settings_directory.join("audit.jsonl");
         let settings_mutex = Arc::new(Mutex::new(loaded.settings));
         let force_cross_volume_moves = Arc::new(AtomicBool::new(false));
@@ -512,6 +529,8 @@ impl FileManagerService {
             force_cross_volume_moves,
             actions: ActionRegistry::with_core_actions(platform_capabilities),
             search,
+            comparison,
+            comparison_store,
         }
     }
 
@@ -623,17 +642,19 @@ impl FileManagerService {
 
     /// Requests cancellation of an operation.
     ///
-    /// Searches are not registered with the mutation [`Scheduler`], so an
-    /// unknown id is retried against the search engine (search operations
-    /// share their `operation_id` and `search_id`, see [`Self::start_search`])
-    /// before giving up.
+    /// Searches and comparisons are not registered with the mutation
+    /// [`Scheduler`], so an unknown id is retried against the search engine,
+    /// then the comparison engine (both share their `operation_id` with
+    /// their own id, see [`Self::start_search`] and
+    /// [`Self::start_comparison`]) before giving up.
     pub fn cancel_operation(&self, id: OperationId) -> Result<(), ApplicationError> {
         match self.operations.cancel(id) {
             Ok(()) => Ok(()),
             Err(SchedulerError::UnknownOperation(_)) => self
                 .search
                 .cancel(id.into_inner())
-                .map_err(|_| ApplicationError::NotFound),
+                .or_else(|_| self.comparison.cancel(id.into_inner()).map_err(|_| ()))
+                .map_err(|()| ApplicationError::NotFound),
             Err(error) => Err(map_scheduler_error(error)),
         }
     }
@@ -1199,6 +1220,159 @@ impl FileManagerService {
             .map_err(|_| ApplicationError::NotFound)
     }
 
+    /// Starts a new cancellable directory comparison, streaming compared
+    /// entries to `request.workspace_id` over the event bus as they are
+    /// found (spec §16 milestone 5, task 0075).
+    pub fn start_comparison(
+        &self,
+        request: StartComparisonRequestDto,
+    ) -> Result<StartComparisonResponseDto, ApplicationError> {
+        let left: Location = request.left.into();
+        let right: Location = request.right.into();
+        let criteria = comparison_criteria(request.criteria);
+        // The comparison id doubles as the operation id (mirrors
+        // `start_search`), so the generic `/operations/{id}/cancel` route
+        // and the operation centre can address a running comparison without
+        // a separate id space.
+        let comparison_id = Uuid::new_v4();
+        let operation_id = OperationId::from(comparison_id);
+        let audience = EventAudience::Workspace(request.workspace_id.into());
+
+        // Emit operation.created so the operation centre tracks this comparison.
+        let op_payload = OperationPayload {
+            id: operation_id,
+            kind: OperationKindPayload::Compare,
+            state: OperationStatePayload::Running,
+            sources: vec![EntryRefPayload {
+                id: EntryId::from(operation_id.into_inner()),
+                location: left.clone().into(),
+            }],
+            destination: Some(right.clone().into()),
+            progress: OperationProgressDetails {
+                completed_items: 0,
+                total_items: None,
+                completed_bytes: 0,
+                total_bytes: None,
+                current_entry: None,
+                bytes_per_second: None,
+            },
+            conflict_policy: ConflictPolicyPayload::Ask,
+            created_at: chrono::Utc::now(),
+            started_at: None,
+            completed_at: None,
+        };
+        self.events.publish(
+            audience.clone(),
+            BackendEventPayload::OperationCreated {
+                operation: op_payload,
+            },
+        );
+
+        let options = fm_comparison::ComparisonOptions {
+            criteria,
+            show_hidden: request.show_hidden,
+            operation_id: Some(operation_id),
+        };
+        self.comparison
+            .start(comparison_id, left, right, options, audience)
+            .map_err(|error| ApplicationError::InvalidRequest(error.to_string()))?;
+        Ok(StartComparisonResponseDto { comparison_id })
+    }
+
+    /// Cancels a running comparison, stopping its traversal promptly.
+    pub fn cancel_comparison(&self, comparison_id: Uuid) -> Result<(), ApplicationError> {
+        self.comparison
+            .cancel(comparison_id)
+            .map_err(|_| ApplicationError::NotFound)
+    }
+
+    /// Returns a bounded page of a comparison's results, optionally
+    /// restricted to non-identical entries (spec §16 milestone 5: "can be
+    /// filtered to differences only").
+    pub fn get_comparison_page(
+        &self,
+        comparison_id: Uuid,
+        offset: u64,
+        limit: u16,
+        differences_only: bool,
+    ) -> Result<ComparisonPageDto, ApplicationError> {
+        let limit = limit.clamp(1, 500);
+        let page = self
+            .comparison_store
+            .page(
+                comparison_id,
+                usize::try_from(offset).unwrap_or(usize::MAX),
+                usize::from(limit),
+                differences_only,
+            )
+            .ok_or(ApplicationError::NotFound)?;
+        Ok(ComparisonPageDto {
+            comparison_id,
+            left: page.left_root.into(),
+            right: page.right_root.into(),
+            criteria: comparison_criteria_dto(page.criteria),
+            offset,
+            limit,
+            total: u64::try_from(page.total).unwrap_or(u64::MAX),
+            entries: page.entries.iter().map(comparison_entry_dto).collect(),
+            is_complete: page.is_complete,
+            warnings_count: page.warnings_count,
+        })
+    }
+
+    /// Proposes a sync plan from a comparison's current results. Never
+    /// touches a filesystem (spec §35): it only reads the comparison's
+    /// already-computed results.
+    pub fn generate_sync_plan(
+        &self,
+        comparison_id: Uuid,
+        request: GenerateSyncPlanRequestDto,
+    ) -> Result<SyncPlanDto, ApplicationError> {
+        let entries = self
+            .comparison_store
+            .all_entries(comparison_id)
+            .ok_or(ApplicationError::NotFound)?;
+        let mode = sync_mode(request.mode);
+        let items = compute_sync_plan(&entries, mode);
+        Ok(SyncPlanDto {
+            comparison_id,
+            items: items.iter().map(sync_plan_item_dto).collect(),
+        })
+    }
+
+    /// Applies a (possibly user-edited) sync plan: every non-`skip` row
+    /// starts one ordinary `copy` or `trash` operation through the existing
+    /// operation engine, with the normal conflict, progress and
+    /// cancellation semantics (spec §35: nothing runs without this explicit,
+    /// reviewed call).
+    pub fn apply_sync_plan(
+        &self,
+        comparison_id: Uuid,
+        request: ApplySyncPlanRequestDto,
+    ) -> Result<ApplySyncPlanResponseDto, ApplicationError> {
+        let (left_root, right_root) = self
+            .comparison_store
+            .roots(comparison_id)
+            .ok_or(ApplicationError::NotFound)?;
+        let mut operation_ids = Vec::with_capacity(request.items.len());
+        for item in request.items {
+            let start_request = match sync_action(item.action) {
+                SyncAction::Skip => continue,
+                SyncAction::CopyLeftToRight => {
+                    copy_request(&left_root, &right_root, &item.relative_path)?
+                }
+                SyncAction::CopyRightToLeft => {
+                    copy_request(&right_root, &left_root, &item.relative_path)?
+                }
+                SyncAction::DeleteLeft => delete_request(&left_root, &item.relative_path)?,
+                SyncAction::DeleteRight => delete_request(&right_root, &item.relative_path)?,
+            };
+            let operation = self.start_operation(start_request, None)?;
+            operation_ids.push(operation.id);
+        }
+        Ok(ApplySyncPlanResponseDto { operation_ids })
+    }
+
     /// Reports which capabilities are available for the current runtime and
     /// platform, so the frontend can respond to capabilities rather than
     /// detecting operating systems itself (spec §21).
@@ -1450,6 +1624,154 @@ fn map_scheduler_error(error: SchedulerError) -> ApplicationError {
     }
 }
 
+/// Builds a `copy` request for one sync-plan row.
+///
+/// `destination_root` is the *other* side's root: the traversal that
+/// produced the comparison only ever descends into directory pairs that
+/// exist, matched, on both sides, so `relative_path`'s parent is guaranteed
+/// resolvable there even when the leaf itself is not (see
+/// [`fm_comparison::resolve_relative`]'s documentation).
+fn copy_request(
+    source_root: &Location,
+    destination_root: &Location,
+    relative_path: &str,
+) -> Result<StartOperationRequestDto, ApplicationError> {
+    let source = resolve_relative(source_root, relative_path)
+        .map_err(|error| ApplicationError::InvalidRequest(error.to_string()))?;
+    let destination_parent = resolve_relative(destination_root, relative_parent(relative_path))
+        .map_err(|error| ApplicationError::InvalidRequest(error.to_string()))?;
+    Ok(StartOperationRequestDto {
+        operation_type: OperationKindDto::Copy,
+        sources: vec![source.into()],
+        destination: Some(destination_parent.into()),
+        destinations: Vec::new(),
+        // Sync intentionally replaces a differing/older destination.
+        conflict_policy: OperationConflictPolicyDto::Overwrite,
+        name: None,
+        archive_format: None,
+        archive_compression_level: None,
+        create_intermediate_directories: false,
+        symlink_policy: fm_transport_dto::SymlinkPolicyDto::default(),
+        permanent_delete_confirmed: false,
+        override_read_only: false,
+    })
+}
+
+/// Builds a `delete` request for one sync-plan deletion row.
+///
+/// Uses permanent delete rather than trash: trash requires a platform
+/// [`fm_platform::PlatformCapabilities::TRASH`] adapter that browser/server
+/// mode does not provide (spec §2.2/§22), so a trash-based sync delete would
+/// fail outright on every non-desktop host. `permanent_delete_confirmed` is
+/// set unconditionally because applying a sync plan is itself the reviewed,
+/// explicit confirmation spec §35 requires — the plan was only reached after
+/// the caller reviewed and, if desired, edited every row.
+fn delete_request(
+    root: &Location,
+    relative_path: &str,
+) -> Result<StartOperationRequestDto, ApplicationError> {
+    let target = resolve_relative(root, relative_path)
+        .map_err(|error| ApplicationError::InvalidRequest(error.to_string()))?;
+    Ok(StartOperationRequestDto {
+        operation_type: OperationKindDto::Delete,
+        sources: vec![target.into()],
+        destination: None,
+        destinations: Vec::new(),
+        conflict_policy: OperationConflictPolicyDto::Ask,
+        name: None,
+        archive_format: None,
+        archive_compression_level: None,
+        create_intermediate_directories: false,
+        symlink_policy: fm_transport_dto::SymlinkPolicyDto::default(),
+        permanent_delete_confirmed: true,
+        override_read_only: false,
+    })
+}
+
+const fn comparison_criteria(dto: ComparisonCriteriaDto) -> ComparisonCriteria {
+    match dto {
+        ComparisonCriteriaDto::NameOnly => ComparisonCriteria::NameOnly,
+        ComparisonCriteriaDto::SizeAndTimestamp => ComparisonCriteria::SizeAndTimestamp,
+        ComparisonCriteriaDto::ContentHash => ComparisonCriteria::ContentHash,
+    }
+}
+
+const fn comparison_criteria_dto(criteria: ComparisonCriteria) -> ComparisonCriteriaDto {
+    match criteria {
+        ComparisonCriteria::NameOnly => ComparisonCriteriaDto::NameOnly,
+        ComparisonCriteria::SizeAndTimestamp => ComparisonCriteriaDto::SizeAndTimestamp,
+        ComparisonCriteria::ContentHash => ComparisonCriteriaDto::ContentHash,
+    }
+}
+
+const fn comparison_status_dto(status: ComparisonStatus) -> ComparisonStatusDto {
+    match status {
+        ComparisonStatus::OnlyLeft => ComparisonStatusDto::OnlyLeft,
+        ComparisonStatus::OnlyRight => ComparisonStatusDto::OnlyRight,
+        ComparisonStatus::Newer => ComparisonStatusDto::Newer,
+        ComparisonStatus::Older => ComparisonStatusDto::Older,
+        ComparisonStatus::DifferentSize => ComparisonStatusDto::DifferentSize,
+        ComparisonStatus::Identical => ComparisonStatusDto::Identical,
+        ComparisonStatus::TypeMismatch => ComparisonStatusDto::TypeMismatch,
+    }
+}
+
+fn comparison_entry_side_dto(side: &ComparisonEntrySide) -> ComparisonEntrySideDto {
+    ComparisonEntrySideDto {
+        kind: side.kind.into(),
+        size: side.size,
+        modified_at: side.modified_at,
+        content_hash: side.content_hash.clone(),
+    }
+}
+
+fn comparison_entry_dto(entry: &ComparisonEntry) -> ComparisonEntryDto {
+    ComparisonEntryDto {
+        relative_path: entry.relative_path.clone(),
+        left: entry.left.as_ref().map(comparison_entry_side_dto),
+        right: entry.right.as_ref().map(comparison_entry_side_dto),
+        status: comparison_status_dto(entry.status),
+    }
+}
+
+const fn sync_mode(dto: SyncModeDto) -> SyncMode {
+    match dto {
+        SyncModeDto::MirrorLeftToRight => SyncMode::MirrorLeftToRight,
+        SyncModeDto::MirrorRightToLeft => SyncMode::MirrorRightToLeft,
+        SyncModeDto::TwoWayUpdate => SyncMode::TwoWayUpdate,
+    }
+}
+
+const fn sync_action(dto: SyncActionDto) -> SyncAction {
+    match dto {
+        SyncActionDto::CopyLeftToRight => SyncAction::CopyLeftToRight,
+        SyncActionDto::CopyRightToLeft => SyncAction::CopyRightToLeft,
+        SyncActionDto::DeleteLeft => SyncAction::DeleteLeft,
+        SyncActionDto::DeleteRight => SyncAction::DeleteRight,
+        SyncActionDto::Skip => SyncAction::Skip,
+    }
+}
+
+const fn sync_action_dto(action: SyncAction) -> SyncActionDto {
+    match action {
+        SyncAction::CopyLeftToRight => SyncActionDto::CopyLeftToRight,
+        SyncAction::CopyRightToLeft => SyncActionDto::CopyRightToLeft,
+        SyncAction::DeleteLeft => SyncActionDto::DeleteLeft,
+        SyncAction::DeleteRight => SyncActionDto::DeleteRight,
+        SyncAction::Skip => SyncActionDto::Skip,
+    }
+}
+
+fn sync_plan_item_dto(item: &SyncPlanItem) -> SyncPlanItemDto {
+    SyncPlanItemDto {
+        relative_path: item.relative_path.clone(),
+        status: comparison_status_dto(item.status),
+        action: sync_action_dto(item.action),
+        left: item.left.as_ref().map(comparison_entry_side_dto),
+        right: item.right.as_ref().map(comparison_entry_side_dto),
+    }
+}
+
 fn operation_kind(kind: OperationKindDto) -> fm_operations::OperationKind {
     match kind {
         OperationKindDto::CreateArchive => fm_operations::OperationKind::CreateArchive,
@@ -1465,6 +1787,10 @@ fn operation_kind(kind: OperationKindDto) -> fm_operations::OperationKind {
         // Search is handled via start_search, not the executor.
         OperationKindDto::Search => {
             unreachable!("search must be handled before calling operation_kind")
+        }
+        // Compare is handled via start_comparison, not the executor.
+        OperationKindDto::Compare => {
+            unreachable!("compare must be handled before calling operation_kind")
         }
     }
 }

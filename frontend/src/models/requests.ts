@@ -1,10 +1,20 @@
+import type { ComparisonPageDto } from '../api/generated/models/comparisonPageDto';
 import type { LoadEditableFileResponseDto } from '../api/generated/models/loadEditableFileResponseDto';
 import type { ReadFileRangeResponseDto } from '../api/generated/models/readFileRangeResponseDto';
 import type { SaveEditableFileResponseDto } from '../api/generated/models/saveEditableFileResponseDto';
 import type { SearchInFileMatchDto } from '../api/generated/models/searchInFileMatchDto';
 import type { SearchInFileResponseDto } from '../api/generated/models/searchInFileResponseDto';
 import type { SortDescriptorDto } from '../api/generated/models/sortDescriptorDto';
+import type { SyncPlanDto } from '../api/generated/models/syncPlanDto';
 import type { ActionInvocationContext } from './action';
+import {
+  type ComparisonCriteria,
+  type ComparisonEntry,
+  comparisonEntryFromDto,
+  type SyncMode,
+  type SyncPlanItem,
+  syncPlanItemFromDto,
+} from './comparison';
 import type { ActionId, EntryId, OperationId, PaneId } from './ids';
 import type { Location } from './location';
 import type { ConflictPolicy, OperationKind } from './operation';
@@ -171,3 +181,90 @@ export type SearchInFileMatch = SearchInFileMatchDto;
 
 /** The result of a {@link SearchInFileRequest}. */
 export type SearchInFileResult = SearchInFileResponseDto;
+
+/**
+ * Starts a recursive, cancellable directory comparison
+ * (`POST /api/v1/comparisons`, task 0075), mirroring
+ * `fm_transport_dto::StartComparisonRequestDto`.
+ */
+export interface StartComparisonRequest {
+  workspaceId: string;
+  left: Location;
+  right: Location;
+  criteria: ComparisonCriteria;
+  showHidden?: boolean;
+}
+
+/** Identifies a started comparison, mirroring `fm_transport_dto::StartComparisonResponseDto`. */
+export interface StartComparisonResult {
+  comparisonId: string;
+}
+
+/**
+ * A bounded, optionally differences-only page of a comparison's results
+ * (`GET /api/v1/comparisons/{comparisonId}`), mirroring
+ * `fm_transport_dto::ComparisonPageDto`.
+ */
+export interface ComparisonPage {
+  comparisonId: string;
+  left: Location;
+  right: Location;
+  criteria: ComparisonCriteria;
+  offset: number;
+  limit: number;
+  total: number;
+  entries: ComparisonEntry[];
+  isComplete: boolean;
+  warningsCount: number;
+}
+
+/** Converts the wire DTO into the frontend model. */
+export function comparisonPageFromDto(dto: ComparisonPageDto): ComparisonPage {
+  return {
+    comparisonId: dto.comparisonId,
+    left: dto.left,
+    right: dto.right,
+    criteria: dto.criteria,
+    offset: dto.offset,
+    limit: dto.limit,
+    total: dto.total,
+    entries: dto.entries.map(comparisonEntryFromDto),
+    isComplete: dto.isComplete,
+    warningsCount: dto.warningsCount,
+  };
+}
+
+/**
+ * Proposes a sync plan from a comparison's current results
+ * (`POST /api/v1/comparisons/{comparisonId}/sync-plan`, task 0075).
+ */
+export interface GenerateSyncPlanRequest {
+  mode: SyncMode;
+}
+
+/** A proposed sync plan, mirroring `fm_transport_dto::SyncPlanDto`. */
+export interface SyncPlan {
+  comparisonId: string;
+  items: SyncPlanItem[];
+}
+
+/** Converts the wire DTO into the frontend model. */
+export function syncPlanFromDto(dto: SyncPlanDto): SyncPlan {
+  return {
+    comparisonId: dto.comparisonId,
+    items: dto.items.map(syncPlanItemFromDto),
+  };
+}
+
+/**
+ * Applies a (possibly user-edited) sync plan
+ * (`POST /api/v1/comparisons/{comparisonId}/apply-sync-plan`, task 0075).
+ */
+export interface ApplySyncPlanRequest {
+  items: readonly SyncPlanItem[];
+}
+
+/** The operations started by applying a sync plan. */
+export interface ApplySyncPlanResult {
+  operationIds: readonly OperationId[];
+}

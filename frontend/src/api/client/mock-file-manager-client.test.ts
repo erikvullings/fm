@@ -381,6 +381,118 @@ describe('MockFileManagerClient search methods', () => {
   });
 });
 
+describe('MockFileManagerClient comparison methods', () => {
+  it('compares a root against itself and reports every entry identical', async () => {
+    vi.useFakeTimers();
+    const client = new MockFileManagerClient();
+    const listener = vi.fn();
+    await client.subscribe(listener);
+
+    const started = await client.startComparison({
+      workspaceId: 'workspace-1',
+      left: { providerId: 'file', uri: 'mock:///Documents' },
+      right: { providerId: 'file', uri: 'mock:///Documents' },
+      criteria: 'sizeAndTimestamp',
+    });
+    expect(started.comparisonId).toMatch(/^mock-comparison-/);
+
+    await vi.runAllTimersAsync();
+    vi.useRealTimers();
+
+    const event = listener.mock.calls[0]?.[0] as BackendEvent;
+    expect(event.payload).toMatchObject({
+      type: 'comparison.resultsBatch',
+      comparisonId: started.comparisonId,
+      isComplete: true,
+    });
+    const page = await client.getComparison(started.comparisonId);
+    expect(page.entries.length).toBeGreaterThan(0);
+    expect(page.entries.every((entry) => entry.status === 'identical')).toBe(true);
+  });
+
+  it('reports entries missing from the right side as onlyLeft, filterable to differences only', async () => {
+    const client = new MockFileManagerClient();
+    const started = await client.startComparison({
+      workspaceId: 'workspace-1',
+      left: { providerId: 'file', uri: 'mock:///Documents' },
+      right: { providerId: 'file', uri: 'mock:///Empty' },
+      criteria: 'nameOnly',
+    });
+
+    const all = await client.getComparison(started.comparisonId);
+    const names = all.entries.map((entry) => entry.relativePath).sort();
+    expect(names).toEqual(['Projects', 'Projects/file-manager.md', 'report.pdf']);
+    expect(all.entries.every((entry) => entry.status === 'onlyLeft')).toBe(true);
+
+    const filtered = await client.getComparison(started.comparisonId, {
+      differencesOnly: true,
+    });
+    expect(filtered.total).toBe(all.entries.length);
+  });
+
+  it('never emits a resultsBatch for a comparison cancelled before it fires', async () => {
+    vi.useFakeTimers();
+    const client = new MockFileManagerClient();
+    const listener = vi.fn();
+    await client.subscribe(listener);
+
+    const started = await client.startComparison({
+      workspaceId: 'workspace-1',
+      left: { providerId: 'file', uri: 'mock:///Documents' },
+      right: { providerId: 'file', uri: 'mock:///Empty' },
+      criteria: 'nameOnly',
+    });
+    await client.cancelComparison(started.comparisonId);
+    await vi.runAllTimersAsync();
+    vi.useRealTimers();
+
+    expect(listener).not.toHaveBeenCalled();
+  });
+
+  it('rejects operations on an unknown comparison id', async () => {
+    const client = new MockFileManagerClient();
+
+    await expect(client.getComparison('nonexistent')).rejects.toMatchObject({
+      code: 'comparisonNotFound',
+    });
+    await expect(client.cancelComparison('nonexistent')).rejects.toMatchObject({
+      code: 'comparisonNotFound',
+    });
+    await expect(
+      client.generateSyncPlan('nonexistent', { mode: 'mirrorLeftToRight' }),
+    ).rejects.toMatchObject({ code: 'comparisonNotFound' });
+  });
+
+  it('generates a mirror-left-to-right sync plan and applies it as real mock operations', async () => {
+    const client = new MockFileManagerClient();
+    const started = await client.startComparison({
+      workspaceId: 'workspace-1',
+      left: { providerId: 'file', uri: 'mock:///Documents' },
+      right: { providerId: 'file', uri: 'mock:///Empty' },
+      criteria: 'nameOnly',
+    });
+
+    const plan = await client.generateSyncPlan(started.comparisonId, {
+      mode: 'mirrorLeftToRight',
+    });
+    expect(plan.items.length).toBeGreaterThan(0);
+    expect(plan.items.every((item) => item.action === 'copyLeftToRight')).toBe(true);
+
+    // Force one row to `skip` to verify it starts no operation.
+    const items = plan.items.map((item, index) =>
+      index === 0 ? { ...item, action: 'skip' as const } : item,
+    );
+    const applied = await client.applySyncPlan(started.comparisonId, { items });
+    expect(applied.operationIds).toHaveLength(items.length - 1);
+
+    const operations = await client.listOperations();
+    for (const operationId of applied.operationIds) {
+      const operation = operations.find((candidate) => candidate.id === operationId);
+      expect(operation).toMatchObject({ kind: 'copy', state: 'completed' });
+    }
+  });
+});
+
 describe('MockFileManagerClient file range and content search methods', () => {
   const LOCATION = { providerId: 'file', uri: 'mock:///report.txt' } as const;
 

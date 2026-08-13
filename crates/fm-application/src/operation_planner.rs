@@ -435,6 +435,11 @@ impl OperationPlanner {
                     "search is handled via start_search, not the operation executor".into(),
                 ));
             }
+            OperationKindDto::Compare => {
+                return Err(ApplicationError::InvalidRequest(
+                    "compare is handled via start_comparison, not the operation executor".into(),
+                ));
+            }
         })
     }
 }

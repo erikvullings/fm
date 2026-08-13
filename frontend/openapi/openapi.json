@@ -279,6 +279,39 @@
         ],
         "type": "object"
       },
+      "ApplySyncPlanRequestDto": {
+        "description": "Applies a (possibly user-edited) sync plan\n(`POST /api/v1/comparisons/{comparisonId}/apply-sync-plan`).\n\nEvery non-`skip` row starts one ordinary `copy` or (confirmed, permanent)\n`delete` operation through the existing operation engine, with the\nnormal conflict, progress and cancellation semantics (spec §35: nothing\nruns without this explicit, reviewed call).",
+        "properties": {
+          "items": {
+            "description": "The (possibly edited) rows to apply. Rows with action `skip` start no\noperation.",
+            "items": {
+              "$ref": "#/components/schemas/SyncPlanItemDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
+      "ApplySyncPlanResponseDto": {
+        "description": "The operations started by applying a sync plan.",
+        "properties": {
+          "operationIds": {
+            "description": "One operation id per applied (non-`skip`) row, in the same order as\nthe request's `items`.",
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "operationIds"
+        ],
+        "type": "object"
+      },
       "ArchiveCredentialRequestDto": {
         "description": "Supplies a password for one archive to the current backend session.",
         "properties": {
@@ -354,6 +387,175 @@
           "visible"
         ],
         "type": "object"
+      },
+      "ComparisonCriteriaDto": {
+        "description": "How two directory trees are compared.",
+        "enum": [
+          "nameOnly",
+          "sizeAndTimestamp",
+          "contentHash"
+        ],
+        "type": "string"
+      },
+      "ComparisonEntryDto": {
+        "description": "One compared path.",
+        "properties": {
+          "left": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ComparisonEntrySideDto",
+                "description": "Left-side metadata, absent when [`ComparisonStatusDto::OnlyRight`]."
+              }
+            ]
+          },
+          "relativePath": {
+            "description": "Path relative to both roots, using `/` separators.",
+            "type": "string"
+          },
+          "right": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ComparisonEntrySideDto",
+                "description": "Right-side metadata, absent when [`ComparisonStatusDto::OnlyLeft`]."
+              }
+            ]
+          },
+          "status": {
+            "$ref": "#/components/schemas/ComparisonStatusDto",
+            "description": "The computed outcome for this path."
+          }
+        },
+        "required": [
+          "relativePath",
+          "status"
+        ],
+        "type": "object"
+      },
+      "ComparisonEntrySideDto": {
+        "description": "One side's metadata for a compared entry.",
+        "properties": {
+          "contentHash": {
+            "description": "Streamed content hash, present only under content-hash criteria.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "kind": {
+            "$ref": "#/components/schemas/EntryKindDto",
+            "description": "File, directory or symlink."
+          },
+          "modifiedAt": {
+            "description": "Last modification time, when known.",
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "size": {
+            "description": "Size in bytes, when known.",
+            "format": "int64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "type": "object"
+      },
+      "ComparisonPageDto": {
+        "description": "A bounded, optionally differences-only page of a comparison's results\n(`GET /api/v1/comparisons/{comparisonId}`).",
+        "properties": {
+          "comparisonId": {
+            "description": "The comparison this page belongs to.",
+            "format": "uuid",
+            "type": "string"
+          },
+          "criteria": {
+            "$ref": "#/components/schemas/ComparisonCriteriaDto",
+            "description": "How entries were classified."
+          },
+          "entries": {
+            "description": "Entries in this page.",
+            "items": {
+              "$ref": "#/components/schemas/ComparisonEntryDto"
+            },
+            "type": "array"
+          },
+          "isComplete": {
+            "description": "Whether the backend has stopped producing further entries (either\nfinished or cancelled).",
+            "type": "boolean"
+          },
+          "left": {
+            "$ref": "#/components/schemas/LocationDto",
+            "description": "Root compared as \"left\"."
+          },
+          "limit": {
+            "description": "Requested page size after server-side clamping.",
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "offset": {
+            "description": "Requested zero-based offset, into the (possibly filtered) result set.",
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "right": {
+            "$ref": "#/components/schemas/LocationDto",
+            "description": "Root compared as \"right\"."
+          },
+          "total": {
+            "description": "Number of entries matching the requested filter, known so far.",
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "warningsCount": {
+            "description": "Cumulative count of unreadable directories skipped so far.",
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "comparisonId",
+          "left",
+          "right",
+          "criteria",
+          "offset",
+          "limit",
+          "total",
+          "entries",
+          "isComplete",
+          "warningsCount"
+        ],
+        "type": "object"
+      },
+      "ComparisonStatusDto": {
+        "description": "Per-entry comparison outcome.",
+        "enum": [
+          "onlyLeft",
+          "onlyRight",
+          "newer",
+          "older",
+          "differentSize",
+          "identical",
+          "typeMismatch"
+        ],
+        "type": "string"
       },
       "ConflictPolicyDto": {
         "description": "Default operation conflict choice.",
@@ -1456,6 +1658,19 @@
         ],
         "type": "object"
       },
+      "GenerateSyncPlanRequestDto": {
+        "description": "Proposes a sync plan from a comparison's current results\n(`POST /api/v1/comparisons/{comparisonId}/sync-plan`).\n\nGenerating a plan never touches a filesystem (spec §35): it only reads\nthe comparison's already-computed results.",
+        "properties": {
+          "mode": {
+            "$ref": "#/components/schemas/SyncModeDto",
+            "description": "Which side is authoritative."
+          }
+        },
+        "required": [
+          "mode"
+        ],
+        "type": "object"
+      },
       "HealthDto": {
         "description": "Response body for `GET /api/v1/health`.",
         "example": {
@@ -2127,7 +2342,8 @@
           "duplicate",
           "trash",
           "delete",
-          "search"
+          "search",
+          "compare"
         ],
         "type": "string"
       },
@@ -3380,6 +3596,66 @@
         ],
         "type": "object"
       },
+      "StartComparisonRequestDto": {
+        "description": "Starts a new recursive, cancellable directory comparison\n(`POST /api/v1/comparisons`).",
+        "example": {
+          "criteria": "sizeAndTimestamp",
+          "left": {
+            "providerId": "local",
+            "uri": "file:///Users/erik/left"
+          },
+          "right": {
+            "providerId": "local",
+            "uri": "file:///Users/erik/right"
+          },
+          "showHidden": false,
+          "workspaceId": "7136d9bc-90f1-4c67-8527-9d30683167ec"
+        },
+        "properties": {
+          "criteria": {
+            "$ref": "#/components/schemas/ComparisonCriteriaDto",
+            "description": "How entries are classified."
+          },
+          "left": {
+            "$ref": "#/components/schemas/LocationDto",
+            "description": "Root compared as \"left\"."
+          },
+          "right": {
+            "$ref": "#/components/schemas/LocationDto",
+            "description": "Root compared as \"right\"."
+          },
+          "showHidden": {
+            "description": "Include hidden entries (dotfiles, or the platform hidden attribute)\non either side. Defaults to `false`.",
+            "type": "boolean"
+          },
+          "workspaceId": {
+            "description": "Workspace that owns the comparison and receives its result-batch events.",
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "workspaceId",
+          "left",
+          "right",
+          "criteria"
+        ],
+        "type": "object"
+      },
+      "StartComparisonResponseDto": {
+        "description": "Identifies a started comparison.",
+        "properties": {
+          "comparisonId": {
+            "description": "The started comparison's identifier, used to page, cancel, and\ngenerate a sync plan from its results.",
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "comparisonId"
+        ],
+        "type": "object"
+      },
       "StartOperationRequestDto": {
         "description": "A request to start one backend-owned semantic operation.",
         "properties": {
@@ -3565,6 +3841,93 @@
           "copyTarget"
         ],
         "type": "string"
+      },
+      "SyncActionDto": {
+        "description": "A proposed (and, before applying, user-editable) action for one entry.",
+        "enum": [
+          "copyLeftToRight",
+          "copyRightToLeft",
+          "deleteLeft",
+          "deleteRight",
+          "skip"
+        ],
+        "type": "string"
+      },
+      "SyncModeDto": {
+        "description": "Which side is authoritative when a sync plan proposes actions.",
+        "enum": [
+          "mirrorLeftToRight",
+          "mirrorRightToLeft",
+          "twoWayUpdate"
+        ],
+        "type": "string"
+      },
+      "SyncPlanDto": {
+        "description": "A proposed sync plan, ready for review and per-row edits before applying.",
+        "properties": {
+          "comparisonId": {
+            "description": "The comparison this plan was generated from.",
+            "format": "uuid",
+            "type": "string"
+          },
+          "items": {
+            "description": "Proposed rows, one per non-identical compared entry.",
+            "items": {
+              "$ref": "#/components/schemas/SyncPlanItemDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "comparisonId",
+          "items"
+        ],
+        "type": "object"
+      },
+      "SyncPlanItemDto": {
+        "description": "One row of a sync plan.",
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/SyncActionDto",
+            "description": "The proposed (or, on the way back to `applySyncPlan`, user-edited)\naction."
+          },
+          "left": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ComparisonEntrySideDto",
+                "description": "Left-side metadata, for display."
+              }
+            ]
+          },
+          "relativePath": {
+            "description": "Path relative to both roots, using `/` separators.",
+            "type": "string"
+          },
+          "right": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ComparisonEntrySideDto",
+                "description": "Right-side metadata, for display."
+              }
+            ]
+          },
+          "status": {
+            "$ref": "#/components/schemas/ComparisonStatusDto",
+            "description": "The comparison outcome this action was proposed from."
+          }
+        },
+        "required": [
+          "relativePath",
+          "status",
+          "action"
+        ],
+        "type": "object"
       },
       "SystemLocationDto": {
         "description": "A navigable location discovered by the host operating system.",
@@ -4392,6 +4755,249 @@
           }
         },
         "summary": "Caches an archive password for this backend session only."
+      }
+    },
+    "/api/v1/comparisons": {
+      "post": {
+        "operationId": "startComparison",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StartComparisonRequestDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StartComparisonResponseDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationErrorDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/v1/comparisons/{comparisonId}": {
+      "get": {
+        "operationId": "getComparison",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "comparisonId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Zero-based entry offset, into the (possibly filtered) result set.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "format": "int64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Page size, clamped to 1 through 500.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Restrict the page to entries that are not identical.",
+            "in": "query",
+            "name": "differencesOnly",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ComparisonPageDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationErrorDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/v1/comparisons/{comparisonId}/apply-sync-plan": {
+      "post": {
+        "operationId": "applySyncPlan",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "comparisonId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApplySyncPlanRequestDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplySyncPlanResponseDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationErrorDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationErrorDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/v1/comparisons/{comparisonId}/cancel": {
+      "post": {
+        "operationId": "cancelComparison",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "comparisonId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationErrorDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/v1/comparisons/{comparisonId}/sync-plan": {
+      "post": {
+        "operationId": "generateSyncPlan",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "comparisonId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenerateSyncPlanRequestDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SyncPlanDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationErrorDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        }
       }
     },
     "/api/v1/connections": {

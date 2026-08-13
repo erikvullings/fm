@@ -25,6 +25,8 @@ import {
   setQuickFilterDraftPatch,
 } from '../../state';
 import { isCutLocation } from '../clipboard/clipboard';
+import { comparisonStatusColumn } from '../comparison/comparison-column';
+import { type ComparisonState, sideForPane, statusForEntry } from '../comparison/comparison-state';
 import { loadConnections } from '../connections/connections-model';
 import { SAMPLE_FILE_AGE_COLUMN } from '../directory-table/directory-table';
 import type { NativeIconLoader } from '../directory-table/native-icon-loader';
@@ -80,6 +82,7 @@ export interface PaneContentContext {
   getNativeDragOutSupported(): boolean;
   getNativeDropInProgress(): boolean;
   getAppState(): AppState | undefined;
+  getComparisonState(): ComparisonState;
   clipboard(): ClipboardState;
 
   // Map state (mutable reference — callers may .get()/.set()/.delete() directly)
@@ -94,6 +97,8 @@ export interface PaneContentContext {
     }
   >;
   getSortRequests(): Map<string, object>;
+  /** Tokens guarding the async "moveCursorTo last" flow — see onSelectionAction below. */
+  getCursorLoadTokens(): Map<string, object>;
   getViewerByTab(): Map<
     string,
     {
@@ -198,8 +203,24 @@ export function createPaneContentBuilder(
     const quickFilterQuery = key === undefined ? '' : context.quickFilterQueryFor(key, tab);
     const filtered =
       key === undefined ? sorted : context.entriesFilteredFor(key, sorted, quickFilterQuery);
+    const comparisonState = context.getComparisonState();
+    const comparisonSide = sideForPane(comparisonState, paneId);
+    // A pane that is part of an active comparison additionally hides identical entries while
+    // "differences only" is on (task 0075). `totalKnownEntries` below is computed from `filtered`
+    // rather than this narrower set, so the scrollbar stays sized off the pre-filter total instead
+    // of chasing a moving target while the comparison is still streaming — the same trade-off the
+    // quick filter above already accepts.
+    const differencesFiltered =
+      comparisonSide === undefined || !comparisonState.differencesOnly
+        ? filtered
+        : filtered.filter((entry) => {
+            const status = statusForEntry(comparisonState, paneId, entry.location.uri)?.status;
+            return status === undefined || status !== 'identical';
+          });
     const entries =
-      tab === undefined ? filtered : withParentEntry(pathFromUri(tab.location.uri), filtered);
+      tab === undefined
+        ? differencesFiltered
+        : withParentEntry(pathFromUri(tab.location.uri), differencesFiltered);
     const entryIds = entries.map((entry) => entry.id);
     const cursorIndex =
       selection.cursorEntryId === undefined ? undefined : entryIds.indexOf(selection.cursorEntryId);
@@ -258,8 +279,8 @@ export function createPaneContentBuilder(
       filterQuery: quickFilterQuery,
       formatSettings: entryFormatSettings,
       ...(nativeIconLoader === undefined ? {} : { nativeIconLoader }),
-      pluginColumns:
-        context
+      pluginColumns: [
+        ...(context
           .getPlugins()
           .some(
             (plugin) =>
@@ -267,7 +288,16 @@ export function createPaneContentBuilder(
           ) &&
         tab?.view.columns.some((column) => column.columnId === 'sample.fileAge' && column.visible)
           ? [SAMPLE_FILE_AGE_COLUMN]
-          : [],
+          : []),
+        ...(comparisonSide === undefined
+          ? []
+          : [
+              comparisonStatusColumn(
+                comparisonSide,
+                (uri) => statusForEntry(comparisonState, paneId, uri)?.status,
+              ),
+            ]),
+      ],
       platform: context.getPlatform(),
       keybindingRuntime: context.getKeybindingRuntime(),
       actions: context.getRegisteredActions(),
@@ -360,6 +390,8 @@ export function createPaneContentBuilder(
           // The loaded prefix doesn't include the real last entry yet: fetch every remaining
           // page (cheap, cache-backed slices on the backend) before landing the cursor, rather
           // than jumping to the last entry loaded so far.
+          const loadToken = {};
+          context.getCursorLoadTokens().set(key, loadToken);
           void context
             .getNavigation()
             .loadAllPages(paneId)
@@ -415,6 +447,10 @@ export function createPaneContentBuilder(
                   ? filteredFresh
                   : withParentEntry(pathFromUri(tab.location.uri), filteredFresh);
               const loadedEntryIds = loadedEntries.map((entry) => entry.id);
+              // Drop this resolution if the user has since taken another selection action (e.g.
+              // pressed Up while the pages were still loading) — applying it now would silently
+              // snap the cursor back to the last entry and undo their more recent navigation.
+              if (context.getCursorLoadTokens().get(key) !== loadToken) return;
               const next = reduceSelection(
                 context.getSelections().get(key) ?? selection,
                 action,
@@ -425,6 +461,7 @@ export function createPaneContentBuilder(
             });
           return;
         }
+        context.getCursorLoadTokens().delete(key);
         const next = reduceSelection(selection, action, entryIds);
         context.getSelections().set(key, next);
         m.redraw();

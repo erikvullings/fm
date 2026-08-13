@@ -459,6 +459,27 @@ main.fm-workspace {
   display: none;
 }
 
+/* Directory-comparison toolbar (task 0075). */
+.fm-comparison-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding-inline: 0.5rem;
+  font-size: 0.85rem;
+  color: var(--fm-text-muted);
+}
+
+.fm-comparison-differences-only {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  cursor: pointer;
+}
+
+.fm-comparison-sync-button {
+  cursor: pointer;
+}
+
 .fm-disclosure-summary-hidden {
   display: inline-block;
   width: 0;
@@ -1146,6 +1167,41 @@ input[type="text"].fm-command-palette-input {
 
 .fm-multi-rename-row--problem td {
   background: var(--fm-error-surface, rgb(255 0 0 / 8%));
+}
+
+/* Sync-plan review table (task 0075), mirroring `.fm-multi-rename-preview` above. */
+.fm-sync-plan-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-height: 60vh;
+}
+
+.fm-sync-plan-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 0.85rem;
+  overflow-y: auto;
+}
+
+.fm-sync-plan-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--fm-surface);
+}
+
+.fm-sync-plan-table th,
+.fm-sync-plan-table td {
+  padding: 0.3rem 0.5rem;
+  text-align: left;
+  border-bottom: 1px solid var(--fm-border);
+}
+
+.fm-sync-plan-path {
+  font-family: var(--fm-font-mono, monospace);
+  word-break: break-all;
 }
 
 /* Uses the same input-styling approach as `.fm-create-directory-field` above. */

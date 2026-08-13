@@ -4,8 +4,11 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import type {
   ActionDescriptor,
   ActionResult,
+  ApplySyncPlanRequest,
+  ApplySyncPlanResult,
   ArchiveCredentialRequest,
   BackendEvent,
+  ComparisonPage,
   Connection,
   ConnectionId,
   CreateConnectionRequest,
@@ -16,6 +19,7 @@ import type {
   EntryMetadata,
   EntryMetadataRequest,
   FileRangeChunk,
+  GenerateSyncPlanRequest,
   HostKeyProbe,
   InvokeActionRequest,
   ListDirectoryRequest,
@@ -34,9 +38,12 @@ import type {
   SearchInFileRequest,
   SearchInFileResult,
   Settings,
+  StartComparisonRequest,
+  StartComparisonResult,
   StartOperationRequest,
   StartSearchRequest,
   StartSearchResult,
+  SyncPlan,
   SystemLocation,
   Unsubscribe,
   UpdateConnectionRequest,
@@ -45,6 +52,7 @@ import type {
   WorkspaceProjection,
   WorkspaceSummary,
 } from '../../models';
+import { syncPlanItemToDto } from '../../models/comparison';
 import { entryMetadataFromDto } from '../../models/entry';
 import { directorySnapshotFromDto } from '../../models/snapshot';
 import { workspaceProjectionFromDto } from '../../models/workspace';
@@ -254,6 +262,49 @@ export class TauriFileManagerClient implements FileManagerClient {
 
   async cancelSearch(searchId: string, _signal?: AbortSignal): Promise<void> {
     await invoke('cancel_search', { searchId });
+  }
+
+  startComparison(
+    request: StartComparisonRequest,
+    _signal?: AbortSignal,
+  ): Promise<StartComparisonResult> {
+    return invoke<StartComparisonResult>('start_comparison', { request });
+  }
+
+  getComparison(
+    comparisonId: string,
+    options?: { offset?: number; limit?: number; differencesOnly?: boolean },
+    _signal?: AbortSignal,
+  ): Promise<ComparisonPage> {
+    return invoke<ComparisonPage>('get_comparison', {
+      comparisonId,
+      offset: options?.offset,
+      limit: options?.limit,
+      differencesOnly: options?.differencesOnly,
+    });
+  }
+
+  async cancelComparison(comparisonId: string, _signal?: AbortSignal): Promise<void> {
+    await invoke('cancel_comparison', { comparisonId });
+  }
+
+  generateSyncPlan(
+    comparisonId: string,
+    request: GenerateSyncPlanRequest,
+    _signal?: AbortSignal,
+  ): Promise<SyncPlan> {
+    return invoke<SyncPlan>('generate_sync_plan', { comparisonId, request });
+  }
+
+  applySyncPlan(
+    comparisonId: string,
+    request: ApplySyncPlanRequest,
+    _signal?: AbortSignal,
+  ): Promise<ApplySyncPlanResult> {
+    return invoke<ApplySyncPlanResult>('apply_sync_plan', {
+      comparisonId,
+      request: { items: request.items.map(syncPlanItemToDto) },
+    });
   }
 
   listActions(_signal?: AbortSignal): Promise<ActionDescriptor[]> {
