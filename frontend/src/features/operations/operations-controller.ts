@@ -30,12 +30,16 @@ export interface OperationsController {
     signal?: AbortSignal,
   ): Promise<Operation>;
   createDirectory(location: Location, name: string, signal?: AbortSignal): Promise<Operation>;
+  /** Creates an empty file at `location` (Shift+F4). */
+  createFile(location: Location, name: string, signal?: AbortSignal): Promise<Operation>;
   rename(source: Location, destination: Location, signal?: AbortSignal): Promise<Operation>;
   multiRename(
     sources: readonly Location[],
     destinations: readonly Location[],
     signal?: AbortSignal,
   ): Promise<Operation>;
+  /** Copy-with-rename in the same directory ("Duplicate", Shift+F5, TASKS/0042). */
+  duplicate(sources: readonly Location[], signal?: AbortSignal): Promise<Operation>;
 }
 
 export function createOperationsController(client: FileManagerClient): OperationsController {
@@ -106,6 +110,19 @@ export function createOperationsController(client: FileManagerClient): Operation
       );
     },
 
+    createFile(location, name, signal) {
+      return client.startOperation(
+        {
+          type: 'createFile',
+          sources: [],
+          destination: location,
+          conflictPolicy: 'ask',
+          name,
+        },
+        signal,
+      );
+    },
+
     rename(source, destination, signal) {
       return client.startOperation(
         { type: 'rename', sources: [source], destination, conflictPolicy: 'ask' },
@@ -118,6 +135,10 @@ export function createOperationsController(client: FileManagerClient): Operation
         { type: 'rename', sources, destinations, conflictPolicy: 'ask' },
         signal,
       );
+    },
+
+    duplicate(sources, signal) {
+      return client.startOperation({ type: 'duplicate', sources, conflictPolicy: 'ask' }, signal);
     },
   };
 }

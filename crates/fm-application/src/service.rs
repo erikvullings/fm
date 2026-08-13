@@ -1415,6 +1415,7 @@ fn operation_kind(kind: OperationKindDto) -> fm_operations::OperationKind {
         OperationKindDto::CreateArchive => fm_operations::OperationKind::CreateArchive,
         OperationKindDto::MoveToArchive => fm_operations::OperationKind::MoveToArchive,
         OperationKindDto::CreateDirectory => fm_operations::OperationKind::CreateDirectory,
+        OperationKindDto::CreateFile => fm_operations::OperationKind::CreateFile,
         OperationKindDto::Rename => fm_operations::OperationKind::Rename,
         OperationKindDto::Copy => fm_operations::OperationKind::Copy,
         OperationKindDto::Move => fm_operations::OperationKind::Move,
@@ -1459,6 +1460,8 @@ fn mutating_operation_kind(id: &ActionId) -> Option<OperationKindDto> {
         "core.trash" => Some(OperationKindDto::Trash),
         "core.delete" => Some(OperationKindDto::Delete),
         "core.createDirectory" => Some(OperationKindDto::CreateDirectory),
+        "core.createFile" => Some(OperationKindDto::CreateFile),
+        "core.duplicate" => Some(OperationKindDto::Duplicate),
         _ => None,
     }
 }
@@ -1522,6 +1525,7 @@ fn operation_dto(operation: Operation, queue_position: Option<u64>) -> Operation
             fm_operations::OperationKind::CreateArchive => OperationKindDto::CreateArchive,
             fm_operations::OperationKind::MoveToArchive => OperationKindDto::MoveToArchive,
             fm_operations::OperationKind::CreateDirectory => OperationKindDto::CreateDirectory,
+            fm_operations::OperationKind::CreateFile => OperationKindDto::CreateFile,
             fm_operations::OperationKind::Rename => OperationKindDto::Rename,
             fm_operations::OperationKind::Copy => OperationKindDto::Copy,
             fm_operations::OperationKind::Move => OperationKindDto::Move,

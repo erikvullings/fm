@@ -76,6 +76,9 @@ export interface FileManagerClient {
   /** Starts an OS file-reference drag from the desktop host. */
   startNativeDrag(locations: readonly Location[], signal?: AbortSignal): Promise<void>;
 
+  /** Closes the desktop window (Alt+F4, task 0128). Only implemented on the Tauri host. */
+  quit?(): Promise<void>;
+
   /** Subscribes to Finder/Explorer file drops over the desktop window. */
   subscribeNativeFileDrops(listener: (drop: NativeFileDrop) => void): Promise<Unsubscribe>;
 

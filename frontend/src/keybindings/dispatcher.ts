@@ -21,7 +21,11 @@ export interface BindingConflict {
   readonly actionIds: readonly ActionId[];
 }
 
-const BROWSER_RESERVED = new Set(['CTRL+P', 'CTRL+W', 'CTRL+T']);
+// Ctrl+N (new browser window) and Ctrl+U (view source) are, like Ctrl+P/Ctrl+W/Ctrl+T,
+// intercepted by Chrome's own UI before a page's keydown listener ever runs - no amount of
+// `event.preventDefault()` can reclaim them, so `core.newConnection` (task 0128) and
+// `core.swapPanes` fall back to the command palette/menu in browser runtime.
+const BROWSER_RESERVED = new Set(['CTRL+P', 'CTRL+W', 'CTRL+T', 'CTRL+N', 'CTRL+U']);
 
 function chordFromText(value: string): KeyChord | undefined {
   const parts = value
@@ -73,7 +77,15 @@ function matches(event: KeyboardEvent, chord: KeyChord, platform: SelectionPlatf
   const modifierMatches =
     chord.key.toUpperCase() === 'TAB'
       ? event.ctrlKey === wantsModifier && !event.metaKey
-      : hasPrimaryModifier(event, platform) === wantsModifier;
+      : wantsModifier
+        ? hasPrimaryModifier(event, platform)
+        : // A bare chord must reject literal Control on macOS too, not just Command:
+          // `hasPrimaryModifier` only recognises Cmd there, so without this check a
+          // Ctrl-held keypress would look identical to an unmodified one and silently
+          // fall through to whatever bare binding shares the same key (e.g. Ctrl+Backspace
+          // on macOS matching the plain-Backspace "parent directory" binding instead of
+          // doing nothing, since the real Ctrl-translated shortcut there needs Cmd).
+          !event.ctrlKey && !event.metaKey;
   if (!modifierMatches) return false;
   return Boolean(chord.shift) === event.shiftKey && Boolean(chord.alt) === event.altKey;
 }

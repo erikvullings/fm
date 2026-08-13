@@ -47,6 +47,7 @@ import {
   createGlobalKeydownHandler,
   type GlobalKeydownContext,
 } from '../features/keybindings/global-keydown-handler';
+import { ShortcutsHelpDialog } from '../features/keybindings/shortcuts-help-dialog';
 import {
   createNavigationController,
   type NavigationController,
@@ -57,6 +58,7 @@ import {
   createOperationsController,
   type OperationsController,
 } from '../features/operations/operations-controller';
+import { isParentEntry } from '../features/panes/parent-entry';
 import {
   createTabController,
   type TabController,
@@ -257,6 +259,9 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
   let plugins: readonly PluginDescriptor[] = [];
   let connections: readonly Connection[] = [];
   let connectionsManagerOpen = false;
+  let shortcutsHelpOpen = false;
+  /** Last non-empty Quick Filter query per tab key, for the Ctrl+Shift+S "reactivate" shortcut. */
+  const lastQuickFilterQueryByTabKey = new Map<string, string>();
 
   function favouriteActions(): readonly ActionDescriptor[] {
     const favourites = currentSettings?.favouriteLocations ?? [];
@@ -1056,7 +1061,10 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     getViewer: (paneId) => viewerByPane.get(paneId),
     getArchiveCreateRequest: () => dialogs.getState().archiveCreateRequest,
     getCreateDirectoryOpen: () => dialogs.getState().createDirectoryOpen,
+    getCreateFileOpen: () => dialogs.getState().createFileOpen,
     getAppState: () => appState,
+    getLastQuickFilterQuery: (paneId) => lastQuickFilterQueryByTabKey.get(activeTabKey(paneId)),
+    getShortcutsHelpOpen: () => shortcutsHelpOpen,
     setCommandPaletteOpen: (open) => {
       commandPaletteOpen = open;
     },
@@ -1070,11 +1078,54 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       if (open) dialogs.openCreateDirectory();
       else dialogs.cancelCreateDirectory();
     },
+    setCreateFileOpen: (open) => {
+      if (open) dialogs.openCreateFile();
+      else dialogs.cancelCreateFile();
+    },
     setAppState: (state) => {
       appState = state;
     },
     setQuickFilterOpen: (key, open) => {
       quickFilterOpen.set(key, open);
+    },
+    setActiveTabQuickFilter: (paneId, query) => {
+      const liveWorkspace = workspace;
+      const pane = liveWorkspace?.panesById[paneId];
+      const tab = pane === undefined ? undefined : pane.tabsById[pane.activeTabId];
+      if (liveWorkspace === undefined || tab === undefined) return;
+      const key = activeTabKey(paneId);
+      const previous = tab.view.quickFilter?.query ?? '';
+      if (query === undefined) {
+        if (previous.length > 0) lastQuickFilterQueryByTabKey.set(key, previous);
+        quickFilterOpen.set(key, false);
+      } else {
+        quickFilterOpen.set(key, true);
+      }
+      if (appState !== undefined)
+        appState = applyAppPatches(appState, deleteQuickFilterDraftPatch(key));
+      void dispatchWorkspaceCommand(
+        attrsClient,
+        {
+          type: 'updateView',
+          workspaceId: liveWorkspace.id,
+          paneId,
+          tabId: tab.id,
+          patch: {
+            quickFilter:
+              query === undefined ? { type: 'clear' } : { type: 'set', filter: { query } },
+          },
+          expectedRevision: liveWorkspace.revision,
+        },
+        (next) => {
+          workspace = next;
+        },
+      ).catch(() => undefined);
+    },
+    setConnectionsManagerOpen: (open) => {
+      connectionsManagerOpen = open;
+    },
+    setShortcutsHelpOpen: (open) => {
+      shortcutsHelpOpen = open;
     },
     getTabController: () => tabController,
     getOpsController: () => opsController,
@@ -1114,6 +1165,89 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       }
     },
     redraw: () => m.redraw(),
+    setSort: (paneId, sort) => {
+      const liveWorkspace = workspace;
+      const pane = liveWorkspace?.panesById[paneId];
+      const tab = pane === undefined ? undefined : pane.tabsById[pane.activeTabId];
+      if (liveWorkspace === undefined || tab === undefined) return;
+      void dispatchWorkspaceCommand(
+        attrsClient,
+        {
+          type: 'updateView',
+          workspaceId: liveWorkspace.id,
+          paneId,
+          tabId: tab.id,
+          patch: { sort: [...sort] },
+          expectedRevision: liveWorkspace.revision,
+        },
+        (next) => {
+          workspace = next;
+        },
+      ).catch(() => undefined);
+    },
+    swapPaneTabSets: (paneAId, paneBId) => {
+      const liveWorkspace = workspace;
+      if (liveWorkspace === undefined) return;
+      const paneA = liveWorkspace.panesById[paneAId];
+      const paneB = liveWorkspace.panesById[paneBId];
+      if (paneA === undefined || paneB === undefined) return;
+      // No backend command swaps a whole tab set atomically (task 0128 Agent Notes) - this
+      // mutates the local projection directly, the same optimistic-update pattern
+      // `activateTab` uses, rather than round-tripping through `dispatchWorkspaceCommand`.
+      workspace = {
+        ...liveWorkspace,
+        panesById: {
+          ...liveWorkspace.panesById,
+          [paneAId]: {
+            ...paneA,
+            tabOrder: paneB.tabOrder,
+            tabsById: paneB.tabsById,
+            activeTabId: paneB.activeTabId,
+          },
+          [paneBId]: {
+            ...paneB,
+            tabOrder: paneA.tabOrder,
+            tabsById: paneA.tabsById,
+            activeTabId: paneA.activeTabId,
+          },
+        },
+      };
+      void navigation.load(paneAId);
+      void navigation.load(paneBId);
+    },
+    openMultiRenameForActivePane: () => {
+      const active = activeDirectory();
+      if (active === undefined) return;
+      const key = activeTabKey(active.paneId);
+      const directory = directories.get(key);
+      if (directory === undefined) return;
+      const selection = selections.get(key);
+      const selected = getSelectedEntries(selection, directory.entries).filter(
+        (entry) => !isParentEntry(entry.id),
+      );
+      // Total Commander's Multi Rename Tool defaults to every entry in the directory when
+      // nothing is selected, rather than requiring a selection first.
+      const entriesToRename =
+        selected.length > 0
+          ? selected
+          : directory.entries.filter((entry) => !isParentEntry(entry.id));
+      if (entriesToRename.length === 0) return;
+      const selectedIds = new Set(entriesToRename.map((entry) => entry.id));
+      dialogs.openMultiRename(
+        entriesToRename,
+        active.location,
+        new Set(
+          directory.entries
+            .filter((entry) => !selectedIds.has(entry.id))
+            .map((entry) => entry.name),
+        ),
+      );
+      m.redraw();
+    },
+    quitApplication: () => {
+      if (keybindingRuntime !== 'desktop') return;
+      void attrsClient.quit?.();
+    },
   };
 
   const findFilesControllerContext: FindFilesControllerContext = {
@@ -1354,6 +1488,20 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     getTabController: () => tabController,
     getOpsController: () => opsController,
     getActiveDirectoryLocation: () => activeDirectory()?.location,
+    openEditorForCreatedFile: (location, name) => {
+      const active = activeDirectory();
+      if (active === undefined) return;
+      refetchAffectedPanes(active.paneId);
+      openEditor(attrsClient, active.paneId, {
+        id: crypto.randomUUID(),
+        location,
+        name,
+        kind: 'file',
+        hidden: false,
+        readOnly: false,
+        metadataRevision: 0,
+      });
+    },
     cancelAutoDismiss,
     rememberDismissedOperation,
     refetchAffectedPanes,
@@ -1905,6 +2053,16 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
               contextMenu = undefined;
             },
             onInvoke: actionCommandController.invokeContextMenuAction,
+          }),
+          m(ShortcutsHelpDialog, {
+            open: shortcutsHelpOpen,
+            actions: registeredActions,
+            keybindings: currentSettings?.keybindings ?? {},
+            platform,
+            runtime: keybindingRuntime,
+            onClose: () => {
+              shortcutsHelpOpen = false;
+            },
           }),
           ...renderAppDialogs(attrs.client, pendingDelete, appDialogsContext),
           m(

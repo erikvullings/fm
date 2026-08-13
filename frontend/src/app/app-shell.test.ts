@@ -248,14 +248,21 @@ describe('AppShell', () => {
 
     const entryCount = activePane?.querySelectorAll('.fm-directory-row').length ?? 0;
     expect(activePane?.querySelectorAll('.fm-selected-row')).toHaveLength(entryCount);
+    const cursorBefore = activePane?.querySelector('.fm-cursor-row')?.textContent;
 
+    // Plain ArrowDown moves the cursor but, per the current selection model, deliberately keeps
+    // an existing multi-selection intact rather than collapsing it to the new cursor row alone
+    // (see the "Keep an existing multi-selection when navigating without Shift" comment in
+    // reduceSelection's moveCursor case) - cursor and selection are independent axes.
     activePane?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
     m.redraw.sync();
-    expect(activePane?.querySelectorAll('.fm-selected-row')).toHaveLength(1);
+    expect(activePane?.querySelectorAll('.fm-selected-row')).toHaveLength(entryCount);
+    expect(activePane?.querySelector('.fm-cursor-row')?.textContent).not.toBe(cursorBefore);
 
+    // Space toggles only the entry under the cursor, dropping the selection by exactly one.
     activePane?.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true }));
     m.redraw.sync();
-    expect(activePane?.querySelectorAll('.fm-selected-row')).toHaveLength(0);
+    expect(activePane?.querySelectorAll('.fm-selected-row')).toHaveLength(entryCount - 1);
   });
 
   it('sorts the loaded page from a column header and reports the active direction', async () => {

@@ -12,6 +12,7 @@ import type {
   Location,
   PaneId,
   Settings,
+  SortDescriptor,
   WorkspaceProjection,
 } from '../../models';
 import { type AppState, applyAppPatches, setQuickFilterDraftPatch } from '../../state';
@@ -23,12 +24,22 @@ import {
 } from '../clipboard/clipboard';
 import type { CommandAvailabilityContext } from '../commands/availability';
 import type { NavigationController, PaneDirectoryView } from '../navigation/navigation';
+import { rootLocationFor } from '../navigation/root-location';
 import type { OperationsController } from '../operations/operations-controller';
 import { isParentEntry } from '../panes/parent-entry';
 import type { TabController } from '../panes/tab-controller';
 import type { FileViewerController, FileViewerState } from '../preview/file-viewer-controller';
 import type { SelectionPlatform } from '../selection/keybindings';
 import { getSelectedEntries, type SelectionState } from '../selection/selection';
+
+/** Fixed sort applied by the Ctrl+F3..Ctrl+F7 shortcuts (Total Commander parity, task 0128). */
+const SORT_SHORTCUT_DESCRIPTORS: Readonly<Record<string, readonly SortDescriptor[]>> = {
+  'core.sortByName': [{ columnId: 'core.name', direction: 'ascending' }],
+  'core.sortByExtension': [{ columnId: 'core.extension', direction: 'ascending' }],
+  'core.sortByDate': [{ columnId: 'core.modified', direction: 'ascending' }],
+  'core.sortBySize': [{ columnId: 'core.size', direction: 'ascending' }],
+  'core.sortUnsorted': [],
+};
 
 type ArchiveCreateRequest = {
   readonly sources: readonly Location[];
@@ -60,15 +71,24 @@ export interface GlobalKeydownContext {
   ): { readonly controller: FileViewerController; state: FileViewerState } | undefined;
   getArchiveCreateRequest(): ArchiveCreateRequest | undefined;
   getCreateDirectoryOpen(): boolean;
+  getCreateFileOpen(): boolean;
   getAppState(): AppState | undefined;
+  /** Last non-empty Quick Filter query committed on this pane's active tab (Ctrl+Shift+S). */
+  getLastQuickFilterQuery(paneId: PaneId): string | undefined;
+  getShortcutsHelpOpen(): boolean;
 
   // State setters
   setCommandPaletteOpen(open: boolean): void;
   setClipboardMessage(msg: string | undefined): void;
   setArchiveCreateRequest(req: ArchiveCreateRequest | undefined): void;
   setCreateDirectoryOpen(open: boolean): void;
+  setCreateFileOpen(open: boolean): void;
   setAppState(state: AppState): void;
   setQuickFilterOpen(key: string, open: boolean): void;
+  /** Sets (`query` defined) or clears (`query` undefined) the active tab's committed Quick Filter. */
+  setActiveTabQuickFilter(paneId: PaneId, query: string | undefined): void;
+  setConnectionsManagerOpen(open: boolean): void;
+  setShortcutsHelpOpen(open: boolean): void;
 
   // Controller accessors
   getTabController(): TabController;
@@ -100,6 +120,14 @@ export interface GlobalKeydownContext {
   activatePane(paneId: PaneId): void;
   redraw(): void;
   toggleTerminal(): void;
+  /** Applies a fixed sort to `paneId`'s active tab (Ctrl+F3..Ctrl+F7). */
+  setSort(paneId: PaneId, sort: readonly SortDescriptor[]): void;
+  /** Swaps `paneAId` and `paneBId`'s entire tab sets (Ctrl+Shift+U), not just their active locations. */
+  swapPaneTabSets(paneAId: PaneId, paneBId: PaneId): void;
+  /** Opens the Multi-Rename Tool directly (Ctrl+M), defaulting to every entry when none is selected. */
+  openMultiRenameForActivePane(): void;
+  /** Closes the desktop window (Alt+F4); a no-op in browser runtime. */
+  quitApplication(): void;
 }
 
 function isEditableTarget(target: EventTarget | null): boolean {
@@ -508,6 +536,146 @@ export function createGlobalKeydownHandler(
       if (workspace === undefined) return;
       event.preventDefault();
       context.getTabController().reopenClosedTab(workspace.activePaneId);
+      return;
+    }
+    if (dispatchedAction === 'core.rootDirectory') {
+      const active = context.activeDirectory();
+      if (active === undefined) return;
+      event.preventDefault();
+      void context.getNavigation().navigate(active.paneId, rootLocationFor(active.location));
+      return;
+    }
+    if (
+      dispatchedAction === 'core.openInNewTab' ||
+      dispatchedAction === 'core.openInNewTabOtherPane'
+    ) {
+      const active = context.activeDirectory();
+      if (active === undefined) return;
+      const key = context.activeTabKey(active.paneId);
+      const selection = context.getSelections().get(key);
+      const directory = context.getDirectories().get(key);
+      const cursorEntry = directory?.entries.find((entry) => entry.id === selection?.cursorEntryId);
+      if (
+        cursorEntry === undefined ||
+        cursorEntry.kind !== 'directory' ||
+        isParentEntry(cursorEntry.id)
+      )
+        return;
+      const workspace = context.getWorkspace();
+      const targetPaneId =
+        dispatchedAction === 'core.openInNewTabOtherPane'
+          ? workspace?.paneOrder.find((paneId) => paneId !== active.paneId)
+          : active.paneId;
+      if (targetPaneId === undefined) return;
+      event.preventDefault();
+      context.getTabController().openTabAt(targetPaneId, cursorEntry.location);
+      return;
+    }
+    if (dispatchedAction === 'core.duplicateLocationToOtherPane') {
+      const active = context.activeDirectory();
+      if (active === undefined) return;
+      const workspace = context.getWorkspace();
+      const otherPaneId = workspace?.paneOrder.find((paneId) => paneId !== active.paneId);
+      if (otherPaneId === undefined) return;
+      event.preventDefault();
+      void context.getNavigation().navigate(otherPaneId, active.location);
+      return;
+    }
+    if (dispatchedAction === 'core.swapPanes') {
+      const workspace = context.getWorkspace();
+      if (workspace === undefined || workspace.paneOrder.length < 2) return;
+      const [paneAId, paneBId] = workspace.paneOrder;
+      if (paneAId === undefined || paneBId === undefined) return;
+      const locationA = context.getDirectories().get(context.activeTabKey(paneAId))?.location;
+      const locationB = context.getDirectories().get(context.activeTabKey(paneBId))?.location;
+      if (locationA === undefined || locationB === undefined) return;
+      event.preventDefault();
+      void context.getNavigation().navigate(paneAId, locationB);
+      void context.getNavigation().navigate(paneBId, locationA);
+      return;
+    }
+    if (dispatchedAction === 'core.swapPaneTabs') {
+      const workspace = context.getWorkspace();
+      if (workspace === undefined || workspace.paneOrder.length < 2) return;
+      const [paneAId, paneBId] = workspace.paneOrder;
+      if (paneAId === undefined || paneBId === undefined) return;
+      event.preventDefault();
+      context.swapPaneTabSets(paneAId, paneBId);
+      return;
+    }
+    if (dispatchedAction === 'core.closeAllTabs') {
+      const workspace = context.getWorkspace();
+      if (workspace === undefined) return;
+      event.preventDefault();
+      context.getTabController().closeAllTabs(workspace.activePaneId);
+      return;
+    }
+    if (dispatchedAction === 'core.newConnection') {
+      event.preventDefault();
+      context.setConnectionsManagerOpen(true);
+      context.redraw();
+      return;
+    }
+    if (dispatchedAction === 'core.reactivateQuickFilter') {
+      const active = context.activeDirectory();
+      if (active === undefined) return;
+      const last = context.getLastQuickFilterQuery(active.paneId);
+      if (last === undefined || last.length === 0) return;
+      event.preventDefault();
+      context.setActiveTabQuickFilter(active.paneId, last);
+      context.redraw();
+      return;
+    }
+    if (dispatchedAction === 'core.clearQuickFilter') {
+      const active = context.activeDirectory();
+      if (active === undefined) return;
+      event.preventDefault();
+      context.setActiveTabQuickFilter(active.paneId, undefined);
+      context.redraw();
+      return;
+    }
+    if (dispatchedAction !== undefined && dispatchedAction in SORT_SHORTCUT_DESCRIPTORS) {
+      const active = context.activeDirectory();
+      if (active === undefined) return;
+      event.preventDefault();
+      context.setSort(active.paneId, SORT_SHORTCUT_DESCRIPTORS[dispatchedAction] ?? []);
+      return;
+    }
+    if (
+      dispatchedAction === 'core.createFile' &&
+      !context.getCreateFileOpen() &&
+      context.activeDirectory() !== undefined
+    ) {
+      event.preventDefault();
+      context.setCreateFileOpen(true);
+      context.redraw();
+      return;
+    }
+    if (dispatchedAction === 'core.duplicate') {
+      const sources = context.selectedLocations();
+      if (sources.length === 0) return;
+      event.preventDefault();
+      void context
+        .getOpsController()
+        .duplicate(sources)
+        .then(() => context.refetchAffectedPanes());
+      return;
+    }
+    if (dispatchedAction === 'core.openMultiRename') {
+      event.preventDefault();
+      context.openMultiRenameForActivePane();
+      return;
+    }
+    if (dispatchedAction === 'core.quit') {
+      if (context.getKeybindingRuntime() !== 'desktop') return;
+      event.preventDefault();
+      context.quitApplication();
+      return;
+    }
+    if (dispatchedAction === 'core.showShortcutsHelp') {
+      event.preventDefault();
+      context.setShortcutsHelpOpen(true);
+      context.redraw();
       return;
     }
     if (dispatchedAction === 'core.view' && !forceSystemView) {

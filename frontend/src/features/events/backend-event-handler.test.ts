@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type {
   BackendEvent,
   Connection,
+  Operation,
   OperationConflict,
   WorkspaceProjection,
 } from '../../models';
@@ -357,7 +358,7 @@ describe('createBackendEventHandler', () => {
           createdAt: '2026-01-01T00:00:00Z',
         },
       ]);
-      const completedOperation = {
+      const completedOperation: Operation = {
         id: 'op-1' as never,
         kind: 'copy',
         state: 'completed',

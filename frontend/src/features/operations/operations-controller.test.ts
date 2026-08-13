@@ -109,6 +109,28 @@ describe('OperationsController', () => {
     );
   });
 
+  it('createFile passes name and no sources', async () => {
+    await controller.createFile(dest, 'new-file.txt');
+    expect(client.startOperation).toHaveBeenCalledWith(
+      {
+        type: 'createFile',
+        sources: [],
+        destination: dest,
+        conflictPolicy: 'ask',
+        name: 'new-file.txt',
+      },
+      undefined,
+    );
+  });
+
+  it('duplicate calls startOperation with type duplicate and no destination', async () => {
+    await controller.duplicate([src]);
+    expect(client.startOperation).toHaveBeenCalledWith(
+      { type: 'duplicate', sources: [src], conflictPolicy: 'ask' },
+      undefined,
+    );
+  });
+
   it('rename uses sources array and single destination', async () => {
     const renamedDest: Location = { ...src, uri: 'file:///src/renamed.txt' };
     await controller.rename(src, renamedDest);

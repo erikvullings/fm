@@ -1,5 +1,5 @@
 import type { FileManagerClient } from '../../api/client/file-manager-client';
-import type { PaneId, TabId, WorkspaceProjection } from '../../models';
+import type { Location, PaneId, TabId, WorkspaceProjection } from '../../models';
 import {
   type AppState,
   applyAppPatches,
@@ -32,9 +32,13 @@ export interface TabControllerContext {
 
 export interface TabController {
   openTab(paneId: PaneId): void;
+  /** Opens a new tab at an arbitrary location rather than duplicating the active tab. */
+  openTabAt(paneId: PaneId, location: Location): void;
   activateTab(paneId: PaneId, tabId: TabId): void;
   performCloseTab(paneId: PaneId, tabId: TabId): void;
   requestCloseTab(paneId: PaneId, tabId: TabId): void;
+  /** Closes every tab in `paneId` except the active one (Ctrl+Shift+W). */
+  closeAllTabs(paneId: PaneId): void;
   reopenClosedTab(paneId: PaneId): void;
   cycleTab(paneId: PaneId, direction: 1 | -1): void;
   jumpToTab(paneId: PaneId, oneBasedIndex: number): void;
@@ -62,6 +66,32 @@ export function createTabController(
           workspaceId: workspace.id,
           paneId,
           location: activeTab.location,
+          expectedRevision: workspace.revision,
+        },
+        (next) => {
+          replaceWorkspace(next);
+          const newTabId = next.panesById[paneId]?.activeTabId;
+          if (newTabId === undefined) {
+            void context.getNavigation().load(paneId);
+            return;
+          }
+          void context
+            .applyCurrentShowHiddenSetting(client, next.id, paneId, newTabId, next.revision)
+            .then(() => context.getNavigation().load(paneId));
+        },
+      ).catch(() => undefined);
+    },
+
+    openTabAt(paneId: PaneId, location: Location): void {
+      const workspace = context.getWorkspace();
+      if (workspace === undefined) return;
+      void dispatchWorkspaceCommand(
+        client,
+        {
+          type: 'addTab',
+          workspaceId: workspace.id,
+          paneId,
+          location,
           expectedRevision: workspace.revision,
         },
         (next) => {
@@ -153,6 +183,47 @@ export function createTabController(
         return;
       }
       this.performCloseTab(paneId, tabId);
+    },
+
+    closeAllTabs(paneId: PaneId): void {
+      const workspace = context.getWorkspace();
+      const pane = workspace?.panesById[paneId];
+      if (workspace === undefined || pane === undefined) return;
+      const idsToClose = pane.tabOrder.filter((tabId) => tabId !== pane.activeTabId);
+      // Closed sequentially (not fired concurrently) so each command's `expectedRevision`
+      // matches the workspace revision left by the previous close.
+      void idsToClose
+        .reduce<Promise<void>>(
+          (chain, tabId) =>
+            chain.then(async () => {
+              const current = context.getWorkspace();
+              if (current === undefined) return;
+              const closedTab = current.panesById[paneId]?.tabsById[tabId];
+              let appState = context.getAppState();
+              if (closedTab !== undefined && appState !== undefined) {
+                appState = applyAppPatches(appState, setClosedTabStackPatch(paneId, closedTab));
+                context.setAppState(appState);
+              }
+              try {
+                await dispatchWorkspaceCommand(
+                  client,
+                  {
+                    type: 'closeTab',
+                    workspaceId: current.id,
+                    paneId,
+                    tabId,
+                    expectedRevision: current.revision,
+                  },
+                  replaceWorkspace,
+                );
+                context.clearTabState(paneId, tabId);
+              } catch {
+                // A stale revision or already-closed tab shouldn't abort the remaining closes.
+              }
+            }),
+          Promise.resolve(),
+        )
+        .then(() => context.getNavigation().load(paneId));
     },
 
     reopenClosedTab(paneId: PaneId): void {

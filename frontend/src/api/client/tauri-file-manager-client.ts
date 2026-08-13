@@ -80,6 +80,10 @@ export class TauriFileManagerClient implements FileManagerClient {
     return invoke<void>('start_native_drag', { locations });
   }
 
+  async quit(): Promise<void> {
+    await getCurrentWindow().close();
+  }
+
   subscribeNativeFileDrops(listener: (drop: NativeFileDrop) => void): Promise<Unsubscribe> {
     return getCurrentWindow().onDragDropEvent(async ({ payload }) => {
       if (payload.type !== 'drop') return;

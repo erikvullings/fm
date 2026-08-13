@@ -68,6 +68,7 @@ pub enum OperationKindDto {
     /// Package selected local entries into a new archive and remove the originals on success.
     MoveToArchive,
     CreateDirectory,
+    CreateFile,
     Rename,
     Copy,
     Move,

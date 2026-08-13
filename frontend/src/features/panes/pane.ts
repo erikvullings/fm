@@ -269,6 +269,8 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
 
   const typeaheadCtrl = createTypeaheadController(() => m.redraw());
   const renameCtrl = createRenameEditingController();
+  /** Selection just before the current keystroke, for the Numpad `/` "restore" shortcut. */
+  let previousSelectionSnapshot: readonly EntryId[] = [];
 
   function openFavourites(attrs: PaneAttrs): void {
     favouritesPreviousFocus = document.activeElement as HTMLElement;
@@ -425,6 +427,7 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
           tabindex: -1,
           onkeydown: (event: KeyboardEvent) => {
             if (isEditableTarget(event.target)) return;
+            previousSelectionSnapshot = [...attrs.selectedEntryIds];
             if (
               hasPrimaryModifier(event, attrs.platform) &&
               !event.altKey &&
@@ -501,7 +504,11 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
                                           ? { type: 'open' as const }
                                           : actionId === 'core.parent'
                                             ? { type: 'parent' as const }
-                                            : undefined;
+                                            : actionId === 'core.toggleSelectionAndAdvance'
+                                              ? { type: 'toggleCursorSelectionAndAdvance' as const }
+                                              : actionId === 'core.restoreSelection'
+                                                ? { type: 'restoreSelection' as const }
+                                                : undefined;
             if (actionId === 'core.switchPane') {
               return;
             }
@@ -586,6 +593,19 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
                 event.preventDefault();
                 attrs.onSelectionAction({ type: 'toggle', entryId: entry.id });
               }
+            } else if (command?.type === 'toggleCursorSelectionAndAdvance') {
+              // Insert: toggle the entry under the cursor, then move down one row - composing
+              // the existing toggle/moveCursor selection actions (Total Commander parity).
+              const entry =
+                attrs.cursorIndex === undefined ? undefined : attrs.entries[attrs.cursorIndex];
+              if (entry !== undefined && !isParentEntry(entry.id)) {
+                event.preventDefault();
+                attrs.onSelectionAction({ type: 'toggle', entryId: entry.id });
+                attrs.onSelectionAction({ type: 'moveCursor', offset: 1 });
+              }
+            } else if (command?.type === 'restoreSelection') {
+              event.preventDefault();
+              attrs.onSelectionAction({ type: 'restore', entryIds: previousSelectionSnapshot });
             } else if (command?.type === 'selectAll') {
               event.preventDefault();
               attrs.onSelectionAction({ type: 'selectAll' });
@@ -709,9 +729,6 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
                             role: 'menuitem',
                             title: systemLocation.location.uri,
                             onclick: () => void navigateFavourite(systemLocation.location, attrs),
-                            disabled: attrs.favourites.unavailableLocations?.has(
-                              locationKey(systemLocation.location),
-                            ),
                           },
                           attrs.favourites.unavailableLocations?.has(
                             locationKey(systemLocation.location),
@@ -735,9 +752,6 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
                             role: 'menuitem',
                             title: systemLocation.location.uri,
                             onclick: () => void navigateFavourite(systemLocation.location, attrs),
-                            disabled: attrs.favourites.unavailableLocations?.has(
-                              locationKey(systemLocation.location),
-                            ),
                           },
                           attrs.favourites.unavailableLocations?.has(
                             locationKey(systemLocation.location),
@@ -835,9 +849,6 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
                             type: 'button',
                             role: 'menuitem',
                             onclick: () => void navigateFavourite(favourite.location, attrs),
-                            disabled: attrs.favourites.unavailableLocations?.has(
-                              locationKey(favourite.location),
-                            ),
                           },
                           attrs.favourites.unavailableLocations?.has(
                             locationKey(favourite.location),
@@ -884,9 +895,6 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
                           role: 'menuitem',
                           title: location.uri,
                           onclick: () => void navigateFavourite(location, attrs),
-                          disabled: attrs.favourites.unavailableLocations?.has(
-                            locationKey(location),
-                          ),
                         },
                         attrs.favourites.unavailableLocations?.has(locationKey(location))
                           ? `${truncateLocationForDisplay(location.uri)} (unavailable)`

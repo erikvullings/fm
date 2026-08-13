@@ -183,7 +183,7 @@ These are the quickest wins and deliberately do **not** depend on the remote con
 
 - [x] 0104 SFTP provider
 - [x] 0105 SSH terminal actions *(extended the embedded terminal drawer to run on the remote host over SSH)*
-- [ ] 0106 FTP and FTPS provider
+- [x] 0106 FTP and FTPS provider
 - [ ] 0107 External remote desktop launch
 
 ## Milestone 9 — Remote transfer/runtime hardening
@@ -219,6 +219,8 @@ Features not yet implemented.
 - [ ] 0118 Integrate parallel-disk-usage with WinDirStat Treemap View
 - [x] 0126-embedded-terminal-drawer
 - [ ] 0127 External terminal application choice *(pick a specific app, e.g. ghostty/Warp, from the context menu)*
+- [x] 0128 Total Commander shortcut parity — quick wins *(reuses existing functionality; also documents conflicts/already-implemented shortcuts)*
+- [ ] 0129 Total Commander shortcut parity — major features *(scoping task; triage each row into its own task, decline, or merge)*
 
 ## Architecture deepening — backend
 

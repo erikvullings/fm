@@ -6,6 +6,7 @@ export type OperationKind =
   | 'createArchive'
   | 'moveToArchive'
   | 'createDirectory'
+  | 'createFile'
   | 'rename'
   | 'copy'
   | 'move'

@@ -133,6 +133,83 @@ OpenAPI documentation. The raw OpenAPI JSON is at <http://127.0.0.1:8787/api/v1/
 - [TASKS/README.md](TASKS/README.md) — Implementation task index and milestone status
 - [ROADMAP.md](ROADMAP.md) — What is done, mocked, and not yet implemented
 
+## Keyboard shortcuts
+
+Every shortcut whose `KeyChord` carries `ctrl: true` is resolved through the app's *primary
+modifier* rather than the literal Control key: **Cmd on macOS, Ctrl on Windows/Linux**
+(`hasPrimaryModifier` in [`frontend/src/keybindings/dispatcher.ts`](frontend/src/keybindings/dispatcher.ts)).
+This mirrors how virtually every native macOS app remaps Windows' Ctrl shortcuts to Cmd, and it
+applies uniformly to every shortcut below — there is no per-shortcut opt-out. The one deliberate
+exception is **Ctrl+Tab / Ctrl+Shift+Tab** (tab cycling), which always requires the literal Control
+key on every platform, because Cmd+Tab is reserved by macOS for the app switcher and never reaches
+the page.
+
+A consequence worth knowing: **on macOS, holding literal Control (without Cmd) is not the same as
+holding no modifier.** Until a fix landed alongside this table, the dispatcher's bare-key check
+only tested for the *absence of Cmd*, so a literal Ctrl-held keypress on macOS looked identical to
+an unmodified one and would silently fall through to whatever plain-key binding shared the same
+key — e.g. Ctrl+Backspace matched plain Backspace ("parent directory") instead of doing nothing,
+and Ctrl+F3…Ctrl+F7 matched the plain F3–F7 bindings (View/Edit/Copy/Move/New Folder) instead of
+the intended sort shortcuts. This is now fixed: a bare-key binding requires that *no* modifier
+(neither Ctrl nor Cmd) is held, on every platform. Practically, this means literal Ctrl+`<key>` on
+macOS is now a safe no-op for anything below rather than a surprising misfire — use Cmd instead.
+
+Separately, **macOS's Mission Control intercepts literal Control+Arrow (Up/Down/Left/Right)
+system-wide** for Spaces navigation, before any application — including this one — ever receives
+the keypress. This is an OS-level reservation, not something the app can override. It doesn't
+actually matter for the shortcuts below, since their real binding is Cmd+Arrow anyway (per the
+primary-modifier rule above), but it explains why literal Ctrl+Arrow does nothing at all on macOS
+even if Mission Control's own gesture isn't visibly triggered.
+
+| Action | Windows / Linux | macOS | Notes |
+|---|---|---|---|
+| Copy | F5 | F5 | |
+| Move | F6 | F6 | |
+| Rename | F2 | F2 | Shift+F6 is an alias for the same action. |
+| View | F3 | F3 | |
+| Edit | F4 | F4 | |
+| New Folder | F7 | F7 | |
+| Trash / Delete | F8, Delete | F8, Delete | Shift+F8 / Shift+Delete for permanent delete when Trash is available. |
+| Context menu | Shift+F10 | Shift+F10 | |
+| Open With… | Ctrl+Enter | Cmd+Enter | |
+| Select All | Ctrl+A | Cmd+A | |
+| Copy / Cut / Paste | Ctrl+C / Ctrl+X / Ctrl+V | Cmd+C / Cmd+X / Cmd+V | |
+| Favourites (bookmarks) | Ctrl+D | Cmd+D | |
+| Refresh | Ctrl+R | Cmd+R | |
+| Command Palette | Ctrl+P | Cmd+P | Unavailable in browser runtime (OS/browser reserves Ctrl+P/Cmd+P for print). |
+| Focus Location bar | Ctrl+L | Cmd+L | |
+| Quick Filter | Ctrl+F | Cmd+F | |
+| Find Files | Alt+F7 | Option+F7 | |
+| New Tab | Ctrl+T | Cmd+T | Unavailable in browser runtime (browser reserves it). |
+| Close Tab | Ctrl+W | Cmd+W | Unavailable in browser runtime (browser reserves it). |
+| Close All Tabs | Ctrl+Shift+W | Cmd+Shift+W | |
+| Next / Previous Tab | Ctrl+Tab / Ctrl+Shift+Tab | **Ctrl**+Tab / **Ctrl**+Shift+Tab | Always literal Ctrl, even on macOS — Cmd+Tab is OS-reserved for the app switcher. |
+| Reopen Closed Tab | Ctrl+Shift+T | Cmd+Shift+T | |
+| Jump to Tab N | Ctrl+1…9 | Cmd+1…9 | |
+| Go to Root Directory | Ctrl+Backspace | Cmd+Backspace | Literal Ctrl+Backspace on macOS is now a safe no-op (previously misfired as "parent directory"). |
+| Open in New Tab | Ctrl+Up | Cmd+Up | Literal Ctrl+Up is swallowed by macOS Mission Control before it reaches the app. |
+| Open in New Tab (other pane) | Ctrl+Shift+Up | Cmd+Shift+Up | Literal Ctrl+Shift+Up on macOS is now a safe no-op (previously misfired as "extend selection up"). |
+| Duplicate Directory to Other Pane | Ctrl+Left / Ctrl+Right | Cmd+Left / Cmd+Right | Literal Ctrl+Left/Right is swallowed by macOS Mission Control (default Spaces-switching gesture). |
+| Swap Pane Directories | Ctrl+U | Cmd+U | Unavailable in browser runtime (browser reserves Ctrl+U/Cmd+U for view-source). |
+| Swap Pane Tab Sets | Ctrl+Shift+U | Cmd+Shift+U | |
+| New Connection… | Ctrl+N | Cmd+N | Unavailable in browser runtime (browser reserves it). |
+| Reactivate Last Quick Filter | Ctrl+Shift+S | Cmd+Shift+S | |
+| Show All Files (clear filter) | Ctrl+F10 | Cmd+F10 | |
+| Sort by Name / Extension / Date / Size / Unsorted | Ctrl+F3 / F4 / F5 / F6 / F7 | Cmd+F3 / F4 / F5 / F6 / F7 | Literal Ctrl+F3…F7 on macOS is now a safe no-op (previously misfired as View/Edit/Copy/Move/New Folder). |
+| Multi-Rename Tool | Ctrl+M | Cmd+M | Also opens automatically on F2 with 2+ entries selected. Not independently verified against a native window menu; flag if Cmd+M ever minimizes the window instead. |
+| Quit | Alt+F4 | Option+F4 | Desktop only. Not independently verified against the OS's own window-close/minimize handling on either platform; macOS users more conventionally expect Cmd+Q, which is not implemented. |
+| Keyboard Shortcuts help | F1 | F1 | |
+| Toggle selection, advance cursor | Insert | Insert | |
+| Restore previous selection | Numpad `/` | Numpad `/` | |
+| Create file here | Shift+F4 | Shift+F4 | |
+| Duplicate (copy with rename) | Shift+F5 | Shift+F5 | |
+| Embedded terminal | Ctrl+\` or F12 | Ctrl+\` or F12 | Desktop only; always literal Ctrl (not translated). |
+
+See [TASKS/0128](TASKS/0128-total-commander-shortcuts-quick-wins.md) for the full Total Commander
+parity audit, including shortcuts intentionally *not* implemented (with rationale) and shortcuts
+that need real new functionality, tracked separately in
+[TASKS/0129](TASKS/0129-total-commander-shortcuts-major-features.md).
+
 For deterministic frontend development without Axum or Tauri, run `pnpm dev:mock`. The mock
 adapter provides nested and special-case directory fixtures, configurable loading/failure states,
 scriptable backend events, and lazily generated directories of up to 1,000,000 entries.

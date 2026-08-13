@@ -166,6 +166,8 @@ pub enum OperationKind {
     MoveToArchive,
     /// Create a directory.
     CreateDirectory,
+    /// Create an empty file.
+    CreateFile,
     /// Rename one entry.
     Rename,
     /// Copy entries.

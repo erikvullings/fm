@@ -26,6 +26,7 @@ import { ArchivePasswordDialog } from '../navigation/archive-password-dialog';
 import { ArchiveCreateDialog, type ArchiveFormat } from '../operations/archive-create-dialog';
 import { ConflictDialog } from '../operations/conflict-dialog';
 import { CreateDirectoryDialog } from '../operations/create-directory-dialog';
+import { CreateFileDialog } from '../operations/create-file-dialog';
 import { MultiRenameDialog } from '../operations/multi-rename-dialog';
 import { OperationCentre } from '../operations/operation-centre';
 import {
@@ -61,6 +62,8 @@ export interface AppDialogsContext {
   getTabController(): TabController;
   getOpsController(): OperationsController;
   getActiveDirectoryLocation(): Location | undefined;
+  /** Opens the just-created file (Shift+F4) in the active pane's editor. */
+  openEditorForCreatedFile(location: Location, name: string): void;
   cancelAutoDismiss(operationId: OperationId): void;
   rememberDismissedOperation(operationId: OperationId): void;
   refetchAffectedPanes(): void;
@@ -105,6 +108,19 @@ export function renderAppDialogs(
             .getOpsController()
             .createDirectory(loc, n)
             .then(() => undefined),
+        ),
+    }),
+    m(CreateFileDialog, {
+      open: ds.createFileOpen,
+      onCancel: () => dialogs.cancelCreateFile(),
+      onConfirm: (name: string) =>
+        dialogs.confirmCreateFile(name, ctx.getActiveDirectoryLocation(), (loc, n) =>
+          ctx
+            .getOpsController()
+            .createFile(loc, n)
+            .then(() => {
+              ctx.openEditorForCreatedFile(loc, n);
+            }),
         ),
     }),
     m(ArchiveCreateDialog, {

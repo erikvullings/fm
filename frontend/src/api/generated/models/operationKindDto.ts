@@ -13,6 +13,7 @@ export const OperationKindDto = {
   createArchive: 'createArchive',
   moveToArchive: 'moveToArchive',
   createDirectory: 'createDirectory',
+  createFile: 'createFile',
   rename: 'rename',
   copy: 'copy',
   move: 'move',

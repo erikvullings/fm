@@ -344,8 +344,40 @@ fn core_actions(capabilities: PlatformCapabilities) -> Vec<ActionDescriptor> {
             "core.rename",
             "Rename",
             "fileOperations",
-            vec![key("F2")],
+            // Shift+F6 is Total Commander's rename shortcut; fm keeps F2 as the
+            // primary Windows/macOS-convention binding and adds Shift+F6 as an
+            // alias to the same action rather than a second action id.
+            vec![
+                key("F2"),
+                KeyChord {
+                    key: "F6".to_owned(),
+                    shift: true,
+                    ..KeyChord::default()
+                },
+            ],
             ActionContextRequirements::single_selection(),
+        ),
+        core_action(
+            "core.duplicate",
+            "Duplicate",
+            "fileOperations",
+            vec![KeyChord {
+                key: "F5".to_owned(),
+                shift: true,
+                ..KeyChord::default()
+            }],
+            ActionContextRequirements::selection(),
+        ),
+        core_action(
+            "core.createFile",
+            "New File",
+            "fileOperations",
+            vec![KeyChord {
+                key: "F4".to_owned(),
+                shift: true,
+                ..KeyChord::default()
+            }],
+            ActionContextRequirements::none(),
         ),
         core_action(
             "core.trash",
@@ -491,6 +523,202 @@ fn core_actions(capabilities: PlatformCapabilities) -> Vec<ActionDescriptor> {
             Vec::new(),
             ActionContextRequirements::selection(),
         ),
+        core_action(
+            "core.rootDirectory",
+            "Go to Root Directory",
+            "navigation",
+            vec![KeyChord {
+                key: "Backspace".to_owned(),
+                ctrl: true,
+                ..KeyChord::default()
+            }],
+            ActionContextRequirements::none(),
+        ),
+        core_action(
+            "core.openInNewTab",
+            "Open in New Tab",
+            "navigation",
+            vec![KeyChord {
+                key: "ArrowUp".to_owned(),
+                ctrl: true,
+                ..KeyChord::default()
+            }],
+            ActionContextRequirements::none(),
+        ),
+        core_action(
+            "core.openInNewTabOtherPane",
+            "Open in New Tab (Other Pane)",
+            "navigation",
+            vec![KeyChord {
+                key: "ArrowUp".to_owned(),
+                ctrl: true,
+                shift: true,
+                ..KeyChord::default()
+            }],
+            ActionContextRequirements::none(),
+        ),
+        core_action(
+            "core.duplicateLocationToOtherPane",
+            "Duplicate Directory to Other Pane",
+            "navigation",
+            vec![
+                KeyChord {
+                    key: "ArrowLeft".to_owned(),
+                    ctrl: true,
+                    ..KeyChord::default()
+                },
+                KeyChord {
+                    key: "ArrowRight".to_owned(),
+                    ctrl: true,
+                    ..KeyChord::default()
+                },
+            ],
+            ActionContextRequirements::none(),
+        ),
+        core_action(
+            "core.swapPanes",
+            "Swap Pane Directories",
+            "navigation",
+            vec![primary("u")],
+            ActionContextRequirements::none(),
+        ),
+        core_action(
+            "core.swapPaneTabs",
+            "Swap Pane Tab Sets",
+            "navigation",
+            vec![KeyChord {
+                key: "u".to_owned(),
+                ctrl: true,
+                shift: true,
+                ..KeyChord::default()
+            }],
+            ActionContextRequirements::none(),
+        ),
+        core_action(
+            "core.closeAllTabs",
+            "Close All Tabs",
+            "navigation",
+            vec![KeyChord {
+                key: "w".to_owned(),
+                ctrl: true,
+                shift: true,
+                ..KeyChord::default()
+            }],
+            ActionContextRequirements::none(),
+        ),
+        core_action(
+            "core.newConnection",
+            "New Connection…",
+            "navigation",
+            vec![primary("n")],
+            ActionContextRequirements::none(),
+        ),
+        core_action(
+            "core.reactivateQuickFilter",
+            "Reactivate Last Quick Filter",
+            "navigation",
+            vec![KeyChord {
+                key: "s".to_owned(),
+                ctrl: true,
+                shift: true,
+                ..KeyChord::default()
+            }],
+            ActionContextRequirements::none(),
+        ),
+        core_action(
+            "core.clearQuickFilter",
+            "Show All Files",
+            "navigation",
+            vec![KeyChord {
+                key: "F10".to_owned(),
+                ctrl: true,
+                ..KeyChord::default()
+            }],
+            ActionContextRequirements::none(),
+        ),
+        core_action(
+            "core.sortByName",
+            "Sort by Name",
+            "navigation",
+            vec![KeyChord {
+                key: "F3".to_owned(),
+                ctrl: true,
+                ..KeyChord::default()
+            }],
+            ActionContextRequirements::none(),
+        ),
+        core_action(
+            "core.sortByExtension",
+            "Sort by Extension",
+            "navigation",
+            vec![KeyChord {
+                key: "F4".to_owned(),
+                ctrl: true,
+                ..KeyChord::default()
+            }],
+            ActionContextRequirements::none(),
+        ),
+        core_action(
+            "core.sortByDate",
+            "Sort by Date",
+            "navigation",
+            vec![KeyChord {
+                key: "F5".to_owned(),
+                ctrl: true,
+                ..KeyChord::default()
+            }],
+            ActionContextRequirements::none(),
+        ),
+        core_action(
+            "core.sortBySize",
+            "Sort by Size",
+            "navigation",
+            vec![KeyChord {
+                key: "F6".to_owned(),
+                ctrl: true,
+                ..KeyChord::default()
+            }],
+            ActionContextRequirements::none(),
+        ),
+        core_action(
+            "core.sortUnsorted",
+            "Unsorted",
+            "navigation",
+            vec![KeyChord {
+                key: "F7".to_owned(),
+                ctrl: true,
+                ..KeyChord::default()
+            }],
+            ActionContextRequirements::none(),
+        ),
+        core_action(
+            "core.openMultiRename",
+            "Multi-Rename Tool",
+            "fileOperations",
+            vec![primary("m")],
+            ActionContextRequirements::none(),
+        ),
+        core_action(
+            "core.quit",
+            "Quit",
+            "application",
+            vec![KeyChord {
+                key: "F4".to_owned(),
+                alt: true,
+                ..KeyChord::default()
+            }],
+            // Desktop-only: gated by KeybindingRuntime on the frontend (the backend registry
+            // has no concept of browser vs. desktop runtime), the same way F12's terminal
+            // toggle is gated in `global-keydown-handler.ts`'s `isTerminalToggleShortcut`.
+            ActionContextRequirements::none(),
+        ),
+        core_action(
+            "core.showShortcutsHelp",
+            "Keyboard Shortcuts",
+            "application",
+            vec![key("F1")],
+            ActionContextRequirements::none(),
+        ),
     ]
     .into_iter()
     .chain(selection_actions())
@@ -580,6 +808,16 @@ fn selection_actions() -> Vec<ActionDescriptor> {
             "Clear Selection",
             vec![key("Escape")],
         ),
+        (
+            "core.toggleSelectionAndAdvance",
+            "Toggle Selection and Advance",
+            vec![key("Insert")],
+        ),
+        (
+            "core.restoreSelection",
+            "Restore Previous Selection",
+            vec![key("/")],
+        ),
     ]
     .into_iter()
     .map(|(id, title, shortcuts)| {
@@ -661,6 +899,28 @@ mod tests {
             "core.selectByMask",
             "core.deselectByMask",
             "core.clearSelection",
+            "core.toggleSelectionAndAdvance",
+            "core.restoreSelection",
+            "core.duplicate",
+            "core.createFile",
+            "core.rootDirectory",
+            "core.openInNewTab",
+            "core.openInNewTabOtherPane",
+            "core.duplicateLocationToOtherPane",
+            "core.swapPanes",
+            "core.swapPaneTabs",
+            "core.closeAllTabs",
+            "core.newConnection",
+            "core.reactivateQuickFilter",
+            "core.clearQuickFilter",
+            "core.sortByName",
+            "core.sortByExtension",
+            "core.sortByDate",
+            "core.sortBySize",
+            "core.sortUnsorted",
+            "core.openMultiRename",
+            "core.quit",
+            "core.showShortcutsHelp",
         ] {
             assert!(ids.iter().any(|id| id == expected), "missing {expected}");
         }
@@ -929,6 +1189,177 @@ mod tests {
         registry
             .require_available(&action_id, &ActionInvocationContext::default())
             .expect("core.findFiles must not require a selection");
+    }
+
+    #[test]
+    fn rename_defaults_to_f2_and_shift_f6_alias() {
+        let registry = ActionRegistry::with_core_actions(PlatformCapabilities::empty());
+        let rename = registry
+            .get(&ActionId::new("core.rename"))
+            .expect("core.rename must be registered");
+        assert_eq!(
+            rename.default_shortcuts,
+            vec![
+                key("F2"),
+                KeyChord {
+                    key: "F6".to_owned(),
+                    shift: true,
+                    ..KeyChord::default()
+                },
+            ],
+            "core.rename must keep F2 as primary and gain Shift+F6 as a Total Commander alias"
+        );
+    }
+
+    #[test]
+    fn duplicate_requires_selection_and_uses_shift_f5() {
+        let registry = ActionRegistry::with_core_actions(PlatformCapabilities::empty());
+        let action_id = ActionId::new("core.duplicate");
+        let duplicate = registry
+            .get(&action_id)
+            .expect("core.duplicate must be registered");
+        assert_eq!(
+            duplicate.default_shortcuts,
+            vec![KeyChord {
+                key: "F5".to_owned(),
+                shift: true,
+                ..KeyChord::default()
+            }]
+        );
+        registry
+            .require_available(&action_id, &ActionInvocationContext::default())
+            .expect_err("duplicate must require a selection");
+    }
+
+    #[test]
+    fn create_file_has_no_selection_requirement_and_uses_shift_f4() {
+        let registry = ActionRegistry::with_core_actions(PlatformCapabilities::empty());
+        let action_id = ActionId::new("core.createFile");
+        let create_file = registry
+            .get(&action_id)
+            .expect("core.createFile must be registered");
+        assert_eq!(
+            create_file.default_shortcuts,
+            vec![KeyChord {
+                key: "F4".to_owned(),
+                shift: true,
+                ..KeyChord::default()
+            }]
+        );
+        registry
+            .require_available(&action_id, &ActionInvocationContext::default())
+            .expect("core.createFile must not require a selection");
+    }
+
+    #[test]
+    fn root_directory_uses_ctrl_backspace_with_no_selection_requirement() {
+        let registry = ActionRegistry::with_core_actions(PlatformCapabilities::empty());
+        let action_id = ActionId::new("core.rootDirectory");
+        let root = registry
+            .get(&action_id)
+            .expect("core.rootDirectory must be registered");
+        assert_eq!(
+            root.default_shortcuts,
+            vec![KeyChord {
+                key: "Backspace".to_owned(),
+                ctrl: true,
+                ..KeyChord::default()
+            }]
+        );
+        registry
+            .require_available(&action_id, &ActionInvocationContext::default())
+            .expect("core.rootDirectory must not require a selection");
+    }
+
+    #[test]
+    fn duplicate_location_to_other_pane_binds_both_ctrl_arrow_directions() {
+        let registry = ActionRegistry::with_core_actions(PlatformCapabilities::empty());
+        let action = registry
+            .get(&ActionId::new("core.duplicateLocationToOtherPane"))
+            .expect("core.duplicateLocationToOtherPane must be registered");
+        assert_eq!(
+            action.default_shortcuts,
+            vec![
+                KeyChord {
+                    key: "ArrowLeft".to_owned(),
+                    ctrl: true,
+                    ..KeyChord::default()
+                },
+                KeyChord {
+                    key: "ArrowRight".to_owned(),
+                    ctrl: true,
+                    ..KeyChord::default()
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn sort_shortcuts_use_ctrl_f3_through_ctrl_f7() {
+        let registry = ActionRegistry::with_core_actions(PlatformCapabilities::empty());
+        let expected = [
+            ("core.sortByName", "F3"),
+            ("core.sortByExtension", "F4"),
+            ("core.sortByDate", "F5"),
+            ("core.sortBySize", "F6"),
+            ("core.sortUnsorted", "F7"),
+        ];
+        for (id, function_key) in expected {
+            let action = registry
+                .get(&ActionId::new(id))
+                .unwrap_or_else(|| panic!("{id} must be registered"));
+            assert_eq!(
+                action.default_shortcuts,
+                vec![KeyChord {
+                    key: function_key.to_owned(),
+                    ctrl: true,
+                    ..KeyChord::default()
+                }],
+                "{id} must bind Ctrl+{function_key}"
+            );
+        }
+    }
+
+    #[test]
+    fn selection_only_actions_include_insert_and_numpad_slash() {
+        let registry = ActionRegistry::with_core_actions(PlatformCapabilities::empty());
+        assert_eq!(
+            registry
+                .get(&ActionId::new("core.toggleSelectionAndAdvance"))
+                .expect("core.toggleSelectionAndAdvance must be registered")
+                .default_shortcuts,
+            vec![key("Insert")]
+        );
+        assert_eq!(
+            registry
+                .get(&ActionId::new("core.restoreSelection"))
+                .expect("core.restoreSelection must be registered")
+                .default_shortcuts,
+            vec![key("/")]
+        );
+    }
+
+    #[test]
+    fn quit_uses_alt_f4_and_help_uses_f1() {
+        let registry = ActionRegistry::with_core_actions(PlatformCapabilities::empty());
+        assert_eq!(
+            registry
+                .get(&ActionId::new("core.quit"))
+                .expect("core.quit must be registered")
+                .default_shortcuts,
+            vec![KeyChord {
+                key: "F4".to_owned(),
+                alt: true,
+                ..KeyChord::default()
+            }]
+        );
+        assert_eq!(
+            registry
+                .get(&ActionId::new("core.showShortcutsHelp"))
+                .expect("core.showShortcutsHelp must be registered")
+                .default_shortcuts,
+            vec![key("F1")]
+        );
     }
 
     #[test]

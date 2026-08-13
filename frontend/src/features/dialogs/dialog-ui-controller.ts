@@ -15,6 +15,8 @@ export interface PendingArchiveCredential {
 export interface DialogUIState {
   createDirectoryOpen: boolean;
   createDirectoryLocation: Location | undefined;
+  createFileOpen: boolean;
+  createFileLocation: Location | undefined;
   archiveCreateRequest: ArchiveCreateRequest | undefined;
   multiRenameOpen: boolean;
   multiRenameEntries: readonly EntrySummary[];
@@ -34,6 +36,13 @@ export interface DialogUIController {
     activeLocation: Location | undefined,
     createDirectory: (location: Location, name: string) => Promise<void>,
   ): void;
+  openCreateFile(location?: Location): void;
+  cancelCreateFile(): void;
+  confirmCreateFile(
+    name: string,
+    activeLocation: Location | undefined,
+    createFile: (location: Location, name: string) => Promise<void>,
+  ): void;
   openArchiveCreate(request: ArchiveCreateRequest): void;
   cancelArchiveCreate(): void;
   openMultiRename(
@@ -52,6 +61,8 @@ export function createDialogUIController(): DialogUIController {
   const state: DialogUIState = {
     createDirectoryOpen: false,
     createDirectoryLocation: undefined,
+    createFileOpen: false,
+    createFileLocation: undefined,
     archiveCreateRequest: undefined,
     multiRenameOpen: false,
     multiRenameEntries: [],
@@ -83,6 +94,28 @@ export function createDialogUIController(): DialogUIController {
       const uri = `${location.uri.replace(/\/$/u, '')}/${encodeURIComponent(name)}`;
       state.pendingCreatedLocation = uri;
       void createDirectory(location, name).catch(() => {
+        state.pendingCreatedLocation = undefined;
+      });
+    },
+
+    openCreateFile(location?: Location): void {
+      state.createFileLocation = location;
+      state.createFileOpen = true;
+    },
+
+    cancelCreateFile(): void {
+      state.createFileOpen = false;
+      state.createFileLocation = undefined;
+    },
+
+    confirmCreateFile(name, activeLocation, createFile): void {
+      const location = state.createFileLocation ?? activeLocation;
+      if (location === undefined) return;
+      state.createFileOpen = false;
+      state.createFileLocation = undefined;
+      const uri = `${location.uri.replace(/\/$/u, '')}/${encodeURIComponent(name)}`;
+      state.pendingCreatedLocation = uri;
+      void createFile(location, name).catch(() => {
         state.pendingCreatedLocation = undefined;
       });
     },

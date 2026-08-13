@@ -58,6 +58,22 @@ const actions: readonly ActionDescriptor[] = [
     contextRequirements: {},
     source: { kind: 'core' },
   },
+  {
+    id: 'core.newConnection',
+    title: 'New connection',
+    category: 'navigation',
+    defaultShortcuts: [{ key: 'n', ctrl: true }],
+    contextRequirements: {},
+    source: { kind: 'core' },
+  },
+  {
+    id: 'core.swapPanes',
+    title: 'Swap panes',
+    category: 'navigation',
+    defaultShortcuts: [{ key: 'u', ctrl: true }],
+    contextRequirements: {},
+    source: { kind: 'core' },
+  },
 ];
 
 const table: KeybindingContext = { scope: 'table', platform: 'windows', runtime: 'desktop' };
@@ -115,6 +131,17 @@ describe('keybinding dispatcher', () => {
     expect(dispatchKeybinding(event('Tab', { metaKey: true }), macos, actions, {})).toBeUndefined();
   });
 
+  it('never lets literal Ctrl on macOS fall through to a bare-key binding sharing the same key', () => {
+    // core.rename's chord is bare F2 (no modifier). Before this fix, hasPrimaryModifier's
+    // macOS check (metaKey && !ctrlKey) returned false for a literal Ctrl+F2 press too, which
+    // made the bare F2 binding match anyway - the same defect that made Ctrl+Backspace on
+    // macOS silently trigger "parent directory" instead of doing nothing (task 0128 follow-up).
+    const macos = { ...table, platform: 'macos' as const };
+    expect(dispatchKeybinding(event('F2'), macos, actions, {})).toBe('core.rename');
+    expect(dispatchKeybinding(event('F2', { ctrlKey: true }), macos, actions, {})).toBeUndefined();
+    expect(dispatchKeybinding(event('F2', { metaKey: true }), macos, actions, {})).toBeUndefined();
+  });
+
   it('does not dispatch table actions while a path input or modal has focus', () => {
     expect(
       dispatchKeybinding(event('F5'), { ...table, scope: 'pathInput' }, actions, {}),
@@ -152,6 +179,20 @@ describe('keybinding dispatcher', () => {
       getLiveBindings(actions, {}, table).find((binding) => binding.actionId === 'core.newTab')
         ?.available,
     ).toBe(true);
+  });
+
+  it('reserves Ctrl+N (new browser window) and Ctrl+U (view source) in browser runtime (task 0128)', () => {
+    for (const actionId of ['core.newConnection', 'core.swapPanes']) {
+      expect(
+        getLiveBindings(actions, {}, { ...table, runtime: 'browser' }).find(
+          (binding) => binding.actionId === actionId,
+        )?.available,
+      ).toBe(false);
+      expect(
+        getLiveBindings(actions, {}, table).find((binding) => binding.actionId === actionId)
+          ?.available,
+      ).toBe(true);
+    }
   });
 
   it('always lists footer function keys in ascending F-key order, marking unavailable actions instead of hiding them', () => {

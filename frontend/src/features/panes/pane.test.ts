@@ -89,6 +89,16 @@ const keybindingActions = [
     defaultShortcuts: [{ key: '+' }, { key: '+', shift: true }],
   },
   { id: 'core.deselectByMask', title: 'Deselect by mask', defaultShortcuts: [{ key: '-' }] },
+  {
+    id: 'core.toggleSelectionAndAdvance',
+    title: 'Toggle selection and advance',
+    defaultShortcuts: [{ key: 'INSERT' }],
+  },
+  {
+    id: 'core.restoreSelection',
+    title: 'Restore previous selection',
+    defaultShortcuts: [{ key: '/' }],
+  },
 ].map(
   (action): ActionDescriptor => ({
     category: 'test',
@@ -665,12 +675,14 @@ describe('Pane breadcrumb editing', () => {
     expect(onAddFavourite).toHaveBeenCalledWith('Projects', location);
   });
 
-  it('marks unavailable favourites instead of allowing a silent retry', () => {
+  it('marks unavailable favourites and allows retrying them', async () => {
     const location = { providerId: 'local' as const, uri: 'file:///gone' };
+    const onNavigateLocation = vi.fn();
     mount(
       attrs({
         favouriteLocations: [{ label: 'Gone', location }],
         unavailableLocations: new Set(['local:file:///gone']),
+        onNavigateLocation,
       }),
     );
 
@@ -678,8 +690,10 @@ describe('Pane breadcrumb editing', () => {
     m.redraw.sync();
 
     const favourite = root.querySelector<HTMLButtonElement>('[role="menuitem"]');
-    expect(favourite?.disabled).toBe(true);
+    expect(favourite?.disabled).toBe(false);
     expect(favourite?.textContent).toContain('unavailable');
+    favourite?.click();
+    await vi.waitFor(() => expect(onNavigateLocation).toHaveBeenCalledWith(location));
   });
 
   it('opens with Ctrl+D and closes with Ctrl+D again', () => {
@@ -964,6 +978,38 @@ describe('Pane navigation input', () => {
       { type: 'invert' },
       { type: 'invert' },
     ]);
+  });
+
+  it('Insert toggles the cursor entry and advances the cursor', () => {
+    const onSelectionAction = vi.fn();
+    mount(attrs({ cursorIndex: 0, onSelectionAction }));
+    const pane = root.querySelector<HTMLElement>('.fm-pane');
+
+    pane?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Insert', bubbles: true }));
+
+    expect(onSelectionAction.mock.calls.map(([action]) => action)).toEqual([
+      { type: 'toggle', entryId: 'one' },
+      { type: 'moveCursor', offset: 1 },
+    ]);
+  });
+
+  it('Numpad / restores the selection as it was before the current keystroke', () => {
+    const onSelectionAction = vi.fn();
+    mount(
+      attrs({
+        cursorIndex: 0,
+        selectedEntryIds: new Set<EntryId>(['one', 'two'] as EntryId[]),
+        onSelectionAction,
+      }),
+    );
+    const pane = root.querySelector<HTMLElement>('.fm-pane');
+
+    pane?.dispatchEvent(new KeyboardEvent('keydown', { key: '/', bubbles: true }));
+
+    expect(onSelectionAction).toHaveBeenCalledWith({
+      type: 'restore',
+      entryIds: ['one', 'two'],
+    });
   });
 
   it('prompts for a mask and dispatches visible matching entry ids', () => {

@@ -23,7 +23,9 @@ export type SelectionAction =
   | { readonly type: 'selectByMask'; readonly matchingEntryIds: readonly EntryId[] }
   | { readonly type: 'deselectByMask'; readonly matchingEntryIds: readonly EntryId[] }
   | { readonly type: 'clear' }
-  | { readonly type: 'prune'; readonly removedEntryIds: readonly EntryId[] };
+  | { readonly type: 'prune'; readonly removedEntryIds: readonly EntryId[] }
+  /** Replaces the selection wholesale, filtered to currently visible entries (Numpad `/`). */
+  | { readonly type: 'restore'; readonly entryIds: readonly EntryId[] };
 
 export const emptySelection: SelectionState = { selectedEntryIds: [] };
 
@@ -199,6 +201,11 @@ export function reduceSelection(
     case 'clear': {
       const { anchorEntryId: _anchorEntryId, baseSelectedEntryIds: _base, ...withoutMeta } = state;
       return { ...withoutMeta, selectedEntryIds: [] };
+    }
+    case 'restore': {
+      const visible = new Set(orderedEntryIds);
+      const restored = action.entryIds.filter((entryId) => visible.has(entryId));
+      return { ...state, selectedEntryIds: restored };
     }
     case 'prune': {
       const removed = new Set(action.removedEntryIds);

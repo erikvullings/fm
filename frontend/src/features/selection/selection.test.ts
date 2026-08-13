@@ -172,6 +172,25 @@ describe('selection reducer', () => {
     ).toEqual(['hidden']);
   });
 
+  it('restores a previous selection, filtered to entries still visible', () => {
+    const initial: SelectionState = { selectedEntryIds: ['a'], cursorEntryId: 'a' };
+    expect(
+      reduceSelection(
+        initial,
+        { type: 'restore', entryIds: ids('a', 'b', 'gone') },
+        ids('a', 'b', 'c'),
+      ).selectedEntryIds,
+    ).toEqual(['a', 'b']);
+  });
+
+  it('restore replaces the selection wholesale rather than merging with the current one', () => {
+    const initial: SelectionState = { selectedEntryIds: ['c'], cursorEntryId: 'c' };
+    expect(
+      reduceSelection(initial, { type: 'restore', entryIds: ids('a') }, ids('a', 'b', 'c'))
+        .selectedEntryIds,
+    ).toEqual(['a']);
+  });
+
   it('clears selection without moving the cursor', () => {
     expect(
       reduceSelection(

@@ -142,6 +142,33 @@ impl OperationPlanner {
                     create_intermediates: request.create_intermediate_directories,
                 })
             }
+            OperationKindDto::CreateFile => {
+                let parent = destination.clone().ok_or_else(|| {
+                    ApplicationError::InvalidRequest(
+                        "createFile requires a destination directory".into(),
+                    )
+                })?;
+                let name = request.name.clone().ok_or_else(|| {
+                    ApplicationError::InvalidRequest("createFile requires a name".into())
+                })?;
+                let provider = self
+                    .providers
+                    .resolve(&parent)
+                    .map_err(ApplicationError::from)?;
+                // Reuses the WRITE capability rather than a dedicated CREATE_FILE bit: creating an
+                // empty file is just opening a writer and immediately shutting it down with no
+                // bytes written, so every provider that can write a file can already do this.
+                provider
+                    .capabilities_for(&parent)
+                    .map_err(ApplicationError::from)?
+                    .require(ProviderCapabilities::WRITE)
+                    .map_err(ApplicationError::from)?;
+                Arc::new(CreateFileExecutor {
+                    provider,
+                    parent,
+                    name,
+                })
+            }
             OperationKindDto::Rename if request.destinations.is_empty() => {
                 if request.sources.len() != 1 {
                     return Err(ApplicationError::InvalidRequest(
@@ -421,6 +448,12 @@ struct CreateDirectoryExecutor {
     parent: Location,
     name: String,
     create_intermediates: bool,
+}
+
+struct CreateFileExecutor {
+    provider: Arc<dyn FileSystemProvider>,
+    parent: Location,
+    name: String,
 }
 
 struct RenameExecutor {
@@ -1827,6 +1860,51 @@ impl OperationExecutor for CreateDirectoryExecutor {
                 .await?;
             parent = created.location;
         }
+        Ok(ExecutionOutcome::Completed)
+    }
+
+    async fn cleanup_partial(&self, _operation: &Operation) -> Result<(), ExecutionError> {
+        Ok(())
+    }
+}
+
+#[async_trait]
+impl OperationExecutor for CreateFileExecutor {
+    async fn plan(
+        &self,
+        _operation: &Operation,
+        _cancellation: &CancellationToken,
+    ) -> Result<OperationPlan, ExecutionError> {
+        Ok(OperationPlan::new(vec![PlanItem::new(
+            EntryRef {
+                id: EntryId::new(),
+                location: self.parent.clone(),
+            },
+            0,
+        )]))
+    }
+
+    async fn execute(
+        &self,
+        _operation: &Operation,
+        _item: &PlanItem,
+        _resolution: Option<ConflictResolution>,
+        _pause: &PauseToken,
+        cancellation: &CancellationToken,
+    ) -> Result<ExecutionOutcome, ExecutionError> {
+        let destination = self
+            .parent
+            .join(&self.name)
+            .map_err(|error| ExecutionError::Failed(error.to_string()))?;
+        // Creating an empty file is just opening a writer and shutting it down without
+        // writing any bytes, so this reuses the same streaming primitive `copy_file` uses
+        // rather than requiring a dedicated provider capability/method.
+        let mut writer = self
+            .provider
+            .open_write(&destination, WriteOptions::default(), cancellation.clone())
+            .await?;
+        writer.shutdown().await.map_err(copy_stream_error)?;
+        drop(writer);
         Ok(ExecutionOutcome::Completed)
     }
 
