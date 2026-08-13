@@ -16,6 +16,7 @@ import {
 } from '../clipboard/copy-selection-actions';
 import type { CommandAvailabilityContext } from '../commands/availability';
 import { evaluateActionAvailability } from '../commands/availability';
+import type { ArchiveCreateRequest } from '../dialogs/dialog-ui-controller';
 import type { NavigationController, PaneDirectoryView } from '../navigation/navigation';
 import type { OperationsController } from '../operations/operations-controller';
 import type { SelectionState } from '../selection/selection';
@@ -67,6 +68,7 @@ export interface ActionCommandControllerContext {
   toast(options: { html: string }): void;
   getOpenTerminalSupported(): boolean;
   openCreateDirectory(location?: import('../../models').Location): void;
+  setArchiveCreateRequest(request: ArchiveCreateRequest): void;
   redraw(): void;
 }
 
@@ -305,6 +307,27 @@ export function createActionCommandController(
         if (mode === 'move') context.replaceClipboard(clearClipboard(currentClipboard));
         context.redraw();
       });
+      return;
+    }
+    if (action.id === 'core.pack' || action.id === 'core.moveToArchive') {
+      if (menu.entries.length === 0 || directory.location === undefined) return;
+      context.setArchiveCreateRequest({
+        sources: menu.entries.map((entry) => entry.location),
+        destinationDirectory: directory.location,
+        moveSources: action.id === 'core.moveToArchive',
+      });
+      return;
+    }
+    if (action.id === 'core.extract') {
+      const source = menu.entries[0];
+      const workspace = context.getWorkspace();
+      const otherPaneId = workspace?.paneOrder.find((paneId) => paneId !== menu.paneId);
+      const destination =
+        otherPaneId === undefined
+          ? undefined
+          : context.getDirectories().get(context.getActiveTabKey(otherPaneId))?.location;
+      if (source === undefined || destination === undefined) return;
+      void context.getOpsController().extract(source.location, destination);
       return;
     }
     invokePaletteAction(action, undefined, {

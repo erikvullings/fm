@@ -1431,6 +1431,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     toast: (options) => toast(options),
     getOpenTerminalSupported: () => openTerminalSupported,
     openCreateDirectory: (location) => dialogs.openCreateDirectory(location),
+    setArchiveCreateRequest: (request) => dialogs.openArchiveCreate(request),
     redraw: () => m.redraw(),
   };
 

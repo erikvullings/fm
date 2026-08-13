@@ -34,6 +34,18 @@ function entry(kind: EntrySummary['kind'], readOnly = false): EntrySummary {
   };
 }
 
+function archiveEntry(name = 'notes.zip'): EntrySummary {
+  return {
+    id: `archive-${name}` as EntryId,
+    location: { providerId: 'local', uri: `file:///${name}` },
+    name,
+    kind: 'file',
+    hidden: false,
+    readOnly: false,
+    metadataRevision: 1,
+  };
+}
+
 function context(overrides: Partial<CommandAvailabilityContext> = {}): CommandAvailabilityContext {
   return {
     selectedEntries: [],
@@ -161,6 +173,39 @@ describe('command availability', () => {
         (item) => item.action.id,
       ),
     ).toEqual(['core.copyName', 'core.copyPath', 'core.copyRelativePath', 'core.rename']);
+  });
+
+  it('includes core.pack and core.moveToArchive for any selection, single or multiple', () => {
+    const actions = [
+      action('core.pack', { requiresSelection: true }),
+      action('core.moveToArchive', { requiresSelection: true }),
+    ];
+
+    expect(
+      menuActionsForContext(actions, context({ selectedEntries: [entry('file')] })).map(
+        (item) => item.action.id,
+      ),
+    ).toEqual(['core.pack', 'core.moveToArchive']);
+    expect(
+      menuActionsForContext(
+        actions,
+        context({ selectedEntries: [entry('file'), entry('directory')] }),
+      ).map((item) => item.action.id),
+    ).toEqual(['core.pack', 'core.moveToArchive']);
+  });
+
+  it('shows core.extract for a single selected archive file, and disables it otherwise', () => {
+    const actions = [action('core.extract', { requiresSingleSelection: true })];
+
+    expect(availableActions(actions, context({ selectedEntries: [archiveEntry()] }))).toEqual([
+      { action: actions[0], available: true },
+    ]);
+    expect(availableActions(actions, context({ selectedEntries: [entry('file')] }))).toEqual([
+      { action: actions[0], available: false, reason: 'Select an archive file' },
+    ]);
+    expect(
+      availableActions(actions, context({ selectedEntries: [archiveEntry(), entry('file')] })),
+    ).toEqual([{ action: actions[0], available: false, reason: 'Select exactly one item' }]);
   });
 
   it('keeps core.trash available for a read-only selection, unlike core.delete (task 0043)', () => {
