@@ -4,6 +4,8 @@
 use std::path::{Path, PathBuf};
 use thiserror::Error;
 
+use fm_transport_dto::LocationDto;
+
 /// Error validating a location against accessible roots.
 #[derive(Debug, Error)]
 pub enum AccessibleRootsError {
@@ -25,6 +27,11 @@ pub enum AccessibleRootsError {
 
 /// Validates that a path is within one of the configured accessible roots,
 /// after resolving symlinks. Returns the canonicalized path.
+///
+/// The target need not exist yet (e.g. a path about to be created): the
+/// nearest existing ancestor is canonicalized and the missing suffix is
+/// rejoined before the roots check, so an escape can't be smuggled in via a
+/// not-yet-created path.
 pub fn validate_within_accessible_roots(
     path: &Path,
     roots: &[PathBuf],
@@ -36,25 +43,80 @@ pub fn validate_within_accessible_roots(
         return Ok(path.to_path_buf());
     }
 
-    // Canonicalize the path to resolve symlinks and relative components.
-    let canonical_path = path
-        .canonicalize()
-        .map_err(|e| AccessibleRootsError::ResolutionFailed(e.to_string()))?;
+    let canonical_path = canonicalize_existing_or_pending(path)?;
+    let canonical_roots = roots
+        .iter()
+        .map(|root| {
+            root.canonicalize()
+                .map_err(|e| AccessibleRootsError::ResolutionFailed(e.to_string()))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
 
-    // Check that the canonical path is within one of the configured roots.
-    for root in roots {
-        let canonical_root = root
-            .canonicalize()
-            .map_err(|e| AccessibleRootsError::ResolutionFailed(e.to_string()))?;
-
-        if canonical_path.starts_with(&canonical_root) {
-            return Ok(canonical_path);
-        }
+    if canonical_roots
+        .iter()
+        .any(|root| canonical_path.starts_with(root))
+    {
+        return Ok(canonical_path);
     }
 
     Err(AccessibleRootsError::OutsideRoots {
         path: canonical_path.display().to_string(),
     })
+}
+
+/// Canonicalizes `path`, falling back to canonicalizing the nearest existing
+/// ancestor and rejoining the missing suffix when `path` itself doesn't
+/// exist yet.
+fn canonicalize_existing_or_pending(path: &Path) -> Result<PathBuf, AccessibleRootsError> {
+    if let Ok(canonical) = path.canonicalize() {
+        return Ok(canonical);
+    }
+
+    let mut ancestor = path.to_path_buf();
+    let mut pending_suffix = Vec::new();
+    loop {
+        let Some(name) = ancestor.file_name().map(std::ffi::OsStr::to_owned) else {
+            return Err(AccessibleRootsError::ResolutionFailed(
+                "no existing ancestor found".to_owned(),
+            ));
+        };
+        let Some(parent) = ancestor.parent().map(Path::to_path_buf) else {
+            return Err(AccessibleRootsError::ResolutionFailed(
+                "no existing ancestor found".to_owned(),
+            ));
+        };
+        pending_suffix.push(name);
+        ancestor = parent;
+        if ancestor.exists() {
+            break;
+        }
+    }
+
+    let mut resolved = ancestor
+        .canonicalize()
+        .map_err(|e| AccessibleRootsError::ResolutionFailed(e.to_string()))?;
+    for name in pending_suffix.into_iter().rev() {
+        resolved.push(name);
+    }
+    Ok(resolved)
+}
+
+/// Validates a wire-level [`LocationDto`] against the configured accessible
+/// roots. Non-local providers (archive, sftp, ftp, search) are skipped:
+/// their locations don't resolve to a native path on this machine, so
+/// accessible-roots enforcement doesn't apply to them (task 0064).
+pub fn validate_location(
+    location: &LocationDto,
+    roots: &[PathBuf],
+) -> Result<(), AccessibleRootsError> {
+    if location.provider_id != "local" {
+        return Ok(());
+    }
+    let domain_location: fm_domain::Location = location.clone().into();
+    let path = domain_location
+        .to_native_path()
+        .map_err(|e| AccessibleRootsError::ResolutionFailed(format!("invalid location: {e}")))?;
+    validate_within_accessible_roots(&path, roots).map(|_| ())
 }
 
 #[cfg(test)]

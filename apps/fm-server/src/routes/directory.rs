@@ -32,6 +32,7 @@ pub(crate) async fn list_directory(
     Json(request): Json<ListDirectoryRequest>,
 ) -> Result<Json<DirectorySnapshotDto>, ApiError> {
     let request_id = extract_request_id(&request_id);
+    crate::error::require_within_roots(&request.location, &state.accessible_roots, request_id)?;
     let started = Instant::now();
     tracing::Span::current()
         .record("workspace_id", request.workspace_id.to_string().as_str())
@@ -84,6 +85,7 @@ pub(crate) async fn refresh_directory(
     Json(request): Json<ListDirectoryRequest>,
 ) -> Result<Json<DirectorySnapshotDto>, ApiError> {
     let request_id = extract_request_id(&request_id);
+    crate::error::require_within_roots(&request.location, &state.accessible_roots, request_id)?;
     let started = Instant::now();
     info!(
         request_id = %request_id,
@@ -133,6 +135,7 @@ pub(crate) async fn navigate_pane(
     Json(request): Json<NavigateRequest>,
 ) -> Result<Json<DirectorySnapshotDto>, ApiError> {
     let request_id = extract_request_id(&request_id);
+    crate::error::require_within_roots(&request.location, &state.accessible_roots, request_id)?;
     let started = Instant::now();
     info!(
         request_id = %request_id,
@@ -182,6 +185,7 @@ pub(crate) async fn get_entry_metadata(
     Json(request): Json<EntryMetadataRequest>,
 ) -> Result<Json<EntryMetadataDto>, ApiError> {
     let request_id = extract_request_id(&request_id);
+    crate::error::require_within_roots(&request.location, &state.accessible_roots, request_id)?;
     state
         .service
         .get_entry_metadata(request)

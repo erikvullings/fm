@@ -3,8 +3,41 @@
 //! Logs delete, trash, and overwrite operations including who (session), what,
 //! and when, without file contents or secrets.
 
+use axum::extract::FromRequestParts;
+use axum::http::request::Parts;
 use chrono::{DateTime, Utc};
+use sha2::Digest;
 use tracing::info;
+
+/// Extracts a short, non-reversible identifier for the caller's session
+/// token, suitable for the "who" field of an [`AuditEvent`] without logging
+/// the credential itself (spec §30, task 0064). `None` when the request
+/// carries no token (dev mode).
+pub(crate) struct SessionIdHeader(pub(crate) Option<String>);
+
+impl<S> FromRequestParts<S> for SessionIdHeader
+where
+    S: Send + Sync,
+{
+    type Rejection = std::convert::Infallible;
+
+    async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
+        let token = parts
+            .headers
+            .get("authorization")
+            .and_then(|h| h.to_str().ok())
+            .and_then(|h| h.strip_prefix("Bearer "));
+        Ok(Self(token.map(hash_token)))
+    }
+}
+
+/// A short, stable, non-reversible fingerprint of a session token.
+fn hash_token(token: &str) -> String {
+    let mut hasher = sha2::Sha256::new();
+    hasher.update(token.as_bytes());
+    let hash = hasher.finalize();
+    hash.iter().take(6).map(|b| format!("{b:02x}")).collect()
+}
 
 /// Audit events for file operations.
 #[derive(Debug)]
@@ -20,7 +53,7 @@ pub struct AuditEvent {
 }
 
 /// Operation types tracked in audit logs.
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum AuditOperation {
     /// File deletion operation.
     Delete,

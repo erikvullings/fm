@@ -62,11 +62,41 @@ pub(crate) async fn start_operation(
     State(state): State<AppState>,
     Extension(request_id): Extension<RequestId>,
     headers: HeaderMap,
+    session_id: crate::audit::SessionIdHeader,
     Json(request): Json<StartOperationRequestDto>,
 ) -> Result<(StatusCode, Json<OperationDto>), ApiError> {
     let correlation_id = extract_request_id(&request_id);
+    for source in &request.sources {
+        crate::error::require_within_roots(source, &state.accessible_roots, correlation_id)?;
+    }
+    if let Some(destination) = &request.destination {
+        crate::error::require_within_roots(destination, &state.accessible_roots, correlation_id)?;
+    }
+    for destination in &request.destinations {
+        crate::error::require_within_roots(destination, &state.accessible_roots, correlation_id)?;
+    }
     let started = Instant::now();
     let operation_kind = request.operation_type;
+    let audit_operation = match operation_kind {
+        fm_transport_dto::OperationKindDto::Delete => Some(crate::audit::AuditOperation::Delete),
+        fm_transport_dto::OperationKindDto::Trash => Some(crate::audit::AuditOperation::Trash),
+        _ if matches!(
+            request.conflict_policy,
+            fm_transport_dto::OperationConflictPolicyDto::Overwrite
+        ) =>
+        {
+            Some(crate::audit::AuditOperation::Overwrite)
+        }
+        _ => None,
+    };
+    let audit_paths: Vec<String> = if audit_operation.is_some() {
+        let mut paths: Vec<String> = request.sources.iter().map(|l| l.uri.clone()).collect();
+        paths.extend(request.destination.iter().map(|l| l.uri.clone()));
+        paths.extend(request.destinations.iter().map(|l| l.uri.clone()));
+        paths
+    } else {
+        Vec::new()
+    };
     let key = headers
         .get("idempotency-key")
         .and_then(|value| value.to_str().ok())
@@ -87,6 +117,12 @@ pub(crate) async fn start_operation(
                 elapsed_ms = started.elapsed().as_millis(),
                 "start_operation honored"
             );
+            if let Some(audit_operation) = audit_operation {
+                for path in audit_paths {
+                    crate::audit::AuditEvent::new(audit_operation, path, session_id.0.clone())
+                        .log();
+                }
+            }
             Ok((StatusCode::CREATED, Json(operation)))
         }
         Err(error) => {
@@ -269,11 +305,18 @@ pub(crate) async fn resolve_operation_conflict(
     State(state): State<AppState>,
     Extension(request_id): Extension<RequestId>,
     Path(id): Path<Uuid>,
+    session_id: crate::audit::SessionIdHeader,
     Json(request): Json<ResolveOperationConflictRequestDto>,
 ) -> Result<StatusCode, ApiError> {
     let correlation_id = extract_request_id(&request_id);
     let started = Instant::now();
     let operation_id = OperationId::from(id);
+    let resolution = request.resolution;
+    let audit_path = (resolution == fm_transport_dto::ConflictResolutionDto::Overwrite)
+        .then(|| state.service.get_operation(operation_id).ok())
+        .flatten()
+        .and_then(|op| op.progress.current_entry)
+        .map(|entry| entry.location.uri);
     info!(
         request_id = %correlation_id,
         operation_id = %operation_id,
@@ -292,6 +335,14 @@ pub(crate) async fn resolve_operation_conflict(
                 elapsed_ms = started.elapsed().as_millis(),
                 "resolve_operation_conflict honored"
             );
+            if let Some(path) = audit_path {
+                crate::audit::AuditEvent::new(
+                    crate::audit::AuditOperation::Overwrite,
+                    path,
+                    session_id.0,
+                )
+                .log();
+            }
             Ok(StatusCode::NO_CONTENT)
         }
         Err(error) => {

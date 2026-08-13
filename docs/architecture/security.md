@@ -15,13 +15,18 @@ The server mode exposes the file manager's capabilities over HTTP/REST and Serve
 
 ### 1. Session-Based Authentication (Task 0064)
 
-All `/api/v1` routes (except health check) require a valid session token.
+All `/api/v1` routes except `GET /api/v1/health` and the Swagger/OpenAPI
+surface (`/api/v1/docs`, `/api/v1/openapi.json`) require a valid session
+token, enforced by the `require_session` Axum middleware
+(`fm-server/src/auth.rs`) layered around every route in `build_router`
+(`fm-server/src/lib.rs`). This includes the SSE stream at `GET
+/api/v1/events`.
 
 #### Token Lifecycle
 
 - **Generation**: On server startup, a random 32-byte session secret is generated using cryptographically random UUIDs.
-- **Issuance**: Clients obtain a token by authenticating out-of-band (e.g., via a one-time setup UI or command-line flag).
-- **Verification**: Each request validates the token's HMAC-SHA256 signature against the server's secret.
+- **Issuance**: `fm-server` prints one token to stdout at startup (unless dev mode is active), the way tools like Jupyter print an access URL. An operator copies it into the browser client.
+- **Verification**: Each request validates the token's HMAC-SHA256 signature against the server's secret, from either an `Authorization: Bearer <token>` header or a `?token=` query parameter — the latter exists because browser `EventSource` connections can't set custom headers, so the SSE stream is opened as `GET /api/v1/events?token=<token>`.
 - **Lifetime**: Tokens are valid for the entire server session; no expiration or refresh tokens.
 
 #### Token Format
@@ -42,10 +47,10 @@ In development mode (opt-in via `--dev-mode-auth-disabled`), authentication is d
 
 #### Production Recommendations
 
-1. Generate a token via a secure setup process (e.g., a one-time bootstrap server or hardcoded token).
-2. Transmit tokens over HTTPS only (TLS terminator or reverse proxy).
+1. Copy the token `fm-server` prints at startup, or generate one out-of-band via a secure setup process.
+2. Transmit tokens over HTTPS only (the built-in `--tls-cert`/`--tls-key` termination or a reverse proxy).
 3. Store tokens in secure browser storage (e.g., `sessionStorage`, never `localStorage`).
-4. Rotate secrets periodically (requires client re-authentication).
+4. Restart the server to rotate the secret (requires client re-authentication); there is no separate rotation endpoint.
 
 ### 2. Loopback-Only Binding (Task 0064)
 
@@ -91,7 +96,15 @@ Wildcard CORS (`*`) allows any website to access the server's API, defeating aut
 
 ### 4. Accessible Roots Validation (Task 0064)
 
-Every incoming file operation is validated against configured accessible roots, **after symlink resolution**.
+Every incoming request that carries a filesystem `Location` is validated
+against the configured accessible roots, **after symlink resolution**,
+before the request reaches `FileManagerService`. This is enforced directly
+in the route handlers (`crate::error::require_within_roots`, called from
+`routes/directory.rs`, `routes/files.rs`, `routes/operation.rs` for every
+source/destination, and `routes/search.rs` for search roots), not deep in
+the filesystem provider — a rejected `Location` never reaches application
+logic. Non-local providers (`archive`, `sftp`, `ftp`, `search`) are exempt:
+they don't resolve to a native path on this machine.
 
 #### Configuration
 
@@ -102,9 +115,12 @@ fm-server --root /home/user/documents --root /mnt/shared/public
 
 #### Validation Logic
 
-1. Resolve the requested path (follow symlinks, normalize `..` and `.`).
+1. Resolve the requested path (follow symlinks, normalize `..` and `.`). A
+   path that doesn't exist yet (e.g. about to be created) is validated by
+   canonicalizing its nearest existing ancestor and rejoining the missing
+   suffix, so a not-yet-created path can't be used to smuggle an escape.
 2. Check if the canonical path starts with one of the configured roots.
-3. Reject if outside all roots.
+3. Reject with `403 Forbidden` if outside all roots.
 
 #### Escape Prevention
 
@@ -120,6 +136,16 @@ This blocks:
 1. Always configure at least one root; an empty list allows access to the entire filesystem.
 2. Roots should be user-owned directories, not system directories.
 3. Use read-only roots where possible (if the server is read-only).
+
+#### Known Gap
+
+Workspace commands (`POST /api/v1/workspaces/{id}/commands`, e.g.
+`addTab`/`navigateTab`) carry `Location` values in their history/tab state
+but are not validated against accessible roots at this handler, since a
+workspace command's location only ever reaches the filesystem through a
+subsequent `directories/list` or `navigation/open` call, which *is*
+validated. Tightening this handler directly is a documented follow-up
+rather than a silent gap.
 
 ### 5. Request Size Limits (Task 0064)
 
@@ -140,30 +166,60 @@ Prevents denial-of-service via large payloads (e.g., uploading a 1 TB file to ex
    - File upload support: Size of largest expected upload.
 2. Pair with reverse proxy limits (nginx: `client_max_body_size`).
 
+### 5b. Rate Limiting (Task 0064)
+
+Mutating requests (`POST`/`PUT`/`PATCH`/`DELETE`) share one server-wide
+token-bucket limiter (`fm-server/src/rate_limit.rs`, backed by the
+`governor` crate); `GET`/`HEAD` requests are never throttled. Exceeding the
+quota returns `429 Too Many Requests`.
+
+```bash
+# Allow at most 20 mutating requests per second, server-wide (the default)
+fm-server --max-mutations-per-second 20
+```
+
+#### Rationale
+
+Bounds how fast a single misbehaving client (or script) can issue
+destructive operations, independent of the request-size limit above, which
+only bounds the size of any one request.
+
+#### Production Recommendations
+
+1. Lower the quota for internet-facing deployments; the default of 20/s
+   is tuned for a single local operator, not a shared server.
+2. The limiter is server-wide, not per-client; a reverse proxy in front of
+   a multi-user deployment should add its own per-IP limiting.
+
 ### 6. Audit Logging (Task 0064)
 
-Destructive operations (delete, trash, overwrite) are logged with structured metadata.
+Destructive operations (delete, trash, overwrite) are logged with structured
+metadata from the route handlers that trigger them:
+`POST /api/v1/operations` for `delete`/`trash`/overwrite-on-conflict,
+`POST /api/v1/operations/{id}/resolve-conflict` for a conflict resolved as
+overwrite, and `POST /api/v1/files/editable/save` for an editable-file save
+(`routes/operation.rs`, `routes/files.rs`, backed by `AuditEvent` in
+`audit.rs`).
 
 ```log
 audit: destructive operation
   operation=delete
-  path=/home/user/documents/file.txt
-  session_id=<uuid>
+  path=file:///home/user/documents/file.txt
+  session_id=3f2a91
   timestamp=2024-08-10T12:00:00Z
 ```
 
 #### What Is Logged
 
 - Operation type (delete, trash, overwrite)
-- Relative path (after root normalization)
-- Session ID (if authenticated)
+- The location's URI as supplied by the client
+- A 6-byte SHA-256 fingerprint of the caller's session token (`session_id`) — never the token itself, so the audit log can correlate events from the same session without becoming a credential store. Absent when dev mode is active.
 - Timestamp
 
 #### What Is NOT Logged
 
 - File contents
-- Secrets (keys, tokens, passwords)
-- Full filesystem paths (relative to root only)
+- Secrets (keys, tokens, passwords) — the session token is hashed to a short fingerprint before logging, never logged in full
 
 #### Production Recommendations
 
@@ -173,9 +229,19 @@ audit: destructive operation
 
 ### 7. TLS/HTTPS (Task 0064)
 
-The server does not implement TLS directly; use a reverse proxy for HTTPS.
+`fm-server` can terminate TLS directly (via `axum-server`'s `rustls`
+backend) or sit behind a reverse proxy; either is supported.
 
-#### Setup Example
+#### Direct TLS Termination
+
+```bash
+fm-server --bind 0.0.0.0 --tls-cert /etc/fm-server/cert.pem --tls-key /etc/fm-server/key.pem
+```
+
+Both `--tls-cert` and `--tls-key` (PEM format) must be set together; setting
+only one panics at startup rather than silently serving plaintext.
+
+#### Reverse Proxy Setup Example
 
 ```nginx
 # /etc/nginx/conf.d/fm-server.conf
@@ -200,8 +266,36 @@ server {
 #### Production Recommendations
 
 1. Use a certificate from a trusted CA (Let's Encrypt, Digicert, etc.).
-2. Enable HSTS (`Strict-Transport-Security`).
-3. Use TLS 1.2+ with strong ciphers.
+2. Enable HSTS (`Strict-Transport-Security`) at the reverse proxy if used.
+3. Rotate certificates before expiry; `fm-server` reads the PEM files once at startup and must be restarted to pick up a renewed certificate.
+
+### 8. Server-Mode Configuration File (Task 0064)
+
+Server-mode settings live in their own TOML file (`fm-server/src/config.rs`,
+`ServerFileConfig`), entirely separate from the desktop app's settings
+directory (`ServerConfig::settings_directory`, which stores workspace/UI
+settings, not server configuration).
+
+```bash
+fm-server --config /etc/fm-server/fm-server.toml
+```
+
+```toml
+# /etc/fm-server/fm-server.toml
+bind = "0.0.0.0"
+port = 8787
+corsOrigins = ["https://files.example.com"]
+roots = ["/home/user/documents", "/mnt/shared/public"]
+maxBodyBytes = 10485760
+maxMutationsPerSecond = 20
+devModeAuthDisabled = false
+tlsCert = "/etc/fm-server/cert.pem"
+tlsKey = "/etc/fm-server/key.pem"
+```
+
+Precedence, highest to lowest: CLI flag or environment variable, then the
+config file, then the built-in default. Every field is optional — a file
+only needs to set what it wants to override.
 
 ## Threat Model
 
@@ -230,13 +324,13 @@ server {
 ## Deployment Checklist
 
 - [ ] **Bind address**: Confirm loopback binding (127.0.0.1) or reverse proxy is in place.
-- [ ] **Authentication**: Dev mode disabled; production tokens are generated securely.
+- [ ] **Authentication**: `--dev-mode-auth-disabled` is unset; the printed startup token is distributed to operators over a secure channel.
 - [ ] **CORS origins**: Configured to known, trusted domains only (no wildcard).
-- [ ] **Accessible roots**: Configured to user-owned directories only.
-- [ ] **TLS**: Reverse proxy has a valid certificate (HTTPS only).
-- [ ] **Request limits**: Set appropriately for your use case.
+- [ ] **Accessible roots**: Configured to user-owned directories only (`--root`).
+- [ ] **TLS**: Either `--tls-cert`/`--tls-key` are set, or a reverse proxy terminates TLS in front of the server.
+- [ ] **Request limits**: `--max-body-bytes` and `--max-mutations-per-second` set appropriately for your use case.
 - [ ] **Audit logs**: Shipped to a centralized logging service.
-- [ ] **Monitoring**: Alerting on auth failures, path traversal attempts.
+- [ ] **Monitoring**: Alerting on auth failures, path traversal attempts (`403`/`401` rates).
 
 ## References
 
@@ -247,8 +341,10 @@ server {
 
 ## Implementation References
 
-- Session authentication: `fm-server/src/auth.rs`
-- Accessible roots validation: `fm-server/src/accessible_roots.rs`
-- Audit logging: `fm-server/src/audit.rs`
-- Server configuration: `fm-server/src/config.rs`
-- Security tests: `fm-server/tests/security.rs`
+- Session authentication middleware: `fm-server/src/auth.rs`, wired in `fm-server/src/lib.rs::build_router_with_service_and_session`
+- Accessible roots validation: `fm-server/src/accessible_roots.rs`, called from `fm-server/src/error.rs::require_within_roots` at each route handler that accepts a `Location`
+- Rate limiting: `fm-server/src/rate_limit.rs`
+- Audit logging: `fm-server/src/audit.rs`, called from `fm-server/src/routes/operation.rs` and `fm-server/src/routes/files.rs`
+- Server configuration and config file: `fm-server/src/config.rs` (`ServerConfig`, `ServerFileConfig`)
+- CLI wiring (config file, TLS, startup token): `fm-server/src/main.rs`
+- Security tests: `fm-server/tests/security.rs` (`security_tests` for pure logic, `http_security_tests` for real end-to-end HTTP coverage)

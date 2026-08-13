@@ -35,6 +35,12 @@ impl TestServer {
             port: 0,
             workspace_directory: workspace_directory.path().to_path_buf(),
             settings_directory: workspace_directory.path().join("config"),
+            // These route tests exercise application behaviour, not the
+            // auth/roots security surface (task 0064 covers that in
+            // `tests/security.rs` with its own explicit configs), so the
+            // shared spawn helper opts into the documented, logged dev-mode
+            // relaxation rather than requiring every test to mint a token.
+            dev_mode_auth_disabled: true,
             ..ServerConfig::default()
         };
         let event_bus = EventBus::new(8);

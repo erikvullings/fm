@@ -1,6 +1,15 @@
 //! Security integration tests for the file manager server (task 0064).
 //!
 //! Tests path traversal, authentication, CORS, and request size limits.
+//!
+//! `security_tests` below exercises the pure validation/config logic in
+//! isolation; `http_security_tests` drives the real router end-to-end over
+//! HTTP (`tower_http`'s CORS layer, the `require_session` middleware, the
+//! request-size limit, and accessible-roots enforcement wired into the
+//! route handlers), so a check that passes here proves the wiring, not just
+//! the underlying function.
+
+mod common;
 
 #[cfg(test)]
 mod security_tests {
@@ -273,5 +282,263 @@ mod security_tests {
     fn session_secret_is_32_bytes() {
         let secret = config::SessionSecret::random();
         assert_eq!(secret.as_bytes().len(), 32);
+    }
+}
+
+/// End-to-end coverage driving the real Axum router over HTTP (task 0064).
+#[cfg(test)]
+mod http_security_tests {
+    use std::net::{IpAddr, Ipv4Addr};
+    use std::sync::Arc;
+
+    use crate::common::TestServer;
+    use fm_application::FileManagerService;
+    use fm_events::EventBus;
+    use fm_server::auth::SessionManager;
+    use fm_server::config::ServerConfig;
+    use fm_transport_dto::RuntimeKindDto;
+    use serde_json::json;
+    use uuid::Uuid;
+
+    /// Spawns a server for the given config, forcing the fields every test
+    /// needs isolated (loopback, ephemeral port, temp workspace storage).
+    async fn spawn(mut config: ServerConfig) -> TestServer {
+        let workspace_directory = tempfile::tempdir().expect("must create workspace directory");
+        config.bind_address = IpAddr::V4(Ipv4Addr::LOCALHOST);
+        config.port = 0;
+        config.workspace_directory = workspace_directory.path().to_path_buf();
+        config.settings_directory = workspace_directory.path().join("config");
+        let service = Arc::new(FileManagerService::with_event_bus(
+            RuntimeKindDto::BrowserServer,
+            config.workspace_directory.clone(),
+            config.settings_directory.clone(),
+            EventBus::new(8),
+        ));
+        TestServer::spawn_with_service(config, service, workspace_directory).await
+    }
+
+    /// Issues a token from the same secret the server was built with, the
+    /// way an operator would use the token `main.rs` prints at startup.
+    fn token_for(config: &ServerConfig) -> String {
+        SessionManager::new(config.session_secret.clone(), false)
+            .issue_token()
+            .as_str()
+            .to_owned()
+    }
+
+    #[tokio::test]
+    async fn unauthenticated_rest_request_is_rejected() {
+        let config = ServerConfig::default();
+        let token = token_for(&config);
+        let server = spawn(config).await;
+
+        let response = reqwest::get(format!("{}/api/v1/workspaces", server.base_url))
+            .await
+            .expect("request must succeed at the transport level");
+        assert_eq!(response.status(), reqwest::StatusCode::UNAUTHORIZED);
+
+        let authenticated = reqwest::Client::new()
+            .get(format!("{}/api/v1/workspaces", server.base_url))
+            .bearer_auth(&token)
+            .send()
+            .await
+            .expect("request must succeed");
+        assert_eq!(authenticated.status(), reqwest::StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn health_check_never_requires_a_session_token() {
+        let server = spawn(ServerConfig::default()).await;
+
+        let response = reqwest::get(format!("{}/api/v1/health", server.base_url))
+            .await
+            .expect("request must succeed");
+        assert_eq!(response.status(), reqwest::StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn unauthenticated_sse_request_is_rejected() {
+        let server = spawn(ServerConfig::default()).await;
+
+        let response = reqwest::get(format!("{}/api/v1/events", server.base_url))
+            .await
+            .expect("request must succeed at the transport level");
+        assert_eq!(response.status(), reqwest::StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn sse_request_with_a_valid_query_token_is_accepted() {
+        let config = ServerConfig::default();
+        let token = token_for(&config);
+        let server = spawn(config).await;
+
+        let response = reqwest::get(format!("{}/api/v1/events?token={token}", server.base_url))
+            .await
+            .expect("request must succeed");
+        assert_eq!(response.status(), reqwest::StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn dev_mode_relaxation_accepts_requests_without_a_token() {
+        let config = ServerConfig {
+            dev_mode_auth_disabled: true,
+            ..ServerConfig::default()
+        };
+        let server = spawn(config).await;
+
+        let response = reqwest::get(format!("{}/api/v1/workspaces", server.base_url))
+            .await
+            .expect("request must succeed");
+        assert_eq!(response.status(), reqwest::StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn disallowed_cors_origin_is_not_granted_access_control_headers() {
+        let config = ServerConfig {
+            dev_mode_auth_disabled: true,
+            cors_allowed_origins: vec!["https://allowed.example".to_owned()],
+            ..ServerConfig::default()
+        };
+        let server = spawn(config).await;
+
+        let disallowed = reqwest::Client::new()
+            .request(
+                reqwest::Method::OPTIONS,
+                format!("{}/api/v1/health", server.base_url),
+            )
+            .header("Origin", "https://evil.example")
+            .header("Access-Control-Request-Method", "GET")
+            .send()
+            .await
+            .expect("preflight must succeed at the transport level");
+        assert!(
+            !disallowed
+                .headers()
+                .contains_key("access-control-allow-origin"),
+            "a disallowed origin must not receive an Access-Control-Allow-Origin header"
+        );
+
+        let allowed = reqwest::Client::new()
+            .request(
+                reqwest::Method::OPTIONS,
+                format!("{}/api/v1/health", server.base_url),
+            )
+            .header("Origin", "https://allowed.example")
+            .header("Access-Control-Request-Method", "GET")
+            .send()
+            .await
+            .expect("preflight must succeed");
+        assert_eq!(
+            allowed
+                .headers()
+                .get("access-control-allow-origin")
+                .and_then(|v| v.to_str().ok()),
+            Some("https://allowed.example")
+        );
+    }
+
+    #[tokio::test]
+    async fn oversized_request_body_is_rejected_with_413() {
+        let config = ServerConfig {
+            dev_mode_auth_disabled: true,
+            max_body_bytes: 64,
+            ..ServerConfig::default()
+        };
+        let server = spawn(config).await;
+
+        let response = reqwest::Client::new()
+            .post(format!("{}/api/v1/workspaces", server.base_url))
+            .json(&json!({ "name": "x".repeat(1024) }))
+            .send()
+            .await
+            .expect("request must succeed at the transport level");
+        assert_eq!(response.status(), reqwest::StatusCode::PAYLOAD_TOO_LARGE);
+    }
+
+    #[tokio::test]
+    async fn location_outside_accessible_roots_is_rejected_with_403() {
+        let allowed_root = tempfile::tempdir().expect("must create allowed root");
+        let outside = tempfile::tempdir().expect("must create outside directory");
+        let config = ServerConfig {
+            dev_mode_auth_disabled: true,
+            roots: vec![allowed_root.path().to_path_buf()],
+            ..ServerConfig::default()
+        };
+        let server = spawn(config).await;
+
+        let outside_location = fm_domain::Location::from_native_path(outside.path())
+            .expect("temp path must be representable");
+        let response = reqwest::Client::new()
+            .post(format!("{}/api/v1/directories/list", server.base_url))
+            .json(&json!({
+                "workspaceId": Uuid::new_v4(),
+                "paneId": Uuid::new_v4(),
+                "requestId": Uuid::new_v4(),
+                "location": {
+                    "providerId": outside_location.provider_id.as_str(),
+                    "uri": outside_location.uri,
+                },
+            }))
+            .send()
+            .await
+            .expect("request must succeed");
+        assert_eq!(response.status(), reqwest::StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    async fn location_inside_accessible_roots_is_allowed() {
+        let allowed_root = tempfile::tempdir().expect("must create allowed root");
+        let config = ServerConfig {
+            dev_mode_auth_disabled: true,
+            roots: vec![allowed_root.path().to_path_buf()],
+            ..ServerConfig::default()
+        };
+        let server = spawn(config).await;
+
+        let inside_location = fm_domain::Location::from_native_path(allowed_root.path())
+            .expect("temp path must be representable");
+        let response = reqwest::Client::new()
+            .post(format!("{}/api/v1/directories/list", server.base_url))
+            .json(&json!({
+                "workspaceId": Uuid::new_v4(),
+                "paneId": Uuid::new_v4(),
+                "requestId": Uuid::new_v4(),
+                "location": {
+                    "providerId": inside_location.provider_id.as_str(),
+                    "uri": inside_location.uri,
+                },
+            }))
+            .send()
+            .await
+            .expect("request must succeed");
+        assert_eq!(response.status(), reqwest::StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn mutation_rate_limit_returns_429_once_the_quota_is_exhausted() {
+        let config = ServerConfig {
+            dev_mode_auth_disabled: true,
+            max_mutations_per_second: 1,
+            ..ServerConfig::default()
+        };
+        let server = spawn(config).await;
+        let client = reqwest::Client::new();
+        let body = json!({ "name": "workspace" });
+
+        let first = client
+            .post(format!("{}/api/v1/workspaces", server.base_url))
+            .json(&body)
+            .send()
+            .await
+            .expect("request must succeed");
+        assert_eq!(first.status(), reqwest::StatusCode::CREATED);
+
+        let second = client
+            .post(format!("{}/api/v1/workspaces", server.base_url))
+            .json(&body)
+            .send()
+            .await
+            .expect("request must succeed at the transport level");
+        assert_eq!(second.status(), reqwest::StatusCode::TOO_MANY_REQUESTS);
     }
 }

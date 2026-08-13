@@ -123,23 +123,79 @@ impl SessionManager {
     }
 }
 
-/// Middleware that enforces session authentication on protected routes.
+/// Routes reachable without a session token: an unauthenticated health probe
+/// and the API documentation surfaces, neither of which touches the
+/// filesystem or application state.
+const PUBLIC_PATHS: &[&str] = &["/api/v1/health"];
+const PUBLIC_PATH_PREFIXES: &[&str] = &["/api/v1/docs", "/api/v1/openapi.json"];
+
+/// Middleware that enforces session authentication on every other
+/// `/api/v1` route, including the SSE stream (task 0064).
+///
+/// Browser `EventSource` connections cannot set an `Authorization` header, so
+/// the token is also accepted as a `?token=` query parameter; the header
+/// takes precedence when both are present.
 pub async fn require_session(
     State(manager): State<Arc<SessionManager>>,
     request: Request<Body>,
     next: Next,
 ) -> Result<Response, StatusCode> {
-    let auth_header = request
+    let path = request.uri().path();
+    if PUBLIC_PATHS.contains(&path) || PUBLIC_PATH_PREFIXES.iter().any(|p| path.starts_with(p)) {
+        return Ok(next.run(request).await);
+    }
+
+    let header_token = request
         .headers()
         .get("authorization")
         .and_then(|h| h.to_str().ok())
-        .and_then(|h| h.strip_prefix("Bearer "));
+        .and_then(|h| h.strip_prefix("Bearer "))
+        .map(str::to_owned);
+    let query_token = query_token(request.uri());
+    let token = header_token.as_deref().or(query_token.as_deref());
 
     manager
-        .validate_token(auth_header)
+        .validate_token(token)
         .map_err(|_| StatusCode::UNAUTHORIZED)?;
 
     Ok(next.run(request).await)
+}
+
+/// Extracts the `token` query parameter, if present, without pulling in a
+/// full URL-parsing dependency for one field.
+fn query_token(uri: &axum::http::Uri) -> Option<String> {
+    let query = uri.query()?;
+    query.split('&').find_map(|pair| {
+        let (key, value) = pair.split_once('=')?;
+        (key == "token").then(|| percent_decode(value))
+    })
+}
+
+/// Minimal percent-decoding sufficient for the opaque hex/UUID token format
+/// (spec token grammar has no reserved characters, but `+` and `%XX` are
+/// decoded defensively in case a client encodes it anyway).
+fn percent_decode(value: &str) -> String {
+    let mut bytes = Vec::with_capacity(value.len());
+    let mut chars = value.bytes();
+    while let Some(byte) = chars.next() {
+        match byte {
+            b'%' => {
+                let hi = chars.next();
+                let lo = chars.next();
+                if let (Some(hi), Some(lo)) = (hi, lo)
+                    && let Ok(decoded) =
+                        u8::from_str_radix(&format!("{}{}", hi as char, lo as char), 16)
+                {
+                    bytes.push(decoded);
+                    continue;
+                }
+                bytes.push(byte);
+            }
+            b'+' => bytes.push(b' '),
+            other => bytes.push(other),
+        }
+    }
+    String::from_utf8_lossy(&bytes).into_owned()
 }
 
 #[cfg(test)]

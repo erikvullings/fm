@@ -30,6 +30,9 @@ pub(crate) async fn start_search(
     Json(request): Json<StartSearchRequestDto>,
 ) -> Result<(StatusCode, Json<StartSearchResponseDto>), ApiError> {
     let correlation_id = extract_request_id(&request_id);
+    for root in &request.roots {
+        crate::error::require_within_roots(root, &state.accessible_roots, correlation_id)?;
+    }
     state
         .service
         .start_search(request)

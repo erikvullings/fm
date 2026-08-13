@@ -6,6 +6,8 @@ use axum::extract::Extension;
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use fm_application::ApplicationError;
+use fm_transport_dto::LocationDto;
+use std::path::PathBuf;
 use tower_http::request_id::RequestId;
 use uuid::Uuid;
 
@@ -69,6 +71,18 @@ fn status_for(error: &ApplicationError) -> StatusCode {
         }
         ApplicationError::Internal => StatusCode::INTERNAL_SERVER_ERROR,
     }
+}
+
+/// Rejects a request whose [`LocationDto`] resolves outside the configured
+/// accessible roots (spec §22, task 0064). A no-op when `roots` is empty
+/// (unrestricted) or the location belongs to a non-local provider.
+pub(crate) fn require_within_roots(
+    location: &LocationDto,
+    roots: &[PathBuf],
+    request_id: Uuid,
+) -> Result<(), ApiError> {
+    crate::accessible_roots::validate_location(location, roots)
+        .map_err(|_| ApiError::new(ApplicationError::PermissionDenied, request_id))
 }
 
 impl IntoResponse for ApiError {

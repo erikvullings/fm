@@ -9,6 +9,9 @@ use fm_application::FileManagerService;
 use fm_transport_dto::DiagnosticErrorDto;
 use tokio_util::sync::CancellationToken;
 
+use crate::auth::SessionManager;
+use crate::rate_limit::MutationLimiter;
+
 /// Bounded error buffer for diagnostics (max 50 entries).
 #[derive(Clone)]
 pub(crate) struct ErrorBuffer {
@@ -134,4 +137,25 @@ pub(crate) struct AppState {
     pub(crate) session_end: CancellationToken,
     pub(crate) error_buffer: ErrorBuffer,
     pub(crate) connection_state: ConnectionState,
+    /// Validates session tokens for every `/api/v1` route except health and
+    /// docs (task 0064). Extracted directly by the `require_session`
+    /// middleware via [`axum::extract::FromRef`].
+    pub(crate) session_manager: Arc<SessionManager>,
+    /// Filesystem roots the server is permitted to expose; empty means
+    /// unrestricted (task 0064).
+    pub(crate) accessible_roots: Arc<[std::path::PathBuf]>,
+    /// Shared token bucket throttling mutating requests (task 0064).
+    pub(crate) mutation_limiter: Arc<MutationLimiter>,
+}
+
+impl axum::extract::FromRef<AppState> for Arc<SessionManager> {
+    fn from_ref(state: &AppState) -> Self {
+        state.session_manager.clone()
+    }
+}
+
+impl axum::extract::FromRef<AppState> for Arc<MutationLimiter> {
+    fn from_ref(state: &AppState) -> Self {
+        state.mutation_limiter.clone()
+    }
 }

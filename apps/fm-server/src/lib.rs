@@ -11,6 +11,7 @@ mod credentials;
 mod error;
 pub mod openapi_export;
 mod platform;
+mod rate_limit;
 mod routes;
 mod state;
 
@@ -188,10 +189,25 @@ pub fn build_router_with_service_and_session(
         session_end: session.cancellation,
         error_buffer: state::ErrorBuffer::new(),
         connection_state: state::ConnectionState::new(),
+        session_manager: Arc::new(auth::SessionManager::new(
+            config.session_secret.clone(),
+            config.dev_mode_auth_disabled,
+        )),
+        accessible_roots: Arc::from(config.roots.clone()),
+        mutation_limiter: rate_limit::build_limiter(config.max_mutations_per_second),
     };
 
     let (router, api) = api_router().split_for_parts();
-    let router = router.with_state(state);
+    let router = router
+        .layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            rate_limit::limit_mutations,
+        ))
+        .layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            auth::require_session,
+        ))
+        .with_state(state);
 
     // Each `Router::layer` call re-erases the response body back to
     // `axum::body::Body`, so layers that change the body type (like the

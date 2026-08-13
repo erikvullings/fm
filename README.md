@@ -98,13 +98,19 @@ root (`dev`, `test`, `lint`, `build`, ...) — see the root `package.json` for t
 
 ```bash
 # Terminal 1 — Axum backend (auto-rebuilds on file change)
-FM_SERVER_PORT=8787 cargo watch -x "run -p fm-server"
+FM_SERVER_PORT=8787 cargo watch -x "run -p fm-server -- --dev-mode-auth-disabled"
 
 # Terminal 2 — Vite dev server with /api proxy to localhost:8787
 pnpm dev:http
 ```
 
 The Vite server starts at <http://127.0.0.1:5180>.
+
+**Authentication:** every `/api/v1` route except `/health` and the Swagger/OpenAPI docs requires a
+session token by default (task 0064); `fm-server` prints one to stdout at startup. Local dev passes
+`--dev-mode-auth-disabled` above because the Vite proxy doesn't attach one — that flag is explicit,
+logged at startup, and refused outright if you also try to bind to a non-loopback address. See
+[docs/architecture/security.md](docs/architecture/security.md) for the full model.
 
 **How the proxy works:** Vite forwards every `/api/*` request to `http://127.0.0.1:8787`. For SSE
 (`GET /api/v1/events`), the proxy configuration in `frontend/config/api-proxy.ts` disables
@@ -125,6 +131,81 @@ The `VITE_RUNTIME` environment variable selects the client adapter at build time
 
 When `fm-server` is running, open <http://127.0.0.1:8787/api/v1/docs> to browse the interactive
 OpenAPI documentation. The raw OpenAPI JSON is at <http://127.0.0.1:8787/api/v1/openapi.json>.
+
+### Running fm-server on a remote host
+
+`fm-server` binds to loopback only by default, so it isn't reachable from another machine out of
+the box — this is deliberate (spec §22, task 0064). To reach it from another device, e.g. a home
+automation server you want to browse from your laptop:
+
+> **The backend security model (auth, roots, TLS, rate limiting) is fully implemented and tested,
+> but the frontend does not yet send the session token it requires** — see step 3 below. Until that
+> follow-up lands, a remote deployment reachable from a browser will authenticate every request as
+> unauthenticated and reject it with `401`. The steps below describe the intended end state.
+
+**1. `fm-server` is API-only — it doesn't serve the frontend.** Build the frontend
+(`pnpm build:frontend`, output in `frontend/dist/`) and serve those static files from a web server
+on the remote host. Put that same web server in front of `fm-server` as a reverse proxy for
+`/api/*`, so the browser sees the frontend and API on **one origin** — this avoids needing any CORS
+configuration at all, and lets the proxy be the single place that terminates TLS. A minimal
+[Caddy](https://caddyserver.com/) config does both:
+
+```caddyfile
+files.home.example {
+    root * /opt/fm/frontend/dist
+    file_server
+    reverse_proxy /api/* 127.0.0.1:8787
+}
+```
+
+Caddy obtains and renews a Let's Encrypt certificate automatically from the domain name; use its
+`tls internal` directive instead for a self-signed cert on a LAN-only hostname. nginx works the
+same way — see the nginx example in
+[docs/architecture/security.md](docs/architecture/security.md#7-tlshttps-task-0064) — just add a
+`try_files`/static block for `frontend/dist` alongside the existing `/api` proxy block.
+
+**2. Run `fm-server` itself bound to loopback**, behind that proxy, with the roots you actually want
+exposed (never leave `--root` empty on a remote host — an empty list allows access to the entire
+filesystem):
+
+```bash
+fm-server \
+  --bind 127.0.0.1 \
+  --root /home/pi/media --root /home/pi/backups \
+  --max-mutations-per-second 10
+```
+
+Because the proxy handles TLS and same-origin routing, `fm-server` needs no `--cors-origin` and no
+`--tls-cert`/`--tls-key` here (those exist for the case where you'd rather have `fm-server`
+terminate TLS itself and skip the reverse proxy — see
+[docs/architecture/security.md](docs/architecture/security.md#7-tlshttps-task-0064) — but fronting
+it is simpler for a home box).
+
+**3. The frontend does not yet send the access token.** `fm-server` prints one token to stdout at
+startup (never pass `--dev-mode-auth-disabled` here — it's refused outright the moment `--bind`
+isn't loopback, but don't rely on that guard as your only line of defense) — but as of task 0064,
+the frontend has no UI to enter it and never attaches it to requests, so **every request will
+currently get `401 Unauthorized` once you deploy this way**. `frontend/src/api/fetch-mutator.ts`
+already exposes `setSessionHeaderProvider()` for exactly this purpose (built in an earlier task,
+never wired up), and the SSE client in `frontend/src/api/events/sse-event-stream.ts` would need a
+`?token=` query parameter added to its `EventSource` URL. Wiring a token-entry UI and both of these
+call sites through to `sessionStorage` is tracked as follow-up work, not yet implemented.
+
+**4. If you'd rather skip the reverse proxy entirely** and hit `fm-server` directly from a
+separately-hosted frontend (a different origin), bind it to a real interface and set
+`--cors-origin` to that exact origin:
+
+```bash
+fm-server --bind 0.0.0.0 --cors-origin https://files.home.example \
+  --root /home/pi/media --tls-cert cert.pem --tls-key key.pem
+```
+
+This logs a startup warning (non-loopback bind) and is more exposure than the proxied setup above
+— prefer option 1 unless you have a specific reason not to.
+
+See [docs/architecture/security.md](docs/architecture/security.md) for the full threat model,
+including the server-mode TOML config file (`--config`) as an alternative to CLI flags for a
+persistent deployment (e.g. a systemd unit).
 
 ### Further reading
 

@@ -31,6 +31,7 @@ pub(crate) async fn cache_archive_password(
     Json(request): Json<ArchiveCredentialRequestDto>,
 ) -> Result<StatusCode, ApiError> {
     let request_id = extract_request_id(&request_id);
+    crate::error::require_within_roots(&request.location, &state.accessible_roots, request_id)?;
     state
         .service
         .cache_archive_password(request)
@@ -57,6 +58,7 @@ pub(crate) async fn read_file_range(
     Json(request): Json<ReadFileRangeRequestDto>,
 ) -> Result<Json<ReadFileRangeResponseDto>, ApiError> {
     let request_id = extract_request_id(&request_id);
+    crate::error::require_within_roots(&request.location, &state.accessible_roots, request_id)?;
     state
         .service
         .read_file_range(request)
@@ -74,6 +76,7 @@ pub(crate) async fn load_editable_file(
     Json(request): Json<LoadEditableFileRequestDto>,
 ) -> Result<Json<LoadEditableFileResponseDto>, ApiError> {
     let request_id = extract_request_id(&request_id);
+    crate::error::require_within_roots(&request.location, &state.accessible_roots, request_id)?;
     state
         .service
         .load_editable_file(request)
@@ -88,15 +91,35 @@ pub(crate) async fn load_editable_file(
 pub(crate) async fn save_editable_file(
     State(state): State<AppState>,
     Extension(request_id): Extension<RequestId>,
+    session_id: crate::audit::SessionIdHeader,
     Json(request): Json<SaveEditableFileRequestDto>,
 ) -> Result<Json<SaveEditableFileResponseDto>, ApiError> {
     let request_id = extract_request_id(&request_id);
-    state
+    crate::error::require_within_roots(&request.location, &state.accessible_roots, request_id)?;
+    if let Some(destination) = &request.destination {
+        crate::error::require_within_roots(destination, &state.accessible_roots, request_id)?;
+    }
+    let audit_target = request
+        .destination
+        .as_ref()
+        .unwrap_or(&request.location)
+        .uri
+        .clone();
+    let result = state
         .service
         .save_editable_file(request)
         .await
         .map(Json)
-        .map_err(|error| ApiError::new(error, request_id))
+        .map_err(|error| ApiError::new(error, request_id));
+    if result.is_ok() {
+        crate::audit::AuditEvent::new(
+            crate::audit::AuditOperation::Overwrite,
+            audit_target,
+            session_id.0,
+        )
+        .log();
+    }
+    result
 }
 
 /// Searches a single file's content for a substring or regex.
@@ -118,6 +141,7 @@ pub(crate) async fn search_in_file(
     Json(request): Json<SearchInFileRequestDto>,
 ) -> Result<Json<SearchInFileResponseDto>, ApiError> {
     let request_id = extract_request_id(&request_id);
+    crate::error::require_within_roots(&request.location, &state.accessible_roots, request_id)?;
     state
         .service
         .search_in_file(request)

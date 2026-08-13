@@ -38,6 +38,7 @@ async fn spawn(adapter: Arc<dyn PlatformAdapter>) -> TestServer {
         workspace_directory: root.path().join("workspaces"),
         settings_directory: root.path().join("settings"),
         port: 0,
+        dev_mode_auth_disabled: true,
         ..ServerConfig::default()
     };
     let service = Arc::new(FileManagerService::with_platform_adapter(

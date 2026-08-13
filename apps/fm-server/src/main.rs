@@ -7,29 +7,32 @@ use std::net::IpAddr;
 use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
-use fm_server::config::ServerConfig;
+use fm_server::config::{ServerConfig, ServerFileConfig};
 use tokio::net::TcpListener;
 use tracing_subscriber::EnvFilter;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 
 /// Command line and environment configuration for the Axum host.
+///
+/// Precedence, highest to lowest: CLI flag/environment variable, then
+/// `--config` file (spec §22, task 0064), then the built-in default.
 #[derive(Parser, Debug)]
 #[command(name = "fm-server", about = "File manager backend")]
 struct Cli {
     /// Subcommand to run instead of serving (task 0009). Absent means "serve".
     #[command(subcommand)]
     command: Option<Command>,
+    /// Path to a server-mode configuration file (TOML), separate from the
+    /// desktop app's settings (task 0064).
+    #[arg(long = "config", env = "FM_SERVER_CONFIG")]
+    config: Option<PathBuf>,
     /// Address to bind to. Defaults to loopback (spec §22).
-    #[arg(long, env = "FM_SERVER_BIND", default_value = "127.0.0.1")]
-    bind: IpAddr,
+    #[arg(long, env = "FM_SERVER_BIND")]
+    bind: Option<IpAddr>,
     /// Port to bind to.
-    #[arg(
-        long,
-        env = "FM_SERVER_PORT",
-        default_value_t = ServerConfig::default().port
-    )]
-    port: u16,
+    #[arg(long, env = "FM_SERVER_PORT")]
+    port: Option<u16>,
     /// Origins allowed to make cross-origin requests. Repeat to allow several;
     /// omit to allow none (spec §22, no wildcard CORS).
     #[arg(
@@ -41,6 +44,23 @@ struct Cli {
     /// Filesystem roots the server is permitted to expose (task 0064).
     #[arg(long = "root", env = "FM_SERVER_ROOT", value_delimiter = ',')]
     root: Vec<PathBuf>,
+    /// Maximum accepted request body size, in bytes (task 0064).
+    #[arg(long = "max-body-bytes", env = "FM_SERVER_MAX_BODY_BYTES")]
+    max_body_bytes: Option<usize>,
+    /// Maximum mutating requests accepted per second, server-wide (task 0064).
+    #[arg(
+        long = "max-mutations-per-second",
+        env = "FM_SERVER_MAX_MUTATIONS_PER_SECOND"
+    )]
+    max_mutations_per_second: Option<u32>,
+    /// PEM certificate chain path for direct TLS termination. Requires
+    /// `--tls-key` to also be set (task 0064).
+    #[arg(long = "tls-cert", env = "FM_SERVER_TLS_CERT")]
+    tls_cert: Option<PathBuf>,
+    /// PEM private key path for direct TLS termination. Requires
+    /// `--tls-cert` to also be set (task 0064).
+    #[arg(long = "tls-key", env = "FM_SERVER_TLS_KEY")]
+    tls_key: Option<PathBuf>,
     /// DEVELOPMENT ONLY: Disable authentication checks. Logged at startup
     /// and impossible when binding to non-loopback addresses (task 0064).
     #[arg(long, env = "FM_SERVER_DEV_MODE_AUTH_DISABLED")]
@@ -58,42 +78,93 @@ enum Command {
     },
 }
 
-impl From<Cli> for ServerConfig {
-    fn from(cli: Cli) -> Self {
-        // Validate that non-loopback binding doesn't enable dev-mode auth disable.
-        let is_loopback = matches!(
-            cli.bind,
-            IpAddr::V4(addr) if addr.octets()[0] == 127,
-        ) || matches!(cli.bind, IpAddr::V6(addr) if addr.is_loopback());
+/// Resolved TLS material, if direct in-process TLS termination is enabled.
+struct TlsPaths {
+    cert: PathBuf,
+    key: PathBuf,
+}
 
-        let dev_mode_auth_disabled = if cli.dev_mode_auth_disabled {
-            if !is_loopback {
-                panic!(
-                    "dev-mode auth disable is not allowed when binding to non-loopback addresses"
-                );
-            }
-            true
-        } else {
-            false
-        };
+/// Merges the CLI/env layer over an optional config-file layer into a
+/// [`ServerConfig`], then validates the loopback/dev-mode invariant.
+///
+/// Returns the resolved config plus the optional TLS material, since TLS
+/// paths aren't part of [`ServerConfig`] (only `main` uses them, to choose
+/// between `axum::serve` and `axum_server`'s rustls acceptor).
+fn resolve_config(cli: &Cli, file: Option<&ServerFileConfig>) -> (ServerConfig, Option<TlsPaths>) {
+    let defaults = ServerConfig::default();
 
-        Self {
-            bind_address: cli.bind,
-            port: cli.port,
-            cors_allowed_origins: cli.cors_origin,
-            roots: cli.root,
-            dev_mode_auth_disabled,
-            ..Self::default()
-        }
+    let bind_address = cli
+        .bind
+        .or_else(|| file.and_then(|f| f.bind))
+        .unwrap_or(defaults.bind_address);
+    let port = cli
+        .port
+        .or_else(|| file.and_then(|f| f.port))
+        .unwrap_or(defaults.port);
+    let cors_allowed_origins = if !cli.cors_origin.is_empty() {
+        cli.cors_origin.clone()
+    } else {
+        file.and_then(|f| f.cors_origins.clone())
+            .unwrap_or(defaults.cors_allowed_origins)
+    };
+    let roots = if !cli.root.is_empty() {
+        cli.root.clone()
+    } else {
+        file.and_then(|f| f.roots.clone()).unwrap_or(defaults.roots)
+    };
+    let max_body_bytes = cli
+        .max_body_bytes
+        .or_else(|| file.and_then(|f| f.max_body_bytes))
+        .unwrap_or(defaults.max_body_bytes);
+    let max_mutations_per_second = cli
+        .max_mutations_per_second
+        .or_else(|| file.and_then(|f| f.max_mutations_per_second))
+        .unwrap_or(defaults.max_mutations_per_second);
+
+    let is_loopback = matches!(
+        bind_address,
+        IpAddr::V4(addr) if addr.octets()[0] == 127,
+    ) || matches!(bind_address, IpAddr::V6(addr) if addr.is_loopback());
+
+    let dev_mode_auth_disabled =
+        cli.dev_mode_auth_disabled || file.and_then(|f| f.dev_mode_auth_disabled).unwrap_or(false);
+    if dev_mode_auth_disabled && !is_loopback {
+        panic!("dev-mode auth disable is not allowed when binding to non-loopback addresses");
     }
+
+    let tls_cert = cli
+        .tls_cert
+        .clone()
+        .or_else(|| file.and_then(|f| f.tls_cert.clone()));
+    let tls_key = cli
+        .tls_key
+        .clone()
+        .or_else(|| file.and_then(|f| f.tls_key.clone()));
+    let tls = match (tls_cert, tls_key) {
+        (Some(cert), Some(key)) => Some(TlsPaths { cert, key }),
+        (None, None) => None,
+        _ => panic!("--tls-cert and --tls-key must both be set to enable direct TLS termination"),
+    };
+
+    let config = ServerConfig {
+        bind_address,
+        port,
+        cors_allowed_origins,
+        max_body_bytes,
+        max_mutations_per_second,
+        roots,
+        dev_mode_auth_disabled,
+        ..defaults
+    };
+    (config, tls)
 }
 
 #[tokio::main]
 async fn main() {
-    let mut cli = Cli::parse();
+    let cli = Cli::parse();
 
-    if let Some(Command::ExportOpenapi { path }) = std::mem::take(&mut cli.command) {
-        fm_server::openapi_export::write_to_file(&path).unwrap_or_else(|err| {
+    if let Some(Command::ExportOpenapi { path }) = &cli.command {
+        fm_server::openapi_export::write_to_file(path).unwrap_or_else(|err| {
             panic!(
                 "failed to export OpenAPI document to {}: {err}",
                 path.display()
@@ -105,14 +176,14 @@ async fn main() {
 
     init_tracing();
 
-    let config: ServerConfig = cli.into();
+    let file_config = cli.config.as_deref().map(|path| {
+        ServerFileConfig::load(path).unwrap_or_else(|err| {
+            panic!("failed to load server config file: {err}");
+        })
+    });
+    let (config, tls) = resolve_config(&cli, file_config.as_ref());
     let router = fm_server::build_router(&config);
 
-    let listener = TcpListener::bind((config.bind_address, config.port))
-        .await
-        .expect("failed to bind fm-server listener");
-
-    // Log security configuration at startup.
     let is_loopback = matches!(
         config.bind_address,
         IpAddr::V4(addr) if addr.octets()[0] == 127,
@@ -127,6 +198,13 @@ async fn main() {
 
     if config.dev_mode_auth_disabled {
         tracing::warn!("DEVELOPMENT MODE: authentication disabled; do not use in production");
+    } else {
+        let manager = fm_server::auth::SessionManager::new(config.session_secret.clone(), false);
+        let token = manager.issue_token();
+        println!(
+            "fm-server access token (pass as `Authorization: Bearer <token>` or `?token=` on the SSE URL):\n{}",
+            token.as_str()
+        );
     }
 
     if config.roots.is_empty() {
@@ -139,12 +217,29 @@ async fn main() {
         loopback_only = is_loopback,
         auth_required = !config.dev_mode_auth_disabled,
         num_roots = config.roots.len(),
+        tls_enabled = tls.is_some(),
         "starting fm-server"
     );
 
-    axum::serve(listener, router)
-        .await
-        .expect("fm-server exited unexpectedly");
+    match tls {
+        Some(TlsPaths { cert, key }) => {
+            let tls_config = axum_server::tls_rustls::RustlsConfig::from_pem_file(&cert, &key)
+                .await
+                .unwrap_or_else(|err| panic!("failed to load TLS material: {err}"));
+            axum_server::bind_rustls((config.bind_address, config.port).into(), tls_config)
+                .serve(router.into_make_service())
+                .await
+                .expect("fm-server exited unexpectedly");
+        }
+        None => {
+            let listener = TcpListener::bind((config.bind_address, config.port))
+                .await
+                .expect("failed to bind fm-server listener");
+            axum::serve(listener, router)
+                .await
+                .expect("fm-server exited unexpectedly");
+        }
+    }
 }
 
 /// Initialises structured tracing.
