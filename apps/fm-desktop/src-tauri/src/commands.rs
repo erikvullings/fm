@@ -643,8 +643,12 @@ pub(crate) fn cancel_search(
 
 /// Starts a cancellable directory comparison through the same service
 /// method as REST (task 0075).
+///
+/// Must be `async`: `ComparisonEngine::start` calls `tokio::spawn`
+/// internally, which panics without a live Tokio reactor outside an
+/// `async fn` command.
 #[tauri::command]
-pub(crate) fn start_comparison(
+pub(crate) async fn start_comparison(
     state: State<'_, AppState>,
     request: StartComparisonRequestDto,
 ) -> Result<StartComparisonResponseDto, ApplicationErrorDto> {

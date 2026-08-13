@@ -1,6 +1,7 @@
 import m, { type FactoryComponent } from 'mithril';
 import { IconButton } from 'mithril-materialized';
 import { heartIcon, heartPlusIcon, plusIcon, searchIcon } from '../../components/tabler-icons';
+import { tooltip } from '../../components/tooltip';
 import type { TabId } from '../../models';
 import { reorderedTabIds } from './tab-navigation';
 
@@ -124,28 +125,32 @@ export const TabStrip: FactoryComponent<TabStripAttrs> = () => {
             ],
           ),
         ),
-        m(
-          IconButton,
-          {
-            key: '__new-tab__',
-            className: 'fm-pane-tab-new',
-            'aria-label': 'New tab',
-            tooltip: 'New tab',
-            onclick: () => attrs.onNewTab(),
-          },
-          plusIcon(),
+        tooltip(
+          'New tab',
+          m(
+            IconButton,
+            {
+              className: 'fm-pane-tab-new',
+              'aria-label': 'New tab',
+              onclick: () => attrs.onNewTab(),
+            },
+            plusIcon(),
+          ),
+          { key: '__new-tab__' },
         ),
-        m(
-          IconButton,
-          {
-            key: '__favourites__',
-            className: 'fm-pane-tab-favourites',
-            'aria-label': 'Favourites',
-            tooltip: 'Favourites',
-            'aria-expanded': String(attrs.favouritesOpen),
-            onclick: () => attrs.onToggleFavourites(),
-          },
-          attrs.canAddFavourite ? heartPlusIcon() : heartIcon(),
+        tooltip(
+          'Favourites',
+          m(
+            IconButton,
+            {
+              className: 'fm-pane-tab-favourites',
+              'aria-label': 'Favourites',
+              'aria-expanded': String(attrs.favouritesOpen),
+              onclick: () => attrs.onToggleFavourites(),
+            },
+            attrs.canAddFavourite ? heartPlusIcon() : heartIcon(),
+          ),
+          { key: '__favourites__' },
         ),
       ]),
   };

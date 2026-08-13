@@ -128,6 +128,9 @@ export interface GlobalKeydownContext {
   openMultiRenameForActivePane(): void;
   /** Closes the desktop window (Alt+F4); a no-op in browser runtime. */
   quitApplication(): void;
+  /** Starts (or re-runs) a directory comparison of the first two panes (Shift+F2, task 0075).
+   * Self-guards on fewer than two open panes, same as the toolbar's Compare button. */
+  startComparison(): void;
 }
 
 function isEditableTarget(target: EventTarget | null): boolean {
@@ -580,6 +583,11 @@ export function createGlobalKeydownHandler(
       if (otherPaneId === undefined) return;
       event.preventDefault();
       void context.getNavigation().navigate(otherPaneId, active.location);
+      return;
+    }
+    if (dispatchedAction === 'core.compareDirectories') {
+      event.preventDefault();
+      context.startComparison();
       return;
     }
     if (dispatchedAction === 'core.swapPanes') {

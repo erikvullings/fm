@@ -87,6 +87,11 @@ function titleFromLocation(location: Location): string {
   if (finalSegment.length === 0) {
     return location.uri;
   }
+  // A provider's root (e.g. `file:///`) strips down to nothing but the bare scheme (`file:`)
+  // once every trailing slash is gone - show `/` rather than the scheme name.
+  if (finalSegment.endsWith(':')) {
+    return '/';
+  }
   try {
     return decodeURIComponent(finalSegment);
   } catch {

@@ -595,6 +595,21 @@ fn core_actions(capabilities: PlatformCapabilities) -> Vec<ActionDescriptor> {
             ActionContextRequirements::none(),
         ),
         core_action(
+            "core.compareDirectories",
+            "Compare Panes' Directories",
+            "navigation",
+            // Shift+F2 is Total Commander's "Compare directories" shortcut. Marking the
+            // differing entries selected happens client-side once the comparison completes
+            // (spec §16 milestone 5, task 0075), so this action carries no context requirements
+            // of its own beyond needing two open panes, checked at invocation time.
+            vec![KeyChord {
+                key: "F2".to_owned(),
+                shift: true,
+                ..KeyChord::default()
+            }],
+            ActionContextRequirements::none(),
+        ),
+        core_action(
             "core.closeAllTabs",
             "Close All Tabs",
             "navigation",
@@ -1359,6 +1374,27 @@ mod tests {
                 .expect("core.showShortcutsHelp must be registered")
                 .default_shortcuts,
             vec![key("F1")]
+        );
+    }
+
+    #[test]
+    fn compare_directories_uses_shift_f2_and_needs_no_selection() {
+        let registry = ActionRegistry::with_core_actions(PlatformCapabilities::empty());
+        let action = registry
+            .get(&ActionId::new("core.compareDirectories"))
+            .expect("core.compareDirectories must be registered");
+        assert_eq!(
+            action.default_shortcuts,
+            vec![KeyChord {
+                key: "F2".to_owned(),
+                shift: true,
+                ..KeyChord::default()
+            }],
+            "Shift+F2 must stay free for Total Commander's Compare Directories shortcut"
+        );
+        assert_eq!(
+            action.context_requirements,
+            ActionContextRequirements::none()
         );
     }
 

@@ -25,8 +25,6 @@ import {
   setQuickFilterDraftPatch,
 } from '../../state';
 import { isCutLocation } from '../clipboard/clipboard';
-import { comparisonStatusColumn } from '../comparison/comparison-column';
-import { type ComparisonState, sideForPane, statusForEntry } from '../comparison/comparison-state';
 import { loadConnections } from '../connections/connections-model';
 import { SAMPLE_FILE_AGE_COLUMN } from '../directory-table/directory-table';
 import type { NativeIconLoader } from '../directory-table/native-icon-loader';
@@ -82,7 +80,6 @@ export interface PaneContentContext {
   getNativeDragOutSupported(): boolean;
   getNativeDropInProgress(): boolean;
   getAppState(): AppState | undefined;
-  getComparisonState(): ComparisonState;
   clipboard(): ClipboardState;
 
   // Map state (mutable reference — callers may .get()/.set()/.delete() directly)
@@ -203,24 +200,8 @@ export function createPaneContentBuilder(
     const quickFilterQuery = key === undefined ? '' : context.quickFilterQueryFor(key, tab);
     const filtered =
       key === undefined ? sorted : context.entriesFilteredFor(key, sorted, quickFilterQuery);
-    const comparisonState = context.getComparisonState();
-    const comparisonSide = sideForPane(comparisonState, paneId);
-    // A pane that is part of an active comparison additionally hides identical entries while
-    // "differences only" is on (task 0075). `totalKnownEntries` below is computed from `filtered`
-    // rather than this narrower set, so the scrollbar stays sized off the pre-filter total instead
-    // of chasing a moving target while the comparison is still streaming — the same trade-off the
-    // quick filter above already accepts.
-    const differencesFiltered =
-      comparisonSide === undefined || !comparisonState.differencesOnly
-        ? filtered
-        : filtered.filter((entry) => {
-            const status = statusForEntry(comparisonState, paneId, entry.location.uri)?.status;
-            return status === undefined || status !== 'identical';
-          });
     const entries =
-      tab === undefined
-        ? differencesFiltered
-        : withParentEntry(pathFromUri(tab.location.uri), differencesFiltered);
+      tab === undefined ? filtered : withParentEntry(pathFromUri(tab.location.uri), filtered);
     const entryIds = entries.map((entry) => entry.id);
     const cursorIndex =
       selection.cursorEntryId === undefined ? undefined : entryIds.indexOf(selection.cursorEntryId);
@@ -289,14 +270,6 @@ export function createPaneContentBuilder(
         tab?.view.columns.some((column) => column.columnId === 'sample.fileAge' && column.visible)
           ? [SAMPLE_FILE_AGE_COLUMN]
           : []),
-        ...(comparisonSide === undefined
-          ? []
-          : [
-              comparisonStatusColumn(
-                comparisonSide,
-                (uri) => statusForEntry(comparisonState, paneId, uri)?.status,
-              ),
-            ]),
       ],
       platform: context.getPlatform(),
       keybindingRuntime: context.getKeybindingRuntime(),

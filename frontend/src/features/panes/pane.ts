@@ -1,6 +1,7 @@
 import m, { type FactoryComponent, type VnodeDOM } from 'mithril';
 import { IconButton } from 'mithril-materialized';
 import { plusIcon } from '../../components/tabler-icons';
+import { tooltip } from '../../components/tooltip';
 import {
   dispatchKeybinding,
   hasPrimaryModifier,
@@ -851,15 +852,17 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
                             favouriteLabel = (event.currentTarget as HTMLInputElement).value;
                           },
                         }),
-                        m(
-                          IconButton,
-                          {
-                            className: 'fm-favourites-add-button',
-                            'aria-label': 'Add current location',
-                            'data-tooltip': 'Add current location',
-                            onclick: () => addCurrentFavourite(attrs),
-                          },
-                          plusIcon(),
+                        tooltip(
+                          'Add current location',
+                          m(
+                            IconButton,
+                            {
+                              className: 'fm-favourites-add-button',
+                              'aria-label': 'Add current location',
+                              onclick: () => addCurrentFavourite(attrs),
+                            },
+                            plusIcon(),
+                          ),
                         ),
                       ],
                     )

@@ -7,7 +7,11 @@ import type {
   OperationConflict,
   WorkspaceProjection,
 } from '../../models';
-import { type ComparisonState, initialComparisonState } from '../comparison/comparison-state';
+import {
+  type ComparisonState,
+  initialComparisonState,
+  withComparisonStarted,
+} from '../comparison/comparison-state';
 import { createOperationsState } from '../operations/operation-state';
 import { type BackendEventContext, createBackendEventHandler } from './backend-event-handler';
 
@@ -39,6 +43,7 @@ function makeContext(overrides: Partial<BackendEventContext> = {}): BackendEvent
     setComparisonState: vi.fn((next: ComparisonState) => {
       comparisonState = next;
     }),
+    markComparisonDifferences: vi.fn(),
     getWorkspaceId: vi.fn(() => WS_ID),
     getWorkspaceRevision: vi.fn(() => 5),
     replaceWorkspace: vi.fn(),
@@ -357,6 +362,78 @@ describe('createBackendEventHandler', () => {
 
       expect(ctx.setComparisonState).toHaveBeenCalledOnce();
       expect(ctx.redraw).toHaveBeenCalled();
+      // The batch itself was discarded (stale id) and the untouched current state isn't
+      // complete, so nothing should be marked selected.
+      expect(ctx.markComparisonDifferences).not.toHaveBeenCalled();
+    });
+
+    it('marks differing entries selected once the tracked comparison completes', () => {
+      let comparisonState = withComparisonStarted({
+        comparisonId: 'comparison-1',
+        criteria: 'sizeAndTimestamp',
+        leftRoot: { providerId: 'local', uri: 'file:///left' },
+        rightRoot: { providerId: 'local', uri: 'file:///right' },
+        leftPaneId: PANE_ID,
+        rightPaneId: 'pane-2' as PaneId,
+      });
+      const ctx = makeContext({
+        getComparisonState: vi.fn(() => comparisonState),
+        setComparisonState: vi.fn((next: ComparisonState) => {
+          comparisonState = next;
+        }),
+      });
+      const handler = createBackendEventHandler(ctx);
+
+      handler(
+        makeEvent(
+          {
+            type: 'comparison.resultsBatch',
+            comparisonId: 'comparison-1',
+            entries: [{ relativePath: 'a.txt', status: 'onlyLeft' }],
+            isComplete: true,
+            warningsCount: 0,
+          },
+          WS_ID,
+        ),
+      );
+
+      expect(ctx.markComparisonDifferences).toHaveBeenCalledOnce();
+      expect(ctx.markComparisonDifferences).toHaveBeenCalledWith(
+        expect.objectContaining({ isComplete: true }),
+      );
+    });
+
+    it('does not mark differences while the comparison is still streaming', () => {
+      let comparisonState = withComparisonStarted({
+        comparisonId: 'comparison-1',
+        criteria: 'sizeAndTimestamp',
+        leftRoot: { providerId: 'local', uri: 'file:///left' },
+        rightRoot: { providerId: 'local', uri: 'file:///right' },
+        leftPaneId: PANE_ID,
+        rightPaneId: 'pane-2' as PaneId,
+      });
+      const ctx = makeContext({
+        getComparisonState: vi.fn(() => comparisonState),
+        setComparisonState: vi.fn((next: ComparisonState) => {
+          comparisonState = next;
+        }),
+      });
+      const handler = createBackendEventHandler(ctx);
+
+      handler(
+        makeEvent(
+          {
+            type: 'comparison.resultsBatch',
+            comparisonId: 'comparison-1',
+            entries: [{ relativePath: 'a.txt', status: 'onlyLeft' }],
+            isComplete: false,
+            warningsCount: 0,
+          },
+          WS_ID,
+        ),
+      );
+
+      expect(ctx.markComparisonDifferences).not.toHaveBeenCalled();
     });
   });
 

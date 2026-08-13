@@ -14,6 +14,7 @@ import {
   searchIcon,
   settingsIcon,
 } from '../components/tabler-icons';
+import { tooltip } from '../components/tooltip';
 import {
   type ActionCommandController,
   type ActionCommandControllerContext,
@@ -33,9 +34,9 @@ import {
 } from '../features/comparison/comparison-controller';
 import {
   type ComparisonState,
+  differingEntryIds,
   initialComparisonState,
 } from '../features/comparison/comparison-state';
-import { SyncPlanDialog } from '../features/comparison/sync-plan-dialog';
 import { DiagnosticsViewComponent } from '../features/diagnostics/diagnostics-view';
 import { type AppDialogsContext, renderAppDialogs } from '../features/dialogs/app-dialogs';
 import { createDialogUIController } from '../features/dialogs/dialog-ui-controller';
@@ -143,7 +144,6 @@ import type {
   PluginLogEntry,
   Settings,
   SortDescriptor,
-  SyncPlanItem,
   SystemLocation,
   TabId,
   TabProjection,
@@ -329,12 +329,10 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
   /** Panes with a `search.resultsBatch`-triggered reload already in flight - see the handler
    * below for why this debounce is needed to make results stream in incrementally. */
   const searchBatchReloadInFlight = new Set<PaneId>();
-  /** Live directory-comparison overlay and sync-plan review state (task 0075). */
+  /** Live directory-comparison overlay state (task 0075). Marks differing entries selected in
+   * both panes once a comparison completes, Total-Commander-style, rather than surfacing a
+   * separate review dialog. */
   let comparisonState: ComparisonState = initialComparisonState();
-  let syncPlanDialogOpen = false;
-  let syncPlanItems: readonly SyncPlanItem[] = [];
-  let syncPlanApplying = false;
-  let syncPlanError: string | undefined;
   /** Registered by `WorkspaceLayoutView` (task 0089): moves DOM focus into a pane so keyboard
    * cursor navigation works immediately, e.g. right after a filename search closes its dialog. */
   let focusPane: ((paneId: PaneId) => void) | undefined;
@@ -986,6 +984,25 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     setComparisonState: (next) => {
       comparisonState = next;
     },
+    markComparisonDifferences: (state) => {
+      for (const paneId of [state.leftPaneId, state.rightPaneId]) {
+        if (paneId === undefined) continue;
+        const key = activeTabKey(paneId);
+        const directory = directories.get(key);
+        if (directory === undefined) continue;
+        const matchingIds = differingEntryIds(state, paneId, directory.entries);
+        if (matchingIds.length === 0) continue;
+        const orderedEntryIds = directory.entries.map((entry) => entry.id);
+        selections.set(
+          key,
+          reduceSelection(
+            selections.get(key) ?? emptySelection,
+            { type: 'restore', entryIds: matchingIds },
+            orderedEntryIds,
+          ),
+        );
+      }
+    },
     getFindFilesSearchId: () => findFilesSearchId,
     getSearchBatchReloadInFlight: () => searchBatchReloadInFlight,
     cacheContentMatches: (uri, matches) => {
@@ -1343,6 +1360,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       if (keybindingRuntime !== 'desktop') return;
       void attrsClient.quit?.();
     },
+    startComparison: () => comparisonController.startComparison('sizeAndTimestamp'),
   };
 
   const findFilesControllerContext: FindFilesControllerContext = {
@@ -1438,7 +1456,6 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     getNativeDragOutSupported: () => nativeDragOutSupported,
     getNativeDropInProgress: () => nativeDropInProgress,
     getAppState: () => appState,
-    getComparisonState: () => comparisonState,
     clipboard,
     getDirectories: () => directories,
     getSelections: () => selections,
@@ -1783,149 +1800,105 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
             : null,
           m('.fm-workspace-toolbar', [
             m('.fm-navigation-controls', { 'aria-label': 'Active pane navigation' }, [
-              m(
-                IconButton,
-                {
-                  disabled:
-                    workspace?.panesById[workspace.activePaneId]?.tabsById[
-                      workspace.panesById[workspace.activePaneId]?.activeTabId ?? ''
-                    ]?.canNavigateBack !== true,
-                  'aria-label': 'Back',
-                  'data-tooltip': 'Back',
-                  onclick: () => void navigation.back(workspace?.activePaneId ?? ''),
-                },
-                arrowLeftIcon(),
+              tooltip(
+                'Back',
+                m(
+                  IconButton,
+                  {
+                    disabled:
+                      workspace?.panesById[workspace.activePaneId]?.tabsById[
+                        workspace.panesById[workspace.activePaneId]?.activeTabId ?? ''
+                      ]?.canNavigateBack !== true,
+                    'aria-label': 'Back',
+                    onclick: () => void navigation.back(workspace?.activePaneId ?? ''),
+                  },
+                  arrowLeftIcon(),
+                ),
               ),
-              m(
-                IconButton,
-                {
-                  disabled:
-                    workspace?.panesById[workspace.activePaneId]?.tabsById[
-                      workspace.panesById[workspace.activePaneId]?.activeTabId ?? ''
-                    ]?.canNavigateForward !== true,
-                  'aria-label': 'Forward',
-                  'data-tooltip': 'Forward',
-                  onclick: () => void navigation.forward(workspace?.activePaneId ?? ''),
-                },
-                arrowRightIcon(),
+              tooltip(
+                'Forward',
+                m(
+                  IconButton,
+                  {
+                    disabled:
+                      workspace?.panesById[workspace.activePaneId]?.tabsById[
+                        workspace.panesById[workspace.activePaneId]?.activeTabId ?? ''
+                      ]?.canNavigateForward !== true,
+                    'aria-label': 'Forward',
+                    onclick: () => void navigation.forward(workspace?.activePaneId ?? ''),
+                  },
+                  arrowRightIcon(),
+                ),
               ),
-              m(
-                IconButton,
-                {
-                  disabled: workspace === undefined,
-                  'aria-label': 'Parent directory',
-                  'data-tooltip': 'Parent directory',
-                  onclick: () => void navigation.parent(workspace?.activePaneId ?? ''),
-                },
-                cornerLeftUpIcon(),
+              tooltip(
+                'Parent directory',
+                m(
+                  IconButton,
+                  {
+                    disabled: workspace === undefined,
+                    'aria-label': 'Parent directory',
+                    onclick: () => void navigation.parent(workspace?.activePaneId ?? ''),
+                  },
+                  cornerLeftUpIcon(),
+                ),
               ),
             ]),
-            m(
-              IconButton,
-              {
-                disabled: activeDirectory() === undefined,
-                'aria-label': 'Find files',
-                'data-tooltip': 'Find files',
-                onclick: () => {
-                  findFilesController.openFindFiles();
+            tooltip(
+              'Find files',
+              m(
+                IconButton,
+                {
+                  disabled: activeDirectory() === undefined,
+                  'aria-label': 'Find files',
+                  onclick: () => {
+                    findFilesController.openFindFiles();
+                  },
                 },
-              },
-              searchIcon(),
+                searchIcon(),
+              ),
             ),
-            m(
-              IconButton,
-              {
-                disabled: (workspace?.paneOrder.length ?? 0) < 2,
-                'aria-label':
-                  comparisonState.comparisonId === undefined ? 'Compare panes' : 'Re-compare panes',
-                'data-tooltip': 'Compare the two panes’ directories',
-                onclick: () => comparisonController.startComparison('sizeAndTimestamp'),
-              },
-              compareIcon(),
-            ),
-            comparisonState.comparisonId === undefined
-              ? undefined
-              : m('.fm-comparison-toolbar', [
-                  m(
-                    'span.fm-comparison-toolbar-status',
-                    comparisonState.isComplete
-                      ? `Compared ${comparisonState.statusByRelativePath.size} entries.`
-                      : `Comparing… ${comparisonState.statusByRelativePath.size} so far.`,
-                  ),
-                  m('label.fm-comparison-differences-only', [
-                    m('input', {
-                      type: 'checkbox',
-                      checked: comparisonState.differencesOnly,
-                      onchange: (event: Event) =>
-                        comparisonController.setDifferencesOnly(
-                          (event.currentTarget as HTMLInputElement).checked,
-                        ),
-                    }),
-                    m('span', 'Differences only'),
-                  ]),
-                  m(
-                    'button.fm-comparison-sync-button',
-                    {
-                      type: 'button',
-                      disabled: !comparisonState.isComplete,
-                      onclick: () => {
-                        const comparisonId = comparisonState.comparisonId;
-                        if (comparisonId === undefined) return;
-                        syncPlanError = undefined;
-                        void attrsClient
-                          .generateSyncPlan(comparisonId, { mode: 'mirrorLeftToRight' })
-                          .then((plan) => {
-                            syncPlanItems = plan.items;
-                            syncPlanDialogOpen = true;
-                            m.redraw();
-                          })
-                          .catch((error: unknown) => {
-                            syncPlanError =
-                              error instanceof Error
-                                ? error.message
-                                : 'Unable to generate a sync plan';
-                            m.redraw();
-                          });
-                      },
-                    },
-                    'Sync…',
-                  ),
-                  m(
-                    IconButton,
-                    {
-                      'aria-label': 'Close comparison',
-                      'data-tooltip': 'Close comparison',
-                      onclick: () => comparisonController.cancelComparison(),
-                    },
-                    closeIcon({ size: 14 }),
-                  ),
-                ]),
-            m(
-              IconButton,
-              {
-                className: 'fm-command-palette-trigger',
-                disabled: registeredActions.length === 0,
-                'aria-label': 'Command palette',
-                'data-tooltip': 'Command palette',
-                onclick: () => {
-                  commandPaletteOpen = true;
+            tooltip(
+              'Select the entries that differ between the two panes (Shift+F2)',
+              m(
+                IconButton,
+                {
+                  disabled: (workspace?.paneOrder.length ?? 0) < 2,
+                  'aria-label': 'Compare panes',
+                  onclick: () => comparisonController.startComparison('sizeAndTimestamp'),
                 },
-              },
-              commandIcon(),
+                compareIcon(),
+              ),
             ),
-            m(
-              IconButton,
-              {
-                className: 'fm-workspace-switcher-button',
-                'aria-label': `Workspace switcher, current workspace: ${workspace?.name ?? 'none'}`,
-                tooltip: `Switch workspace — current: ${workspace?.name ?? 'none'}`,
-                onclick: () => {
-                  if (workspaceDisclosureElement !== undefined) {
-                    workspaceDisclosureElement.open = !workspaceDisclosureElement.open;
-                  }
+            tooltip(
+              'Command palette',
+              m(
+                IconButton,
+                {
+                  className: 'fm-command-palette-trigger',
+                  disabled: registeredActions.length === 0,
+                  'aria-label': 'Command palette',
+                  onclick: () => {
+                    commandPaletteOpen = true;
+                  },
                 },
-              },
-              layoutGridIcon(),
+                commandIcon(),
+              ),
+            ),
+            tooltip(
+              `Switch workspace — current: ${workspace?.name ?? 'none'}`,
+              m(
+                IconButton,
+                {
+                  className: 'fm-workspace-switcher-button',
+                  'aria-label': `Workspace switcher, current workspace: ${workspace?.name ?? 'none'}`,
+                  onclick: () => {
+                    if (workspaceDisclosureElement !== undefined) {
+                      workspaceDisclosureElement.open = !workspaceDisclosureElement.open;
+                    }
+                  },
+                },
+                layoutGridIcon(),
+              ),
             ),
             m(
               'details.fm-workspace-disclosure',
@@ -1979,20 +1952,22 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
                 ]),
               ],
             ),
-            m(
-              IconButton,
-              {
-                className: 'fm-diagnostics-button',
-                'aria-label': 'Diagnostics',
-                tooltip: 'Show system diagnostics',
-                onclick: () => {
-                  if (diagnosticsDisclosureElement === undefined) return;
-                  diagnosticsDisclosureElement.open = !diagnosticsDisclosureElement.open;
-                  diagnosticsDialogOpen = diagnosticsDisclosureElement.open;
-                  m.redraw();
+            tooltip(
+              'Show system diagnostics',
+              m(
+                IconButton,
+                {
+                  className: 'fm-diagnostics-button',
+                  'aria-label': 'Diagnostics',
+                  onclick: () => {
+                    if (diagnosticsDisclosureElement === undefined) return;
+                    diagnosticsDisclosureElement.open = !diagnosticsDisclosureElement.open;
+                    diagnosticsDialogOpen = diagnosticsDisclosureElement.open;
+                    m.redraw();
+                  },
                 },
-              },
-              activityIcon(),
+                activityIcon(),
+              ),
             ),
             m(
               'details.fm-diagnostics-disclosure',
@@ -2043,23 +2018,25 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
                 ),
               ],
             ),
-            m(
-              IconButton,
-              {
-                className: 'fm-settings-button',
-                'aria-label': 'Settings',
-                tooltip: 'Open settings',
-                onclick: () => {
-                  if (settingsDisclosureElement === undefined) return;
-                  settingsDisclosureElement.open = !settingsDisclosureElement.open;
-                  settingsDialogOpen = settingsDisclosureElement.open;
-                  if (!settingsDialogOpen && currentSettings !== undefined) {
-                    applyAppearance(currentSettings);
-                  }
-                  m.redraw();
+            tooltip(
+              'Open settings',
+              m(
+                IconButton,
+                {
+                  className: 'fm-settings-button',
+                  'aria-label': 'Settings',
+                  onclick: () => {
+                    if (settingsDisclosureElement === undefined) return;
+                    settingsDisclosureElement.open = !settingsDisclosureElement.open;
+                    settingsDialogOpen = settingsDisclosureElement.open;
+                    if (!settingsDialogOpen && currentSettings !== undefined) {
+                      applyAppearance(currentSettings);
+                    }
+                    m.redraw();
+                  },
                 },
-              },
-              settingsIcon(),
+                settingsIcon(),
+              ),
             ),
             m(
               'details.fm-settings-disclosure',
@@ -2241,35 +2218,6 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
             },
           }),
           ...renderAppDialogs(attrs.client, pendingDelete, appDialogsContext),
-          m(SyncPlanDialog, {
-            open: syncPlanDialogOpen,
-            items: syncPlanItems,
-            applying: syncPlanApplying,
-            ...(syncPlanError === undefined ? {} : { error: syncPlanError }),
-            onCancel: () => {
-              syncPlanDialogOpen = false;
-              syncPlanError = undefined;
-            },
-            onApply: (items) => {
-              const comparisonId = comparisonState.comparisonId;
-              if (comparisonId === undefined) return;
-              syncPlanApplying = true;
-              syncPlanError = undefined;
-              void attrsClient
-                .applySyncPlan(comparisonId, { items })
-                .then(() => {
-                  syncPlanApplying = false;
-                  syncPlanDialogOpen = false;
-                  m.redraw();
-                })
-                .catch((error: unknown) => {
-                  syncPlanApplying = false;
-                  syncPlanError =
-                    error instanceof Error ? error.message : 'Unable to apply the sync plan';
-                  m.redraw();
-                });
-            },
-          }),
           m(
             '.fm-function-key-bar',
             footerFunctionKeyBindings(

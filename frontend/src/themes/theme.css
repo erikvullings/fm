@@ -322,23 +322,23 @@ main.fm-workspace {
 }
 
 /*
- * Custom tooltip: native `title` tooltips are unreliable across browsers/webviews
- * (delay and support vary a lot), so icon-only toolbar controls carry their label
- * in `data-tooltip` and render it themselves on hover/focus instead.
+ * Custom tooltip: native `title` tooltips are unreliable across browsers/webviews (delay and
+ * support vary a lot), so icon-only controls are wrapped in `.fm-tooltip` (see
+ * `components/tooltip.ts`), which shows the label on hover/focus. The visible tooltip itself is
+ * a single `body`-level portal element (`.fm-tooltip-portal`), positioned in JS rather than
+ * painted in place as a `::after` on the wrapper - several ancestors a tooltip-bearing control
+ * can live inside (an icon button's own ripple-clipping class, the pane tab strip's
+ * horizontally-scrolling container) clip an in-place tooltip via `overflow: hidden`, and a portal
+ * outside that DOM subtree sidesteps it entirely.
  */
-.fm-workspace-toolbar [data-tooltip] {
-  position: relative;
+.fm-tooltip {
+  display: inline-flex;
 }
 
-.fm-workspace-toolbar [data-tooltip]:hover::after,
-.fm-workspace-toolbar [data-tooltip]:focus-visible::after {
-  content: attr(data-tooltip);
-  position: absolute;
-  top: 100%;
-  left: 50%;
-  transform: translateX(-50%);
-  margin-top: 0.35rem;
-  z-index: 110;
+.fm-tooltip-portal {
+  display: none;
+  position: fixed;
+  z-index: 1000;
   border-radius: var(--fm-radius);
   padding: 0.2rem 0.5rem;
   background: var(--fm-text);
@@ -357,7 +357,9 @@ main.fm-workspace {
 .fm-navigation-controls button,
 .fm-workspace-toolbar > button,
 .fm-settings-button,
-.fm-settings-editor button {
+.fm-settings-editor button,
+.fm-diagnostics-button,
+.fm-diagnostics-editor button {
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
@@ -373,7 +375,9 @@ main.fm-workspace {
 .fm-navigation-controls button:hover:not(:disabled),
 .fm-workspace-toolbar > button:hover:not(:disabled),
 .fm-settings-button:hover,
-.fm-settings-editor button:hover:not(:disabled) {
+.fm-settings-editor button:hover:not(:disabled),
+.fm-diagnostics-button:hover,
+.fm-diagnostics-editor button:hover:not(:disabled) {
   background: var(--fm-hover);
   color: var(--fm-text);
 }
@@ -425,6 +429,32 @@ main.fm-workspace {
   display: none;
 }
 
+.fm-diagnostics-editor {
+  position: fixed;
+  z-index: 20;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgb(0 0 0 / 35%);
+}
+
+.fm-diagnostics-disclosure {
+  display: contents;
+}
+
+.fm-diagnostics-button {
+  display: flex;
+  min-height: var(--fm-row-height);
+  align-items: center;
+  cursor: pointer;
+  list-style: none;
+}
+
+.fm-diagnostics-button::-webkit-details-marker {
+  display: none;
+}
+
 .fm-settings-editor-heading {
   display: flex;
   align-items: center;
@@ -457,27 +487,6 @@ main.fm-workspace {
 
 .fm-workspace-switcher-button::-webkit-details-marker {
   display: none;
-}
-
-/* Directory-comparison toolbar (task 0075). */
-.fm-comparison-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding-inline: 0.5rem;
-  font-size: 0.85rem;
-  color: var(--fm-text-muted);
-}
-
-.fm-comparison-differences-only {
-  display: flex;
-  align-items: center;
-  gap: 0.25rem;
-  cursor: pointer;
-}
-
-.fm-comparison-sync-button {
-  cursor: pointer;
 }
 
 .fm-disclosure-summary-hidden {

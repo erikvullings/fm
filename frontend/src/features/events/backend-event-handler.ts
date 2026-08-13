@@ -100,6 +100,10 @@ export interface BackendEventContext {
   // Comparison
   getComparisonState(): ComparisonState;
   setComparisonState(next: ComparisonState): void;
+  /** Selects, in both compared panes, every currently loaded entry whose comparison outcome
+   * isn't `identical` (Total-Commander-style "Compare directories"). Called once a comparison
+   * finishes streaming. */
+  markComparisonDifferences(state: ComparisonState): void;
 
   // Search
   getFindFilesSearchId(): string | undefined;
@@ -282,15 +286,18 @@ export function createBackendEventHandler(ctx: BackendEventContext): (event: Bac
     }
 
     if (payload.type === 'comparison.resultsBatch') {
-      ctx.setComparisonState(
-        withComparisonBatch(
-          ctx.getComparisonState(),
-          payload.comparisonId,
-          payload.entries,
-          payload.isComplete,
-          payload.warningsCount,
-        ),
+      const next = withComparisonBatch(
+        ctx.getComparisonState(),
+        payload.comparisonId,
+        payload.entries,
+        payload.isComplete,
+        payload.warningsCount,
       );
+      ctx.setComparisonState(next);
+      // Guard on `next.isComplete`, not `payload.isComplete`: a stale/no-longer-tracked batch
+      // (comparisonId mismatch) leaves `next` as the untouched current state, whose own
+      // completion flag reflects reality even though this particular payload was discarded.
+      if (next.isComplete) ctx.markComparisonDifferences(next);
       ctx.redraw();
       return;
     }

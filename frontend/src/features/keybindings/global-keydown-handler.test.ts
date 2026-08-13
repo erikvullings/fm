@@ -34,6 +34,11 @@ const ACTIONS: readonly ActionDescriptor[] = [
   },
   { id: 'core.swapPanes', title: 'Swap panes', defaultShortcuts: [{ key: 'u', ctrl: true }] },
   {
+    id: 'core.compareDirectories',
+    title: 'Compare directories',
+    defaultShortcuts: [{ key: 'F2', shift: true }],
+  },
+  {
     id: 'core.swapPaneTabs',
     title: 'Swap pane tabs',
     defaultShortcuts: [{ key: 'u', ctrl: true, shift: true }],
@@ -179,6 +184,7 @@ function makeContext(overrides: Partial<GlobalKeydownContext> = {}): GlobalKeydo
     swapPaneTabSets: vi.fn(),
     openMultiRenameForActivePane: vi.fn(),
     quitApplication: vi.fn(),
+    startComparison: vi.fn(),
   };
   return { ...base, ...overrides };
 }
@@ -388,6 +394,13 @@ describe('createGlobalKeydownHandler - task 0128 shortcuts', () => {
     const context = makeContext({ getKeybindingRuntime: () => 'browser', quitApplication });
     createGlobalKeydownHandler(context)(keydown('F4', { altKey: true }));
     expect(quitApplication).not.toHaveBeenCalled();
+  });
+
+  it('Shift+F2 starts a directory comparison', () => {
+    const startComparison = vi.fn();
+    const context = makeContext({ startComparison });
+    createGlobalKeydownHandler(context)(keydown('F2', { shiftKey: true }));
+    expect(startComparison).toHaveBeenCalled();
   });
 
   it('F1 opens the shortcuts help overlay', () => {

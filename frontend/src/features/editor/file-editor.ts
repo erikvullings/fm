@@ -2,6 +2,7 @@ import { linter } from '@codemirror/lint';
 import m, { type Component } from 'mithril';
 import { FlatButton, IconButton } from 'mithril-materialized';
 import { closeIcon } from '../../components/tabler-icons';
+import { tooltip } from '../../components/tooltip';
 import { CodeMirrorEditor } from './code-mirror-editor';
 import { jsonParseLinter, languageExtension } from './editor-language';
 import type { FileEditorController, FileEditorState } from './file-editor-controller';
@@ -43,17 +44,19 @@ export const FileEditor: Component<FileEditorAttrs> = {
           disabled: !state.dirty || state.saving,
           onclick: () => void controller.save(),
         }),
-        m(
-          IconButton,
-          {
-            className: 'fm-file-editor-close',
-            'aria-label': 'Close editor',
-            tooltip: 'Close editor',
-            onclick: () => {
-              if (controller.requestClose()) attrs.onClose();
+        tooltip(
+          'Close editor',
+          m(
+            IconButton,
+            {
+              className: 'fm-file-editor-close',
+              'aria-label': 'Close editor',
+              onclick: () => {
+                if (controller.requestClose()) attrs.onClose();
+              },
             },
-          },
-          closeIcon({ size: 13 }),
+            closeIcon({ size: 13 }),
+          ),
         ),
       ]),
       state.error ? m('.fm-file-editor-error', { role: 'alert' }, state.error) : undefined,

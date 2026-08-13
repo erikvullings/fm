@@ -1,4 +1,11 @@
-import type { ComparisonCriteria, ComparisonEntry, Location, PaneId } from '../../models';
+import type {
+  ComparisonCriteria,
+  ComparisonEntry,
+  EntryId,
+  EntrySummary,
+  Location,
+  PaneId,
+} from '../../models';
 
 /** Live state for the directory comparison overlay (spec §16 milestone 5, task 0075). */
 export interface ComparisonState {
@@ -109,4 +116,21 @@ export function statusForEntry(
   const relativePath = relativePathUnder(entryUri, root);
   if (relativePath === undefined) return undefined;
   return state.statusByRelativePath.get(relativePath);
+}
+
+/** Entry ids among `entries` whose comparison outcome is known and not `identical`, i.e. the
+ * rows a completed comparison should mark selected in `paneId` (Total-Commander-style "Compare
+ * directories": differing entries are selected directly in both panes rather than reported
+ * through a separate dialog or per-row badge). */
+export function differingEntryIds(
+  state: ComparisonState,
+  paneId: PaneId,
+  entries: readonly EntrySummary[],
+): readonly EntryId[] {
+  return entries
+    .filter((entry) => {
+      const outcome = statusForEntry(state, paneId, entry.location.uri);
+      return outcome !== undefined && outcome.status !== 'identical';
+    })
+    .map((entry) => entry.id);
 }

@@ -578,8 +578,9 @@ describe('Pane breadcrumb editing', () => {
     expect(
       root
         .querySelector('.fm-pane-tab-new')
-        ?.nextElementSibling?.classList.contains('fm-pane-tab-favourites'),
-    ).toBe(true);
+        ?.closest('.fm-tooltip')
+        ?.nextElementSibling?.querySelector('.fm-pane-tab-favourites'),
+    ).not.toBeNull();
     expect(root.querySelector('.fm-icon-heart')).not.toBeNull();
   });
 

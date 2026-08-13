@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
-import type { ComparisonEntry, Location } from '../../models';
+import type { ComparisonEntry, EntrySummary, Location } from '../../models';
 import {
+  differingEntryIds,
   initialComparisonState,
   relativePathUnder,
   sideForPane,
@@ -15,6 +16,19 @@ import {
 
 const LEFT_ROOT: Location = { providerId: 'local', uri: 'file:///left' };
 const RIGHT_ROOT: Location = { providerId: 'local', uri: 'file:///right' };
+
+function entry(overrides: Partial<EntrySummary> = {}): EntrySummary {
+  return {
+    id: 'entry-1',
+    location: { providerId: 'local', uri: 'file:///left/a.txt' },
+    name: 'a.txt',
+    kind: 'file',
+    hidden: false,
+    readOnly: false,
+    metadataRevision: 1,
+    ...overrides,
+  };
+}
 
 function started() {
   return withComparisonStarted({
@@ -178,5 +192,31 @@ describe('statusForEntry', () => {
     expect(
       statusForEntry(initialComparisonState(), 'pane-left', 'file:///left/file.txt'),
     ).toBeUndefined();
+  });
+});
+
+describe('differingEntryIds', () => {
+  it('marks entries whose outcome is not identical, and skips identical/unknown ones (Total-Commander-style selection)', () => {
+    const withData = withComparisonBatch(
+      started(),
+      'comparison-1',
+      [
+        { relativePath: 'a.txt', status: 'onlyLeft' },
+        { relativePath: 'b.txt', status: 'identical' },
+      ],
+      true,
+      0,
+    );
+    const entries = [
+      entry({ id: 'a', location: { providerId: 'local', uri: 'file:///left/a.txt' } }),
+      entry({ id: 'b', location: { providerId: 'local', uri: 'file:///left/b.txt' } }),
+      entry({ id: 'c', location: { providerId: 'local', uri: 'file:///left/c.txt' } }),
+    ];
+    expect(differingEntryIds(withData, 'pane-left', entries)).toEqual(['a']);
+  });
+
+  it('returns nothing when no comparison is active', () => {
+    const entries = [entry({ id: 'a' })];
+    expect(differingEntryIds(initialComparisonState(), 'pane-left', entries)).toEqual([]);
   });
 });
