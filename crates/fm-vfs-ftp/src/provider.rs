@@ -5,12 +5,12 @@ use fm_vfs::{
     ProviderCapabilities, ProviderChangeStream, ProviderReadStream, ProviderWriteStream,
     RemoveOptions, VfsError, WriteOptions,
 };
+use rustls_platform_verifier::ConfigVerifierExt;
 use std::{collections::BTreeMap, str::FromStr, sync::Arc};
 use suppaftp::{
     Mode,
-    async_native_tls::TlsConnector,
     list::File,
-    tokio::{AsyncFtpStream, AsyncNativeTlsConnector, AsyncNativeTlsFtpStream},
+    tokio::{AsyncFtpStream, AsyncRustlsConnector, AsyncRustlsFtpStream},
 };
 use tokio_util::sync::CancellationToken;
 
@@ -36,16 +36,24 @@ pub trait FtpConnectionResolver: Send + Sync {
 }
 enum Client {
     Plain(AsyncFtpStream),
-    Secure(AsyncNativeTlsFtpStream),
+    Secure(AsyncRustlsFtpStream),
 }
 impl Client {
     async fn connect(p: &FtpConnectionParameters) -> Result<Self, VfsError> {
         let address = format!("{}:{}", p.host, p.port);
         if p.explicit_tls {
-            let stream = AsyncNativeTlsFtpStream::connect(address)
+            let _ = tokio_rustls::rustls::crypto::ring::default_provider().install_default();
+            let stream = AsyncRustlsFtpStream::connect(address)
                 .await
                 .map_err(map_ftp)?;
-            let connector = AsyncNativeTlsConnector::from(TlsConnector::new());
+            let config =
+                tokio_rustls::rustls::ClientConfig::with_platform_verifier().map_err(|error| {
+                    VfsError::Io {
+                        message: error.to_string(),
+                    }
+                })?;
+            let connector =
+                AsyncRustlsConnector::from(tokio_rustls::TlsConnector::from(Arc::new(config)));
             let mut stream = stream
                 .into_secure(connector, &p.host)
                 .await

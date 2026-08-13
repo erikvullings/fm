@@ -247,12 +247,17 @@ where
     }
 
     /// Checks whether this connection's configuration and referenced
-    /// credential are currently usable, without changing its tracked status
-    /// or publishing an event - see this module's documentation for what
-    /// "usable" means before a real dialer is registered.
+    /// credential are currently usable, then persists and publishes the
+    /// resulting reachability status.
     pub async fn test(&self, id: ConnectionId) -> Result<ConnectionStatus, ConnectionError> {
         let profile = self.get(id).await?;
-        self.evaluate(&profile).await
+        let outcome = self.evaluate(&profile).await;
+        let status = outcome
+            .as_ref()
+            .copied()
+            .unwrap_or(ConnectionStatus::Failed);
+        self.set_status_and_publish(id, status);
+        outcome
     }
 
     /// Attempts to connect, transitioning through
@@ -833,7 +838,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_reports_status_without_mutating_the_tracked_status() {
+    async fn test_persists_the_reachable_status() {
         let service = service();
         let created = service
             .create(draft(SshAuthenticationMethod::Agent, None))
@@ -843,11 +848,9 @@ mod tests {
         let status = service.test(created.id).await.expect("test must succeed");
 
         assert_eq!(status, ConnectionStatus::Connected);
-        // `test` must not have changed the tracked status away from its
-        // never-connected default.
         assert_eq!(
             service.status(created.id).await.unwrap(),
-            ConnectionStatus::Disconnected
+            ConnectionStatus::Connected
         );
     }
 

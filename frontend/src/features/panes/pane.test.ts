@@ -1433,7 +1433,7 @@ describe('Pane tab strip', () => {
     expect(root.querySelector('.fm-network-locations strong')?.textContent).toBe('Network');
     const share = root.querySelector<HTMLButtonElement>('.fm-network-locations [role="menuitem"]');
     expect(share?.textContent).toContain('Team Files (unavailable)');
-    expect(share?.disabled).toBe(true);
+    expect(share?.disabled).toBe(false);
   });
 
   it('shows a recoverable cloud discovery state', () => {

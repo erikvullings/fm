@@ -264,9 +264,13 @@ function stateView(attrs: DirectoryTableAttrs, rowHeight: number): m.Children | 
     ]);
   }
   if (attrs.state.type === 'error') {
+    const genericMessage = 'Unable to load directory.';
+    const detail = attrs.state.message.trim();
+    const normalizedDetail = detail.replace(/[.!?]+$/, '').toLocaleLowerCase();
+    const normalizedGeneric = genericMessage.replace(/[.!?]+$/, '').toLocaleLowerCase();
     return m('.fm-directory-state.fm-directory-error', { role: 'alert' }, [
-      m('strong', 'Unable to load directory.'),
-      m('span', attrs.state.message),
+      m('strong', genericMessage),
+      detail.length > 0 && normalizedDetail !== normalizedGeneric ? m('span', detail) : undefined,
       attrs.onRetry === undefined
         ? undefined
         : m('button.fm-directory-retry', { type: 'button', onclick: attrs.onRetry }, 'Retry'),

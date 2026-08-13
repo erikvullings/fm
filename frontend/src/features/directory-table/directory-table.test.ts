@@ -111,6 +111,15 @@ describe('DirectoryTable states', () => {
     root.querySelector<HTMLButtonElement>('.fm-directory-retry')?.click();
     expect(onRetry).toHaveBeenCalledOnce();
   });
+
+  it('does not repeat the generic directory error as its detail', () => {
+    mount({
+      state: { type: 'error', message: 'Unable to load directory' },
+      viewportHeight: 120,
+    });
+
+    expect(root.querySelector('[role="alert"]')?.textContent).toBe('Unable to load directory.');
+  });
 });
 
 describe('DirectoryTable rows', () => {

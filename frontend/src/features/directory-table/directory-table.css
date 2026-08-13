@@ -236,6 +236,7 @@ img.fm-native-entry-icon {
 }
 
 .fm-directory-error {
+  min-height: 100%;
   color: var(--fm-error);
 }
 

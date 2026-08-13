@@ -24,6 +24,23 @@ struct Resolver {
     port: u16,
 }
 
+struct RebexResolver {
+    explicit_tls: bool,
+}
+
+#[async_trait]
+impl FtpConnectionResolver for RebexResolver {
+    async fn resolve(&self, _id: &str) -> Result<FtpConnectionParameters, VfsError> {
+        Ok(FtpConnectionParameters {
+            host: "test.rebex.net".to_owned(),
+            port: 21,
+            username: "demo".to_owned(),
+            password: "password".to_owned(),
+            explicit_tls: self.explicit_tls,
+        })
+    }
+}
+
 #[async_trait]
 impl FtpConnectionResolver for Resolver {
     async fn resolve(&self, _id: &str) -> Result<FtpConnectionParameters, VfsError> {
@@ -81,6 +98,7 @@ impl Fixture {
 }
 
 async fn start_untrusted_ftps_fixture() -> (SocketAddr, tokio::task::JoinHandle<()>) {
+    let _ = tokio_rustls::rustls::crypto::ring::default_provider().install_default();
     let certificate = rcgen::generate_simple_self_signed(vec!["localhost".to_owned()]).unwrap();
     let config = tokio_rustls::rustls::ServerConfig::builder()
         .with_no_client_auth()
@@ -301,6 +319,64 @@ async fn explicit_ftps_rejects_an_untrusted_server_certificate() {
     let result = FtpFileSystemProvider::verify_connectivity(&parameters).await;
     task.abort();
     assert!(matches!(result, Err(VfsError::Io { .. })));
+}
+
+#[tokio::test]
+#[ignore = "public Rebex smoke test; requires internet access"]
+async fn rebex_ftp_lists_and_reads_its_public_example_file() {
+    run_rebex_smoke(false).await;
+}
+
+#[tokio::test]
+#[ignore = "public Rebex smoke test; requires internet access"]
+async fn rebex_explicit_ftps_lists_and_reads_its_public_example_file() {
+    run_rebex_smoke(true).await;
+}
+
+async fn run_rebex_smoke(explicit_tls: bool) {
+    if let Err(message) = try_rebex_smoke(explicit_tls).await {
+        if std::env::var_os("FM_REBEX_STRICT").is_some() {
+            panic!("{message}");
+        }
+        eprintln!("Rebex smoke test skipped: {message}");
+    }
+}
+
+async fn try_rebex_smoke(explicit_tls: bool) -> Result<(), String> {
+    let provider = FtpFileSystemProvider::new(Arc::new(RebexResolver { explicit_tls }));
+    let scheme = if explicit_tls { "ftps" } else { "ftp" };
+    let directory = Location::parse(&format!(
+        "{scheme}://11111111-1111-4111-8111-111111111111/pub/example"
+    ))
+    .map_err(|error| error.to_string())?;
+    let page = provider
+        .list(&directory, ListOptions::default(), CancellationToken::new())
+        .await
+        .map_err(|error| format!("{scheme} listing failed: {error}"))?;
+    let readme = page
+        .entries
+        .iter()
+        .find(|entry| entry.name == "readme.txt")
+        .ok_or_else(|| format!("{scheme} listing did not contain readme.txt"))?;
+    let mut reader = provider
+        .open_read(
+            &EntryRef {
+                id: readme.id,
+                location: readme.location.clone(),
+            },
+            CancellationToken::new(),
+        )
+        .await
+        .map_err(|error| format!("{scheme} readme.txt open failed: {error}"))?;
+    let mut contents = Vec::new();
+    reader
+        .read_to_end(&mut contents)
+        .await
+        .map_err(|error| format!("{scheme} readme.txt download failed: {error}"))?;
+    if contents.is_empty() {
+        return Err(format!("{scheme} readme.txt was empty"));
+    }
+    Ok(())
 }
 
 #[tokio::test]

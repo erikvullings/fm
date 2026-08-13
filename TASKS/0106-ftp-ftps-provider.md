@@ -35,6 +35,10 @@ Add FTP/FTPS as another `FileSystemProvider`. SFTP remains separate via 0004. Pl
   provider does not advertise watch, checksum, timestamps, permissions, trash, or server-side copy.
 - Added an isolated in-process passive FTP fixture covering list/upload/download/mkdir/rename/delete,
   plus an explicit-FTPS fixture proving that an untrusted certificate is rejected.
+- Added ignored, soft-failing live smoke tests for Rebex that list `/pub/example` and download
+  `readme.txt` over both FTP and explicit FTPS. Set `FM_REBEX_STRICT=1` when running them to make
+  third-party endpoint failures fail the test.
+- Switched FTPS to rustls because Rebex requires TLS session reuse on protected data connections.
 - Plain FTP is labelled `FTP (insecure)` in the connection editor with an explicit warning that
   credentials and files are sent without encryption.
 - Verified with `pnpm test` and `pnpm run lint` on 2026-08-13.
