@@ -316,7 +316,10 @@ main.fm-workspace {
   font-weight: 700;
 }
 
-.fm-workspace-toolbar > span {
+/* Excludes `.fm-tooltip`: every toolbar icon button is now wrapped in a `span.fm-tooltip`
+   (components/tooltip.ts), so an unscoped `> span` selector here would match each one and push
+   every button to the far right instead of just the intended trailing status span. */
+.fm-workspace-toolbar > span:not(.fm-tooltip) {
   margin-left: auto;
   color: var(--fm-text-muted);
 }
