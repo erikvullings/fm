@@ -3,6 +3,7 @@ import type { FileManagerClient } from '../api/client/file-manager-client';
 import {
   createDefaultEntryIconRegistry,
   type EntryIconRegistry,
+  resolveEntryIcon,
 } from '../features/directory-table/entry-icons';
 import type { PluginIconTheme } from '../models/plugin';
 import { installPluginIconTheme, restoreDefaultIconTheme } from './plugin-icon-theme';
@@ -126,6 +127,38 @@ describe('installPluginIconTheme', () => {
 
     restoreDefaultIconTheme();
     expect(entryIconRegistry.kindIcons.get('directory')).toBe(defaultFolderIcon);
+  });
+
+  it('treats file and folder name mappings as case-insensitive by default', async () => {
+    const registry = freshRegistry();
+    const client = stubClient({
+      'icons/folder.svg': SAFE_SVG,
+      'icons/ts.svg': SAFE_SVG,
+    });
+    const theme: PluginIconTheme = {
+      iconDefinitions: {
+        folder: { iconPath: 'icons/folder.svg' },
+        typescript: { iconPath: 'icons/ts.svg' },
+      },
+      fileExtensions: {},
+      fileNames: { 'Cargo.toml': 'typescript' },
+      folderNames: { Downloads: 'folder' },
+      mimePrefixes: {},
+    };
+
+    await installPluginIconTheme(client, 'sample.icons', theme, registry);
+
+    const fileIconByLower = resolveEntryIcon(
+      { kind: 'file', id: '1', name: 'cargo.toml', extension: 'toml' },
+      registry,
+    );
+    expect(fileIconByLower).toBe(registry.fileNameIcons.get('Cargo.toml'));
+
+    const folderIconByLower = resolveEntryIcon(
+      { kind: 'directory', id: '2', name: 'downloads' },
+      registry,
+    );
+    expect(folderIconByLower).toBe(registry.folderNameIcons.get('Downloads'));
   });
 });
 

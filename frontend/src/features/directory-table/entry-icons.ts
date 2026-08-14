@@ -25,6 +25,8 @@ export type EntryIconRenderer = (attrs?: IconAttrs) => m.Children;
 export interface EntryIconRegistry {
   /** Icon for `directory`/`symlink`/`file` entries, before any extension/MIME match. */
   readonly kindIcons: Map<EntryKind, EntryIconRenderer>;
+  /** Icon for `directory` entries, keyed by exact folder name, matched before kind fallback. */
+  readonly folderNameIcons: Map<string, EntryIconRenderer>;
   /** Icon for `file` entries, keyed by lowercased extension without the leading dot. */
   readonly extensionIcons: Map<string, EntryIconRenderer>;
   /** Icon for `file` entries, keyed by exact file name, matched before {@link extensionIcons}. */
@@ -76,6 +78,7 @@ export function createDefaultEntryIconRegistry(): EntryIconRegistry {
 
   return {
     kindIcons,
+    folderNameIcons: new Map<string, EntryIconRenderer>(),
     extensionIcons,
     fileNameIcons: new Map<string, EntryIconRenderer>(),
     mimePrefixIcons,
@@ -98,8 +101,15 @@ export function hasSpecificEntryIcon(
   const defaultKindRenderer =
     entry.kind === 'directory' ? folderIcon : entry.kind === 'symlink' ? symlinkIcon : fileIcon;
   if ((registry.kindIcons.get(entry.kind) ?? fileIcon) !== defaultKindRenderer) return true;
+  if (entry.kind === 'directory') {
+    if (registry.folderNameIcons.has(entry.name)) return true;
+    const lowerName = entry.name.toLowerCase();
+    return lowerName !== entry.name && registry.folderNameIcons.has(lowerName);
+  }
   if (entry.kind !== 'file') return false;
   if (registry.fileNameIcons.has(entry.name)) return true;
+  const lowerName = entry.name.toLowerCase();
+  if (lowerName !== entry.name && registry.fileNameIcons.has(lowerName)) return true;
   const extension = entry.extension?.toLowerCase();
   if (extension !== undefined && registry.extensionIcons.has(extension)) return true;
   return (
@@ -115,6 +125,7 @@ export function restoreDefaultIconTheme(registry: EntryIconRegistry = entryIconR
   for (const [kind, renderer] of defaults.kindIcons) {
     registry.kindIcons.set(kind, renderer);
   }
+  registry.folderNameIcons.clear();
   registry.extensionIcons.clear();
   for (const [extension, renderer] of defaults.extensionIcons) {
     registry.extensionIcons.set(extension, renderer);
@@ -132,11 +143,21 @@ export function resolveEntryIcon(
   registry: EntryIconRegistry = entryIconRegistry,
 ): EntryIconRenderer {
   if (entry.kind !== 'file') {
+    if (entry.kind === 'directory') {
+      const byFolderName = registry.folderNameIcons.get(entry.name);
+      if (byFolderName !== undefined) return byFolderName;
+      const byFolderNameLower = registry.folderNameIcons.get(entry.name.toLowerCase());
+      if (byFolderNameLower !== undefined) return byFolderNameLower;
+    }
     return registry.kindIcons.get(entry.kind) ?? fileIcon;
   }
   const byFileName = registry.fileNameIcons.get(entry.name);
   if (byFileName !== undefined) {
     return byFileName;
+  }
+  const byFileNameLower = registry.fileNameIcons.get(entry.name.toLowerCase());
+  if (byFileNameLower !== undefined) {
+    return byFileNameLower;
   }
   const extension = entry.extension?.toLowerCase();
   const byExtension = extension === undefined ? undefined : registry.extensionIcons.get(extension);

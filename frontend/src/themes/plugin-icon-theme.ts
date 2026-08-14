@@ -13,6 +13,17 @@ import { sanitizeSvgMarkup } from './svg-sanitizer';
 
 export { restoreDefaultIconTheme };
 
+function setCaseInsensitiveAlias(
+  map: Map<string, EntryIconRenderer>,
+  key: string,
+  renderer: EntryIconRenderer,
+): void {
+  const lower = key.toLowerCase();
+  if (lower !== key && !map.has(lower)) {
+    map.set(lower, renderer);
+  }
+}
+
 /** Turns an icon-definition key into a safe CSS class fragment (keys may contain e.g. `.`/spaces). */
 function cssClassFromKey(definitionKey: string): string {
   return `fm-icon-plugin-${definitionKey.toLowerCase().replace(/[^a-z0-9-]+/g, '-')}`;
@@ -85,7 +96,18 @@ export async function installPluginIconTheme(
 
   for (const [fileName, definitionKey] of Object.entries(iconTheme.fileNames)) {
     const renderer = await rendererFor(definitionKey);
-    if (renderer !== undefined) registry.fileNameIcons.set(fileName, renderer);
+    if (renderer !== undefined) {
+      registry.fileNameIcons.set(fileName, renderer);
+      setCaseInsensitiveAlias(registry.fileNameIcons, fileName, renderer);
+    }
+  }
+
+  for (const [folderName, definitionKey] of Object.entries(iconTheme.folderNames ?? {})) {
+    const renderer = await rendererFor(definitionKey);
+    if (renderer !== undefined) {
+      registry.folderNameIcons.set(folderName, renderer);
+      setCaseInsensitiveAlias(registry.folderNameIcons, folderName, renderer);
+    }
   }
 
   for (const [prefix, definitionKey] of Object.entries(iconTheme.mimePrefixes)) {

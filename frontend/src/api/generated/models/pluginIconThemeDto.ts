@@ -4,6 +4,8 @@
  */
 import type { PluginIconThemeDtoFileExtensions } from './pluginIconThemeDtoFileExtensions.ts';
 import type { PluginIconThemeDtoFileNames } from './pluginIconThemeDtoFileNames.ts';
+import type { PluginIconThemeDtoFolderNames } from './pluginIconThemeDtoFolderNames.ts';
+import type { PluginIconThemeDtoFolderNamesExpanded } from './pluginIconThemeDtoFolderNamesExpanded.ts';
 import type { PluginIconThemeDtoIconDefinitions } from './pluginIconThemeDtoIconDefinitions.ts';
 import type { PluginIconThemeDtoMimePrefixes } from './pluginIconThemeDtoMimePrefixes.ts';
 
@@ -21,6 +23,10 @@ export interface PluginIconThemeDto {
   fileExtensions: PluginIconThemeDtoFileExtensions;
   /** Exact file name to icon definition key, matched before `file_extensions`. */
   fileNames: PluginIconThemeDtoFileNames;
+   /** Exact directory name to icon definition key. */
+   folderNames: PluginIconThemeDtoFolderNames;
+   /** Exact expanded directory name to icon definition key. */
+   folderNamesExpanded: PluginIconThemeDtoFolderNamesExpanded;
   /**
      * Default icon definition key for `directory` entries.
      * @nullable

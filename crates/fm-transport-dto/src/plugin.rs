@@ -65,6 +65,10 @@ pub struct PluginIconThemeDto {
     pub file_extensions: BTreeMap<String, String>,
     /// Exact file name to icon definition key, matched before `file_extensions`.
     pub file_names: BTreeMap<String, String>,
+    /// Exact directory name (e.g. `".git"`) to icon definition key.
+    pub folder_names: BTreeMap<String, String>,
+    /// Exact expanded directory name to icon definition key.
+    pub folder_names_expanded: BTreeMap<String, String>,
     /// MIME type prefix (e.g. `"image/"`) to icon definition key.
     pub mime_prefixes: BTreeMap<String, String>,
 }
