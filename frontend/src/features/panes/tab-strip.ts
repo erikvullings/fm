@@ -32,6 +32,9 @@ export interface TabStripAttrs {
   /** Whether the current location can be added as a new favourite (controls heart vs heart-plus). */
   readonly canAddFavourite: boolean;
   readonly onToggleFavourites: () => void;
+  /** Whether to render the trailing new-tab/favourites buttons in this strip. Defaults to
+   * `true`; panes with their own breadcrumb bar render those buttons there instead. */
+  readonly showActions?: boolean;
 }
 
 /** Renders the pane tab bar — individual tabs with drag-to-reorder, new-tab and favourites buttons. */
@@ -130,33 +133,37 @@ export const TabStrip: FactoryComponent<TabStripAttrs> = () => {
             ],
           ),
         ),
-        tooltip(
-          'New tab',
-          m(
-            IconButton,
-            {
-              className: 'fm-pane-tab-new',
-              'aria-label': 'New tab',
-              onclick: () => attrs.onNewTab(),
-            },
-            plusIcon(),
-          ),
-          { key: '__new-tab__' },
-        ),
-        tooltip(
-          'Favourites',
-          m(
-            IconButton,
-            {
-              className: 'fm-pane-tab-favourites',
-              'aria-label': 'Favourites',
-              'aria-expanded': String(attrs.favouritesOpen),
-              onclick: () => attrs.onToggleFavourites(),
-            },
-            attrs.canAddFavourite ? heartPlusIcon() : heartIcon(),
-          ),
-          { key: '__favourites__' },
-        ),
+        ...(attrs.showActions === false
+          ? []
+          : [
+              tooltip(
+                'New tab',
+                m(
+                  IconButton,
+                  {
+                    className: 'fm-pane-tab-new',
+                    'aria-label': 'New tab',
+                    onclick: () => attrs.onNewTab(),
+                  },
+                  plusIcon(),
+                ),
+                { key: '__new-tab__' },
+              ),
+              tooltip(
+                'Favourites',
+                m(
+                  IconButton,
+                  {
+                    className: 'fm-pane-tab-favourites',
+                    'aria-label': 'Favourites',
+                    'aria-expanded': String(attrs.favouritesOpen),
+                    onclick: () => attrs.onToggleFavourites(),
+                  },
+                  attrs.canAddFavourite ? heartPlusIcon() : heartIcon(),
+                ),
+                { key: '__favourites__' },
+              ),
+            ]),
       ]),
   };
 };

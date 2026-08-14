@@ -21,9 +21,7 @@
   grid-row: 1;
 }
 
-.fm-breadcrumb,
-.fm-path-editor,
-.fm-quick-filter {
+.fm-breadcrumb-row {
   grid-row: 2;
 }
 
@@ -168,10 +166,15 @@
   align-items: center;
   justify-content: center;
   flex: 0 0 auto;
-  width: var(--fm-row-height);
+  /* mithril-materialized's `.btn-flat` sets its own fixed `height: 36px` and
+   * `padding: 0 16px` at equal selector specificity - override with `!important` so this
+   * button always matches the row height instead of stretching it (previously only masked by
+   * the old tab strip's `overflow: hidden`). */
+  width: var(--fm-row-height) !important;
+  height: var(--fm-row-height) !important;
   min-width: var(--fm-row-height);
   min-height: var(--fm-row-height);
-  padding: 0;
+  padding: 0 !important;
   border: 0;
   background: transparent;
   color: var(--fm-text-muted);
@@ -183,6 +186,28 @@
 .fm-pane-tab-new .fm-icon {
   display: block;
   transform: translateY(-1px);
+}
+
+.fm-breadcrumb-row {
+  display: flex;
+  align-items: stretch;
+  min-width: 0;
+  height: var(--fm-row-height);
+  overflow: hidden;
+  border-bottom: 1px solid var(--fm-border);
+  /* Painted here (not per-child) so the new-tab/favourites buttons share the same background as
+   * the breadcrumb/path-editor/quick-filter segment beside them, instead of falling through to
+   * the plain (non-elevated) `.fm-pane` background and reading as a mismatched box. */
+  background: var(--fm-pane-breadcrumb-background, var(--fm-surface-elevated));
+}
+
+.fm-breadcrumb-row > .fm-breadcrumb,
+.fm-breadcrumb-row > .fm-path-editor,
+.fm-breadcrumb-row > .fm-quick-filter {
+  flex: 1 1 auto;
+  min-width: 0;
+  border-bottom: 0;
+  background: transparent;
 }
 
 .fm-breadcrumb,
@@ -233,7 +258,7 @@
 }
 
 .fm-pane-tab-favourites {
-  margin-right: 0;
+  margin-right: 0.5rem;
 }
 
 .fm-pane-tab-favourites .fm-icon {
