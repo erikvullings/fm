@@ -272,12 +272,14 @@ Features not yet implemented.
 Cross-cutting refactors to increase module depth, testability, and AI-navigability.
 `FileManagerService` (~5,800 lines) is the primary target. 0119 coordinates the decomposition;
 0120–0123 each extract one capability and can land in any order once 0119's composition plan is
-decided. 0124 and 0125 are independent and can be picked up early. 0120–0125 are all done, but the
-coordinating task 0119 itself is still open: the facade (`crates/fm-application/src/service.rs`) is
-down to ~3,836 lines from ~5,800, short of the <500-line target — final composition-layer cleanup
-remains.
+decided. 0124 and 0125 are independent and can be picked up early. 0120–0125 are all done; 0119
+itself is in progress — a 2026-08-14 session extracted the operation-history/observer cluster into
+`operation_history.rs`, taking the facade from ~3,836 to ~3,555 lines. Still well short of the
+<500-line target; see 0119's Agent Notes for the prioritized list of what's left (mapping-function
+cluster, search/comparison/action-invocation coordination, and moving the ~1,690-line test module's
+capability-specific tests alongside their code).
 
-- [ ] 0119 Decompose FileManagerService into capability sub-services *(open — subtasks 0120–0125 done, but the facade is not yet reduced to a thin composition layer)*
+- [ ] 0119 Decompose FileManagerService into capability sub-services *(in_progress — subtasks 0120–0125 done; facade down to ~3,555 lines, still short of the <500-line target)*
 - [x] 0120 Extract Operation Planner module *(needs 0119)*
 - [x] 0121 Extract File Editor Service *(needs 0119)*
 - [x] 0122 Extract Connection Facade *(needs 0119)*

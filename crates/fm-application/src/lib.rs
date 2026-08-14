@@ -12,6 +12,7 @@ mod directory;
 mod error;
 mod file_editor;
 mod ftp;
+mod operation_history;
 mod operation_planner;
 mod plugin_manager;
 mod remote_terminal;
