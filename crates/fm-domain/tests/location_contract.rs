@@ -290,7 +290,10 @@ proptest! {
     fn native_path_location_round_trip_is_lossless(
         segments in prop::collection::vec(
             "[A-Za-z0-9 _.$()é]{1,20}"
-                .prop_filter("path components cannot be traversal tokens", |name| name != "." && name != ".."),
+                .prop_filter("path components cannot be traversal tokens", |name| name != "." && name != "..")
+                .prop_filter("path components cannot be reserved Windows device names", |name| {
+                    fm_domain::location::validate_name(name).is_ok()
+                }),
             1..8
         )
     ) {
