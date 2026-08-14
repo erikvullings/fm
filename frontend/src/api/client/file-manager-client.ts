@@ -34,6 +34,7 @@ import type {
   SaveEditableFileRequest,
   SearchInFileRequest,
   SearchInFileResult,
+  SetPaneActivityRequest,
   Settings,
   StartComparisonRequest,
   StartComparisonResult,
@@ -127,6 +128,9 @@ export interface FileManagerClient {
   listDirectory(request: ListDirectoryRequest, signal?: AbortSignal): Promise<DirectorySnapshot>;
 
   getEntryMetadata(request: EntryMetadataRequest, signal?: AbortSignal): Promise<EntryMetadata>;
+
+  /** Marks a pane's foreground/background state (task 0109). */
+  setPaneActivity(request: SetPaneActivityRequest, signal?: AbortSignal): Promise<void>;
 
   cacheArchivePassword(request: ArchiveCredentialRequest, signal?: AbortSignal): Promise<void>;
 

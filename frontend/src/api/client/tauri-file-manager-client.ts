@@ -37,6 +37,7 @@ import type {
   SaveEditableFileRequest,
   SearchInFileRequest,
   SearchInFileResult,
+  SetPaneActivityRequest,
   Settings,
   StartComparisonRequest,
   StartComparisonResult,
@@ -205,6 +206,10 @@ export class TauriFileManagerClient implements FileManagerClient {
     _signal?: AbortSignal,
   ): Promise<EntryMetadata> {
     return entryMetadataFromDto(await invoke<EntryMetadataDto>('get_entry_metadata', { request }));
+  }
+
+  async setPaneActivity(request: SetPaneActivityRequest, _signal?: AbortSignal): Promise<void> {
+    await invoke<void>('set_pane_activity', { request });
   }
 
   readFileRange(request: ReadFileRangeRequest, _signal?: AbortSignal): Promise<FileRangeChunk> {

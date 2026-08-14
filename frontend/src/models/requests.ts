@@ -61,6 +61,17 @@ export interface EntryMetadataRequest {
   location: Location;
 }
 
+/**
+ * Marks whether a pane is currently in the foreground, so a poll-tracked
+ * directory watch (SFTP, FTP, ...) can poll less often while backgrounded
+ * (`POST /api/v1/directories/activity`, task 0109), mirroring
+ * `fm_transport_dto::SetPaneActivityRequest`.
+ */
+export interface SetPaneActivityRequest {
+  paneId: PaneId;
+  active: boolean;
+}
+
 /** Supplies an archive password to the backend-session-only credential cache. */
 export interface ArchiveCredentialRequest {
   location: Location;

@@ -2,9 +2,10 @@
 
 use axum::Json;
 use axum::extract::{Extension, State};
+use axum::http::StatusCode;
 use fm_transport_dto::{
     ApplicationErrorDto, DirectorySnapshotDto, EntryMetadataDto, EntryMetadataRequest,
-    ListDirectoryRequest, NavigateRequest,
+    ListDirectoryRequest, NavigateRequest, SetPaneActivityRequest,
 };
 use std::time::Instant;
 use tower_http::request_id::RequestId;
@@ -193,4 +194,31 @@ pub(crate) async fn get_entry_metadata(
         .map(EntryMetadataDto::from)
         .map(Json)
         .map_err(|error| ApiError::new(error, request_id))
+}
+
+/// Marks whether a pane is currently in the foreground, so a poll-tracked
+/// directory watch (SFTP, FTP, ...) can poll less often while backgrounded
+/// (task 0109).
+#[utoipa::path(
+    post,
+    path = "/api/v1/directories/activity",
+    operation_id = "setPaneActivity",
+    request_body = SetPaneActivityRequest,
+    responses(
+        (status = 204, description = "The pane's activity state was recorded"),
+        (status = 404, description = "No pane exists with this id", body = ApplicationErrorDto),
+    )
+)]
+pub(crate) async fn set_pane_activity(
+    State(state): State<AppState>,
+    Extension(request_id): Extension<RequestId>,
+    Json(request): Json<SetPaneActivityRequest>,
+) -> Result<StatusCode, ApiError> {
+    let request_id = extract_request_id(&request_id);
+    state
+        .service
+        .set_pane_activity(request)
+        .await
+        .map_err(|error| ApiError::new(error, request_id))?;
+    Ok(StatusCode::NO_CONTENT)
 }

@@ -3335,6 +3335,29 @@
         ],
         "type": "object"
       },
+      "SetPaneActivityRequest": {
+        "description": "Marks whether a pane is currently in the foreground, so a poll-tracked\ndirectory watch (SFTP, FTP, ...) can poll less often while backgrounded\n(`POST /api/v1/directories/activity`, task 0109). Has no effect on a\nnative/delta-API watch, which is push-based rather than polled.",
+        "example": {
+          "active": false,
+          "paneId": "5b1b6b1e-9b1b-4b1b-8b1b-1b1b1b1b1b1b"
+        },
+        "properties": {
+          "active": {
+            "description": "Whether the pane is currently in the foreground.",
+            "type": "boolean"
+          },
+          "paneId": {
+            "description": "The pane whose foreground/background state changed.",
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "paneId",
+          "active"
+        ],
+        "type": "object"
+      },
       "SettingsDto": {
         "description": "Versioned global settings. Live workspace content is deliberately absent.",
         "properties": {
@@ -5438,6 +5461,37 @@
           }
         },
         "summary": "Provides comprehensive diagnostics information for troubleshooting and bug reports."
+      }
+    },
+    "/api/v1/directories/activity": {
+      "post": {
+        "operationId": "setPaneActivity",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetPaneActivityRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "The pane's activity state was recorded"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationErrorDto"
+                }
+              }
+            },
+            "description": "No pane exists with this id"
+          }
+        },
+        "summary": "Marks whether a pane is currently in the foreground, so a poll-tracked\ndirectory watch (SFTP, FTP, ...) can poll less often while backgrounded\n(task 0109)."
       }
     },
     "/api/v1/directories/list": {

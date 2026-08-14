@@ -14,10 +14,10 @@ use fm_transport_dto::{
     HostKeyProbeDto, InvokeActionRequestDto, ListDirectoryRequest, LocationDto, NavigateRequest,
     OperationDto, PluginDescriptorDto, PluginLogEntryDto, ReadFileRangeRequestDto,
     ReadFileRangeResponseDto, ResolveOperationConflictRequestDto, RuntimeCapabilitiesDto,
-    SearchInFileRequestDto, SearchInFileResponseDto, SettingsDto, StartComparisonRequestDto,
-    StartComparisonResponseDto, StartOperationRequestDto, StartSearchRequestDto,
-    StartSearchResponseDto, SyncPlanDto, UpdateConnectionRequestDto, WorkspaceCommandDto,
-    WorkspaceDto, WorkspaceSummaryDto,
+    SearchInFileRequestDto, SearchInFileResponseDto, SetPaneActivityRequest, SettingsDto,
+    StartComparisonRequestDto, StartComparisonResponseDto, StartOperationRequestDto,
+    StartSearchRequestDto, StartSearchResponseDto, SyncPlanDto, UpdateConnectionRequestDto,
+    WorkspaceCommandDto, WorkspaceDto, WorkspaceSummaryDto,
 };
 
 use crate::{
@@ -371,6 +371,20 @@ pub(crate) async fn get_entry_metadata(
         .get_entry_metadata(request)
         .await
         .map(Into::into)
+        .map_err(|error| error.into_dto(Uuid::new_v4()))
+}
+
+/// Marks a pane's foreground/background state through the same application
+/// service as Axum (task 0109).
+#[tauri::command]
+pub(crate) async fn set_pane_activity(
+    state: State<'_, AppState>,
+    request: SetPaneActivityRequest,
+) -> Result<(), ApplicationErrorDto> {
+    state
+        .service
+        .set_pane_activity(request)
+        .await
         .map_err(|error| error.into_dto(Uuid::new_v4()))
 }
 

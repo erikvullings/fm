@@ -43,6 +43,7 @@ import type {
   SaveEditableFileResponseDto,
   SearchInFileRequestDto,
   SearchInFileResponseDto,
+  SetPaneActivityRequest,
   SettingsDto,
   StartComparisonRequestDto,
   StartComparisonResponseDto,
@@ -889,6 +890,51 @@ export const getDiagnostics = async ( options?: Parameters<typeof fetchMutator>[
     method: 'GET'
 
 
+  }
+);}
+
+
+
+export type setPaneActivityResponse204 = {
+  data: void
+  status: 204
+}
+
+export type setPaneActivityResponse404 = {
+  data: ApplicationErrorDto
+  status: 404
+}
+
+export type setPaneActivityResponseSuccess = (setPaneActivityResponse204) & {
+  headers: Headers;
+};
+export type setPaneActivityResponseError = (setPaneActivityResponse404) & {
+  headers: Headers;
+};
+
+export type setPaneActivityResponse = (setPaneActivityResponseSuccess | setPaneActivityResponseError)
+
+export const getSetPaneActivityUrl = () => {
+
+
+
+
+  return `/api/v1/directories/activity`
+}
+
+/**
+ * @summary Marks whether a pane is currently in the foreground, so a poll-tracked
+directory watch (SFTP, FTP, ...) can poll less often while backgrounded
+(task 0109).
+ */
+export const setPaneActivity = async (setPaneActivityRequest: SetPaneActivityRequest, options?: Parameters<typeof fetchMutator>[1]): Promise<setPaneActivityResponse> => {
+
+  return fetchMutator<setPaneActivityResponse>(getSetPaneActivityUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(setPaneActivityRequest)
   }
 );}
 

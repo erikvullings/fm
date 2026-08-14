@@ -3,6 +3,8 @@
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering as AtomicOrdering};
+use std::time::Duration;
 
 use fm_domain::{DirectorySnapshot, EntryId, EntryKind, EntryMetadata, LoadingState, PaneId};
 use fm_events::{
@@ -13,14 +15,25 @@ use fm_transport_dto::{
     SortDirectionDto,
 };
 use fm_vfs::{
-    EntryRef, FileSystemProvider, ListOptions, ProviderChange, ProviderRegistry, VfsError,
+    ChangeTracking, EntryRef, FileSystemProvider, ListOptions, ProviderChange,
+    ProviderChangeStream, ProviderRegistry, VfsError,
 };
-use futures::StreamExt;
+use futures::{StreamExt, stream};
 use tokio::sync::{Mutex, broadcast};
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 use crate::ApplicationError;
+
+/// A pane not currently in the foreground polls a poll-tracked location this
+/// many times less often than an active one (task 0109). Native/delta-API
+/// watches are push-based and unaffected by pane activity.
+const BACKGROUND_POLL_MULTIPLIER: u32 = 4;
+
+/// Ceiling on how far a run of consecutive poll failures can stretch the
+/// interval, so a still-broken connection is still retried at least this
+/// often rather than backing off forever.
+const MAX_POLL_BACKOFF_MULTIPLIER: u32 = 8;
 
 /// Maximum entries returned per `list()` response. The full directory is always enumerated and
 /// sorted first (see `list()` docs); this only bounds response/DOM size for very large
@@ -47,6 +60,11 @@ struct SharedWatch {
     sender: broadcast::Sender<ProviderChange>,
     cancellation: CancellationToken,
     references: usize,
+    /// Shared by every pane watching this location (task 0109): the most
+    /// recent `set_active` call from any of them wins. Only meaningful for
+    /// [`ChangeTracking::Poll`]; ignored by native/delta-API watches, which
+    /// are push-based and have no cadence to throttle.
+    active: Arc<AtomicBool>,
 }
 
 #[derive(Default)]
@@ -212,12 +230,7 @@ impl DirectoryService {
         let watch_cancellation = state.watch_cancellation.clone();
         drop(panes);
 
-        if first_page
-            && provider
-                .capabilities_for(&location)
-                .unwrap_or_else(|_| provider.capabilities())
-                .contains(fm_vfs::ProviderCapabilities::WATCH)
-        {
+        if first_page && provider.change_tracking() != ChangeTracking::Unsupported {
             let receiver = self
                 .watches
                 .acquire(provider.clone(), snapshot.location.clone())
@@ -338,6 +351,34 @@ impl DirectoryService {
             .await
             .map_err(Into::into)
     }
+
+    /// Marks whether a pane is currently in the foreground, so a
+    /// poll-tracked watch on its directory (SFTP, FTP, ...) can poll less
+    /// often while backgrounded (task 0109).
+    ///
+    /// A no-op for a pane with no watch registered at all — e.g. its
+    /// provider has no change tracking, or its listing hasn't finished yet
+    /// — since there is nothing to throttle; native/delta-API watches are
+    /// push-based and unaffected either way. Only an unknown pane id is
+    /// rejected.
+    pub async fn set_pane_activity(
+        &self,
+        pane_id: PaneId,
+        active: bool,
+    ) -> Result<(), ApplicationError> {
+        let location = {
+            let panes = self.panes.lock().await;
+            let state = panes.get(&pane_id).ok_or(ApplicationError::NotFound)?;
+            state
+                .snapshot
+                .as_ref()
+                .map(|snapshot| snapshot.location.clone())
+        };
+        if let Some(location) = location {
+            self.watches.set_active(&location, active).await;
+        }
+        Ok(())
+    }
 }
 
 impl WatchHub {
@@ -353,7 +394,24 @@ impl WatchHub {
         }
 
         let cancellation = CancellationToken::new();
-        let mut stream = provider.watch(&location, cancellation.clone()).await?;
+        let active = Arc::new(AtomicBool::new(true));
+        let mut stream: ProviderChangeStream = match provider.change_tracking() {
+            ChangeTracking::NativeWatch | ChangeTracking::DeltaApi => {
+                provider.watch(&location, cancellation.clone()).await?
+            }
+            ChangeTracking::Poll { interval } => poll_change_stream(
+                Arc::clone(&provider),
+                location.clone(),
+                interval,
+                Arc::clone(&active),
+                cancellation.clone(),
+            ),
+            ChangeTracking::Unsupported => {
+                return Err(VfsError::UnsupportedCapability {
+                    capability: fm_vfs::ProviderCapabilities::WATCH,
+                });
+            }
+        };
         let (sender, receiver) = broadcast::channel(16);
         let forward = sender.clone();
         let source_cancellation = cancellation.clone();
@@ -375,6 +433,7 @@ impl WatchHub {
                 sender,
                 cancellation,
                 references: 1,
+                active,
             },
         );
         Ok(receiver)
@@ -391,10 +450,103 @@ impl WatchHub {
         }
     }
 
+    /// Adjusts the poll cadence for a poll-tracked location (task 0109); a
+    /// no-op when no watch is registered for it (e.g. its provider has no
+    /// change tracking, or every pane that watched it has since navigated
+    /// away).
+    async fn set_active(&self, location: &fm_domain::Location, active: bool) {
+        let watches = self.watches.lock().await;
+        if let Some(watch) = watches.get(location) {
+            watch.active.store(active, AtomicOrdering::Relaxed);
+        }
+    }
+
     #[cfg(test)]
     async fn registration_count(&self) -> usize {
         self.watches.lock().await.len()
     }
+}
+
+/// Builds a [`ProviderChangeStream`] for a [`ChangeTracking::Poll`] provider
+/// by periodically re-listing `location` and comparing it against the
+/// previous poll (task 0109), rather than requiring the provider to fake a
+/// native [`FileSystemProvider::watch`].
+///
+/// The very first successful poll only seeds the baseline and never emits:
+/// [`DirectoryService::list`] already published that same listing before
+/// this watch was acquired, so signalling a change here too would cause an
+/// immediate, redundant re-list. Entries are compared by id rather than by
+/// list order, since a provider makes no ordering guarantee between calls.
+/// A failed poll is swallowed and doubles the wait before the next attempt,
+/// capped at [`MAX_POLL_BACKOFF_MULTIPLIER`], rather than tearing down the
+/// watch: a transient network hiccup must not force a full directory reset.
+/// `active` (shared with every pane watching this location) is read fresh
+/// before each sleep, so toggling it takes effect on the very next tick.
+fn poll_change_stream(
+    provider: Arc<dyn FileSystemProvider>,
+    location: fm_domain::Location,
+    base_interval: Duration,
+    active: Arc<AtomicBool>,
+    cancellation: CancellationToken,
+) -> ProviderChangeStream {
+    struct State {
+        provider: Arc<dyn FileSystemProvider>,
+        location: fm_domain::Location,
+        base_interval: Duration,
+        active: Arc<AtomicBool>,
+        cancellation: CancellationToken,
+        previous: Option<HashMap<EntryId, fm_domain::EntrySummary>>,
+        backoff: u32,
+    }
+
+    let state = State {
+        provider,
+        location,
+        base_interval,
+        active,
+        cancellation,
+        previous: None,
+        backoff: 1,
+    };
+
+    Box::pin(stream::unfold(state, |mut state| async move {
+        loop {
+            let activity_multiplier = if state.active.load(AtomicOrdering::Relaxed) {
+                1
+            } else {
+                BACKGROUND_POLL_MULTIPLIER
+            };
+            let interval = state.base_interval * (activity_multiplier * state.backoff);
+            tokio::select! {
+                () = state.cancellation.cancelled() => return None,
+                () = tokio::time::sleep(interval) => {}
+            }
+
+            match list_all(
+                Arc::clone(&state.provider),
+                &state.location,
+                state.cancellation.clone(),
+            )
+            .await
+            {
+                Ok(entries) => {
+                    state.backoff = 1;
+                    let fingerprint: HashMap<EntryId, fm_domain::EntrySummary> =
+                        entries.into_iter().map(|entry| (entry.id, entry)).collect();
+                    let is_first_poll = state.previous.is_none();
+                    let changed = state.previous.as_ref() != Some(&fingerprint);
+                    state.previous = Some(fingerprint);
+                    if changed && !is_first_poll {
+                        return Some((Ok(ProviderChange::Changed), state));
+                    }
+                }
+                Err(VfsError::Cancelled) => return None,
+                Err(_) => {
+                    state.backoff = (state.backoff * 2).min(MAX_POLL_BACKOFF_MULTIPLIER);
+                }
+            }
+        }
+    }))
 }
 
 struct PaneWatch {
@@ -677,10 +829,12 @@ mod tests {
 
     use async_trait::async_trait;
     use fm_domain::{EntryMetadata, Location, ProviderId};
+    use fm_events::{SessionId, SubscriptionEvent};
     use fm_transport_dto::LocationDto;
     use fm_vfs::{
-        DirectoryPage, FileSystemProvider, ProviderCapabilities, ProviderChangeStream,
-        ProviderReadStream, ProviderWriteStream, RemoveOptions, VfsError, WriteOptions,
+        ChangeTracking, DirectoryPage, FileSystemProvider, ProviderCapabilities,
+        ProviderChangeStream, ProviderReadStream, ProviderWriteStream, RemoveOptions, VfsError,
+        WriteOptions,
     };
     use tokio::sync::Notify;
 
@@ -811,6 +965,523 @@ mod tests {
             show_hidden: true,
             folders_first: false,
         }
+    }
+
+    /// A provider with `ChangeTracking::Poll` tracking whose successive
+    /// `list()` responses are scripted, for exercising the generic poll
+    /// loop (task 0109). Every call is timestamped so tests can assert on
+    /// cadence, and the final scripted response repeats indefinitely once
+    /// exhausted so a test never needs to predict exactly how many polls a
+    /// downstream consumer (e.g. `spawn_pane_watch`'s own re-list) makes.
+    struct PollingProvider {
+        id: ProviderId,
+        tracking_interval: Duration,
+        responses: Vec<PollOutcome>,
+        cursor: AtomicUsize,
+        call_times: Mutex<Vec<std::time::Instant>>,
+    }
+
+    #[derive(Clone)]
+    enum PollOutcome {
+        Ok(Vec<fm_domain::EntrySummary>),
+        Err,
+    }
+
+    impl PollingProvider {
+        fn new(id: ProviderId, tracking_interval: Duration, responses: Vec<PollOutcome>) -> Self {
+            Self {
+                id,
+                tracking_interval,
+                responses,
+                cursor: AtomicUsize::new(0),
+                call_times: Mutex::new(Vec::new()),
+            }
+        }
+
+        async fn call_count(&self) -> usize {
+            self.call_times.lock().await.len()
+        }
+
+        async fn call_times_snapshot(&self) -> Vec<std::time::Instant> {
+            self.call_times.lock().await.clone()
+        }
+    }
+
+    #[async_trait]
+    impl FileSystemProvider for PollingProvider {
+        fn id(&self) -> ProviderId {
+            self.id.clone()
+        }
+
+        fn capabilities(&self) -> ProviderCapabilities {
+            ProviderCapabilities::LIST
+        }
+
+        fn change_tracking(&self) -> ChangeTracking {
+            ChangeTracking::Poll {
+                interval: self.tracking_interval,
+            }
+        }
+
+        async fn list(
+            &self,
+            _location: &Location,
+            _options: ListOptions,
+            _cancellation: CancellationToken,
+        ) -> Result<DirectoryPage, VfsError> {
+            self.call_times.lock().await.push(std::time::Instant::now());
+            let index = self.cursor.fetch_add(1, AtomicOrdering::SeqCst);
+            let outcome = self
+                .responses
+                .get(index)
+                .or_else(|| self.responses.last())
+                .cloned()
+                .expect("PollingProvider needs at least one scripted response");
+            match outcome {
+                PollOutcome::Ok(entries) => Ok(DirectoryPage {
+                    entries,
+                    total_known_entries: Some(0),
+                    has_more: false,
+                    continuation_token: None,
+                }),
+                PollOutcome::Err => Err(VfsError::Io {
+                    message: "simulated poll failure".to_owned(),
+                }),
+            }
+        }
+
+        async fn metadata(
+            &self,
+            _entry: &EntryRef,
+            _cancellation: CancellationToken,
+        ) -> Result<EntryMetadata, VfsError> {
+            Err(unsupported())
+        }
+
+        async fn create_directory(
+            &self,
+            _location: &Location,
+            _name: &str,
+            _cancellation: CancellationToken,
+        ) -> Result<EntryRef, VfsError> {
+            Err(unsupported())
+        }
+
+        async fn rename(
+            &self,
+            _source: &EntryRef,
+            _destination: &Location,
+            _cancellation: CancellationToken,
+        ) -> Result<EntryRef, VfsError> {
+            Err(unsupported())
+        }
+
+        async fn remove(
+            &self,
+            _entry: &EntryRef,
+            _options: RemoveOptions,
+            _cancellation: CancellationToken,
+        ) -> Result<(), VfsError> {
+            Err(unsupported())
+        }
+
+        async fn open_read(
+            &self,
+            _entry: &EntryRef,
+            _cancellation: CancellationToken,
+        ) -> Result<ProviderReadStream, VfsError> {
+            Err(unsupported())
+        }
+
+        async fn open_write(
+            &self,
+            _destination: &Location,
+            _options: WriteOptions,
+            _cancellation: CancellationToken,
+        ) -> Result<ProviderWriteStream, VfsError> {
+            Err(unsupported())
+        }
+
+        async fn watch(
+            &self,
+            _location: &Location,
+            _cancellation: CancellationToken,
+        ) -> Result<ProviderChangeStream, VfsError> {
+            Err(unsupported())
+        }
+    }
+
+    /// A provider with no change tracking at all (`ChangeTracking::Unsupported`),
+    /// used to prove such providers are never watched or polled.
+    struct UntrackedProvider;
+
+    #[async_trait]
+    impl FileSystemProvider for UntrackedProvider {
+        fn id(&self) -> ProviderId {
+            ProviderId::new("untracked")
+        }
+
+        fn capabilities(&self) -> ProviderCapabilities {
+            ProviderCapabilities::LIST
+        }
+
+        async fn list(
+            &self,
+            _location: &Location,
+            _options: ListOptions,
+            _cancellation: CancellationToken,
+        ) -> Result<DirectoryPage, VfsError> {
+            Ok(DirectoryPage {
+                entries: Vec::new(),
+                total_known_entries: Some(0),
+                has_more: false,
+                continuation_token: None,
+            })
+        }
+
+        async fn metadata(
+            &self,
+            _entry: &EntryRef,
+            _cancellation: CancellationToken,
+        ) -> Result<EntryMetadata, VfsError> {
+            Err(unsupported())
+        }
+
+        async fn create_directory(
+            &self,
+            _location: &Location,
+            _name: &str,
+            _cancellation: CancellationToken,
+        ) -> Result<EntryRef, VfsError> {
+            Err(unsupported())
+        }
+
+        async fn rename(
+            &self,
+            _source: &EntryRef,
+            _destination: &Location,
+            _cancellation: CancellationToken,
+        ) -> Result<EntryRef, VfsError> {
+            Err(unsupported())
+        }
+
+        async fn remove(
+            &self,
+            _entry: &EntryRef,
+            _options: RemoveOptions,
+            _cancellation: CancellationToken,
+        ) -> Result<(), VfsError> {
+            Err(unsupported())
+        }
+
+        async fn open_read(
+            &self,
+            _entry: &EntryRef,
+            _cancellation: CancellationToken,
+        ) -> Result<ProviderReadStream, VfsError> {
+            Err(unsupported())
+        }
+
+        async fn open_write(
+            &self,
+            _destination: &Location,
+            _options: WriteOptions,
+            _cancellation: CancellationToken,
+        ) -> Result<ProviderWriteStream, VfsError> {
+            Err(unsupported())
+        }
+
+        async fn watch(
+            &self,
+            _location: &Location,
+            _cancellation: CancellationToken,
+        ) -> Result<ProviderChangeStream, VfsError> {
+            Err(unsupported())
+        }
+    }
+
+    fn poll_entry(name: &str) -> fm_domain::EntrySummary {
+        fm_domain::EntrySummary {
+            id: fm_domain::EntryId::new(),
+            location: Location::new(ProviderId::new("poll"), format!("poll:///dir/{name}")),
+            name: name.to_owned(),
+            kind: EntryKind::File,
+            size: Some(0),
+            modified_at: None,
+            created_at: None,
+            hidden: false,
+            read_only: false,
+            extension: None,
+            mime_type: None,
+            icon_key: None,
+            metadata_revision: 0,
+        }
+    }
+
+    fn poll_request(pane_id: PaneId) -> ListDirectoryRequest {
+        let mut request = request(pane_id, Uuid::new_v4());
+        request.location = LocationDto {
+            provider_id: "poll".to_owned(),
+            uri: "poll:///dir".to_owned(),
+        };
+        request
+    }
+
+    async fn wait_for_call_count(provider: &PollingProvider, target: usize) {
+        tokio::time::timeout(Duration::from_secs(3), async {
+            loop {
+                if provider.call_count().await >= target {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(2)).await;
+            }
+        })
+        .await
+        .expect("provider must reach the expected call count in time");
+    }
+
+    #[tokio::test]
+    async fn a_poll_tracked_provider_change_produces_a_directory_delta_event() {
+        let entry_a = poll_entry("a.txt");
+        let entry_b = poll_entry("b.txt");
+        let provider = Arc::new(PollingProvider::new(
+            ProviderId::new("poll"),
+            Duration::from_millis(20),
+            vec![
+                PollOutcome::Ok(vec![entry_a.clone()]),
+                PollOutcome::Ok(vec![entry_a.clone()]),
+                PollOutcome::Ok(vec![entry_a.clone(), entry_b.clone()]),
+            ],
+        ));
+        let mut providers = ProviderRegistry::new();
+        providers.register(provider.clone());
+        let events = EventBus::default();
+        let service = DirectoryService::with_event_bus(providers, events.clone());
+        let workspace_id = Uuid::new_v4();
+        let mut subscription = events.subscribe_all_workspaces(SessionId::new("test"), None);
+
+        let mut list_request = poll_request(PaneId::new());
+        list_request.workspace_id = workspace_id;
+        let snapshot = service
+            .list(list_request)
+            .await
+            .expect("initial listing must succeed");
+        assert_eq!(snapshot.entries.len(), 1);
+
+        let delta = tokio::time::timeout(Duration::from_secs(3), async {
+            loop {
+                match subscription
+                    .recv()
+                    .await
+                    .expect("subscription must stay open")
+                {
+                    SubscriptionEvent::Event(envelope) => {
+                        if let BackendEventPayload::DirectoryDelta { delta, .. } = envelope.payload
+                        {
+                            return delta;
+                        }
+                    }
+                    SubscriptionEvent::Gap { .. } => {}
+                }
+            }
+        })
+        .await
+        .expect("a delta must be published once the poller observes the provider's change");
+
+        match delta {
+            DirectoryDeltaPayload::EntriesAdded { entries, .. } => {
+                assert_eq!(entries.len(), 1);
+                assert_eq!(entries[0].name, "b.txt");
+            }
+            other => panic!("expected an EntriesAdded delta, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn unchanged_polls_do_not_publish_directory_delta_events() {
+        let entry_a = poll_entry("a.txt");
+        let provider = Arc::new(PollingProvider::new(
+            ProviderId::new("poll"),
+            Duration::from_millis(15),
+            vec![PollOutcome::Ok(vec![entry_a.clone()])],
+        ));
+        let mut providers = ProviderRegistry::new();
+        providers.register(provider.clone());
+        let events = EventBus::default();
+        let service = DirectoryService::with_event_bus(providers, events.clone());
+        let mut subscription = events.subscribe_all_workspaces(SessionId::new("test"), None);
+
+        service
+            .list(poll_request(PaneId::new()))
+            .await
+            .expect("initial listing must succeed");
+
+        wait_for_call_count(&provider, 6).await;
+
+        let outcome = tokio::time::timeout(Duration::from_millis(50), subscription.recv()).await;
+        assert!(
+            outcome.is_err(),
+            "an unchanged poll must not publish a directory delta event"
+        );
+    }
+
+    #[tokio::test]
+    async fn poll_failures_back_off_with_increasing_delay_before_retrying() {
+        let entry_a = poll_entry("a.txt");
+        let interval = Duration::from_millis(20);
+        let provider = Arc::new(PollingProvider::new(
+            ProviderId::new("poll"),
+            interval,
+            vec![
+                PollOutcome::Ok(vec![entry_a.clone()]), // DirectoryService::list()'s own initial listing
+                PollOutcome::Ok(vec![entry_a.clone()]), // poll tick 1: baseline
+                PollOutcome::Err,                       // poll tick 2
+                PollOutcome::Err,                       // poll tick 3
+                PollOutcome::Err,                       // poll tick 4
+                PollOutcome::Ok(vec![entry_a.clone()]), // poll tick 5: recovers
+            ],
+        ));
+        let mut providers = ProviderRegistry::new();
+        providers.register(provider.clone());
+        let service = DirectoryService::new(providers);
+
+        service
+            .list(poll_request(PaneId::new()))
+            .await
+            .expect("initial listing must succeed");
+
+        wait_for_call_count(&provider, 6).await;
+
+        let calls = provider.call_times_snapshot().await;
+        let gaps: Vec<Duration> = calls.windows(2).map(|pair| pair[1] - pair[0]).collect();
+        // gaps[0], gaps[1]: poll ticks 1 and 2, both at the base interval (no failure yet).
+        // gaps[2]: after tick 2 failed, backoff x2.
+        // gaps[3]: after tick 3 failed, backoff x4.
+        // gaps[4]: after tick 4 failed, backoff x8.
+        assert!(
+            gaps[3].as_secs_f64() > gaps[2].as_secs_f64() * 1.3,
+            "backoff must grow after a second consecutive failure: {gaps:?}"
+        );
+        assert!(
+            gaps[4].as_secs_f64() > gaps[3].as_secs_f64() * 1.3,
+            "backoff must grow after a third consecutive failure: {gaps:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn navigating_away_stops_the_poll_loop_for_a_poll_tracked_provider() {
+        let entry_a = poll_entry("a.txt");
+        let provider = Arc::new(PollingProvider::new(
+            ProviderId::new("poll"),
+            Duration::from_millis(10),
+            vec![PollOutcome::Ok(vec![entry_a.clone()])],
+        ));
+        let mut providers = ProviderRegistry::new();
+        providers.register(provider.clone());
+        providers.register(Arc::new(UntrackedProvider));
+        let service = DirectoryService::new(providers);
+        let pane_id = PaneId::new();
+
+        service
+            .list(poll_request(pane_id))
+            .await
+            .expect("initial listing must succeed");
+        wait_for_call_count(&provider, 3).await;
+
+        let mut other_request = request(pane_id, Uuid::new_v4());
+        other_request.location = LocationDto {
+            provider_id: "untracked".to_owned(),
+            uri: "untracked:///directory".to_owned(),
+        };
+        service
+            .list(other_request)
+            .await
+            .expect("navigating away must succeed");
+
+        let count_at_navigate = provider.call_count().await;
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        let count_after_wait = provider.call_count().await;
+
+        assert!(
+            count_after_wait <= count_at_navigate + 1,
+            "the poll loop must stop once the pane navigates away: {count_at_navigate} -> {count_after_wait}"
+        );
+        assert_eq!(service.watches.registration_count().await, 0);
+    }
+
+    #[tokio::test]
+    async fn a_provider_with_unsupported_change_tracking_is_never_watched() {
+        let provider = Arc::new(UntrackedProvider);
+        let mut providers = ProviderRegistry::new();
+        providers.register(provider);
+        let service = DirectoryService::new(providers);
+
+        let mut list_request = request(PaneId::new(), Uuid::new_v4());
+        list_request.location = LocationDto {
+            provider_id: "untracked".to_owned(),
+            uri: "untracked:///directory".to_owned(),
+        };
+        service
+            .list(list_request)
+            .await
+            .expect("listing must succeed");
+
+        assert_eq!(service.watches.registration_count().await, 0);
+    }
+
+    #[tokio::test]
+    async fn set_pane_activity_reduces_poll_frequency_for_a_backgrounded_pane() {
+        let entry_a = poll_entry("a.txt");
+        let interval = Duration::from_millis(20);
+        let provider = Arc::new(PollingProvider::new(
+            ProviderId::new("poll"),
+            interval,
+            vec![PollOutcome::Ok(vec![entry_a.clone()])],
+        ));
+        let mut providers = ProviderRegistry::new();
+        providers.register(provider.clone());
+        let service = DirectoryService::new(providers);
+        let pane_id = PaneId::new();
+
+        service
+            .list(poll_request(pane_id))
+            .await
+            .expect("initial listing must succeed");
+
+        wait_for_call_count(&provider, 2).await;
+        let before = provider.call_times_snapshot().await;
+        let active_gap = *before.last().expect("at least 2 calls") - before[before.len() - 2];
+
+        service
+            .set_pane_activity(pane_id, false)
+            .await
+            .expect("pane must exist");
+
+        // The poll tick already sleeping when `set_pane_activity` lands may have started that
+        // sleep with the stale (still-active) cadence, so wait for a *second* tick past the
+        // toggle: only its sleep is guaranteed to have read the freshly stored `false`.
+        let count_before_background = provider.call_count().await;
+        wait_for_call_count(&provider, count_before_background + 2).await;
+        let after = provider.call_times_snapshot().await;
+        let background_gap = *after.last().expect("at least 2 calls") - after[after.len() - 2];
+
+        assert!(
+            background_gap.as_secs_f64() > active_gap.as_secs_f64() * 2.0,
+            "a backgrounded pane's poll gap ({background_gap:?}) must be meaningfully longer \
+             than the active gap ({active_gap:?})"
+        );
+    }
+
+    #[tokio::test]
+    async fn set_pane_activity_reports_not_found_for_an_unknown_pane() {
+        let service = DirectoryService::new(ProviderRegistry::new());
+
+        let error = service
+            .set_pane_activity(PaneId::new(), false)
+            .await
+            .expect_err("an unknown pane must be rejected");
+
+        assert_eq!(error, ApplicationError::NotFound);
     }
 
     #[tokio::test]

@@ -1,9 +1,9 @@
 use async_trait::async_trait;
 use fm_domain::{EntryId, EntryKind, EntryMetadata, EntrySummary, Location, ProviderId};
 use fm_vfs::{
-    CopyCommitOptions, DirectoryPage, EntryRef, FileSystemProvider, ListOptions,
-    ProviderCapabilities, ProviderChangeStream, ProviderReadStream, ProviderWriteStream,
-    RemoveOptions, VfsError, WriteOptions,
+    CONSERVATIVE_POLL_INTERVAL, ChangeTracking, CopyCommitOptions, DirectoryPage, EntryRef,
+    FileSystemProvider, ListOptions, ProviderCapabilities, ProviderChangeStream,
+    ProviderReadStream, ProviderWriteStream, RemoveOptions, VfsError, WriteOptions,
 };
 use rustls_platform_verifier::ConfigVerifierExt;
 use std::{collections::BTreeMap, str::FromStr, sync::Arc};
@@ -153,6 +153,14 @@ impl FileSystemProvider for FtpFileSystemProvider {
             | ProviderCapabilities::RENAME
             | ProviderCapabilities::MOVE
             | ProviderCapabilities::DELETE
+    }
+    /// FTP/FTPS has no native change-notification mechanism (task 0106
+    /// deliberately does not fake `WATCH`); `fm-application`'s directory
+    /// service instead polls `list` conservatively (task 0109).
+    fn change_tracking(&self) -> ChangeTracking {
+        ChangeTracking::Poll {
+            interval: CONSERVATIVE_POLL_INTERVAL,
+        }
     }
     async fn list(
         &self,

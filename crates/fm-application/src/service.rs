@@ -16,7 +16,7 @@ use fm_comparison::{
 use fm_connections::{ConnectionService, JsonFileConnectionRepository};
 use fm_credentials::{CredentialStore, InMemoryCredentialStore, SessionCredentialStore};
 use fm_domain::OperationId;
-use fm_domain::{ActionId, DirectorySnapshot, EntryId, EntryMetadata, Location};
+use fm_domain::{ActionId, DirectorySnapshot, EntryId, EntryMetadata, Location, PaneId};
 use fm_events::{
     BackendEventPayload, ConflictPolicyPayload, EntryRefPayload, EventAudience, EventBus,
     NotificationLevelPayload, NotificationPayload, OperationKindPayload, OperationPayload,
@@ -41,11 +41,11 @@ use fm_transport_dto::{
     OperationProgressDto, OperationStateDto, PlatformKindDto, PluginDescriptorDto,
     PluginLogEntryDto, ReadFileRangeRequestDto, ReadFileRangeResponseDto,
     ResolveOperationConflictRequestDto, RuntimeCapabilitiesDto, RuntimeKindDto,
-    SearchInFileMatchDto, SearchInFileRequestDto, SearchInFileResponseDto, SettingsDto,
-    SizeFormatDto, StartComparisonRequestDto, StartComparisonResponseDto, StartOperationRequestDto,
-    StartSearchRequestDto, StartSearchResponseDto, SyncActionDto, SyncModeDto, SyncPlanDto,
-    SyncPlanItemDto, ThemeDto, UpdateConnectionRequestDto, VolumeCapacityDto, WorkspaceCommandDto,
-    WorkspaceDto, WorkspaceSummaryDto,
+    SearchInFileMatchDto, SearchInFileRequestDto, SearchInFileResponseDto, SetPaneActivityRequest,
+    SettingsDto, SizeFormatDto, StartComparisonRequestDto, StartComparisonResponseDto,
+    StartOperationRequestDto, StartSearchRequestDto, StartSearchResponseDto, SyncActionDto,
+    SyncModeDto, SyncPlanDto, SyncPlanItemDto, ThemeDto, UpdateConnectionRequestDto,
+    VolumeCapacityDto, WorkspaceCommandDto, WorkspaceDto, WorkspaceSummaryDto,
 };
 use fm_vfs::{EntryRef, ProviderCapabilities, ProviderReadStream, ProviderRegistry};
 use fm_vfs_local::LocalFileSystemProvider;
@@ -946,6 +946,18 @@ impl FileManagerService {
     ) -> Result<DirectorySnapshotDto, ApplicationError> {
         let snapshot = self.directories.navigate(request).await?;
         Ok(self.enrich_snapshot(snapshot).await)
+    }
+
+    /// Marks whether a pane is currently in the foreground, so a
+    /// poll-tracked directory watch can poll less often while backgrounded
+    /// (task 0109).
+    pub async fn set_pane_activity(
+        &self,
+        request: SetPaneActivityRequest,
+    ) -> Result<(), ApplicationError> {
+        self.directories
+            .set_pane_activity(PaneId::from(request.pane_id), request.active)
+            .await
     }
 
     /// Converts a domain snapshot to its wire DTO, attaching the backing

@@ -13,8 +13,8 @@ use fm_ssh::{
     SshConnectionParameters, SshCredential, SshHostKeyPolicy,
 };
 use fm_vfs::{
-    EntryRef, FileSystemProvider, ListOptions, ProviderCapabilities, RemoveOptions, VfsError,
-    WriteOptions,
+    CONSERVATIVE_POLL_INTERVAL, ChangeTracking, EntryRef, FileSystemProvider, ListOptions,
+    ProviderCapabilities, RemoveOptions, VfsError, WriteOptions,
 };
 use fm_vfs_sftp::{SftpFileSystemProvider, SshConnectionResolver};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -138,6 +138,18 @@ async fn id_and_capabilities_are_reported_accurately() {
             "unexpectedly advertised {unexpected:?}"
         );
     }
+}
+
+#[tokio::test]
+async fn change_tracking_reports_conservative_polling_rather_than_the_native_watch_default() {
+    let (provider, _fixture) = provider_and_fixture().await;
+
+    assert_eq!(
+        provider.change_tracking(),
+        ChangeTracking::Poll {
+            interval: CONSERVATIVE_POLL_INTERVAL
+        }
+    );
 }
 
 #[tokio::test]

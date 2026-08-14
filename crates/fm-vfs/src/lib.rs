@@ -6,6 +6,7 @@
 //! than failing at call time.
 
 mod capabilities;
+mod change_tracking;
 mod content;
 mod error;
 mod provider;
@@ -13,6 +14,7 @@ mod registry;
 mod types;
 
 pub use capabilities::ProviderCapabilities;
+pub use change_tracking::{CONSERVATIVE_POLL_INTERVAL, ChangeTracking};
 pub use content::{
     ContentMatch, ContentQuery, ContentQueryError, ContentSearchOutcome, looks_like_binary,
     search_content,

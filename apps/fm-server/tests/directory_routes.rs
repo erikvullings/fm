@@ -105,6 +105,45 @@ async fn directory_errors_use_stable_sanitized_application_error_dtos() {
     );
 }
 
+#[tokio::test]
+async fn set_pane_activity_endpoint_accepts_a_known_pane_and_rejects_an_unknown_one() {
+    let root = tempfile::tempdir().expect("must create a temp directory");
+    let server = TestServer::spawn().await;
+    let client = reqwest::Client::new();
+    let workspace_id = Uuid::new_v4();
+    let pane_id = Uuid::new_v4();
+
+    client
+        .post(format!("{}/api/v1/directories/list", server.base_url))
+        .json(&json!({
+            "workspaceId": workspace_id,
+            "paneId": pane_id,
+            "requestId": Uuid::new_v4(),
+            "location": location_json(root.path()),
+        }))
+        .send()
+        .await
+        .expect("request must succeed");
+
+    let response = client
+        .post(format!("{}/api/v1/directories/activity", server.base_url))
+        .json(&json!({ "paneId": pane_id, "active": false }))
+        .send()
+        .await
+        .expect("request must succeed");
+    assert_eq!(response.status(), reqwest::StatusCode::NO_CONTENT);
+
+    let response = client
+        .post(format!("{}/api/v1/directories/activity", server.base_url))
+        .json(&json!({ "paneId": Uuid::new_v4(), "active": true }))
+        .send()
+        .await
+        .expect("request must succeed");
+    assert_eq!(response.status(), reqwest::StatusCode::NOT_FOUND);
+    let body: Value = response.json().await.expect("body must be JSON");
+    assert_eq!(body["code"], "notFound");
+}
+
 #[test]
 fn directory_openapi_uses_the_required_stable_operation_ids() {
     let document = fm_server::openapi_document();
@@ -113,6 +152,7 @@ fn directory_openapi_uses_the_required_stable_operation_ids() {
         ("/api/v1/directories/refresh", "refreshDirectory"),
         ("/api/v1/navigation/open", "navigatePane"),
         ("/api/v1/entries/metadata", "getEntryMetadata"),
+        ("/api/v1/directories/activity", "setPaneActivity"),
     ];
 
     for (path, operation_id) in expected {

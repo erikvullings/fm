@@ -3,7 +3,7 @@ use fm_domain::{EntryMetadata, EntrySummary, Location, ProviderId};
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    CopyCommitOptions, DirectoryPage, EntryRef, ListOptions, ProviderCapabilities,
+    ChangeTracking, CopyCommitOptions, DirectoryPage, EntryRef, ListOptions, ProviderCapabilities,
     ProviderChangeStream, ProviderReadStream, ProviderWriteStream, RemoveOptions, VfsError,
     WriteOptions,
 };
@@ -25,6 +25,23 @@ pub trait FileSystemProvider: Send + Sync {
     /// different support levels. Providers with uniform behavior inherit the static result.
     fn capabilities_for(&self, _location: &Location) -> Result<ProviderCapabilities, VfsError> {
         Ok(self.capabilities())
+    }
+
+    /// Reports how this provider's directory contents can be tracked for
+    /// external changes (task 0109).
+    ///
+    /// The default derives a [`ChangeTracking`] from [`Self::capabilities`]:
+    /// providers advertising [`ProviderCapabilities::WATCH`] are assumed to
+    /// stream real native events through [`Self::watch`], everything else is
+    /// [`ChangeTracking::Unsupported`]. Providers whose [`Self::watch`] is
+    /// backed by a remote delta/sync-token API, or that only support
+    /// conservative polling, must override this.
+    fn change_tracking(&self) -> ChangeTracking {
+        if self.capabilities().contains(ProviderCapabilities::WATCH) {
+            ChangeTracking::NativeWatch
+        } else {
+            ChangeTracking::Unsupported
+        }
     }
 
     /// Lists one page of a directory.

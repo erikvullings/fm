@@ -72,7 +72,9 @@ pub use plugin::{
     PluginLogEntryDto, PluginPermissionsDto,
 };
 pub use redaction::{redact, redact_absolute_paths, redact_path};
-pub use requests::{EntryMetadataRequest, ListDirectoryRequest, NavigateRequest};
+pub use requests::{
+    EntryMetadataRequest, ListDirectoryRequest, NavigateRequest, SetPaneActivityRequest,
+};
 pub use runtime::{PlatformKindDto, RuntimeCapabilitiesDto, RuntimeKindDto};
 pub use search::{StartSearchRequestDto, StartSearchResponseDto};
 pub use settings::{

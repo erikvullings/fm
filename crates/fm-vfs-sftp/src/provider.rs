@@ -9,7 +9,11 @@
 //! limited/unsupported" for SFTP, and no clean, portable SFTPv3 primitive
 //! exists for it. `TRASH` is left unsupported ("generally no"). `WATCH` has
 //! no default and is implemented to always report unsupported (spec §6.6
-//! "no native watch"; real polling is task 0109's job). `RANDOM_ACCESS`,
+//! "no native watch"); instead, [`FileSystemProvider::change_tracking`] is
+//! overridden to [`fm_vfs::ChangeTracking::Poll`] at
+//! [`fm_vfs::CONSERVATIVE_POLL_INTERVAL`], so `fm-application`'s directory
+//! service polls this provider's `list` conservatively rather than treating
+//! it as untracked (task 0109). `RANDOM_ACCESS`,
 //! `SET_TIMESTAMPS`, `SET_PERMISSIONS` and `CHECKSUM` are left unset: SFTPv3
 //! technically supports seeking/`fsetstat`, but nothing in this task's
 //! acceptance criteria needs them, and advertising a capability this
@@ -45,9 +49,9 @@ use fm_domain::{
 };
 use fm_ssh::{SshConnectionManager, SshConnectionParameters, SshError};
 use fm_vfs::{
-    CopyCommitOptions, DirectoryPage, EntryRef, FileSystemProvider, ListOptions,
-    ProviderCapabilities, ProviderChangeStream, ProviderReadStream, ProviderWriteStream,
-    RemoveOptions, VfsError, WriteOptions,
+    CONSERVATIVE_POLL_INTERVAL, ChangeTracking, CopyCommitOptions, DirectoryPage, EntryRef,
+    FileSystemProvider, ListOptions, ProviderCapabilities, ProviderChangeStream,
+    ProviderReadStream, ProviderWriteStream, RemoveOptions, VfsError, WriteOptions,
 };
 use futures::future::BoxFuture;
 use russh_sftp::client::SftpSession;
@@ -172,6 +176,12 @@ impl FileSystemProvider for SftpFileSystemProvider {
             | ProviderCapabilities::RENAME
             | ProviderCapabilities::MOVE
             | ProviderCapabilities::DELETE
+    }
+
+    fn change_tracking(&self) -> ChangeTracking {
+        ChangeTracking::Poll {
+            interval: CONSERVATIVE_POLL_INTERVAL,
+        }
     }
 
     async fn list(

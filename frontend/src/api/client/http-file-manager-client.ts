@@ -35,6 +35,7 @@ import type {
   SaveEditableFileRequest,
   SearchInFileRequest,
   SearchInFileResult,
+  SetPaneActivityRequest,
   Settings,
   StartComparisonRequest,
   StartComparisonResult,
@@ -82,6 +83,7 @@ import {
   resumeOperation as requestOperationResume,
   startOperation as requestOperationStart,
   listOperations as requestOperations,
+  setPaneActivity as requestPaneActivity,
   disablePlugin as requestPluginDisable,
   enablePlugin as requestPluginEnable,
   getPluginIconThemeAsset as requestPluginIconThemeAsset,
@@ -323,6 +325,16 @@ export class HttpFileManagerClient implements FileManagerClient {
       throw new Error(`Unexpected getEntryMetadata response status: ${response.status}`);
     }
     return entryMetadataFromDto(response.data);
+  }
+
+  async setPaneActivity(request: SetPaneActivityRequest, signal?: AbortSignal): Promise<void> {
+    const response = await requestPaneActivity(
+      request,
+      signal !== undefined ? { signal } : undefined,
+    );
+    if (response.status !== 204) {
+      throw new Error(`Unexpected setPaneActivity response status: ${response.status}`);
+    }
   }
 
   async readFileRange(

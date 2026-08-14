@@ -10,7 +10,10 @@ use std::{
 
 use async_trait::async_trait;
 use fm_domain::Location;
-use fm_vfs::{EntryRef, FileSystemProvider, ListOptions, ProviderCapabilities, VfsError};
+use fm_vfs::{
+    CONSERVATIVE_POLL_INTERVAL, ChangeTracking, EntryRef, FileSystemProvider, ListOptions,
+    ProviderCapabilities, VfsError,
+};
 use fm_vfs_ftp::{FtpConnectionParameters, FtpConnectionResolver, FtpFileSystemProvider};
 use tokio::{
     io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader},
@@ -284,6 +287,16 @@ fn reports_only_implemented_ftp_capabilities() {
     ] {
         assert!(!capabilities.contains(unsupported));
     }
+}
+
+#[test]
+fn change_tracking_reports_conservative_polling_rather_than_the_native_watch_default() {
+    assert_eq!(
+        provider(false).change_tracking(),
+        ChangeTracking::Poll {
+            interval: CONSERVATIVE_POLL_INTERVAL
+        }
+    );
 }
 
 #[tokio::test]

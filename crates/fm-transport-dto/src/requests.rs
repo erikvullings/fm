@@ -98,6 +98,23 @@ pub struct EntryMetadataRequest {
     pub location: LocationDto,
 }
 
+/// Marks whether a pane is currently in the foreground, so a poll-tracked
+/// directory watch (SFTP, FTP, ...) can poll less often while backgrounded
+/// (`POST /api/v1/directories/activity`, task 0109). Has no effect on a
+/// native/delta-API watch, which is push-based rather than polled.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(example = json!({
+    "paneId": "5b1b6b1e-9b1b-4b1b-8b1b-1b1b1b1b1b1b",
+    "active": false
+}))]
+pub struct SetPaneActivityRequest {
+    /// The pane whose foreground/background state changed.
+    pub pane_id: Uuid,
+    /// Whether the pane is currently in the foreground.
+    pub active: bool,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -178,6 +195,20 @@ mod tests {
         let json = serde_json::to_string(&request).expect("serialization must succeed");
         assert!(json.contains("\"entryId\""));
         let parsed: EntryMetadataRequest =
+            serde_json::from_str(&json).expect("deserialization must succeed");
+        assert_eq!(request, parsed);
+    }
+
+    #[test]
+    fn set_pane_activity_request_round_trips_and_uses_camel_case_field_names() {
+        let request = SetPaneActivityRequest {
+            pane_id: Uuid::new_v4(),
+            active: false,
+        };
+        let json = serde_json::to_string(&request).expect("serialization must succeed");
+        assert!(json.contains("\"paneId\""));
+        assert!(json.contains("\"active\""));
+        let parsed: SetPaneActivityRequest =
             serde_json::from_str(&json).expect("deserialization must succeed");
         assert_eq!(request, parsed);
     }

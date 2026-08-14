@@ -418,8 +418,17 @@ persist it before a later connect can succeed - accepted fingerprints are stored
 known-hosts file beside the connection profiles. Clicking a connected server under `SERVERS` opens
 its root in the active pane; `local ↔ SFTP` and same-connection `SFTP ↔ SFTP` copies/moves stream
 through the same operation engine as local files, including server-native rename when source and
-destination share a connection. FTP/FTPS and native cloud/SMB providers remain unimplemented; their
-`connect`/`test` still validate configuration and credential only, without a live handshake.
+destination share a connection. FTP/FTPS is implemented by `fm-vfs-ftp` (passive FTP and explicit
+FTPS, registered under the `ftp` scheme); plain FTP is labelled insecure in the connection editor.
+Native cloud/SMB providers remain unimplemented; their `connect`/`test` still validate configuration
+and credential only, without a live handshake.
+
+Neither SFTP nor FTP/FTPS has a native change-notification API, so unlike the local provider's real
+filesystem watch, `fm-application`'s directory service keeps an open SFTP/FTP directory fresh by
+conservatively polling it (every 20s, backing off further on repeated failures) and diffing the
+result - see `docs/architecture/filesystem-watching.md` for the full `ChangeTracking` design. A
+backgrounded pane can be marked inactive (`POST /api/v1/directories/activity`) to poll such a
+location four times less often.
 
 Mutating filesystem work is represented by typed jobs in `fm-operations`. Its bounded scheduler
 runs a planning phase before execution, publishes lifecycle and coalesced progress events through

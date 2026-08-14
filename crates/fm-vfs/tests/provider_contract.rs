@@ -5,7 +5,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use fm_domain::{EntryMetadata, Location, ProviderId};
 use fm_vfs::{
-    DirectoryPage, EntryRef, FileSystemProvider, ListOptions, ProviderCapabilities,
+    ChangeTracking, DirectoryPage, EntryRef, FileSystemProvider, ListOptions, ProviderCapabilities,
     ProviderChangeStream, ProviderReadStream, ProviderRegistry, ProviderWriteStream, RemoveOptions,
     VfsError, WriteOptions,
 };
@@ -196,6 +196,26 @@ fn every_vfs_error_has_a_stable_machine_readable_code() {
             "invalidLocation",
         ]
     );
+}
+
+#[test]
+fn a_provider_without_the_watch_capability_reports_unsupported_change_tracking_by_default() {
+    let provider = StubProvider {
+        id: ProviderId::new("search"),
+        capabilities: ProviderCapabilities::LIST,
+    };
+
+    assert_eq!(provider.change_tracking(), ChangeTracking::Unsupported);
+}
+
+#[test]
+fn a_provider_advertising_the_watch_capability_reports_native_watch_change_tracking_by_default() {
+    let provider = StubProvider {
+        id: ProviderId::new("local"),
+        capabilities: ProviderCapabilities::LIST | ProviderCapabilities::WATCH,
+    };
+
+    assert_eq!(provider.change_tracking(), ChangeTracking::NativeWatch);
 }
 
 #[test]

@@ -43,6 +43,7 @@ import type {
   SearchInFileMatch,
   SearchInFileRequest,
   SearchInFileResult,
+  SetPaneActivityRequest,
   Settings,
   StartComparisonRequest,
   StartComparisonResult,
@@ -94,6 +95,7 @@ export type MockClientMethod =
   | 'navigatePane'
   | 'listDirectory'
   | 'getEntryMetadata'
+  | 'setPaneActivity'
   | 'getFileIcon'
   | 'cacheArchivePassword'
   | 'readFileRange'
@@ -845,6 +847,10 @@ export class MockFileManagerClient implements FileManagerClient {
       checksums: {},
       pluginFields: {},
     }));
+  }
+
+  setPaneActivity(_request: SetPaneActivityRequest, signal?: AbortSignal): Promise<void> {
+    return this.perform('setPaneActivity', signal, () => undefined);
   }
 
   readFileRange(request: ReadFileRangeRequest, signal?: AbortSignal): Promise<FileRangeChunk> {

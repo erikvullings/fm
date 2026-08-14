@@ -206,6 +206,7 @@ export * from './searchInFileRequestDto.ts';
 export * from './searchInFileRequestDto';
 export * from './searchInFileResponseDto.ts';
 export * from './searchInFileResponseDto';
+export * from './setPaneActivityRequest.ts';
 export * from './settingsDto.ts';
 export * from './settingsDto';
 export * from './settingsDtoKeybindings.ts';
