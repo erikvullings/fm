@@ -17,41 +17,66 @@ Each row below is independently schedulable; split into its own task file when p
 `Depends on: 0129` if the breakdown is kept as a parent/subtask structure, or just reference this
 file's context if promoted directly.
 
-## Candidate features
+**2026-08-14 re-triage:** re-checked every remaining row against the current codebase (a lot has
+shipped since the initial pass — 0075, 0126, 0128 all landed, and new tasks 0133/0134 were created
+in a separate feature-gap review). Findings below; the candidate table now only lists rows that are
+still genuinely open. One row (Alt+F1/Alt+F2) was cheap enough to implement immediately during this
+review — see Agent Notes.
 
-**Corrections from initial triage:** two rows originally listed here were wrong — both features
-already exist or are already tracked elsewhere in `TASKS/`:
-- **Ctrl+M (Multi Rename Tool)** — already implemented, see [0072](0072-multi-rename.md) (done).
-  Triggered via F2 with more than one entry selected rather than a dedicated Ctrl+M chord. Moved to
-  [0128](0128-total-commander-shortcuts-quick-wins.md) as an "already implemented" entry; binding
-  Ctrl+M as an additional alias to the same dialog is a cheap addition if wanted, also tracked in 0128.
-- **Shift+F2 (Compare file lists)** — already tracked as its own open task, see
-  [0075](0075-directory-comparison-and-synchronization.md) (directory comparison and
-  synchronization). Not duplicated here; 0075 should also register the Shift+F2 shortcut once
-  implemented.
+## Resolved this review (2026-08-14)
+
+- **Alt+F1 / Alt+F2 (switch panel to a different drive)** — **implemented**. fm already had a
+  per-favourite quick-jump action (`core.favourite.${index}`, dispatched in
+  `frontend/src/features/keybindings/global-keydown-handler.ts`) wired to the favourites menu
+  (0070), but it shipped with `defaultShortcuts: []` — dispatchable and user-rebindable, but nothing
+  bound out of the box. Added default `Ctrl/Cmd+1`..`Ctrl/Cmd+9` bindings for the first nine
+  favourites in `frontend/src/app/app-shell.ts` (`favouriteActions()`). This is fm's natural
+  equivalent of TC's drive-switch shortcuts — jump straight to a saved location instead of a raw
+  drive letter, since fm has no drive concept. Original row is no longer accurate ("needs UX design
+  before implementation, not just a shortcut binding") — the UX already existed, it was one line.
+- **Ctrl+I (sync current panel's path to the other panel)** — **already covered**, confirmed. 0128
+  added `core.duplicateLocationToOtherPane` bound to `Ctrl+Left`/`Ctrl+Right`
+  (`crates/fm-application/src/action.rs`), which is exactly TC's Ctrl+I behavior. No separate
+  binding needed; a literal `Ctrl+I` alias to the same action would be a trivial addition if wanted,
+  but isn't necessary for parity.
+- **Shift+F2 (compare file lists)** — **already covered**, this row was stale. The "Corrections from
+  initial triage" note below already said this was tracked as 0075 (directory comparison and
+  synchronization, done) and shouldn't be duplicated here, but an old table row survived anyway.
+  Removed.
+- **Alt+F8 (command-line history dropdown)** — **declined, superseded**. 0126 (embedded terminal
+  drawer, done) ships a real PTY-backed terminal per location with full native shell history —
+  strictly more capable than a TC-style command-line-only history dropdown. No separate feature
+  needed.
+- **Ctrl+Shift+F1 (thumbnails view)** and the **Ctrl+F1/Ctrl+F2 (brief/full view mode)** cluster —
+  **merged into [0134](0134-thumbnails-and-grid-view.md)**, a new task created in a broader
+  feature-gap review that covers thumbnail generation/caching and a grid/icon view mode. 0134's
+  Implementation Notes explicitly flag that a general view-mode switch (not just grid/icon) is worth
+  building as the foundation, so brief/full-detail modes remain buildable later on the same
+  architecture even though 0134 only ships grid/icon view itself.
+- **F9 / bare F10 (pull-down menu bar)** — **merged into [0133](0133-native-menu-bar-content.md)**.
+  The original row asked "does fm want a menu bar, or is this TC convention obsolete?" as an open
+  design question. Answer: yes, but as the OS-native menu bar (macOS/Windows), not an in-app
+  pull-down replica — 0133 populates the currently-empty `install_native_menu` hook (0058/0059/0131)
+  with real File/Edit/View/Go/Window/Help content. That supersedes the TC-style in-app pull-down
+  menu; no separate in-app widget is planned.
+
+## Candidate features still open
 
 | TC shortcut(s) | TC behavior | What's missing in fm | Notes |
 |---|---|---|---|
-| Ctrl+Q | Quick View panel (live inline preview) | A preview pane rendered alongside the file list, updating as the cursor moves | **Declined by prior product direction**, not just "missing": [0071](0071-file-preview-architecture.md)'s Agent Notes record that cursor-driven automatic preview loading was explicitly reversed on 2026-08-04 (it fetched bytes for every entry the cursor passed over). Preview is intentionally opt-in via F3 only (0088). Re-adding a TC-style auto-follow Quick View would need that product decision revisited first — don't implement this row without re-confirming that. |
-| Alt+F10 / Ctrl+F8 | Directory tree dialog / sidebar tree view | No tree-view UI exists; only flat pane listings | Moderate-to-large: tree component, lazy expansion, sync with active pane location. |
-| Alt+F8 | Command-line history dropdown | fm has no built-in command-line/console input at all | Would need an actual command bar first, not just a shortcut; likely superseded by the existing [embedded terminal drawer](0126-embedded-terminal-drawer.md) — evaluate whether a real command bar is still wanted or whether the terminal drawer already fills this role. |
-| Alt+F1 / Alt+F2 | Switch left/right panel to a different drive letter | fm has no "drive" concept (VFS locations/connections instead) | Nearest equivalent would be a quick-switch menu over configured connections/roots per pane — needs UX design before implementation, not just a shortcut binding. |
-| Ctrl+I | Switch current directory to the path shown in the opposite panel | Overlaps with the cheap Ctrl+Left/Right "duplicate path" addition in [0128](0128-total-commander-shortcuts-quick-wins.md) | Revisit after 0128 lands — may turn out to already be covered and this row can be dropped. |
-| Alt+Enter | File/folder Properties dialog | No properties dialog exists; only inline status-bar metadata | Needs a new modal showing size, dates, permissions, per-provider metadata (varies a lot across VFS providers — local/SFTP/FTP/S3/etc.). |
-| Shift+F1 | Custom columns view menu | fm's directory table has a fixed column set; no per-view column picker | Needs a column-configuration UI plus persisted per-pane (or global) column layout. |
-| Shift+F2 | Compare file lists (diff two panes, highlight differences) | No directory-comparison logic exists | Needs a comparison algorithm (by name/size/date) plus highlighting in both panes' tables. |
+| Ctrl+Q | Quick View panel (live inline preview) | A preview pane rendered alongside the file list, updating as the cursor moves | **Declined by prior product direction**, not just "missing": [0071](0071-file-preview-architecture.md)'s Agent Notes record that cursor-driven automatic preview loading was explicitly reversed on 2026-08-04 (it fetched bytes for every entry the cursor passed over). Preview is intentionally opt-in via F3 only (0088). Re-adding a TC-style auto-follow Quick View would need that product decision revisited first — don't implement this row without re-confirming that. (0071 has since gained a related but distinct feature: pressing the preview key on a *directory* shows its recursive size, TC's other Space-bar behavior — see 0071.) |
+| Alt+F10 / Ctrl+F8 | Directory tree dialog / sidebar tree view | No tree-view UI exists; only flat pane listings | Moderate-to-large: tree component, lazy expansion, sync with active pane location. Still confirmed missing as of 2026-08-14 (no tree/sidebar component found in `frontend/src`). |
+| Alt+Enter | File/folder Properties dialog | No properties dialog exists; only inline status-bar metadata | Confirmed still missing. Needs a new modal showing size, dates, permissions, per-provider metadata (varies a lot across VFS providers — local/SFTP/FTP/S3/etc.). |
+| Shift+F1 | Custom columns view menu | fm's directory table has a fixed column set; no per-view column picker | Confirmed still missing. Needs a column-configuration UI plus persisted per-pane (or global) column layout. |
 | Shift+F3 | List only the file under cursor when multiple files are selected | The Lister viewer (F3) always targets the cursor entry; TC's nuance is about selection vs cursor interaction when multiple are selected | Small viewer-behavior change, but grouped here because it's viewer-internals work, not a pure keybinding addition. |
-| Shift+Ctrl+F5 | Create shortcuts/symlinks of selected files | No shortcut/symlink-creation operation exists | Platform-asymmetric: Windows `.lnk` creation is nontrivial; POSIX symlinks are simpler. Needs a new operation type in the operation planner plus per-platform backend support. |
+| Shift+Ctrl+F5 | Create shortcuts/symlinks of selected files | No shortcut/symlink-creation operation exists | Confirmed still missing (existing `symlink` handling in `operation_planner.rs` only covers copy-time follow-vs-copy-link policy, not creating new links). Platform-asymmetric: Windows `.lnk` creation is nontrivial; POSIX symlinks are simpler. Needs a new operation type in the operation planner plus per-platform backend support. |
 | Ctrl+Z (file-list context) | Edit a per-file "comment" (TC's `descript.ion` sidecar file convention) | fm has no file-comment/metadata-sidecar feature | Niche; would need a new metadata store and UI surface, low priority. |
-| Ctrl+Shift+F1 | Thumbnails view | No thumbnail generation/caching exists | Needs image (and possibly video/PDF) thumbnail generation, caching, and a grid/thumbnail pane layout — this is a substantial feature on its own. |
-| Ctrl+F1 / Ctrl+F2 | Brief view / full-details view (pane layout modes) | Pane only renders one table layout today | Needs a view-mode architecture (layout switch per pane) before any of the F1/F2/thumbnail view modes can exist; do this one first if picking up the view-mode cluster. |
 | Ctrl+Shift+F2 | "Comments" column view | Depends on the Ctrl+Z file-comment feature above | Low priority; only meaningful once file comments exist. |
 | Ctrl+F11 | Filter to show only executables | Cross-platform "executable" isn't well-defined (macOS `.app` bundles are directories, Linux relies on the exec bit, Windows on `.exe`) | Needs a platform-aware predicate; low value, evaluate before building. |
-| Ctrl+F12 | User-defined, savable filter presets | fm's Quick Filter (Ctrl+F) is ad hoc/session-only, no saved presets | Needs a small persistence layer (named filter presets in settings) plus a management UI. |
+| Ctrl+F12 | User-defined, savable filter presets | fm's Quick Filter (Ctrl+F) is ad hoc/session-only, no saved presets | Confirmed still missing (no preset/history concept in 0067). Needs a small persistence layer (named filter presets in settings) plus a management UI. |
 | Ctrl+F9 | Print the file under cursor | No print integration | Low value for a modern file manager; consider explicitly declining rather than implementing. |
-| Shift+Esc | Minimize the app to the system tray | fm has no system-tray integration | Needs Tauri tray-icon setup (icon, context menu, restore-on-click) — a genuine new platform integration, desktop-only. |
-| F9 / bare F10 | Activate the classic pull-down menu bar | fm has no traditional menu-bar UI at all — the command palette + context menus fill this role | Open design question: does fm want a menu bar, or is this TC convention obsolete for this app? Recommend explicitly deciding "not applicable" rather than treating as a backlog item, unless a menu bar is independently wanted. |
-| Ctrl+Shift+F / Ctrl+Shift+M | Disconnect from FTP / toggle FTP transfer mode (ASCII vs binary) | FTP is a VFS provider with no dedicated connect/disconnect or transfer-mode actions bound to keys | Binary vs ASCII transfer mode is a legacy FTP concept fm's VFS abstraction doesn't currently model; would need provider-level support before any shortcut makes sense. |
+| Shift+Esc | Minimize the app to the system tray | fm has no system-tray integration | Confirmed still missing (no tray code in `apps/fm-desktop`). Needs Tauri tray-icon setup (icon, context menu, restore-on-click) — a genuine new platform integration, desktop-only. |
+| Ctrl+Shift+F / Ctrl+Shift+M | Disconnect from FTP / toggle FTP transfer mode (ASCII vs binary) | FTP is a VFS provider with no dedicated connect/disconnect or transfer-mode actions bound to keys | Confirmed still missing (no ASCII/binary transfer-mode code in `crates/fm-vfs-ftp`). Binary vs ASCII transfer mode is a legacy FTP concept fm's VFS abstraction doesn't currently model; would need provider-level support before any shortcut makes sense. |
 
 ## Acceptance Criteria
 
@@ -59,18 +84,25 @@ This is a tracking/scoping task, not an implementation task — "done" means eac
 triaged into one of: (a) split into its own numbered task with `Depends on: 0129` noted where
 relevant, (b) explicitly declined with a one-line reason recorded in this file's Agent Notes
 (e.g. "Ctrl+F9 print — declined, low value"), or (c) merged into an existing task (e.g. the
-thumbnails-view work might fold into a future gallery/preview task).
+thumbnails-view work folded into 0134). Several rows above are already effectively triaged (b) via
+their "Notes" column; what remains is a product decision on the rest (see Agent Notes) — freeze
+some in the new Freezer section of `TASKS/README.md`, split others into real tasks, or leave open.
 
 ## Implementation Notes
 
-- Several rows cluster naturally and should probably be scoped together rather than one-shortcut-
-  one-task: the "view mode" cluster (Ctrl+F1/Ctrl+F2/Ctrl+Shift+F1 thumbnails), the "FTP session"
-  cluster (Ctrl+Shift+F/Ctrl+Shift+M), and the "file comments" cluster (Ctrl+Z/Ctrl+Shift+F2).
-- Check [0118](0118-integrate-parallel-disk-usage-windirstat.md) before scoping the Alt+F10/Ctrl+F8
-  tree-view work — a treemap/tree sidebar component built there may be directly reusable.
-- Check [0126](0126-embedded-terminal-drawer.md) (done) before scoping Alt+F8 command-line
-  history — the terminal drawer may already satisfy the underlying need TC's command line serves.
+- The "FTP session" cluster (Ctrl+Shift+F/Ctrl+Shift+M) and the "file comments" cluster (Ctrl+Z/
+  Ctrl+Shift+F2) still cluster naturally if picked up.
+- Check [0134](0134-thumbnails-and-grid-view.md) before scoping the Alt+F10/Ctrl+F8 tree-view work —
+  it's a separate UI surface (grid/icon view vs a tree sidebar), but both touch the pane's
+  view-mode/layout question and should stay aware of each other.
 
 ## Agent Notes
 
-- (none yet)
+- 2026-08-14: Full re-triage against the current codebase (see "Resolved this review" above).
+  Implemented the Alt+F1/Alt+F2 equivalent immediately (default `Ctrl/Cmd+1..9` shortcuts on
+  existing `core.favourite.N` actions, `frontend/src/app/app-shell.ts`) since it required no new
+  architecture. Confirmed by grep that these are still genuinely missing, not just undiscovered:
+  tree/sidebar view, properties dialog, column-picker UI, symlink-creation operation, saved
+  filter presets, system tray integration, FTP ASCII/binary transfer mode. Remaining open rows are
+  a product-priority discussion, not further investigation — see conversation for the proposed
+  split between "split into its own task" vs "freezer."

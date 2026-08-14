@@ -292,7 +292,10 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
         title: `Open favourite: ${favourite.label}`,
         description: favourite.location.uri,
         category: 'navigation',
-        defaultShortcuts: [],
+        // TC-style quick-switch-to-saved-location: Ctrl/Cmd+1..9 for the first nine favourites
+        // (task 0129's Alt+F1/Alt+F2 "switch panel to a different drive" row — fm has no drive
+        // concept, but jumping to a saved favourite location is the closest equivalent).
+        defaultShortcuts: index < 9 ? [{ key: String(index + 1), ctrl: true }] : [],
         contextRequirements: {},
         source: { kind: 'core' as const },
       })),
