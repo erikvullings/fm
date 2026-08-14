@@ -137,3 +137,61 @@ This is the central architectural friction point in the Rust codebase. See `/imp
     ~1,690-line test module is the other big piece — same "move tests alongside their capability"
     approach as before, but most of what's left to extract now needs the sub-service design decided
     first, since tests for `&self` methods can't move to a module that doesn't exist yet.
+- 2026-08-14 (third pass, same session): requested final scan for anything still easy/safe before
+  starting the harder sub-service redesign. Read every remaining `impl FileManagerService` method
+  and classified each by real dependency count, rather than assuming — found five more genuinely
+  single-field, low-risk methods the first two passes missed (they weren't free functions, so
+  didn't show up in the "free function" sweep, but they don't touch `&self` state beyond one field
+  either, same risk profile):
+  - `system_locations` (only used `self.platform`) → moved into `platform_mapping.rs` as
+    `discover_system_locations(platform: Arc<dyn PlatformAdapter>)`.
+  - `runtime_capabilities` (only used `self.runtime` + `self.platform.capabilities()`) → moved as
+    `runtime_capabilities_dto(runtime, capabilities)`, taking values instead of `&self`.
+  - `read_file_range` and `search_in_file` (only used `self.providers`, ~120 lines combined,
+    including their `skip_bytes`/`MAX_RANGE_LENGTH`/`MAX_SEARCH_MATCHES` helpers) → new module
+    `crates/fm-application/src/content_streaming.rs` (166 lines), functions taking
+    `&ProviderRegistry` instead of `&self`.
+  - `enrich_snapshot`/`volume_capacity` (only used `self.platform`, ~30 lines) → `volume_capacity`
+    moved into `platform_mapping.rs`; `enrich_snapshot` itself stayed (2 lines, calls the new
+    function) since it's the one place that actually needs `self.directories`' snapshot type too.
+  - Confirmed everything else already delegating one-to-three lines to `self.workspaces`/
+    `self.connections`/`self.plugin_manager`/`self.remote_terminals`/`self.editor`/
+    `self.directories`/`self.settings`/`self.events`/`self.archive_provider` is already exactly
+    the "thin composition layer" the acceptance criteria wants — spot-checked every one (not
+    assumed from the method name) and found no hidden logic worth extracting further there.
+  - `service.rs`: 3,160 → 2,957 lines this pass. **Session total: 3,836 → 2,957 lines (~22.9%) across
+    three verified passes and six new modules** (`operation_history`, `settings_mapping`,
+    `comparison_mapping`, `operation_requests`, `platform_mapping`, `content_streaming`).
+  - Verified identically to the prior two passes: zero warnings, clippy `-D warnings` clean, fmt
+    clean, `cargo test -p fm-application --lib` 183/183 (same count throughout all three passes —
+    no coverage lost across the whole session), full integration suite green, workspace build
+    clean.
+  - **Conclusion of this "easy/safe" sweep: there is nothing left in `service.rs` of meaningful size
+    that is a low-risk extraction.** Everything remaining beyond thin delegations falls into four
+    named clusters, all requiring real sub-service design (not mechanical moves) because each is
+    genuinely tied to multiple fields and/or calls back into other facade methods:
+    1. **Constructors** (`new`, `with_event_bus`, `with_platform_adapter`,
+       `with_platform_adapter_and_credential_store`, ~230 lines) — wires every field on the struct;
+       this is inherently facade-shaped work, not a candidate for extraction at all (it's the
+       composition root the whole task is trying to shrink *around*, not a capability to pull out).
+    2. **Operations management** (`start_operation`, `list_operations`, `list_operation_page`,
+       `get_operation`, `cancel_operation`, `pause_operation`/`resume_operation`,
+       `resolve_operation_conflict`, `force_cross_volume_moves_for_tests`, ~165 lines) — touches
+       `operations` (Scheduler), `operation_idempotency`, `operation_history`, `planner`, and
+       `force_cross_volume_moves`, plus `cancel_operation` falls back to `search`/`comparison` for
+       ids the scheduler doesn't recognize. A genuine `OperationsCoordinator` sub-service candidate.
+    3. **Search/comparison coordination** (`start_search`, `cancel_search`, `start_comparison`,
+       `cancel_comparison`, `get_comparison_page`, `generate_sync_plan`, `apply_sync_plan`,
+       ~230–250 lines) — touches `search`, `comparison`, `comparison_store`, `events`, and
+       `apply_sync_plan` calls back into `self.start_operation`, so it can't be fully independent
+       of whatever holds operations submission.
+    4. **Action invocation** (`invoke_action`, `invoke_platform_action`, ~130 lines) — touches
+       `plugin_manager`, `actions`, `platform`, `settings`, and calls back into
+       `self.start_operation` for mutating actions. The most central, most coupled cluster.
+  - These four total ~750–775 lines of real logic, plus the ~230-line constructor block that
+    structurally can't shrink, plus the ~1,690-line test module (which can only shrink once the
+    sub-services above exist for their tests to move alongside). That's the real shape of what's
+    left: getting from ~2,957 to the ~1000-line target needs 2 (2 and 3 could plausibly merge, since
+    3's cancel/apply paths already reach into 2) or 3 new sub-service types designed with the same
+    care as `ConnectionFacade`/`PluginManager` — genuine architecture work for a dedicated session,
+    not something to rush through opportunistically.

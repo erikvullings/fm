@@ -9,6 +9,7 @@ mod action;
 mod comparison_mapping;
 mod connection_dto;
 mod connection_facade;
+mod content_streaming;
 mod directory;
 mod error;
 mod file_editor;

@@ -19,7 +19,7 @@ use fm_events::{
     OperationProgressDetails, OperationStatePayload,
 };
 use fm_operations::{ConflictResolution, Operation, Scheduler, SchedulerError};
-use fm_platform::{FallbackPlatformAdapter, PlatformAdapter, PlatformCapabilities};
+use fm_platform::{FallbackPlatformAdapter, PlatformAdapter};
 use fm_plugin_runtime::{PluginDiscovery, PluginRuntime};
 use fm_search::{SearchEngine, SearchFileSystemProvider, SearchResultsStore};
 use fm_settings::{Settings, SettingsStore};
@@ -30,15 +30,13 @@ use fm_transport_dto::{
     ListDirectoryRequest, NavigateRequest, OperationConflictPolicyDto, OperationDto,
     PluginDescriptorDto, PluginLogEntryDto, ReadFileRangeRequestDto, ReadFileRangeResponseDto,
     ResolveOperationConflictRequestDto, RuntimeCapabilitiesDto, RuntimeKindDto,
-    SearchInFileMatchDto, SearchInFileRequestDto, SearchInFileResponseDto, SetPaneActivityRequest,
-    SettingsDto, StartComparisonRequestDto, StartComparisonResponseDto, StartOperationRequestDto,
+    SearchInFileRequestDto, SearchInFileResponseDto, SetPaneActivityRequest, SettingsDto,
+    StartComparisonRequestDto, StartComparisonResponseDto, StartOperationRequestDto,
     StartSearchRequestDto, StartSearchResponseDto, SyncPlanDto, UpdateConnectionRequestDto,
-    VolumeCapacityDto, WorkspaceCommandDto, WorkspaceDto, WorkspaceSummaryDto,
+    WorkspaceCommandDto, WorkspaceDto, WorkspaceSummaryDto,
 };
-use fm_vfs::{EntryRef, ProviderCapabilities, ProviderReadStream, ProviderRegistry};
+use fm_vfs::{EntryRef, ProviderRegistry};
 use fm_vfs_local::LocalFileSystemProvider;
-use tokio::io::AsyncReadExt;
-use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 use crate::DirectoryService;
@@ -48,8 +46,9 @@ use crate::comparison_mapping::{
     sync_plan_item_dto,
 };
 use crate::connection_facade::ConnectionFacade;
+use crate::content_streaming;
 use crate::error::ApplicationError;
-use crate::file_editor::{FileEditorService, read_stream_error};
+use crate::file_editor::FileEditorService;
 use crate::operation_history::{ApplicationOperationObserver, OperationHistory, operation_dto};
 use crate::operation_planner::OperationPlanner;
 use crate::operation_requests::{
@@ -57,8 +56,8 @@ use crate::operation_requests::{
     operation_kind,
 };
 use crate::platform_mapping::{
-    PlatformActionKind, detect_platform, map_file_icon_error, map_platform_error,
-    platform_action_kind,
+    PlatformActionKind, discover_system_locations, map_file_icon_error, map_platform_error,
+    platform_action_kind, runtime_capabilities_dto, volume_capacity,
 };
 use crate::plugin_manager::PluginManager;
 use crate::remote_terminal::RemoteTerminalService;
@@ -106,35 +105,7 @@ impl FileManagerService {
     pub async fn system_locations(
         &self,
     ) -> Result<Vec<fm_transport_dto::SystemLocationDto>, ApplicationError> {
-        let platform = Arc::clone(&self.platform);
-        let discovered = tokio::task::spawn_blocking(move || platform.system_locations())
-            .await
-            .map_err(|_| ApplicationError::Internal)?
-            .map_err(|error| ApplicationError::PlatformOperationFailed(error.to_string()))?;
-        discovered
-            .into_iter()
-            .map(|location| {
-                let local = Location::from_native_path(&location.path)
-                    .map_err(|_| ApplicationError::Internal)?;
-                Ok(fm_transport_dto::SystemLocationDto {
-                    name: location.name,
-                    kind: match location.kind {
-                        fm_platform::SystemLocationKind::Cloud => {
-                            fm_transport_dto::SystemLocationKindDto::Cloud
-                        }
-                        fm_platform::SystemLocationKind::Network => {
-                            fm_transport_dto::SystemLocationKindDto::Network
-                        }
-                    },
-                    location: local.into(),
-                    provider_hint: location.provider_hint,
-                    protocol: location.protocol,
-                    server: location.server,
-                    share: location.share,
-                    read_only: location.read_only,
-                })
-            })
-            .collect()
+        discover_system_locations(Arc::clone(&self.platform)).await
     }
 
     /// Builds a service for the given host runtime, persisting workspaces
@@ -799,34 +770,11 @@ impl FileManagerService {
     /// volume's total/available capacity (task 0096) when the platform
     /// adapter and location support it.
     async fn enrich_snapshot(&self, snapshot: DirectorySnapshot) -> DirectorySnapshotDto {
-        let volume_capacity = self.volume_capacity(&snapshot.location).await;
+        let volume_capacity = volume_capacity(&self.platform, &snapshot.location).await;
         DirectorySnapshotDto {
             volume_capacity,
             ..DirectorySnapshotDto::from(snapshot)
         }
-    }
-
-    /// Reports the backing volume's total/available capacity for a location
-    /// (task 0096), or `None` when the platform adapter doesn't support it,
-    /// the location isn't a local filesystem path, or the native call fails.
-    async fn volume_capacity(&self, location: &Location) -> Option<VolumeCapacityDto> {
-        if !self
-            .platform
-            .capabilities()
-            .contains(PlatformCapabilities::VOLUME_CAPACITY)
-        {
-            return None;
-        }
-        let path = location.to_native_path().ok()?;
-        let platform = Arc::clone(&self.platform);
-        let capacity = tokio::task::spawn_blocking(move || platform.volume_capacity(&path))
-            .await
-            .ok()?
-            .ok()?;
-        Some(VolumeCapacityDto {
-            total_bytes: capacity.total_bytes,
-            available_bytes: capacity.available_bytes,
-        })
     }
 
     /// Fetches detailed metadata for one entry.
@@ -839,82 +787,11 @@ impl FileManagerService {
 
     /// Reads one bounded chunk of a file's raw bytes, for the in-app large
     /// file viewer (task 0088).
-    ///
-    /// Uses [`FileSystemProvider::read_range`] directly when the provider
-    /// advertises [`ProviderCapabilities::RANDOM_ACCESS`]; otherwise falls
-    /// back to a sequential skip-read over [`FileSystemProvider::open_read`]
-    /// (a documented reduced-capability path - only [`ProviderCapabilities::READ`]
-    /// is required in that case).
     pub async fn read_file_range(
         &self,
         request: ReadFileRangeRequestDto,
     ) -> Result<ReadFileRangeResponseDto, ApplicationError> {
-        if request.length == 0 || request.length > MAX_RANGE_LENGTH {
-            return Err(ApplicationError::InvalidRequest(format!(
-                "length must be between 1 and {MAX_RANGE_LENGTH} bytes"
-            )));
-        }
-        let location: Location = request.location.into();
-        let provider = self
-            .providers
-            .resolve(&location)
-            .map_err(ApplicationError::from)?;
-        provider
-            .capabilities_for(&location)
-            .map_err(ApplicationError::from)?
-            .require(ProviderCapabilities::READ)
-            .map_err(ApplicationError::from)?;
-        let entry = EntryRef {
-            id: EntryId::new(),
-            location: location.clone(),
-        };
-        let cancellation = CancellationToken::new();
-        let mut reader: ProviderReadStream = if provider
-            .capabilities_for(&location)
-            .map_err(ApplicationError::from)?
-            .contains(ProviderCapabilities::RANDOM_ACCESS)
-        {
-            provider
-                .read_range(
-                    &entry,
-                    request.offset,
-                    Some(request.length),
-                    cancellation.clone(),
-                )
-                .await
-                .map_err(ApplicationError::from)?
-        } else {
-            let mut sequential = provider
-                .open_read(&entry, cancellation.clone())
-                .await
-                .map_err(ApplicationError::from)?;
-            skip_bytes(&mut sequential, request.offset)
-                .await
-                .map_err(read_stream_error)?;
-            sequential
-        };
-        let mut data = vec![0_u8; request.length as usize];
-        let mut filled = 0_usize;
-        while filled < data.len() {
-            let read = reader
-                .read(&mut data[filled..])
-                .await
-                .map_err(read_stream_error)?;
-            if read == 0 {
-                break;
-            }
-            filled += read;
-        }
-        data.truncate(filled);
-        let eof = (filled as u64) < request.length;
-        let probably_binary = (request.offset == 0).then(|| fm_vfs::looks_like_binary(&data));
-        Ok(ReadFileRangeResponseDto {
-            offset: request.offset,
-            length: data.len() as u64,
-            data,
-            eof,
-            probably_binary,
-        })
+        content_streaming::read_file_range(&self.providers, request).await
     }
 
     /// Loads a complete text file only when it fits the bounded editor budget.
@@ -940,47 +817,7 @@ impl FileManagerService {
         &self,
         request: SearchInFileRequestDto,
     ) -> Result<SearchInFileResponseDto, ApplicationError> {
-        let location: Location = request.location.into();
-        let provider = self
-            .providers
-            .resolve(&location)
-            .map_err(ApplicationError::from)?;
-        provider
-            .capabilities_for(&location)
-            .map_err(ApplicationError::from)?
-            .require(ProviderCapabilities::READ)
-            .map_err(ApplicationError::from)?;
-        let entry = EntryRef {
-            id: EntryId::new(),
-            location,
-        };
-        let cancellation = CancellationToken::new();
-        let reader = provider
-            .open_read(&entry, cancellation.clone())
-            .await
-            .map_err(ApplicationError::from)?;
-        let query = fm_vfs::ContentQuery::new(
-            &request.query,
-            request.regex,
-            request.case_sensitive,
-            request.whole_word,
-        )
-        .map_err(|error| ApplicationError::InvalidRequest(error.to_string()))?;
-        let outcome = fm_vfs::search_content(reader, &query, MAX_SEARCH_MATCHES, &cancellation)
-            .await
-            .map_err(ApplicationError::from)?;
-        Ok(SearchInFileResponseDto {
-            matches: outcome
-                .matches
-                .into_iter()
-                .map(|found| SearchInFileMatchDto {
-                    line_number: found.line_number,
-                    offset: found.match_start,
-                    length: found.match_len,
-                })
-                .collect(),
-            truncated: outcome.truncated,
-        })
+        content_streaming::search_in_file(&self.providers, request).await
     }
 
     /// Starts a cancellable recursive filename search over one or more
@@ -1224,30 +1061,7 @@ impl FileManagerService {
     /// platform, so the frontend can respond to capabilities rather than
     /// detecting operating systems itself (spec §21).
     pub fn runtime_capabilities(&self) -> RuntimeCapabilitiesDto {
-        let capabilities = self.platform.capabilities();
-        RuntimeCapabilitiesDto {
-            runtime: self.runtime,
-            platform: detect_platform(),
-            native_menus: capabilities.contains(PlatformCapabilities::NATIVE_MENUS),
-            native_file_icons: capabilities.contains(PlatformCapabilities::FILE_ICONS),
-            native_thumbnails: capabilities.contains(PlatformCapabilities::THUMBNAILS),
-            native_drag_out: capabilities.contains(PlatformCapabilities::NATIVE_DRAG_OUT),
-            system_trash: capabilities.contains(PlatformCapabilities::TRASH),
-            reveal_in_system_file_manager: capabilities
-                .contains(PlatformCapabilities::REVEAL_IN_FILE_MANAGER),
-            open_terminal: capabilities.contains(PlatformCapabilities::OPEN_TERMINAL),
-            // Basic text/data clipboard access works through the browser
-            // Clipboard API without any native bridge, on every host. This is
-            // deliberately not derived from `PlatformCapabilities::
-            // CLIPBOARD_FILE_REFERENCES`, which instead gates pasting actual
-            // file path lists (e.g. from Finder/Explorer) - a capability
-            // `RuntimeCapabilitiesDto` has no field for yet. A future task
-            // adding file-reference paste support should add one rather than
-            // overload this flag.
-            clipboard: true,
-            plugins: true,
-            server_administration: false,
-        }
+        runtime_capabilities_dto(self.runtime, self.platform.capabilities())
     }
 
     /// Returns the active platform adapter's PNG icon for one sample entry.
@@ -1442,27 +1256,6 @@ impl From<WorkspaceSummary> for WorkspaceSummaryDto {
     }
 }
 
-/// Maximum bytes returned by a single [`FileManagerService::read_file_range`] call (task 0088).
-const MAX_RANGE_LENGTH: u64 = 1_048_576;
-
-/// Maximum matches returned by a single [`FileManagerService::search_in_file`] call (task 0088).
-const MAX_SEARCH_MATCHES: usize = 5_000;
-
-/// Discards `remaining` bytes from `reader`, for providers without random-access reads.
-/// Stops early at EOF (a request offset past the end of the file yields an empty range).
-async fn skip_bytes(reader: &mut ProviderReadStream, mut remaining: u64) -> std::io::Result<()> {
-    let mut buffer = [0_u8; 64 * 1024];
-    while remaining > 0 {
-        let chunk = remaining.min(buffer.len() as u64) as usize;
-        let read = reader.read(&mut buffer[..chunk]).await?;
-        if read == 0 {
-            break;
-        }
-        remaining -= read as u64;
-    }
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1474,7 +1267,11 @@ mod tests {
         SaveEditableFileRequestDto,
     };
 
+    use fm_platform::PlatformCapabilities;
+
+    use crate::content_streaming::MAX_RANGE_LENGTH;
     use crate::file_editor::MAX_EDITABLE_FILE_BYTES;
+    use crate::platform_mapping::detect_platform;
 
     fn service() -> (tempfile::TempDir, FileManagerService) {
         let dir = tempfile::tempdir().expect("must create a temp dir");
@@ -2355,7 +2152,7 @@ mod tests {
             "search://local/example-search",
         );
 
-        let capacity = service.volume_capacity(&location).await;
+        let capacity = volume_capacity(&service.platform, &location).await;
 
         assert!(capacity.is_none());
     }

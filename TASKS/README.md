@@ -273,15 +273,16 @@ Cross-cutting refactors to increase module depth, testability, and AI-navigabili
 `FileManagerService` (~5,800 lines) is the primary target. 0119 coordinates the decomposition;
 0120–0123 each extract one capability and can land in any order once 0119's composition plan is
 decided. 0124 and 0125 are independent and can be picked up early. 0120–0125 are all done; 0119
-itself is in progress — two verified passes on 2026-08-14 extracted the operation-history/observer
-cluster (`operation_history.rs`) and four pure mapping-function modules (`settings_mapping.rs`,
-`comparison_mapping.rs`, `operation_requests.rs`, `platform_mapping.rs`), taking the facade from
-~3,836 to ~3,160 lines. Target revised: ~1000 lines is an acceptable outcome, and further
-extraction should follow genuine capability boundaries rather than force a split — see 0119's Agent
-Notes for what's left (the `impl FileManagerService` block itself needs real sub-service design,
-not just moving more free functions).
+itself is in progress — three verified passes on 2026-08-14 extracted the operation-history/observer
+cluster, four pure mapping-function modules, and every remaining single-field method (system
+locations, runtime capabilities, byte-range/content-search reads, volume capacity), taking the
+facade from ~3,836 to ~2,957 lines (~23%) across six new modules. A dedicated final-sweep pass
+confirmed nothing low-risk is left: what remains (constructors, operations management, search/
+comparison coordination, action invocation — ~750–1000 lines combined) genuinely needs new
+sub-service types designed with the same care as `ConnectionFacade`/`PluginManager`, not more
+mechanical extraction. See 0119's Agent Notes for the full breakdown before starting that work.
 
-- [ ] 0119 Decompose FileManagerService into capability sub-services *(in_progress — facade down to ~3,160 lines across 5 new modules; revised target ~1000 lines along clean boundaries)*
+- [ ] 0119 Decompose FileManagerService into capability sub-services *(in_progress — facade down to ~2,957 lines across 6 new modules; remaining work needs real sub-service design, not more extraction)*
 - [x] 0120 Extract Operation Planner module *(needs 0119)*
 - [x] 0121 Extract File Editor Service *(needs 0119)*
 - [x] 0122 Extract Connection Facade *(needs 0119)*
