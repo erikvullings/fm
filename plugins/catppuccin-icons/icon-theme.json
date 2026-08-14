@@ -24,6 +24,9 @@
     "bun-lock": {
       "iconPath": "icons/bun-lock.svg"
     },
+    "binary": {
+      "iconPath": "icons/binary.svg"
+    },
     "c": {
       "iconPath": "icons/c.svg"
     },
@@ -33,11 +36,50 @@
     "cargo": {
       "iconPath": "icons/cargo.svg"
     },
+    "exe": {
+      "iconPath": "icons/exe.svg"
+    },
     "cargo-lock": {
       "iconPath": "icons/cargo-lock.svg"
     },
+    "favicon": {
+      "iconPath": "icons/favicon.svg"
+    },
+    "figma": {
+      "iconPath": "icons/figma.svg"
+    },
     "changelog": {
       "iconPath": "icons/changelog.svg"
+    },
+    "folder-cargo": {
+      "iconPath": "icons/folder_cargo.svg"
+    },
+    "folder-cargo-open": {
+      "iconPath": "icons/folder_cargo_open.svg"
+    },
+    "folder-dist": {
+      "iconPath": "icons/folder_dist.svg"
+    },
+    "folder-dist-open": {
+      "iconPath": "icons/folder_dist_open.svg"
+    },
+    "folder-download": {
+      "iconPath": "icons/folder_download.svg"
+    },
+    "folder-download-open": {
+      "iconPath": "icons/folder_download_open.svg"
+    },
+    "folder-git": {
+      "iconPath": "icons/folder_git.svg"
+    },
+    "folder-git-open": {
+      "iconPath": "icons/folder_git_open.svg"
+    },
+    "folder-node": {
+      "iconPath": "icons/folder_node.svg"
+    },
+    "folder-node-open": {
+      "iconPath": "icons/folder_node_open.svg"
     },
     "circle-ci": {
       "iconPath": "icons/circle-ci.svg"
@@ -336,7 +378,10 @@
     "docx": "ms-word",
     "dot": "ms-word",
     "env": "env",
+    "exe": "exe",
     "flac": "audio",
+    "fig": "figma",
+    "figma": "figma",
     "flv": "video",
     "go": "go",
     "gradle": "gradle",
@@ -377,6 +422,7 @@
     "mp3": "audio",
     "mp4": "video",
     "mts": "typescript",
+    "nzb": "binary",
     "otf": "font",
     "pdf": "pdf",
     "php": "php",
@@ -477,6 +523,10 @@
     "docker-compose.yaml": "docker-compose",
     "docker-compose.yml": "docker-compose",
     "dockerfile": "docker",
+      "favicon.ico": "favicon",
+      "favicon.png": "favicon",
+      "favicon.svg": "favicon",
+      "favicon.webp": "favicon",
     "eslint.config.cjs": "eslint",
     "eslint.config.js": "eslint",
     "eslint.config.mjs": "eslint",
@@ -545,6 +595,22 @@
     "vitest.config.mjs": "vitest",
     "vitest.config.ts": "vitest",
     "yarn.lock": "yarn-lock"
+  },
+  "folderNames": {
+    ".cargo": "folder-cargo",
+    ".git": "folder-git",
+    "cargo": "folder-cargo",
+    "dist": "folder-dist",
+    "downloads": "folder-download",
+    "node_modules": "folder-node"
+  },
+  "folderNamesExpanded": {
+    ".cargo": "folder-cargo-open",
+    ".git": "folder-git-open",
+    "cargo": "folder-cargo-open",
+    "dist": "folder-dist-open",
+    "downloads": "folder-download-open",
+    "node_modules": "folder-node-open"
   },
   "mimePrefixes": {
     "image/": "image",
