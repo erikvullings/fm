@@ -24,6 +24,17 @@
   overflow-y: auto;
   scrollbar-gutter: stable;
   outline: none;
+  /* Set explicitly (not just inherited from .fm-directory-table) so the reserved gutter always
+   * composites against the pane's own surface colour in Tauri's WKWebView - without this, one
+   * pane's gutter can render against a different, darker default depending on its position in
+   * the window. */
+  background: var(--fm-surface);
+  /* Forces its own compositing layer. WKWebView has known repaint bugs with
+   * `scrollbar-gutter: stable` inside a CSS Grid ancestor (the two-pane split is a grid) where
+   * the first grid track's reserved gutter can composite against stale/default chrome instead of
+   * `background` above, while later tracks repaint correctly - this nudges the engine to redo the
+   * paint on its own layer instead of reusing that stale composite. */
+  transform: translateZ(0);
   scrollbar-color: var(--fm-border) var(--fm-surface);
 }
 
