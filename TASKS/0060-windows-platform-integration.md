@@ -1,6 +1,6 @@
 # 0060 Windows platform integration
 
-Status: open
+Status: done
 Priority: medium
 Owner: unassigned
 Agent: unassigned
