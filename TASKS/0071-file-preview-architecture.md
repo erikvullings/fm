@@ -25,14 +25,32 @@ preview).
   automatically as the cursor moves. See Agent Notes.
 - Markdown, PDF, media metadata, archive summary, syntax highlighting and plugin previews are
   designed for but not implemented; the registry makes adding them additive.
+- Pressing the preview trigger key (F3/0088, or a dedicated key — evaluate `Space`, TC's binding for
+  this) on a **directory** entry computes and displays its recursive total size, matching Total
+  Commander's "press Space on a folder to see how much space it consumes" behaviour. This is
+  distinct from 0097's aggregate totals (which only sum the *currently listed* entries in the
+  active pane, one level, non-recursive) and from 0118's full treemap view (which visualizes the
+  breakdown, not just a number) — this is the lightweight "just tell me the number, recursively,
+  on demand" case. Treat it as a "directory" renderer in this task's registry (parallel to the
+  existing "file metadata" renderer for files) rather than a bolt-on elsewhere.
 - Tests: renderer selection by MIME/extension, size-limit enforcement, cancellation on cursor move,
-  binary detection.
+  binary detection, recursive directory-size computation (including cancellation if the cursor
+  moves away mid-walk).
 
 ## Implementation Notes
 - Reuse `mime_type`/`icon_key` from `EntrySummary` where available, but sniff content rather than
   trusting the extension for the text/binary decision.
 - Image previews should use a downscaled/streamed representation rather than the original bytes for
   very large images.
+- **Competitive note (macOS):** macOS Quick Look (spacebar in Finder) already renders PDF and CBR
+  (comic book archive) files very well out of the box — full pagination, decent performance, zero
+  extra code. A from-scratch renderer for these formats in fm's own preview panel may not beat that
+  experience. Worth deciding explicitly, before investing renderer effort here, whether to (a) build
+  bespoke PDF/CBR renderers anyway for cross-platform parity (Windows/Linux have no equivalent to
+  lean on), (b) shell out to Quick Look (`qlmanage`) on macOS specifically and accept a weaker
+  experience elsewhere, or (c) deprioritize PDF/CBR preview entirely and let macOS users rely on
+  Quick Look directly (fm doesn't need to duplicate an OS feature that's already excellent). No
+  decision made yet — flag for product input before scoping PDF/CBR renderer work.
 
 ## Agent Notes
 - Not started.

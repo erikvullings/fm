@@ -16,6 +16,30 @@ cargo watch -x "run -p fm-server"
 pnpm run dev:http
 ```
 
+## Recommended near-term priority (2026-08-14)
+
+Not a new milestone, just a reading order through the currently-open tasks that matter most right
+now, agreed after a review of feature gaps against other "state-of-the-art" file managers (Marta,
+Total Commander, ForkLift, Finder/Explorer). Superseded by whatever's actually picked up next —
+update this list if priorities shift rather than treating it as fixed.
+
+1. **0119** — finish the `FileManagerService` decomposition. It's the one task that looks done-ish
+   but is actually stalled (facade still ~3,836 lines against a <500-line target); architectural
+   debt here slows down everything below.
+2. **0071** — preview panel. Biggest missing "feels modern" gap; the folder-size-on-Space feature
+   and the PDF/CBR competitive question (see the task file) both live here now.
+3. **0134** — thumbnails + grid/icon view. Pairs with 0071; closes an explicit gap flagged on both
+   0059 and 0060.
+4. **0077** — checksums and duplicate-file detection. Commonly expected, self-contained, no blocking
+   dependencies.
+5. **0133** — populate native menu bar content. Cheap relative to payoff: the hook point already
+   exists (0058/0059/0131), this is populating content, not building infrastructure.
+6. **0098** — frontend i18n. Gets more expensive to retrofit the more UI strings accumulate; worth
+   doing before the app grows much further.
+
+0135–0138 (git status column, Finder tags/xattrs, Services menu/Send to, mount-share action) are
+real gaps but lower priority than the above — pick up opportunistically.
+
 ## Step 1 — Repository bootstrap (§33.1)
 
 - [x] 0001 Cargo workspace skeleton and crate stubs
@@ -125,14 +149,14 @@ the workspace-service tasks; see Step 2b above).
 - [x] 0059 macOS platform integration
 - [x] 0060 Windows platform integration *(shell icons split out to 0130, native menu bar to 0131; thumbnails remain an unimplemented capability)*
 - [x] 0061 Open with default application, reveal in file manager, open terminal
-- [x] 0062 Drag and drop within the app and with the OS
+- [ ] 0062 Drag and drop within the app and with the OS *(in_progress — in-app and native drag-in/out implemented; interactive Finder/Explorer manual verification still outstanding)*
 - [x] 0063 Desktop packaging, signing and notarization
 
 ## Cross-cutting quality
 
 - [x] 0064 Browser/server mode security hardening (§22)
 - [x] 0065 Performance fixtures and benchmarks (§28)
-- [x] 0066 Accessibility review (§29)
+- [ ] 0066 Accessibility review (§29) *(in_progress — automated axe-core phase complete; manual keyboard/screen-reader passes still outstanding)*
 - [x] 0073 Diagnostics view and structured logging (§30)
 - [x] 0074 README, development commands and roadmap (§38)
 - [x] 0085 Directory entry icons (themeable, with optional native-icon overlay)
@@ -173,7 +197,7 @@ the workspace-service tasks; see Step 2b above).
 These are the quickest wins and deliberately do **not** depend on the remote connection framework.
 
 - [x] 0101 OS cloud-backed locations
-- [ ] 0102 Mounted network volumes
+- [x] 0102 Mounted network volumes
 
 ## Milestone 7 — Remote connection foundation
 
@@ -189,14 +213,24 @@ These are the quickest wins and deliberately do **not** depend on the remote con
 ## Milestone 9 — Remote transfer/runtime hardening
 
 - [ ] 0108 Cross-provider transfer planning *(needs 0104, 0106)*
-- [ ] 0109 Remote change tracking *(needs 0104, 0106)*
+- [x] 0109 Remote change tracking *(needs 0104, 0106)*
 
 ## Milestone 10 — Optional native providers
 
 OneDrive is already useful through 0101 when exposed by the OS, and SMB through 0102 when mounted by the OS.
+0110 and 0111 have been moved to the Freezer below — not planned near-term.
 
-- [ ] 0110 Native OneDrive provider *(optional; needs 0103, 0108, 0109)*
-- [ ] 0111 Native SMB provider *(optional; needs 0103, 0108, 0109)*
+## Freezer
+
+Parked by product decision — not declined outright, just not going to happen in the near term.
+Revisit only if a concrete need surfaces. (Note: 0118, the WinDirStat treemap integration, is
+*not* here — it's a liked feature and stays live in the Backlog above.)
+
+- [ ] 0110 Native OneDrive provider *(frozen 2026-08-14 — 0101's OS-mediated cloud locations already
+  cover the common case; building a bespoke Graph API client for marginal gain over "let the OS
+  mount it" isn't worth it right now; optional, needs 0103, 0108, 0109)*
+- [ ] 0111 Native SMB provider *(frozen 2026-08-14 — same reasoning: 0102's OS-mediated mounted
+  shares already cover the common case; optional, needs 0103, 0108, 0109)*
 
 ## Architecture deepening — frontend
 
@@ -221,18 +255,27 @@ Features not yet implemented.
 - [ ] 0127 External terminal application choice *(pick a specific app, e.g. ghostty/Warp, from the context menu)*
 - [x] 0128 Total Commander shortcut parity — quick wins *(reuses existing functionality; also documents conflicts/already-implemented shortcuts)*
 - [ ] 0129 Total Commander shortcut parity — major features *(scoping task; triage each row into its own task, decline, or merge)*
-- [ ] 0130 Windows native file icon extraction *(split out of 0060; layers onto the 0091 overlay pipeline)*
+- [x] 0130 Windows native file icon extraction *(split out of 0060; layers onto the 0091 overlay pipeline)*
 - [ ] 0131 Windows native menu bar *(split out of 0060; hook-point-only, mirrors the macOS 0058 implementation)*
-- [ ] 0132 Windows defect: operation routes return 500 / deadlock *(pre-existing, found while verifying 0060; blocks the Windows pre-commit hook)*
+- [x] 0132 Windows defect: operation routes return 500 / deadlock *(pre-existing, found while verifying 0060; blocks the Windows pre-commit hook)*
+- [ ] 0133 Populate native menu bar content (macOS + Windows) *(needs 0059; Windows half also needs 0131)*
+- [ ] 0134 Thumbnails for images/video and a grid/icon view mode
+- [ ] 0135 Git status column/badges
+- [ ] 0136 Extended attributes, Finder tags and Spotlight comments editor
+- [ ] 0137 Services menu (macOS) / "Send to" (Windows) integration
+- [ ] 0138 OS-level "Mount share…" action *(needs 0102; low priority — only if OS-native mounting causes friction)*
 
 ## Architecture deepening — backend
 
 Cross-cutting refactors to increase module depth, testability, and AI-navigability.
 `FileManagerService` (~5,800 lines) is the primary target. 0119 coordinates the decomposition;
 0120–0123 each extract one capability and can land in any order once 0119's composition plan is
-decided. 0124 and 0125 are independent and can be picked up early.
+decided. 0124 and 0125 are independent and can be picked up early. 0120–0125 are all done, but the
+coordinating task 0119 itself is still open: the facade (`crates/fm-application/src/service.rs`) is
+down to ~3,836 lines from ~5,800, short of the <500-line target — final composition-layer cleanup
+remains.
 
-- [x] 0119 Decompose FileManagerService into capability sub-services
+- [ ] 0119 Decompose FileManagerService into capability sub-services *(open — subtasks 0120–0125 done, but the facade is not yet reduced to a thin composition layer)*
 - [x] 0120 Extract Operation Planner module *(needs 0119)*
 - [x] 0121 Extract File Editor Service *(needs 0119)*
 - [x] 0122 Extract Connection Facade *(needs 0119)*
