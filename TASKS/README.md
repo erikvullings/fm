@@ -123,7 +123,7 @@ the workspace-service tasks; see Step 2b above).
 
 - [x] 0058 Platform adapter traits and capability reporting
 - [x] 0059 macOS platform integration
-- [ ] 0060 Windows platform integration *(mostly done: reveal, Recycle Bin, drives, terminal, locked-file errors; shell icons and thumbnails still open)*
+- [x] 0060 Windows platform integration *(shell icons split out to 0130; native menus and thumbnails remain unimplemented capabilities)*
 - [x] 0061 Open with default application, reveal in file manager, open terminal
 - [x] 0062 Drag and drop within the app and with the OS
 - [x] 0063 Desktop packaging, signing and notarization
@@ -221,6 +221,7 @@ Features not yet implemented.
 - [ ] 0127 External terminal application choice *(pick a specific app, e.g. ghostty/Warp, from the context menu)*
 - [x] 0128 Total Commander shortcut parity — quick wins *(reuses existing functionality; also documents conflicts/already-implemented shortcuts)*
 - [ ] 0129 Total Commander shortcut parity — major features *(scoping task; triage each row into its own task, decline, or merge)*
+- [ ] 0130 Windows native file icon extraction *(split out of 0060; layers onto the 0091 overlay pipeline)*
 
 ## Architecture deepening — backend
 

@@ -48,7 +48,8 @@ Depends on: 0058
 - **Not delivered:** shell icons and shell thumbnails. Both need an `HICON`/`IShellItemImageFactory`
   bitmap re-encoded as PNG, and this workspace has no image encoder dependency; their capability
   bits stay unset rather than reporting success and failing at call time. Native menus and
-  clipboard file references also remain delegated to the fallback adapter.
+  clipboard file references also remain delegated to the fallback adapter. Shell icon extraction
+  is split out into task 0130; thumbnails and native menus stay unimplemented.
 - Fixed a real Windows navigation defect found while testing: `file:///C:/` (any directory URI
   written with a trailing slash, which is the only natural way to write a drive root) was rejected
   as `EmptySegment`. `Location::parse` now accepts a single trailing slash and canonicalises it
