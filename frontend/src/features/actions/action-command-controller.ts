@@ -19,6 +19,7 @@ import { evaluateActionAvailability } from '../commands/availability';
 import type { ArchiveCreateRequest } from '../dialogs/dialog-ui-controller';
 import type { NavigationController, PaneDirectoryView } from '../navigation/navigation';
 import type { OperationsController } from '../operations/operations-controller';
+import { isParentEntry } from '../panes/parent-entry';
 import type { SelectionState } from '../selection/selection';
 
 /** Context required by ActionCommandController for state access and dependencies. */
@@ -133,11 +134,12 @@ export function createActionCommandController(
       active === undefined
         ? undefined
         : context.getSelections().get(context.getActiveTabKey(active.paneId));
+    const selectedEntryIds = (selection?.selectedEntryIds ?? []).filter(
+      (entryId) => !isParentEntry(entryId),
+    );
     return {
       ...(active === undefined ? {} : { paneId: active.paneId }),
-      ...(selection?.selectedEntryIds.length === 0 || selection?.selectedEntryIds === undefined
-        ? {}
-        : { selectedEntryIds: [...selection.selectedEntryIds] }),
+      ...(selectedEntryIds.length === 0 ? {} : { selectedEntryIds }),
       ...(selection?.cursorEntryId === undefined ? {} : { cursorEntryId: selection.cursorEntryId }),
     };
   }

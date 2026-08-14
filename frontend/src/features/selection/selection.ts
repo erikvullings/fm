@@ -1,4 +1,5 @@
 import type { EntryId, EntrySummary, Location } from '../../models';
+import { isParentEntry } from '../panes/parent-entry';
 
 /** Stable-ID selection state for one pane. */
 export interface SelectionState {
@@ -238,7 +239,7 @@ export function reduceSelection(
     return [];
   }
   const idSet = new Set(selection.selectedEntryIds);
-  return entries.filter((entry) => idSet.has(entry.id) === true);
+  return entries.filter((entry) => idSet.has(entry.id) === true && !isParentEntry(entry.id));
 }
 
 /**

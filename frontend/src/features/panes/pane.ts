@@ -1,6 +1,6 @@
 import m, { type FactoryComponent, type VnodeDOM } from 'mithril';
 import { IconButton } from 'mithril-materialized';
-import { plusIcon } from '../../components/tabler-icons';
+import { heartIcon, heartPlusIcon, plusIcon } from '../../components/tabler-icons';
 import { tooltip } from '../../components/tooltip';
 import {
   dispatchKeybinding,
@@ -703,6 +703,7 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
               else openFavourites(attrs);
               m.redraw();
             },
+            showActions: false,
           }),
           favouritesOpen && [
             m('.fm-favourites-menu-backdrop', { onclick: () => closeFavourites() }),
@@ -951,75 +952,106 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
               ],
             ),
           ],
-          attrs.filter.filterOpen
-            ? m(QuickFilterInput, {
-                query: attrs.filter.filterQuery,
-                onQueryChange: attrs.filter.onFilterQueryChange,
-                onCommit: attrs.filter.onFilterCommit,
-                onClose: attrs.filter.onFilterClose,
-              })
-            : editing
-              ? m('.fm-path-editor', [
-                  m('input[type=text].fm-path-input', {
-                    value: draftPath,
-                    'aria-label': 'Path',
-                    'aria-invalid': pathError === undefined ? undefined : 'true',
-                    oncreate: (vnode: VnodeDOM) => {
-                      inputElement = vnode.dom as HTMLInputElement;
-                      inputElement.focus();
-                      inputElement.select();
-                    },
-                    oninput: (event: InputEvent) => {
-                      draftPath = (event.currentTarget as HTMLInputElement).value;
-                      pathError = undefined;
-                    },
-                    onkeydown: (event: KeyboardEvent) => {
-                      event.stopPropagation();
-                      if (event.key === 'Escape') {
-                        cancelEditing();
-                      } else if (event.key === 'Enter') {
-                        event.preventDefault();
-                        void navigate(draftPath, attrs, true);
-                      }
-                    },
-                  }),
-                  pathError === undefined
-                    ? undefined
-                    : m('.fm-path-error', { role: 'alert' }, pathError),
-                ])
-              : m('nav.fm-breadcrumb', { 'aria-label': 'Current path' }, [
-                  isSftpLocation
-                    ? m('span.fm-breadcrumb-scheme', { 'aria-hidden': 'true' }, 'sftp://')
-                    : undefined,
-                  m(
-                    '.fm-breadcrumb-segments',
-                    {
-                      ondblclick: isSearchLocation ? undefined : () => beginEditing(attrs.path),
-                    },
-                    isSearchLocation
-                      ? searchBreadcrumbSegments(activeLocationUri, attrs.searchQuery).map(
-                          (segment) =>
-                            m('span.fm-breadcrumb-segment', { key: segment.path }, segment.label),
-                        )
-                      : (isSftpLocation && attrs.path !== '/'
-                          ? breadcrumbSegments(attrs.path).slice(1)
-                          : breadcrumbSegments(attrs.path)
-                        ).map((segment) =>
-                          m(
-                            'button.fm-breadcrumb-segment',
-                            {
-                              key: segment.path,
-                              type: 'button',
-                              onclick: () => void navigate(segment.path, attrs, false),
-                            },
-                            segment.label,
+          m('.fm-breadcrumb-row', [
+            attrs.filter.filterOpen
+              ? m(QuickFilterInput, {
+                  query: attrs.filter.filterQuery,
+                  onQueryChange: attrs.filter.onFilterQueryChange,
+                  onCommit: attrs.filter.onFilterCommit,
+                  onClose: attrs.filter.onFilterClose,
+                })
+              : editing
+                ? m('.fm-path-editor', [
+                    m('input[type=text].fm-path-input', {
+                      value: draftPath,
+                      'aria-label': 'Path',
+                      'aria-invalid': pathError === undefined ? undefined : 'true',
+                      oncreate: (vnode: VnodeDOM) => {
+                        inputElement = vnode.dom as HTMLInputElement;
+                        inputElement.focus();
+                        inputElement.select();
+                      },
+                      oninput: (event: InputEvent) => {
+                        draftPath = (event.currentTarget as HTMLInputElement).value;
+                        pathError = undefined;
+                      },
+                      onkeydown: (event: KeyboardEvent) => {
+                        event.stopPropagation();
+                        if (event.key === 'Escape') {
+                          cancelEditing();
+                        } else if (event.key === 'Enter') {
+                          event.preventDefault();
+                          void navigate(draftPath, attrs, true);
+                        }
+                      },
+                    }),
+                    pathError === undefined
+                      ? undefined
+                      : m('.fm-path-error', { role: 'alert' }, pathError),
+                  ])
+                : m('nav.fm-breadcrumb', { 'aria-label': 'Current path' }, [
+                    isSftpLocation
+                      ? m('span.fm-breadcrumb-scheme', { 'aria-hidden': 'true' }, 'sftp://')
+                      : undefined,
+                    m(
+                      '.fm-breadcrumb-segments',
+                      {
+                        ondblclick: isSearchLocation ? undefined : () => beginEditing(attrs.path),
+                      },
+                      isSearchLocation
+                        ? searchBreadcrumbSegments(activeLocationUri, attrs.searchQuery).map(
+                            (segment) =>
+                              m('span.fm-breadcrumb-segment', { key: segment.path }, segment.label),
+                          )
+                        : (isSftpLocation && attrs.path !== '/'
+                            ? breadcrumbSegments(attrs.path).slice(1)
+                            : breadcrumbSegments(attrs.path)
+                          ).map((segment) =>
+                            m(
+                              'button.fm-breadcrumb-segment',
+                              {
+                                key: segment.path,
+                                type: 'button',
+                                onclick: () => void navigate(segment.path, attrs, false),
+                              },
+                              segment.label,
+                            ),
                           ),
-                        ),
-                  ),
-                  pathError === undefined
-                    ? undefined
-                    : m('.fm-path-error', { role: 'alert' }, pathError),
-                ]),
+                    ),
+                    pathError === undefined
+                      ? undefined
+                      : m('.fm-path-error', { role: 'alert' }, pathError),
+                  ]),
+            tooltip(
+              'New tab',
+              m(
+                IconButton,
+                {
+                  className: 'fm-pane-tab-new',
+                  'aria-label': 'New tab',
+                  onclick: () => attrs.onNewTab(),
+                },
+                plusIcon(),
+              ),
+            ),
+            tooltip(
+              'Favourites',
+              m(
+                IconButton,
+                {
+                  className: 'fm-pane-tab-favourites',
+                  'aria-label': 'Favourites',
+                  'aria-expanded': String(favouritesOpen),
+                  onclick: () => {
+                    if (favouritesOpen) closeFavourites();
+                    else openFavourites(attrs);
+                    m.redraw();
+                  },
+                },
+                canAddCurrentFavourite(attrs.favourites) ? heartPlusIcon() : heartIcon(),
+              ),
+            ),
+          ]),
           m(DirectoryTable, {
             state: attrs.state,
             source: entryArraySource(attrs.entries, ds.totalKnownEntries),
@@ -1065,7 +1097,7 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
               const entry = attrs.entries[index];
               if (entry === undefined) return;
               if (isParentEntry(entry.id)) {
-                attrs.onSelectionAction({ type: 'setCursor', entryId: entry.id });
+                attrs.onSelectionAction({ type: 'selectOnly', entryId: entry.id });
               } else if (modifiers?.shiftKey === true) {
                 attrs.onSelectionAction({ type: 'extendRangeTo', entryId: entry.id });
               } else if (modifiers?.ctrlKey === true) {
