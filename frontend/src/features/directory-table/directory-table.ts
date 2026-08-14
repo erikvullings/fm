@@ -86,11 +86,11 @@ function readRowHeight(element: HTMLElement): number {
   return Number.isFinite(configured) && configured > 0 ? configured : DEFAULT_ROW_HEIGHT;
 }
 
-/** The viewport always reserves scrollbar space (`overflow-y: scroll`, see directory-table.css),
- * so its content is consistently narrower than the header above it by the platform's actual
- * scrollbar width. Measuring and republishing that width as a CSS custom property lets the
- * header reserve the same amount via `padding-inline-end`, keeping every column aligned whether
- * or not the list is actually tall enough to need scrolling. */
+/** The viewport reserves scrollbar space via `scrollbar-gutter: stable` (see
+ * directory-table.css), so its content remains narrower than the header above it by the
+ * platform's actual scrollbar width. Measuring and republishing that width as a CSS custom
+ * property lets the header reserve the same amount via `padding-inline-end`, keeping every
+ * column aligned whether or not the list is actually tall enough to need scrolling. */
 function syncScrollbarWidth(viewport: HTMLElement): void {
   const width = viewport.offsetWidth - viewport.clientWidth;
   const table = viewport.parentElement;

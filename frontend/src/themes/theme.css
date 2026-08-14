@@ -166,6 +166,31 @@ body {
   font-size: var(--fm-font-size);
 }
 
+/* Keep native scrollbars visually aligned with the active theme in Tauri/WKWebView. */
+.fm-app-shell * {
+  scrollbar-color: var(--fm-border) var(--fm-surface);
+}
+
+.fm-app-shell *::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+  background: var(--fm-surface);
+}
+
+.fm-app-shell *::-webkit-scrollbar-track {
+  background: var(--fm-surface);
+}
+
+.fm-app-shell *::-webkit-scrollbar-thumb {
+  background: var(--fm-border);
+  border: 2px solid var(--fm-surface);
+  border-radius: 999px;
+}
+
+.fm-app-shell *::-webkit-scrollbar-thumb:hover {
+  background: var(--fm-text-muted);
+}
+
 /*
  * The file manager UI is not a document -- only text the user actively types
  * (inputs/textareas) should be selectable. Everything else (chrome, labels,

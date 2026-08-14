@@ -10,18 +10,39 @@
   font-size: 0.92em;
 }
 
-/* Header lives outside the scrollable viewport so the scrollbar starts below it. The viewport
- * always reserves scrollbar space (`overflow-y: scroll` rather than `auto`) and the header
- * mirrors that reserved width via `--fm-scrollbar-width` (set from JS - see directory-table.ts),
- * otherwise a directory with enough rows to actually show a scrollbar renders its columns a few
- * pixels narrower than the header above them, visibly misaligning every column after the first. */
+/* Header lives outside the scrollable viewport so the scrollbar starts below it. We reserve
+ * scrollbar gutter space with `scrollbar-gutter: stable` while keeping `overflow-y: auto`.
+ * In Tauri's WKWebView, forcing an always-visible disabled scrollbar (`overflow-y: scroll`) can
+ * intermittently repaint with system white when content is short; the stable gutter avoids that
+ * while preserving column alignment. The header mirrors the measured gutter via
+ * `--fm-scrollbar-width` (set from JS - see directory-table.ts). */
 .fm-directory-viewport {
   position: relative;
   flex: 1 1 auto;
   min-height: 0;
   overflow-x: hidden;
-  overflow-y: scroll;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
   outline: none;
+  scrollbar-color: var(--fm-border) var(--fm-surface);
+}
+
+.fm-directory-viewport::-webkit-scrollbar {
+  width: 12px;
+}
+
+.fm-directory-viewport::-webkit-scrollbar-track {
+  background: var(--fm-surface);
+}
+
+.fm-directory-viewport::-webkit-scrollbar-thumb {
+  background: var(--fm-border);
+  border: 2px solid var(--fm-surface);
+  border-radius: 999px;
+}
+
+.fm-directory-viewport::-webkit-scrollbar-thumb:hover {
+  background: var(--fm-text-muted);
 }
 
 .fm-directory-header,
