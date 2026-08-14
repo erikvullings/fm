@@ -59,14 +59,17 @@ review — see Agent Notes.
   pull-down replica — 0133 populates the currently-empty `install_native_menu` hook (0058/0059/0131)
   with real File/Edit/View/Go/Window/Help content. That supersedes the TC-style in-app pull-down
   menu; no separate in-app widget is planned.
+- **Alt+F10 / Ctrl+F8 (directory tree)** and **Alt+Enter (Properties dialog)** — **split into their
+  own tasks**, [0139](0139-directory-tree-sidebar.md) and [0140](0140-properties-dialog.md), per
+  product decision on 2026-08-14: these two were judged the most plausibly worth building of the
+  remaining rows (meaningfully sized, commonly expected in a "state-of-the-art" file manager).
+  Removed from the candidate table below; see those files for scope.
 
 ## Candidate features still open
 
 | TC shortcut(s) | TC behavior | What's missing in fm | Notes |
 |---|---|---|---|
 | Ctrl+Q | Quick View panel (live inline preview) | A preview pane rendered alongside the file list, updating as the cursor moves | **Declined by prior product direction**, not just "missing": [0071](0071-file-preview-architecture.md)'s Agent Notes record that cursor-driven automatic preview loading was explicitly reversed on 2026-08-04 (it fetched bytes for every entry the cursor passed over). Preview is intentionally opt-in via F3 only (0088). Re-adding a TC-style auto-follow Quick View would need that product decision revisited first — don't implement this row without re-confirming that. (0071 has since gained a related but distinct feature: pressing the preview key on a *directory* shows its recursive size, TC's other Space-bar behavior — see 0071.) |
-| Alt+F10 / Ctrl+F8 | Directory tree dialog / sidebar tree view | No tree-view UI exists; only flat pane listings | Moderate-to-large: tree component, lazy expansion, sync with active pane location. Still confirmed missing as of 2026-08-14 (no tree/sidebar component found in `frontend/src`). |
-| Alt+Enter | File/folder Properties dialog | No properties dialog exists; only inline status-bar metadata | Confirmed still missing. Needs a new modal showing size, dates, permissions, per-provider metadata (varies a lot across VFS providers — local/SFTP/FTP/S3/etc.). |
 | Shift+F1 | Custom columns view menu | fm's directory table has a fixed column set; no per-view column picker | Confirmed still missing. Needs a column-configuration UI plus persisted per-pane (or global) column layout. |
 | Shift+F3 | List only the file under cursor when multiple files are selected | The Lister viewer (F3) always targets the cursor entry; TC's nuance is about selection vs cursor interaction when multiple are selected | Small viewer-behavior change, but grouped here because it's viewer-internals work, not a pure keybinding addition. |
 | Shift+Ctrl+F5 | Create shortcuts/symlinks of selected files | No shortcut/symlink-creation operation exists | Confirmed still missing (existing `symlink` handling in `operation_planner.rs` only covers copy-time follow-vs-copy-link policy, not creating new links). Platform-asymmetric: Windows `.lnk` creation is nontrivial; POSIX symlinks are simpler. Needs a new operation type in the operation planner plus per-platform backend support. |
@@ -106,3 +109,10 @@ some in the new Freezer section of `TASKS/README.md`, split others into real tas
   filter presets, system tray integration, FTP ASCII/binary transfer mode. Remaining open rows are
   a product-priority discussion, not further investigation — see conversation for the proposed
   split between "split into its own task" vs "freezer."
+- 2026-08-14 (follow-up): product decision on the remaining rows — split the directory tree
+  (Alt+F10/Ctrl+F8) and Properties dialog (Alt+Enter) rows into their own tasks, 0139 and 0140, as
+  the two judged most worth building. The rest (Shift+F1 columns, Shift+F3 viewer nuance,
+  Shift+Ctrl+F5 symlink creation, Ctrl+Z file comments, Ctrl+Shift+F2 comments column, Ctrl+F11
+  executable filter, Ctrl+F12 saved filter presets, Ctrl+F9 print, Shift+Esc system tray,
+  Ctrl+Shift+F/M FTP transfer mode) remain open in this task pending further product input on
+  which to split out vs. freeze.

@@ -264,6 +264,8 @@ Features not yet implemented.
 - [ ] 0136 Extended attributes, Finder tags and Spotlight comments editor
 - [ ] 0137 Services menu (macOS) / "Send to" (Windows) integration
 - [ ] 0138 OS-level "Mount share…" action *(needs 0102; low priority — only if OS-native mounting causes friction)*
+- [ ] 0139 Directory tree dialog / sidebar tree view *(split out of 0129)*
+- [ ] 0140 File/folder Properties dialog *(split out of 0129)*
 
 ## Architecture deepening — backend
 

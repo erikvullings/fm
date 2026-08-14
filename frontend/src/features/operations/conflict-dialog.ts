@@ -7,13 +7,19 @@ export interface ConflictDialogAttrs {
   readonly onResolve: (resolution: ConflictResolution, applyToAllSimilar: boolean) => void;
 }
 
+/** Formats a `Date` as a compact `YYYY-MM-DD HH:MM:SS` string in the local time zone. */
+function formatLocalCompact(date: Date): string {
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+}
+
 /** Compact, stable metadata for comparing two conflicting entries. */
 export function formatConflictMetadata(entry: OperationConflict['source']): string {
   const size = entry.size === undefined ? 'size unavailable' : `${entry.size}b`;
   const date =
     entry.modifiedAt === undefined
       ? 'modified time unavailable'
-      : new Date(entry.modifiedAt).toISOString().slice(0, 19).replace('T', ' ');
+      : formatLocalCompact(new Date(entry.modifiedAt));
   return `${entry.name} · ${size} · ${date}`;
 }
 
