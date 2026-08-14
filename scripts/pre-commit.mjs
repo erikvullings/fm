@@ -58,13 +58,17 @@ if (stagedRustSources.length > 0) {
   run('git', ['add', ...stagedRustSources]);
 }
 
+// Clippy only, not `cargo test`: clippy type-checks and lints without executing
+// anything, so it stays fast on an incremental build. The full test suite
+// (including slow integration tests - large-tree copies, real SFTP sessions,
+// etc.) runs in the pre-push hook and in CI instead, where it fires once per
+// push rather than once per commit.
 const stagedRust = stagedFiles(['*.rs', '**/Cargo.toml', 'Cargo.toml', 'Cargo.lock']);
 if (stagedRust.length > 0) {
   const manifests = [...new Set(stagedRust.map(owningManifest))];
   for (const manifest of manifests) {
     if (manifest === 'Cargo.toml') {
       run('cargo', ['clippy', '--workspace', '--all-targets', '--', '-D', 'warnings']);
-      run('cargo', ['test', '--workspace']);
     } else {
       run('cargo', [
         'clippy',
@@ -75,7 +79,6 @@ if (stagedRust.length > 0) {
         '-D',
         'warnings',
       ]);
-      run('cargo', ['test', '--manifest-path', manifest]);
     }
   }
 }
