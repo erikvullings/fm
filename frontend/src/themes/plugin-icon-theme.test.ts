@@ -149,13 +149,30 @@ describe('installPluginIconTheme', () => {
     await installPluginIconTheme(client, 'sample.icons', theme, registry);
 
     const fileIconByLower = resolveEntryIcon(
-      { kind: 'file', id: '1', name: 'cargo.toml', extension: 'toml' },
+      {
+        kind: 'file',
+        id: '1',
+        location: { providerId: 'file', uri: 'file:///tmp/cargo.toml' },
+        name: 'cargo.toml',
+        extension: 'toml',
+        hidden: false,
+        readOnly: false,
+        metadataRevision: 0,
+      },
       registry,
     );
     expect(fileIconByLower).toBe(registry.fileNameIcons.get('Cargo.toml'));
 
     const folderIconByLower = resolveEntryIcon(
-      { kind: 'directory', id: '2', name: 'downloads' },
+      {
+        kind: 'directory',
+        id: '2',
+        location: { providerId: 'file', uri: 'file:///tmp/downloads' },
+        name: 'downloads',
+        hidden: false,
+        readOnly: false,
+        metadataRevision: 0,
+      },
       registry,
     );
     expect(folderIconByLower).toBe(registry.folderNameIcons.get('Downloads'));
