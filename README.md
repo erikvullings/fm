@@ -83,6 +83,7 @@ root (`dev`, `test`, `lint`, `build`, ...) — see the root `package.json` for t
 | `pnpm dev` | Start the Vite dev server with the **mock** client (default). No Rust process needed. |
 | `pnpm dev:mock` | Same as `pnpm dev` — mock runtime explicitly selected (`VITE_RUNTIME=mock`). |
 | `pnpm dev:http` | Start Vite against the **Axum backend** (`VITE_RUNTIME=http`). Requires Terminal 1 below. |
+| `pnpm dev:server` | Start `fm-server` on port 8787 with auth disabled, auto-rebuilding on file change (Terminal 1). |
 | `pnpm dev:tauri` | Launch the **Tauri desktop** app in dev mode (`VITE_RUNTIME=tauri`). |
 | `pnpm test` | Run Rust tests + frontend tests + script tests. |
 | `pnpm test:rust` | `cargo test --workspace` |
@@ -100,7 +101,7 @@ On macOS and Linux:
 
 ```bash
 # Terminal 1 — Axum backend (auto-rebuilds on file change)
-FM_SERVER_PORT=8787 cargo watch -x "run -p fm-server -- --dev-mode-auth-disabled"
+pnpm dev:server
 
 # Terminal 2 — Vite dev server with /api proxy to localhost:8787
 pnpm dev:http
@@ -112,7 +113,7 @@ as a separate statement (`cargo install cargo-watch` first, if `cargo watch` rep
 
 ```powershell
 # Terminal 1 — Axum backend (auto-rebuilds on file change)
-$env:FM_SERVER_PORT = '8787'; cargo watch -x 'run -p fm-server'
+$env:FM_SERVER_PORT = '8787'; cargo watch -x 'run -p fm-server -- --dev-mode-auth-disabled'
 
 # Terminal 2 — Vite dev server with /api proxy to localhost:8787
 pnpm dev:http
