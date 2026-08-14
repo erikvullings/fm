@@ -1,6 +1,6 @@
 # 0132 Windows defect: operation routes return 500 / deadlock
 
-Status: open
+Status: done
 Priority: high
 Owner: unassigned
 Agent: unassigned
@@ -55,4 +55,12 @@ planner/executor) or its locking/conflict-resolution path — not test-harness f
   other platforms.
 
 ## Agent Notes
-- Not started.
+- Verified resolved on Windows 11 after the task 0060 merge (`f72976c`, now on `main`). The
+  Windows-specific test fixture URI changes in that merge use `Location::from_native_path`, so
+  the operation routes receive valid `file:///C:/...` locations rather than invalid
+  `file://C:\...` values. The resulting invalid-location errors were the cause of the reported
+  HTTP 500 conflict-resolution responses and stalled copy lifecycle.
+- `cargo test -p fm-server --test operation_routes -- --nocapture` passes all four tests on
+  Windows, including both conflict resolutions and the idempotent copy lifecycle.
+- `cargo test --workspace` also passes on Windows, so the pre-commit hook's Rust test step is no
+  longer blocked. The existing route integration tests run in the `Rust (windows-latest)` CI job.
