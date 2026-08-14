@@ -1,6 +1,6 @@
 # 0130 Windows native file icon extraction
 
-Status: open
+Status: done
 Priority: low
 Owner: unassigned
 Agent: unassigned
@@ -51,4 +51,17 @@ implements `file_icon` for `crates/fm-platform-windows/src/lib.rs` and flips
 - Thumbnails remain explicitly out of scope (declared unimplemented capability per 0060).
 
 ## Agent Notes
-- Not started.
+- Implemented on the Windows adapter with `SHGetFileInfoW(SHGFI_ICON | SHGFI_LARGEICON)`, GDI
+  bitmap extraction, and a small dependency-free PNG encoder. Extended-length paths are stripped
+  before the shell lookup, matching the other Windows native calls.
+- File icons are cached by lowercased extension, with separate directory and extension-less
+  sentinels. `PlatformCapabilities::FILE_ICONS` is now reported by the Windows adapter; thumbnails
+  remain unsupported.
+- Tests cover real non-empty PNG output for a text file, an extension-less file, and a directory,
+  plus an injected cache test proving a second lookup for a case-variant extension does not invoke
+  the fetch function again.
+- Verified on Windows 11 with `cargo test -p fm-platform-windows` and
+  `cargo clippy --workspace --all-targets -- -D warnings`. The full `cargo test --workspace`
+  run reaches one unrelated existing failure in
+  `fm-plugin-runtime::tests::discovers_the_real_catppuccin_icons_plugin_package`; the focused
+  Windows platform suite remains green.
