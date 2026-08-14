@@ -49,7 +49,8 @@ Depends on: 0058
   bitmap re-encoded as PNG, and this workspace has no image encoder dependency; their capability
   bits stay unset rather than reporting success and failing at call time. Native menus and
   clipboard file references also remain delegated to the fallback adapter. Shell icon extraction
-  is split out into task 0130; thumbnails and native menus stay unimplemented.
+  is split out into task 0130, the native menu bar hook into task 0131; thumbnails stay
+  unimplemented.
 - Fixed a real Windows navigation defect found while testing: `file:///C:/` (any directory URI
   written with a trailing slash, which is the only natural way to write a drive root) was rejected
   as `EmptySegment`. `Location::parse` now accepts a single trailing slash and canonicalises it
@@ -76,11 +77,12 @@ Depends on: 0058
   --lib` aborts with `STATUS_ENTRYPOINT_NOT_FOUND` (WebView2/Tauri runtime), and 5 frontend tests
   fail (`mithril-inspector`, `import-boundaries`, `component-colours`, one `pane` total). Both were
   verified to fail identically with these changes stashed.
-- Also pre-existing and **Windows-specific**, worth its own task: `apps/fm-server`'s
-  `tests/operation_routes.rs` fails here - `resolve_conflict_route_applies_the_requested_decision`
-  and `resolve_conflict_route_confirms_a_permanent_directory_delete` both return HTTP 500, and
+- Also pre-existing and **Windows-specific**: `apps/fm-server`'s `tests/operation_routes.rs` fails
+  here - `resolve_conflict_route_applies_the_requested_decision` and
+  `resolve_conflict_route_confirms_a_permanent_directory_delete` both return HTTP 500, and
   `start_retry_uses_stable_id_and_copy_emits_full_lifecycle` deadlocks (>60s). Verified to fail
   identically with these changes stashed, so the operation engine has a genuine Windows defect
-  independent of task 0060. This is what blocks the pre-commit hook on Windows.
+  independent of task 0060. This is what blocks the pre-commit hook on Windows; tracked as its own
+  task, 0132.
 - Not verified: drag to/from Explorer, and behaviour on a real UNC share or a mapped network drive
   (no server available in this environment).
