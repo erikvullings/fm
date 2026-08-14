@@ -18,6 +18,9 @@
     "biome": {
       "iconPath": "icons/biome.svg"
     },
+    "book": {
+      "iconPath": "icons/mdbook.svg"
+    },
     "bun": {
       "iconPath": "icons/bun.svg"
     },
@@ -378,6 +381,7 @@
     "docx": "ms-word",
     "dot": "ms-word",
     "env": "env",
+    "epub": "book",
     "exe": "exe",
     "flac": "audio",
     "fig": "figma",
@@ -523,10 +527,10 @@
     "docker-compose.yaml": "docker-compose",
     "docker-compose.yml": "docker-compose",
     "dockerfile": "docker",
-      "favicon.ico": "favicon",
-      "favicon.png": "favicon",
-      "favicon.svg": "favicon",
-      "favicon.webp": "favicon",
+    "favicon.ico": "favicon",
+    "favicon.png": "favicon",
+    "favicon.svg": "favicon",
+    "favicon.webp": "favicon",
     "eslint.config.cjs": "eslint",
     "eslint.config.js": "eslint",
     "eslint.config.mjs": "eslint",
