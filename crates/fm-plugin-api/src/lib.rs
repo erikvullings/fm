@@ -221,6 +221,13 @@ pub struct IconThemeManifest {
     /// [`Self::file_extensions`] so `Cargo.lock` can differ from every other `.lock`.
     #[serde(default)]
     pub file_names: BTreeMap<String, String>,
+    /// Exact directory name (e.g. `".git"`) to icon definition key, for a collapsed folder
+    /// (task 0092 "folder hooks").
+    #[serde(default)]
+    pub folder_names: BTreeMap<String, String>,
+    /// Exact directory name to icon definition key, for that same folder shown expanded.
+    #[serde(default)]
+    pub folder_names_expanded: BTreeMap<String, String>,
     /// MIME type prefix (e.g. `"image/"`) to icon definition key.
     #[serde(default)]
     pub mime_prefixes: BTreeMap<String, String>,
@@ -255,6 +262,8 @@ impl IconThemeManifest {
             .file_extensions
             .values()
             .chain(self.file_names.values())
+            .chain(self.folder_names.values())
+            .chain(self.folder_names_expanded.values())
             .chain(self.mime_prefixes.values())
         {
             self.require_known_key(key)?;
@@ -471,6 +480,49 @@ actions = true
             icon_theme.file_names.get("Cargo.lock").map(String::as_str),
             Some("psd")
         );
+    }
+
+    #[test]
+    fn parses_folder_name_hooks_for_collapsed_and_expanded_states() {
+        let icon_theme = IconThemeManifest::parse(
+            r#"{
+                "iconDefinitions": {
+                    "folder-cargo": {"iconPath": "folder-cargo.svg"},
+                    "folder-cargo-open": {"iconPath": "folder-cargo-open.svg"}
+                },
+                "folderNames": {".cargo": "folder-cargo"},
+                "folderNamesExpanded": {".cargo": "folder-cargo-open"}
+            }"#,
+        )
+        .expect("valid icon theme manifest with folder-name hooks");
+
+        assert_eq!(
+            icon_theme.folder_names.get(".cargo").map(String::as_str),
+            Some("folder-cargo")
+        );
+        assert_eq!(
+            icon_theme
+                .folder_names_expanded
+                .get(".cargo")
+                .map(String::as_str),
+            Some("folder-cargo-open")
+        );
+    }
+
+    #[test]
+    fn rejects_a_folder_name_hook_pointing_at_an_undeclared_definition() {
+        let error = IconThemeManifest::parse(
+            r#"{
+                "iconDefinitions": {"folder": {"iconPath": "folder.svg"}},
+                "folderNames": {".cargo": "missing"}
+            }"#,
+        )
+        .expect_err("unknown definition key must be rejected");
+
+        assert!(matches!(
+            error,
+            IconThemeManifestError::UnknownIconDefinition(key) if key == "missing"
+        ));
     }
 
     #[test]
