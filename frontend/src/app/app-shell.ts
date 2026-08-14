@@ -1268,6 +1268,10 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
         directoryLocation,
       ),
     activatePane: (paneId) => activatePane(attrsClient, paneId),
+    focusPane: (paneId) => {
+      if (focusPane !== undefined) focusPane(paneId);
+      else void activatePane(attrsClient, paneId);
+    },
     toggleTerminal: () => {
       if (runtimeKind !== 'tauri') return;
       const activeLocation = activeDirectory()?.location;

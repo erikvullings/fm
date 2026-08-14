@@ -118,6 +118,9 @@ export interface GlobalKeydownContext {
     location: Location | undefined,
   ): { uri: string } | undefined;
   activatePane(paneId: PaneId): void;
+  /** Moves DOM focus into `paneId`'s directory table, activating it as a side effect. Undefined
+   * before the workspace layout has mounted and registered its focus callback. */
+  focusPane(paneId: PaneId): void;
   redraw(): void;
   toggleTerminal(): void;
   /** Applies a fixed sort to `paneId`'s active tab (Ctrl+F3..Ctrl+F7). */
@@ -513,7 +516,9 @@ export function createGlobalKeydownHandler(
       const direction = event.shiftKey ? -1 : 1;
       const nextIndex = (currentIndex + direction + paneOrder.length) % paneOrder.length;
       const nextPaneId = paneOrder[nextIndex];
-      if (nextPaneId !== undefined) context.activatePane(nextPaneId);
+      // Move DOM focus into the target pane, not just app-state `activePaneId` - otherwise
+      // arrow-key navigation stays inert until a mouse click focuses a row.
+      if (nextPaneId !== undefined) context.focusPane(nextPaneId);
       return;
     }
     if (dispatchedAction === 'core.closeTab') {

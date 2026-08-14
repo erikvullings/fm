@@ -178,6 +178,7 @@ function makeContext(overrides: Partial<GlobalKeydownContext> = {}): GlobalKeydo
     refetchAffectedPanes: vi.fn(),
     platformActionParameters: () => undefined,
     activatePane: vi.fn(),
+    focusPane: vi.fn(),
     redraw: vi.fn(),
     toggleTerminal: vi.fn(),
     setSort: vi.fn(),
