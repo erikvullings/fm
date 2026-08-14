@@ -1,7 +1,7 @@
 # 0119 Decompose FileManagerService into capability sub-services
 
-Status: in_progress
-Priority: high
+Status: open
+Priority: medium
 Subsystem: backend
 Depends on: none
 
@@ -195,3 +195,17 @@ This is the central architectural friction point in the Rust codebase. See `/imp
     3's cancel/apply paths already reach into 2) or 3 new sub-service types designed with the same
     care as `ConnectionFacade`/`PluginManager` — genuine architecture work for a dedicated session,
     not something to rush through opportunistically.
+- 2026-08-14: Paused here by explicit product decision — the easy/safe extraction work (three
+  passes above) is done and verified; the remaining sub-service design (constructors excluded —
+  see the "Conclusion" above for why those can't shrink further) is deliberately deferred to a
+  future dedicated session rather than continued now. `Status` set back to `open` (not
+  `in_progress`, since nothing is actively being worked on) and `Priority` lowered to `medium`.
+  Next agent picking this up: start by reading the third pass's "Conclusion of this sweep" note
+  above — it already scopes the remaining work into four clusters with size estimates and the
+  specific reason each one needs real design rather than mechanical extraction. No new
+  investigation should be needed before starting; the open question is *how* to shape
+  `OperationsCoordinator` / `SearchComparisonCoordinator` / `ActionInvoker` (naming and exact
+  boundaries still undecided — the note above suggests 2 and 3 could plausibly merge into one
+  type since `apply_sync_plan` already reaches into operations submission, but that's a design
+  call for whoever picks this up, not settled here), not whether there's more low-hanging fruit
+  first (there isn't).

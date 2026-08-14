@@ -23,18 +23,15 @@ now, agreed after a review of feature gaps against other "state-of-the-art" file
 Total Commander, ForkLift, Finder/Explorer). Superseded by whatever's actually picked up next —
 update this list if priorities shift rather than treating it as fixed.
 
-1. **0119** — finish the `FileManagerService` decomposition. It's the one task that looks done-ish
-   but is actually stalled (facade still ~3,836 lines against a <500-line target); architectural
-   debt here slows down everything below.
-2. **0071** — preview panel. Biggest missing "feels modern" gap; the folder-size-on-Space feature
+1. **0071** — preview panel. Biggest missing "feels modern" gap; the folder-size-on-Space feature
    and the PDF/CBR competitive question (see the task file) both live here now.
-3. **0134** — thumbnails + grid/icon view. Pairs with 0071; closes an explicit gap flagged on both
+2. **0134** — thumbnails + grid/icon view. Pairs with 0071; closes an explicit gap flagged on both
    0059 and 0060.
-4. **0077** — checksums and duplicate-file detection. Commonly expected, self-contained, no blocking
+3. **0077** — checksums and duplicate-file detection. Commonly expected, self-contained, no blocking
    dependencies.
-5. **0133** — populate native menu bar content. Cheap relative to payoff: the hook point already
+4. **0133** — populate native menu bar content. Cheap relative to payoff: the hook point already
    exists (0058/0059/0131), this is populating content, not building infrastructure.
-6. **0098** — frontend i18n. Gets more expensive to retrofit the more UI strings accumulate; worth
+5. **0098** — frontend i18n. Gets more expensive to retrofit the more UI strings accumulate; worth
    doing before the app grows much further.
 
 0135–0138 (git status column, Finder tags/xattrs, Services menu/Send to, mount-share action) are
@@ -282,7 +279,7 @@ comparison coordination, action invocation — ~750–1000 lines combined) genui
 sub-service types designed with the same care as `ConnectionFacade`/`PluginManager`, not more
 mechanical extraction. See 0119's Agent Notes for the full breakdown before starting that work.
 
-- [ ] 0119 Decompose FileManagerService into capability sub-services *(in_progress — facade down to ~2,957 lines across 6 new modules; remaining work needs real sub-service design, not more extraction)*
+- [ ] 0119 Decompose FileManagerService into capability sub-services *(paused 2026-08-14 — facade down to ~2,957 lines across 6 new modules; remaining work needs real sub-service design (not more extraction) and is deferred to a future dedicated session)*
 - [x] 0120 Extract Operation Planner module *(needs 0119)*
 - [x] 0121 Extract File Editor Service *(needs 0119)*
 - [x] 0122 Extract Connection Facade *(needs 0119)*
