@@ -9,7 +9,7 @@ specification and [TASKS/README.md](TASKS/README.md) for the implementation task
 ## Prerequisites
 
 | Tool | Minimum version | Notes |
-|---|---|---|
+| --- | --- | --- |
 | Rust toolchain | **1.97.1** (stable) | Pinned via `rust-toolchain.toml`. Install via [rustup](https://rustup.rs/). |
 | Node.js | **22 LTS** | Managed by [nvs](https://github.com/jasongin/nvs) or nvm. |
 | pnpm | **11** | `npm install -g pnpm` or `corepack enable`. |
@@ -41,7 +41,7 @@ crates/
   fm-operations/        operation engine: jobs, scheduler, conflict handling
   fm-platform/          platform-adapter trait and capability flags
   fm-platform-macos/    macOS implementation (icons, trash, terminal, …)
-  fm-platform-windows/  Windows implementation (drag-out only so far)
+  fm-platform-windows/  Windows implementation (Explorer reveal, Recycle Bin, drives, terminal)
   fm-plugin-api/        plugin manifest, permissions, contribution types
   fm-plugin-runtime/    restricted Lua sandbox and plugin lifecycle
   fm-transport-dto/     OpenAPI-serialisable DTOs shared by server and client
@@ -79,7 +79,7 @@ root (`dev`, `test`, `lint`, `build`, ...) — see the root `package.json` for t
 ### Development commands
 
 | Command | What it does |
-|---|---|
+| --- | --- |
 | `pnpm dev` | Start the Vite dev server with the **mock** client (default). No Rust process needed. |
 | `pnpm dev:mock` | Same as `pnpm dev` — mock runtime explicitly selected (`VITE_RUNTIME=mock`). |
 | `pnpm dev:http` | Start Vite against the **Axum backend** (`VITE_RUNTIME=http`). Requires Terminal 1 below. |
@@ -96,9 +96,23 @@ root (`dev`, `test`, `lint`, `build`, ...) — see the root `package.json` for t
 
 ### Recommended two-terminal flow (HTTP mode)
 
+On macOS and Linux:
+
 ```bash
 # Terminal 1 — Axum backend (auto-rebuilds on file change)
 FM_SERVER_PORT=8787 cargo watch -x "run -p fm-server -- --dev-mode-auth-disabled"
+
+# Terminal 2 — Vite dev server with /api proxy to localhost:8787
+pnpm dev:http
+```
+
+On Windows, PowerShell has no inline `VAR=value command` syntax, so set the environment variable
+as a separate statement (`cargo install cargo-watch` first, if `cargo watch` reports
+`no such command`):
+
+```powershell
+# Terminal 1 — Axum backend (auto-rebuilds on file change)
+$env:FM_SERVER_PORT = '8787'; cargo watch -x 'run -p fm-server'
 
 # Terminal 2 — Vite dev server with /api proxy to localhost:8787
 pnpm dev:http
@@ -124,7 +138,7 @@ compression, removes timeouts, and adds `cache-control: no-cache, no-transform` 
 The `VITE_RUNTIME` environment variable selects the client adapter at build time:
 
 | `VITE_RUNTIME` | Adapter | Backend needed |
-|---|---|---|
+| --- | --- | --- |
 | `mock` (default) | In-process mock — fixtures up to 1 M entries | None |
 | `http` | HTTP + SSE against Axum | `fm-server` on port 8787 |
 | `tauri` | Tauri IPC commands + Tauri channel events | Embedded in the Tauri shell |
@@ -241,7 +255,7 @@ primary-modifier rule above), but it explains why literal Ctrl+Arrow does nothin
 even if Mission Control's own gesture isn't visibly triggered.
 
 | Action | Windows / Linux | macOS | Notes |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Copy | F5 | F5 | |
 | Move | F6 | F6 | |
 | Rename | F2 | F2 | Shift+F6 is an alias for the same action. |
@@ -398,7 +412,7 @@ there starts a real remote shell (`cd <path> && exec $SHELL -l` over an SSH `exe
 client-side quoted) instead of a local one, while `core.openTerminal`'s external-terminal launch
 remains local-machine-only. SSH host keys are never auto-accepted, first use or on change:
 an unverified or changed key surfaces as a distinct connection status
-(`hostKeyUnverified`/`hostKeyMismatch`), and `POST /api/v1/connections/{id}/hostKey/probe`/`accept`
+(`hostKeyUnverified`/`hostKeyMismatch`), and`POST /api/v1/connections/{id}/hostKey/probe`/`accept`
 (and the equivalent Tauri commands) let a caller inspect the presented fingerprint and explicitly
 persist it before a later connect can succeed - accepted fingerprints are stored in a JSON
 known-hosts file beside the connection profiles. Clicking a connected server under `SERVERS` opens

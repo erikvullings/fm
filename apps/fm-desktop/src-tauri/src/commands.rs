@@ -193,6 +193,47 @@ pub(crate) async fn start_native_drag<R: Runtime>(
     }
 }
 
+/// Paints the native window caption to match the application chrome.
+///
+/// Windows draws the caption itself and only follows the light/dark system theme, so without
+/// this the title bar sits at the OS chrome colour rather than the app's surface colour. macOS
+/// draws its caption over our own reserved row already, and Linux caption colours are the
+/// compositor's business, so both are deliberate no-ops.
+#[tauri::command]
+pub(crate) fn set_caption_colours<R: Runtime>(
+    window: Window<R>,
+    background: String,
+    foreground: String,
+) {
+    #[cfg(target_os = "windows")]
+    {
+        let (Some(caption), Some(text)) = (colorref(&background), colorref(&foreground)) else {
+            return;
+        };
+        let Ok(handle) = window.hwnd() else { return };
+        fm_platform_windows::set_caption_colours(handle.0 as isize, caption, text);
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = (window, background, foreground);
+    }
+}
+
+/// Converts a `#rgb`/`#rrggbb` CSS colour into a Win32 `COLORREF` (`0x00bbggrr`).
+#[cfg(target_os = "windows")]
+fn colorref(css: &str) -> Option<u32> {
+    let digits = css.trim().strip_prefix('#')?;
+    let expanded = match digits.len() {
+        3 => digits.chars().flat_map(|c| [c, c]).collect::<String>(),
+        6 => digits.to_owned(),
+        _ => return None,
+    };
+    let red = u32::from_str_radix(&expanded[0..2], 16).ok()?;
+    let green = u32::from_str_radix(&expanded[2..4], 16).ok()?;
+    let blue = u32::from_str_radix(&expanded[4..6], 16).ok()?;
+    Some((blue << 16) | (green << 8) | red)
+}
+
 /// Caches an archive password for the lifetime of this desktop backend session.
 #[tauri::command]
 pub(crate) fn cache_archive_password(

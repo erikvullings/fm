@@ -36,5 +36,11 @@
   },
   "[css]": {
     "editor.defaultFormatter": "vscode.css-language-features"
+  },
+  "[toml]": {
+    "editor.defaultFormatter": "be5invis.toml"
+  },
+  "[shellscript]": {
+    "editor.defaultFormatter": "mads-hartmann.bash-ide-vscode"
   }
 }

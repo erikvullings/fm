@@ -1,7 +1,7 @@
 // Verifies the root dev scripts fail loudly (never silently no-op) while
 // their underlying features are not implemented yet, per TASKS/0003.
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -10,21 +10,27 @@ import { fileURLToPath } from 'node:url';
 
 const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 
-function runScript(scriptName, args = []) {
-  try {
-    const stdout = execFileSync('bash', [join('scripts', scriptName), ...args], {
-      cwd: repoRoot,
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-    return { exitCode: 0, stdout, stderr: '' };
-  } catch (error) {
-    return {
-      exitCode: error.status,
-      stdout: error.stdout ?? '',
-      stderr: error.stderr,
-    };
+/** On Windows `bash` on PATH is usually WSL, a different machine with none of
+ * this toolchain installed, so use the Git Bash shipped alongside git itself. */
+function bashCommand() {
+  if (process.platform !== 'win32') {
+    return 'bash';
   }
+  const gitExecPath = execFileSync('git', ['--exec-path'], { encoding: 'utf8' }).trim();
+  return join(gitExecPath, '..', '..', '..', 'bin', 'bash.exe');
+}
+
+/** Runs one of the Node scripts the root package.json exposes. */
+function runNodeScript(scriptName, args = []) {
+  const result = spawnSync(process.execPath, [join('scripts', scriptName), ...args], {
+    cwd: repoRoot,
+    encoding: 'utf8',
+  });
+  return {
+    exitCode: result.status ?? 1,
+    stdout: result.stdout ?? '',
+    stderr: result.stderr ?? '',
+  };
 }
 
 /** Maps every file under `dir` to its contents, for before/after diffing. */
@@ -36,23 +42,26 @@ function snapshotDir(dir) {
   return Object.fromEntries(entries.sort().map((entry) => [entry, readFileSync(join(dir, entry))]));
 }
 
-test('scripts/export-openapi.sh, generate-api.sh and not-implemented.sh are executable', () => {
-  for (const name of ['export-openapi.sh', 'generate-api.sh', 'not-implemented.sh']) {
-    const mode = statSync(join(repoRoot, 'scripts', name)).mode;
-    assert.ok(mode & 0o111, `${name} should be executable`);
-  }
+test('scripts/not-implemented.sh is executable', () => {
+  // Windows has no execute bit, so assert the mode git has recorded - that is
+  // what actually makes the script runnable once checked out on macOS/Linux.
+  const entry = execFileSync('git', ['ls-files', '-s', 'scripts/not-implemented.sh'], {
+    cwd: repoRoot,
+    encoding: 'utf8',
+  });
+  assert.match(entry, /^100755 /, 'not-implemented.sh should be committed executable');
 });
 
-test('scripts/export-openapi.sh writes a deterministic OpenAPI document (task 0009)', () => {
+test('scripts/export-openapi.mjs writes a deterministic OpenAPI document (task 0009)', () => {
   const dir = mkdtempSync(join(tmpdir(), 'fm-export-openapi-'));
   const outputPath = join(dir, 'openapi.json');
 
   try {
-    const first = runScript('export-openapi.sh', [outputPath]);
+    const first = runNodeScript('export-openapi.mjs', [outputPath]);
     assert.equal(first.exitCode, 0, first.stderr);
     const firstBytes = readFileSync(outputPath);
 
-    const second = runScript('export-openapi.sh', [outputPath]);
+    const second = runNodeScript('export-openapi.mjs', [outputPath]);
     assert.equal(second.exitCode, 0, second.stderr);
     const secondBytes = readFileSync(outputPath);
 
@@ -62,11 +71,11 @@ test('scripts/export-openapi.sh writes a deterministic OpenAPI document (task 00
   }
 });
 
-test('scripts/generate-api.sh regenerates a byte-identical client (task 0010)', () => {
+test('scripts/generate-api.mjs regenerates a byte-identical client (task 0010)', () => {
   const generatedDir = join(repoRoot, 'frontend', 'src', 'api', 'generated');
   const before = snapshotDir(generatedDir);
 
-  const result = runScript('generate-api.sh');
+  const result = runNodeScript('generate-api.mjs');
   assert.equal(result.exitCode, 0, result.stderr);
 
   const after = snapshotDir(generatedDir);
@@ -77,7 +86,7 @@ test('scripts/not-implemented.sh reports the script name and task number', () =>
   let stderr = '';
   let exitCode = 0;
   try {
-    execFileSync('bash', ['scripts/not-implemented.sh', 'dev:tauri', '0015'], {
+    execFileSync(bashCommand(), ['scripts/not-implemented.sh', 'dev:tauri', '0015'], {
       cwd: repoRoot,
       encoding: 'utf8',
     });

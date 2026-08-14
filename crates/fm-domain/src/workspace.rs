@@ -25,7 +25,7 @@ use crate::location::Location;
 /// than this; an older version is expected to already have been migrated up
 /// to this version before validation runs (see `fm_application`'s
 /// `WorkspaceService` startup lifecycle, task 0079).
-pub const CURRENT_WORKSPACE_SCHEMA_VERSION: u32 = 2;
+pub const CURRENT_WORKSPACE_SCHEMA_VERSION: u32 = 3;
 
 /// Maximum number of locations retained across both sides of a tab's
 /// navigation history (spec §5.3.4, §5.3.6 invariant 10).

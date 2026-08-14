@@ -22,11 +22,14 @@ pub fn resolve_home_directory() -> PathBuf {
     dirs::home_dir().unwrap_or_else(|| PathBuf::from("/"))
 }
 
+/// Converts a native home/start directory into a validated `file:` location.
+///
+/// Must go through [`Location::from_native_path`] rather than formatting the
+/// path into a URI: only POSIX paths survive concatenation, while a Windows
+/// path yields `file://C:\Users\erik`, which every later listing rejects.
 pub(crate) fn location_for(path: &Path) -> Location {
-    Location::new(
-        ProviderId::new("local"),
-        format!("file://{}", path.display()),
-    )
+    Location::from_native_path(path)
+        .unwrap_or_else(|_| Location::new(ProviderId::new("local"), "file:///"))
 }
 
 fn default_directory_view() -> DirectoryViewConfiguration {
@@ -128,6 +131,39 @@ pub fn default_workspace(home_directory: &Path, secondary_location: Option<&Path
 mod tests {
     use super::*;
 
+    #[cfg(windows)]
+    const HOME: &str = r"C:\Users\erik";
+    #[cfg(windows)]
+    const HOME_URI: &str = "file:///C:/Users/erik";
+    #[cfg(windows)]
+    const DOWNLOADS: &str = r"C:\Users\erik\Downloads";
+    #[cfg(windows)]
+    const DOWNLOADS_URI: &str = "file:///C:/Users/erik/Downloads";
+
+    #[cfg(not(windows))]
+    const HOME: &str = "/Users/erik";
+    #[cfg(not(windows))]
+    const HOME_URI: &str = "file:///Users/erik";
+    #[cfg(not(windows))]
+    const DOWNLOADS: &str = "/Users/erik/Downloads";
+    #[cfg(not(windows))]
+    const DOWNLOADS_URI: &str = "file:///Users/erik/Downloads";
+
+    /// A native home directory must become a *parseable* location. Building the
+    /// URI by string concatenation only happened to work for POSIX paths and
+    /// produced `file://C:\Users\erik` on Windows, which every later listing
+    /// then rejected as an invalid URI (task 0060).
+    #[test]
+    fn default_workspace_locations_are_parseable_native_paths() {
+        let workspace = default_workspace(Path::new(HOME), None);
+
+        for pane in &workspace.panes {
+            let location = &pane.tabs[0].location;
+            let parsed = Location::parse(&location.uri).expect("location must be a valid URI");
+            assert_eq!(parsed.to_native_path().unwrap(), Path::new(HOME));
+        }
+    }
+
     #[test]
     fn resolve_home_directory_never_returns_an_empty_path() {
         let home = resolve_home_directory();
@@ -136,7 +172,7 @@ mod tests {
 
     #[test]
     fn default_workspace_is_named_default_with_two_panes_in_a_50_50_split() {
-        let workspace = default_workspace(Path::new("/Users/erik"), None);
+        let workspace = default_workspace(Path::new(HOME), None);
 
         assert_eq!(workspace.name, "Default");
         assert_eq!(workspace.panes.len(), 2);
@@ -153,28 +189,19 @@ mod tests {
 
     #[test]
     fn default_workspace_uses_the_home_directory_for_both_panes_without_a_secondary_location() {
-        let workspace = default_workspace(Path::new("/Users/erik"), None);
+        let workspace = default_workspace(Path::new(HOME), None);
 
         for pane in &workspace.panes {
             assert_eq!(pane.tabs[0].location.provider_id.as_str(), "local");
-            assert_eq!(pane.tabs[0].location.uri, "file:///Users/erik");
+            assert_eq!(pane.tabs[0].location.uri, HOME_URI);
         }
     }
 
     #[test]
     fn default_workspace_uses_the_secondary_location_for_the_second_pane_only() {
-        let workspace = default_workspace(
-            Path::new("/Users/erik"),
-            Some(Path::new("/Users/erik/Downloads")),
-        );
+        let workspace = default_workspace(Path::new(HOME), Some(Path::new(DOWNLOADS)));
 
-        assert_eq!(
-            workspace.panes[0].tabs[0].location.uri,
-            "file:///Users/erik"
-        );
-        assert_eq!(
-            workspace.panes[1].tabs[0].location.uri,
-            "file:///Users/erik/Downloads"
-        );
+        assert_eq!(workspace.panes[0].tabs[0].location.uri, HOME_URI);
+        assert_eq!(workspace.panes[1].tabs[0].location.uri, DOWNLOADS_URI);
     }
 }

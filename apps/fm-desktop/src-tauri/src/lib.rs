@@ -127,6 +127,7 @@ pub fn run() {
             commands::open_embedded_terminal,
             commands::write_embedded_terminal,
             commands::resize_embedded_terminal,
+            commands::set_caption_colours,
         ])
         .run(build_context())
         .expect("error while running the Tauri application");
@@ -273,6 +274,19 @@ mod tests {
             .expect("failed to build mock app")
     }
 
+    /// The URL the webview really serves the frontend from, which is the only
+    /// origin the app's ACL grants commands to. Windows and Android use the
+    /// `http://tauri.localhost` workaround rather than the `tauri://` scheme
+    /// (see `WebviewManager::tauri_protocol_url`).
+    fn local_protocol_url() -> tauri::Url {
+        let url = if cfg!(any(windows, target_os = "android")) {
+            "http://tauri.localhost"
+        } else {
+            "tauri://localhost"
+        };
+        url.parse().expect("valid url")
+    }
+
     /// Smoke test (task 0015's acceptance criteria): the app starts, on a
     /// headless `MockRuntime` (no real window), and `getRuntimeCapabilities`
     /// reports `runtime: "tauri"`.
@@ -289,12 +303,9 @@ mod tests {
                 cmd: "get_runtime_capabilities".into(),
                 callback: CallbackFn(0),
                 error: CallbackFn(1),
-                // `tauri://localhost` on macOS/Linux; only Windows/Android use the
-                // `http(s)://tauri.localhost` workaround URL (see
-                // `WebviewManager::tauri_protocol_url`). A URL that doesn't
-                // match the platform's local protocol is treated as remote and
-                // rejected by the app's ACL (no capability grants it there).
-                url: "tauri://localhost".parse().expect("valid url"),
+                // The app's ACL only grants commands to the platform's own local
+                // protocol URL; anything else counts as remote and is rejected.
+                url: local_protocol_url(),
                 body: InvokeBody::default(),
                 headers: Default::default(),
                 invoke_key: INVOKE_KEY.to_string(),
@@ -321,7 +332,7 @@ mod tests {
                 cmd: "get_file_icon".into(),
                 callback: CallbackFn(0),
                 error: CallbackFn(1),
-                url: "tauri://localhost".parse().expect("valid url"),
+                url: local_protocol_url(),
                 body: InvokeBody::Json(serde_json::json!({ "uri": "not a location" })),
                 headers: Default::default(),
                 invoke_key: INVOKE_KEY.to_string(),

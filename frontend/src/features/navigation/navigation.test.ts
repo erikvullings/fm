@@ -450,6 +450,28 @@ describe('navigation controller', () => {
     });
   });
 
+  /** Tauri's `invoke` rejects with a plain `{code, message}` object rather than an `Error`,
+   * so a backend failure must still surface its own message instead of a generic fallback. */
+  it('surfaces the backend message when the transport rejects with a plain object', async () => {
+    const context = setup();
+    vi.mocked(context.client.navigatePane).mockRejectedValue({
+      code: 'fileLocked',
+      message: 'The file is in use by another program.',
+    });
+    const controller = createNavigationController({
+      client: context.client,
+      getWorkspace: context.getWorkspace,
+      replaceWorkspace: context.replaceWorkspace,
+      updatePane: (_paneId, _tabId, view) => context.views.push(view),
+    });
+
+    await controller.navigate('left', { providerId: 'local', uri: 'file:///C:' });
+
+    expect(context.views.at(-1)).toMatchObject({
+      state: { type: 'error', message: 'The file is in use by another program.' },
+    });
+  });
+
   it('keeps a tab recoverable when a mounted network share disappears', async () => {
     const context = setup();
     const original = context.getWorkspace();

@@ -100,7 +100,12 @@ export const TabStrip: FactoryComponent<TabStripAttrs> = () => {
                 draggedTabId = undefined;
                 dropTargetTabId = undefined;
               },
-              class: dropTargetTabId === tab.id ? 'fm-drop-target' : '',
+              class: [
+                dropTargetTabId === tab.id ? 'fm-drop-target' : '',
+                attrs.tabs.length === 1 ? 'fm-pane-tab-only' : '',
+              ]
+                .filter((name) => name !== '')
+                .join(' '),
             },
             [
               m(

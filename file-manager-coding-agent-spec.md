@@ -300,8 +300,8 @@ file-manager/
 │   ├── directories/
 │   └── mock-responses/
 └── scripts/
-    ├── export-openapi.sh
-    ├── generate-api.sh
+    ├── export-openapi.mjs
+    ├── generate-api.mjs
     └── create-large-directory-fixture.rs
 ```
 
@@ -439,7 +439,7 @@ The Rust `WorkspaceService` is the authoritative owner of workspace configuratio
 Use the following ownership split:
 
 | State | Owner | Persisted |
-|---|---|---|
+| --- | --- | --- |
 | Workspace identity and name | Workspace service | Yes |
 | Pane layout | Workspace service | Yes |
 | Open tabs and tab order | Workspace service | Yes |

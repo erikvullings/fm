@@ -173,8 +173,13 @@ mod tests {
         let symlink = allowed.join("link");
         #[cfg(unix)]
         std::os::unix::fs::symlink(&outside, &symlink).unwrap();
+        // Creating a symlink needs SeCreateSymbolicLinkPrivilege, which an
+        // unelevated Windows session without Developer Mode does not hold.
         #[cfg(windows)]
-        std::os::windows::fs::symlink_file(&outside, &symlink).unwrap();
+        if let Err(error) = std::os::windows::fs::symlink_file(&outside, &symlink) {
+            eprintln!("symlink fixture unsupported in this Windows environment: {error}");
+            return;
+        }
 
         // The symlink's target is outside the allowed root, so access should be denied.
         let result = validate_within_accessible_roots(&symlink, std::slice::from_ref(&allowed));

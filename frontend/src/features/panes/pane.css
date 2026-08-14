@@ -100,6 +100,12 @@
   outline-offset: -2px;
 }
 
+/* A lone tab has nothing to separate it from -- the divider would just float next to the
+ * new-tab/favourites buttons. */
+.fm-pane-tab.fm-pane-tab-only {
+  border-right: 0;
+}
+
 .fm-pane-tab[aria-selected="true"] {
   background: var(--fm-surface-elevated);
   color: inherit;
@@ -136,7 +142,9 @@
   padding: 0;
   border: 0;
   border-radius: var(--fm-radius);
-  background: var(--fm-surface);
+  /* Overlays the tab title, so it must mask it with the tab's own background rather than a
+   * fixed colour that only matches inactive tabs. */
+  background-color: inherit;
   color: inherit;
   font: inherit;
   line-height: 1;
@@ -147,13 +155,11 @@
 .fm-pane-tab:hover .fm-pane-tab-close,
 .fm-pane-tab:focus-within .fm-pane-tab-close {
   opacity: 1;
-  background: var(--fm-surface);
   pointer-events: auto;
 }
 
-.fm-pane-tab[aria-selected="true"]:hover .fm-pane-tab-close,
-.fm-pane-tab[aria-selected="true"]:focus-within .fm-pane-tab-close {
-  background: var(--fm-hover);
+.fm-pane-tab-close:hover {
+  background-color: var(--fm-hover);
 }
 
 .fm-pane-tab-new,

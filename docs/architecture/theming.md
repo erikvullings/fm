@@ -105,6 +105,7 @@ icon theme format but trimmed to what `entryIconRegistry` resolves:
   "file": "file",
   "symlink": "symlink",
   "fileExtensions": { "ts": "typescript" },
+  "fileNames": { "Cargo.toml": "cargo" },
   "mimePrefixes": { "image/": "image" }
 }
 ```
@@ -115,14 +116,16 @@ icon theme format but trimmed to what `entryIconRegistry` resolves:
 - `folder`, `file`, `symlink`: definition keys used as the default glyph for each `EntryKind`.
 - `fileExtensions`: lowercased extension (no leading dot) to definition key, feeding
   `entryIconRegistry.extensionIcons`.
+- `fileNames`: exact, case-sensitive file name to definition key, feeding
+  `entryIconRegistry.fileNameIcons` and matched ahead of `fileExtensions`.
 - `mimePrefixes`: MIME-type prefix to definition key, feeding `entryIconRegistry.mimePrefixIcons`
   (an fm-specific fallback tier; not part of VS Code's format).
 
 `discover_plugins` parses and validates `icon-theme.json` whenever `icon_theme` is declared, using
 the same "invalid plugin → disabled with a diagnostic, never fail startup" pattern as action/column
 plugins: an empty `iconDefinitions`, an unsafe `iconPath`, or any `file`/`folder`/`symlink`/
-`fileExtensions`/`mimePrefixes` value referencing an undeclared definition key disables the plugin
-with a diagnostic instead of aborting discovery.
+`fileExtensions`/`fileNames`/`mimePrefixes` value referencing an undeclared definition key disables
+the plugin with a diagnostic instead of aborting discovery.
 
 #### Serving theme assets
 

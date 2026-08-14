@@ -1,5 +1,5 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
-import { dirname, join, relative } from 'node:path';
+import { dirname, isAbsolute, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
@@ -22,6 +22,12 @@ function collectTsFiles(dir: string): string[] {
 
 function importsSpecifierContaining(content: string, needle: string): boolean {
   return new RegExp(`from\\s+['"][^'"]*${needle}[^'"]*['"]`).test(content);
+}
+
+/** Separator-agnostic containment, so the check also holds on Windows. */
+function isInside(root: string, file: string): boolean {
+  const path = relative(root, file);
+  return path.length > 0 && !path.startsWith('..') && !isAbsolute(path);
 }
 
 describe('module import boundaries', () => {
@@ -51,7 +57,7 @@ describe('module import boundaries', () => {
     const allowedRoots = [THIS_DIR, join(SRC_ROOT, 'models')];
 
     const offenders = files
-      .filter((file) => !allowedRoots.some((root) => file.startsWith(`${root}/`)))
+      .filter((file) => !allowedRoots.some((root) => isInside(root, file)))
       .filter((file) => importsSpecifierContaining(readFileSync(file, 'utf-8'), 'generated'));
 
     expect(offenders.map((file) => relative(SRC_ROOT, file))).toEqual([]);

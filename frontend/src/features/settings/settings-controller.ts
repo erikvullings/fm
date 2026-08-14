@@ -1,3 +1,4 @@
+import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { type Theme, ThemeManager } from 'mithril-materialized';
 import type { FileManagerClient } from '../../api/client/file-manager-client';
@@ -178,15 +179,19 @@ export function createSettingsController(context: SettingsControllerContext): Se
 
     syncTauriWindowBackground(): void {
       if (context.getRuntimeKind() !== 'tauri') return;
-      const resolved = getComputedStyle(document.documentElement)
-        .getPropertyValue('--fm-surface-elevated')
-        .trim();
+      const styles = getComputedStyle(document.documentElement);
+      const resolved = styles.getPropertyValue('--fm-surface-elevated').trim();
       if (resolved.length === 0) return;
       const win = getCurrentWindow();
       void win.setBackgroundColor(resolved);
       // 'auto' -> null lets the OS decide, matching the CSS @media fallback.
       const theme = context.getCurrentSettings()?.theme;
       void win.setTheme(theme === 'auto' || theme === undefined ? null : theme);
+      // Windows draws its own caption, which otherwise stays at the OS chrome colour.
+      void invoke('set_caption_colours', {
+        background: resolved,
+        foreground: styles.getPropertyValue('--fm-text').trim(),
+      }).catch(() => undefined);
     },
 
     async loadSettings(client: FileManagerClient): Promise<void> {

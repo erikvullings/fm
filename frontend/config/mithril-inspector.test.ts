@@ -3,11 +3,13 @@
 import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { build, resolveConfig } from 'vite';
 import { afterEach, describe, expect, it } from 'vitest';
 
-const frontendRoot = new URL('..', import.meta.url).pathname;
+// `URL.pathname` would yield `/C:/dev/...` on Windows, which is not a usable path.
+const frontendRoot = fileURLToPath(new URL('..', import.meta.url));
 const viteConfigFile = join(frontendRoot, 'vite.config.ts');
 const temporaryDirectories: string[] = [];
 

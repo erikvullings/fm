@@ -58,3 +58,12 @@ lockfile. Default features not required by the supported matrix are disabled.
 - Feature coverage may differ by format, and UI actions follow advertised capabilities.
 - Synchronous archive codecs run on blocking workers so application async executors remain
   responsive and cancellable at provider-defined safe points.
+
+## Revisit conditions
+
+- A permissively licensed Rust library gains safe RAR rewriting, or 7z in-place mutation, making the
+  read-only rows in the matrix unnecessary.
+- ZIP or 7z requirements outgrow what `zip`/`sevenz-rust2` can express, at which point libarchive
+  becomes the fallback already identified above.
+- A dependency's license or default feature set changes in a way the pre-merge lockfile check
+  rejects.

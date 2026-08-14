@@ -822,7 +822,7 @@ async fn summarize_entry(
         size: (kind == EntryKind::File).then_some(metadata.len()),
         modified_at: metadata.modified().ok().map(DateTime::<Utc>::from),
         created_at: metadata.created().ok().map(DateTime::<Utc>::from),
-        read_only: metadata.permissions().readonly(),
+        read_only: is_read_only(&metadata),
         mime_type: None,
         icon_key: None,
         metadata_revision: 0,
@@ -859,7 +859,7 @@ async fn summarize_path(path: &Path, location: &Location) -> Result<EntrySummary
         size: (kind == EntryKind::File).then_some(metadata.len()),
         modified_at: metadata.modified().ok().map(DateTime::<Utc>::from),
         created_at: metadata.created().ok().map(DateTime::<Utc>::from),
-        read_only: metadata.permissions().readonly(),
+        read_only: is_read_only(&metadata),
         mime_type: None,
         icon_key: None,
         metadata_revision: 0,
@@ -1025,10 +1025,22 @@ fn empty_page() -> DirectoryPage {
 fn permissions(metadata: &std::fs::Metadata) -> PermissionsInfo {
     PermissionsInfo {
         readable: true,
-        writable: !metadata.permissions().readonly(),
+        writable: !is_read_only(metadata),
         executable: executable(metadata),
         unix_mode: unix_mode(metadata),
     }
+}
+
+/// Windows sets `FILE_ATTRIBUTE_READONLY` on directories to flag folder customisation rather than
+/// write protection, so honouring it there would wrongly block renaming ordinary folders.
+#[cfg(windows)]
+fn is_read_only(metadata: &std::fs::Metadata) -> bool {
+    !metadata.is_dir() && metadata.permissions().readonly()
+}
+
+#[cfg(not(windows))]
+fn is_read_only(metadata: &std::fs::Metadata) -> bool {
+    metadata.permissions().readonly()
 }
 
 #[cfg(unix)]
@@ -1057,7 +1069,11 @@ fn unix_mode(_metadata: &std::fs::Metadata) -> Option<u32> {
 fn is_hidden(name: &str, metadata: &std::fs::Metadata) -> bool {
     use std::os::windows::fs::MetadataExt;
     const FILE_ATTRIBUTE_HIDDEN: u32 = 0x2;
-    name.starts_with('.') || metadata.file_attributes() & FILE_ATTRIBUTE_HIDDEN != 0
+    // System entries are hidden by Explorer's own default too, so they follow
+    // the hidden-file setting rather than always being listed (task 0060).
+    const FILE_ATTRIBUTE_SYSTEM: u32 = 0x4;
+    name.starts_with('.')
+        || metadata.file_attributes() & (FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM) != 0
 }
 
 #[cfg(not(windows))]
@@ -1094,6 +1110,11 @@ fn validate_directory_name(name: &str) -> Result<(), VfsError> {
 }
 
 fn map_io_error(error: io::Error, location: &str) -> VfsError {
+    if is_locked_error(&error) {
+        return VfsError::Locked {
+            location: location.to_owned(),
+        };
+    }
     match error.kind() {
         io::ErrorKind::NotFound => VfsError::NotFound {
             location: location.to_owned(),
@@ -1111,6 +1132,38 @@ fn map_io_error(error: io::Error, location: &str) -> VfsError {
             message: error.to_string(),
         },
     }
+}
+
+#[cfg(all(test, windows))]
+mod windows_error_tests {
+    use super::map_io_error;
+    use fm_vfs::VfsError;
+    use std::io;
+
+    #[test]
+    fn sharing_violation_maps_to_locked_error() {
+        let error = map_io_error(io::Error::from_raw_os_error(32), "file:///locked.txt");
+        assert!(matches!(error, VfsError::Locked { .. }));
+        assert_eq!(error.code(), "locked");
+    }
+}
+
+/// Windows reports a file another process holds open without sharing as
+/// `ERROR_SHARING_VIOLATION`/`ERROR_LOCK_VIOLATION`, which `io::ErrorKind`
+/// still flattens into `Uncategorized` (task 0060).
+#[cfg(windows)]
+fn is_locked_error(error: &io::Error) -> bool {
+    const ERROR_SHARING_VIOLATION: i32 = 32;
+    const ERROR_LOCK_VIOLATION: i32 = 33;
+    matches!(
+        error.raw_os_error(),
+        Some(ERROR_SHARING_VIOLATION | ERROR_LOCK_VIOLATION)
+    )
+}
+
+#[cfg(not(windows))]
+fn is_locked_error(_error: &io::Error) -> bool {
+    false
 }
 
 fn unsupported<T>(capability: ProviderCapabilities) -> Result<T, VfsError> {

@@ -717,6 +717,110 @@ async fn windows_hidden_attribute_and_directory_reparse_points_are_flagged() {
     );
 }
 
+#[cfg(windows)]
+#[tokio::test]
+async fn windows_read_only_directories_stay_writable() {
+    use std::process::Command;
+
+    // Explorer sets +R on folders to mark customisation, not write protection, and user profile
+    // folders such as Documents ship that way -- honouring it would block renaming them.
+    let root = tempdir().expect("temporary directory");
+    let folder = root.path().join("Documents");
+    fs::create_dir(&folder).expect("create folder fixture");
+    let read_only_file = root.path().join("locked.txt");
+    fs::write(&read_only_file, []).expect("create file fixture");
+    for path in [&folder, &read_only_file] {
+        let status = Command::new("attrib")
+            .arg("+R")
+            .arg(path)
+            .status()
+            .expect("run attrib");
+        assert!(status.success());
+    }
+    let location = Location::from_native_path(root.path()).expect("local location");
+
+    let page = LocalFileSystemProvider::new()
+        .list(&location, ListOptions::default(), CancellationToken::new())
+        .await
+        .expect("list directory");
+
+    let folder_entry = page
+        .entries
+        .iter()
+        .find(|entry| entry.name == "Documents")
+        .expect("folder entry");
+    assert!(!folder_entry.read_only);
+    let file_entry = page
+        .entries
+        .iter()
+        .find(|entry| entry.name == "locked.txt")
+        .expect("file entry");
+    assert!(file_entry.read_only);
+}
+
+#[cfg(windows)]
+#[tokio::test]
+async fn windows_system_files_are_treated_as_hidden_for_the_hidden_file_setting() {
+    use std::process::Command;
+
+    let root = tempdir().expect("temporary directory");
+    let system_path = root.path().join("system.bin");
+    fs::write(&system_path, []).expect("create system fixture");
+    let status = Command::new("attrib")
+        .arg("+S")
+        .arg(&system_path)
+        .status()
+        .expect("run attrib");
+    assert!(status.success());
+    let location = Location::from_native_path(root.path()).expect("local location");
+    let provider = LocalFileSystemProvider::new();
+
+    let visible = provider
+        .list(&location, ListOptions::default(), CancellationToken::new())
+        .await
+        .expect("list directory");
+
+    assert!(
+        visible
+            .entries
+            .iter()
+            .any(|entry| entry.name == "system.bin" && entry.hidden)
+    );
+}
+
+/// A file another process holds open without sharing must report a distinct
+/// `locked` code, not a generic I/O failure (task 0060, specification §8/§23).
+#[cfg(windows)]
+#[tokio::test]
+async fn windows_exclusively_locked_files_report_a_distinct_locked_error() {
+    use std::os::windows::fs::OpenOptionsExt;
+
+    const FILE_SHARE_NONE: u32 = 0;
+
+    let root = tempdir().expect("temporary directory");
+    let locked_path = root.path().join("locked.txt");
+    fs::write(&locked_path, b"payload").expect("create locked fixture");
+    let _exclusive = fs::OpenOptions::new()
+        .read(true)
+        .share_mode(FILE_SHARE_NONE)
+        .open(&locked_path)
+        .expect("hold an exclusive handle");
+
+    let location = Location::from_native_path(&locked_path).expect("local location");
+    let entry = EntryRef {
+        id: fm_domain::EntryId::new(),
+        location: location.clone(),
+    };
+    let error = LocalFileSystemProvider::new()
+        .open_read(&entry, CancellationToken::new())
+        .await
+        .err()
+        .expect("reading an exclusively locked file fails");
+
+    assert_eq!(error.code(), "locked");
+    assert!(matches!(error, VfsError::Locked { .. }));
+}
+
 #[cfg(target_os = "macos")]
 #[tokio::test]
 async fn macos_application_bundles_are_listed_as_files_not_directories() {

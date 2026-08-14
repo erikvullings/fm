@@ -48,6 +48,7 @@ const ADR_TITLES = [
   'virtualized table implementation',
   'settings persistence',
   'native platform adapters',
+  'archive library selection',
 ];
 
 function decisionFiles() {
@@ -58,7 +59,7 @@ function decisionFiles() {
 
 test('docs/decisions contains exactly one numbered ADR per §34 item', () => {
   const files = decisionFiles();
-  assert.equal(files.length, 10);
+  assert.equal(files.length, ADR_TITLES.length);
   files.forEach((file, index) => {
     const expectedNumber = String(index + 1).padStart(4, '0');
     assert.ok(

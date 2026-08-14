@@ -10,6 +10,16 @@ use fm_server::config::ServerConfig;
 use fm_transport_dto::RuntimeKindDto;
 use std::sync::Arc;
 
+/// A native path as a validated `file:` URI. Formatting the path into the URI
+/// instead only produces a valid result for POSIX paths: a Windows path yields
+/// `file://C:\dir`, which the domain layer rejects.
+#[allow(dead_code)]
+pub(crate) fn file_uri(path: &std::path::Path) -> String {
+    fm_domain::Location::from_native_path(path)
+        .expect("test fixture path must be an absolute native path")
+        .uri
+}
+
 /// A spawned test server plus the `TempDir` its workspace storage lives in.
 ///
 /// The `TempDir` must be kept alive for the duration of the test (dropping it

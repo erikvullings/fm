@@ -85,7 +85,7 @@ async fn invoke_action_delegates_create_directory_and_returns_an_operation_id() 
             "parameters": {
                 "type": "createDirectory",
                 "sources": [],
-                "destination": {"providerId": "local", "uri": format!("file://{}", root.path().display())},
+                "destination": {"providerId": "local", "uri": common::file_uri(root.path())},
                 "conflictPolicy": "ask",
                 "name": "child"
             }
