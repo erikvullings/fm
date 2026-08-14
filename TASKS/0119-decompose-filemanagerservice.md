@@ -12,7 +12,11 @@ The ` FileManagerService` facade (`crates/fm-application/src/service.rs`) has gr
 This is the central architectural friction point in the Rust codebase. See `/improve-codebase-architecture` skill findings for the full analysis.
 
 ## Acceptance Criteria
-- `FileManagerService` reduced to a thin composition layer (target: <500 lines)
+- `FileManagerService` reduced to a thin composition layer. Original target was <500 lines; revised
+  2026-08-14 per product guidance — ~1000 lines is an acceptable outcome, and extractions must be
+  along genuine capability/responsibility boundaries. Do not force a split (e.g. arbitrarily
+  breaking up `impl FileManagerService`'s method bodies into loops/helpers) purely to hit a line
+  count; a clean stop above 500 lines is preferable to an artificial one at 500.
 - Each capability cluster (operations, file editing, plugins, connections, search) extracted into its own deep module with a small, well-defined interface
 - All extracted modules have their own test coverage — not just unit tests, but tests through the module's interface
 - No behavioural changes visible to callers (Axum routes, Tauri commands, CLI)
@@ -83,3 +87,53 @@ This is the central architectural friction point in the Rust codebase. See `/imp
     → new module → fix imports → `cargo build --tests` zero warnings → `clippy -D warnings` → `fmt`
     → `cargo test -p fm-application --lib` and the full integration suite → `cargo build --workspace`)
     before moving to the next cluster, rather than batching multiple extractions unverified.
+- 2026-08-14 (second pass, same session): product guidance revised the target to ~1000 lines and
+  explicitly asked for clean capability boundaries over forced splitting — see the "Not done" item
+  above and the revised Acceptance Criteria. Extracted the ~400-line mapping-function cluster
+  identified in the first pass's notes, split by actual responsibility rather than dumped into one
+  file, since "free function defined in service.rs" was never a real boundary:
+  - `crates/fm-application/src/settings_mapping.rs` (134 lines): `settings_to_dto`/
+    `settings_from_dto` — `Settings` (`fm-settings`) <-> `SettingsDto` (`fm-transport-dto`).
+  - `crates/fm-application/src/comparison_mapping.rs` (98 lines): the full `fm-comparison` <->
+    transport-DTO conversion set for directory comparison/sync (task 0075) — `comparison_criteria`,
+    `comparison_criteria_dto`, `comparison_status_dto`, `comparison_entry_side_dto`,
+    `comparison_entry_dto`, `sync_mode`, `sync_action`, `sync_action_dto`, `sync_plan_item_dto`.
+  - `crates/fm-application/src/operation_requests.rs` (141 lines): translates wire-level requests/
+    action ids into the operations engine's own types — `map_scheduler_error`, `copy_request`/
+    `delete_request` (sync-plan-row request builders), `operation_kind`, `conflict_policy`,
+    `mutating_operation_kind`.
+  - `crates/fm-application/src/platform_mapping.rs` (74 lines): action-id-to-platform-adapter
+    dispatch mapping (task 0061) plus OS detection — `PlatformActionKind`, `platform_action_kind`,
+    `map_platform_error`, `map_file_icon_error`, `detect_platform`.
+  - All four are pure functions/enums with no `self`/facade-state dependency, same shape as
+    `operation_history.rs`'s `operation_dto`. Every external call site stayed inside
+    `impl FileManagerService` (confirmed by grep before extracting, not assumed) — only
+    `pub(crate)`-exposed what's actually called from `service.rs`; helpers used solely within a new
+    module's own functions (`comparison_entry_side_dto`, `sync_action_dto`, `comparison_status_dto`)
+    stayed module-private.
+  - `service.rs`: 3,555 → 3,160 lines (395 lines moved). Fixed import fallout the same way as the
+    first pass, including one `cargo fix --lib -p fm-application --tests --allow-dirty` quirk worth
+    flagging for next time: it over-removed `OperationKindDto`/`PlatformKindDto` from the crate-wide
+    import list because they're only used inside `#[cfg(test)] mod tests`, then failed the
+    `--tests` build it had just "fixed" — `cargo fix` doesn't reliably reconcile a single import
+    list against both the plain and `--tests` compilations in one pass. Manually moved both into the
+    test module's own `use fm_transport_dto::{...}` (matching the `OperationStateDto` pattern from
+    the first pass) rather than trusting the tool's second pass.
+  - Verified identically to the first pass: `cargo build -p fm-application --tests` zero warnings,
+    `cargo clippy -p fm-application --all-targets -- -D warnings` clean, `cargo fmt -p
+    fm-application` clean, `cargo test -p fm-application --lib` 183/183 (same count — no coverage
+    lost), `cargo test -p fm-application` (full integration suite) green, `cargo build --workspace`
+    clean.
+  - Session total so far: service.rs 3,836 → 3,160 lines (~18% reduction) across two verified
+    passes, five new modules (`operation_history`, `settings_mapping`, `comparison_mapping`,
+    `operation_requests`, `platform_mapping`).
+  - **What's left** is unchanged in kind from the first pass's item 2 and 3 (see above): the
+    `impl FileManagerService` block itself (~1,330 lines, 61 public methods) is the real remaining
+    facade-shrinking work, and it's architecturally different from what's been extracted so far —
+    these methods are genuinely tied to `&self` and the facade's many fields, so extracting them
+    means designing real sub-service types (following the `ConnectionFacade`/`PluginManager`
+    pattern) that own the relevant state, not just moving pure functions. That's a bigger design
+    task than this session's mechanical extractions and is better done as its own focused pass. The
+    ~1,690-line test module is the other big piece — same "move tests alongside their capability"
+    approach as before, but most of what's left to extract now needs the sub-service design decided
+    first, since tests for `&self` methods can't move to a module that doesn't exist yet.

@@ -7,9 +7,7 @@ use std::sync::{Arc, Mutex};
 
 use fm_archive::ArchiveFileSystemProvider;
 use fm_comparison::{
-    ComparisonCriteria, ComparisonEngine, ComparisonEntry, ComparisonEntrySide,
-    ComparisonResultsStore, ComparisonStatus, SyncAction, SyncMode, SyncPlanItem,
-    generate_sync_plan as compute_sync_plan, relative_parent, resolve_relative,
+    ComparisonEngine, ComparisonResultsStore, SyncAction, generate_sync_plan as compute_sync_plan,
 };
 use fm_connections::{ConnectionService, JsonFileConnectionRepository};
 use fm_credentials::{CredentialStore, InMemoryCredentialStore, SessionCredentialStore};
@@ -24,22 +22,17 @@ use fm_operations::{ConflictResolution, Operation, Scheduler, SchedulerError};
 use fm_platform::{FallbackPlatformAdapter, PlatformAdapter, PlatformCapabilities};
 use fm_plugin_runtime::{PluginDiscovery, PluginRuntime};
 use fm_search::{SearchEngine, SearchFileSystemProvider, SearchResultsStore};
-use fm_settings::{
-    ConflictPolicy, DateFormat, DefaultPaneLayout, Settings, SettingsStore, SizeFormat, Theme,
-};
+use fm_settings::{Settings, SettingsStore};
 use fm_transport_dto::{
     ActionDescriptorDto, ActionResultDto, ApplySyncPlanRequestDto, ApplySyncPlanResponseDto,
-    ComparisonCriteriaDto, ComparisonEntryDto, ComparisonEntrySideDto, ComparisonPageDto,
-    ComparisonStatusDto, ConflictPolicyDto, ConflictResolutionDto, ConnectionDto,
-    CreateConnectionRequestDto, DateFormatDto, DefaultPaneLayoutDto, DirectorySnapshotDto,
-    EntryMetadataRequest, GenerateSyncPlanRequestDto, InvokeActionRequestDto, ListDirectoryRequest,
-    NavigateRequest, OperationConflictPolicyDto, OperationDto, OperationKindDto, PlatformKindDto,
+    ComparisonPageDto, ConflictResolutionDto, ConnectionDto, CreateConnectionRequestDto,
+    DirectorySnapshotDto, EntryMetadataRequest, GenerateSyncPlanRequestDto, InvokeActionRequestDto,
+    ListDirectoryRequest, NavigateRequest, OperationConflictPolicyDto, OperationDto,
     PluginDescriptorDto, PluginLogEntryDto, ReadFileRangeRequestDto, ReadFileRangeResponseDto,
     ResolveOperationConflictRequestDto, RuntimeCapabilitiesDto, RuntimeKindDto,
     SearchInFileMatchDto, SearchInFileRequestDto, SearchInFileResponseDto, SetPaneActivityRequest,
-    SettingsDto, SizeFormatDto, StartComparisonRequestDto, StartComparisonResponseDto,
-    StartOperationRequestDto, StartSearchRequestDto, StartSearchResponseDto, SyncActionDto,
-    SyncModeDto, SyncPlanDto, SyncPlanItemDto, ThemeDto, UpdateConnectionRequestDto,
+    SettingsDto, StartComparisonRequestDto, StartComparisonResponseDto, StartOperationRequestDto,
+    StartSearchRequestDto, StartSearchResponseDto, SyncPlanDto, UpdateConnectionRequestDto,
     VolumeCapacityDto, WorkspaceCommandDto, WorkspaceDto, WorkspaceSummaryDto,
 };
 use fm_vfs::{EntryRef, ProviderCapabilities, ProviderReadStream, ProviderRegistry};
@@ -50,13 +43,26 @@ use uuid::Uuid;
 
 use crate::DirectoryService;
 use crate::action::ActionRegistry;
+use crate::comparison_mapping::{
+    comparison_criteria, comparison_criteria_dto, comparison_entry_dto, sync_action, sync_mode,
+    sync_plan_item_dto,
+};
 use crate::connection_facade::ConnectionFacade;
 use crate::error::ApplicationError;
 use crate::file_editor::{FileEditorService, read_stream_error};
 use crate::operation_history::{ApplicationOperationObserver, OperationHistory, operation_dto};
 use crate::operation_planner::OperationPlanner;
+use crate::operation_requests::{
+    conflict_policy, copy_request, delete_request, map_scheduler_error, mutating_operation_kind,
+    operation_kind,
+};
+use crate::platform_mapping::{
+    PlatformActionKind, detect_platform, map_file_icon_error, map_platform_error,
+    platform_action_kind,
+};
 use crate::plugin_manager::PluginManager;
 use crate::remote_terminal::RemoteTerminalService;
+use crate::settings_mapping::{settings_from_dto, settings_to_dto};
 use crate::workspace::{JsonFileWorkspaceRepository, WorkspaceService, WorkspaceSummary};
 
 /// Central application service that every host (Axum, Tauri, CLI) calls into.
@@ -1457,408 +1463,6 @@ async fn skip_bytes(reader: &mut ProviderReadStream, mut remaining: u64) -> std:
     Ok(())
 }
 
-fn map_scheduler_error(error: SchedulerError) -> ApplicationError {
-    match error {
-        SchedulerError::UnknownOperation(_) => ApplicationError::NotFound,
-        SchedulerError::Transition(error) => ApplicationError::InvalidRequest(error.to_string()),
-        SchedulerError::Execution(_) => ApplicationError::Internal,
-    }
-}
-
-/// Builds a `copy` request for one sync-plan row.
-///
-/// `destination_root` is the *other* side's root: the traversal that
-/// produced the comparison only ever descends into directory pairs that
-/// exist, matched, on both sides, so `relative_path`'s parent is guaranteed
-/// resolvable there even when the leaf itself is not (see
-/// [`fm_comparison::resolve_relative`]'s documentation).
-fn copy_request(
-    source_root: &Location,
-    destination_root: &Location,
-    relative_path: &str,
-) -> Result<StartOperationRequestDto, ApplicationError> {
-    let source = resolve_relative(source_root, relative_path)
-        .map_err(|error| ApplicationError::InvalidRequest(error.to_string()))?;
-    let destination_parent = resolve_relative(destination_root, relative_parent(relative_path))
-        .map_err(|error| ApplicationError::InvalidRequest(error.to_string()))?;
-    Ok(StartOperationRequestDto {
-        operation_type: OperationKindDto::Copy,
-        sources: vec![source.into()],
-        destination: Some(destination_parent.into()),
-        destinations: Vec::new(),
-        // Sync intentionally replaces a differing/older destination.
-        conflict_policy: OperationConflictPolicyDto::Overwrite,
-        name: None,
-        archive_format: None,
-        archive_compression_level: None,
-        create_intermediate_directories: false,
-        symlink_policy: fm_transport_dto::SymlinkPolicyDto::default(),
-        permanent_delete_confirmed: false,
-        override_read_only: false,
-    })
-}
-
-/// Builds a `delete` request for one sync-plan deletion row.
-///
-/// Uses permanent delete rather than trash: trash requires a platform
-/// [`fm_platform::PlatformCapabilities::TRASH`] adapter that browser/server
-/// mode does not provide (spec §2.2/§22), so a trash-based sync delete would
-/// fail outright on every non-desktop host. `permanent_delete_confirmed` is
-/// set unconditionally because applying a sync plan is itself the reviewed,
-/// explicit confirmation spec §35 requires — the plan was only reached after
-/// the caller reviewed and, if desired, edited every row.
-fn delete_request(
-    root: &Location,
-    relative_path: &str,
-) -> Result<StartOperationRequestDto, ApplicationError> {
-    let target = resolve_relative(root, relative_path)
-        .map_err(|error| ApplicationError::InvalidRequest(error.to_string()))?;
-    Ok(StartOperationRequestDto {
-        operation_type: OperationKindDto::Delete,
-        sources: vec![target.into()],
-        destination: None,
-        destinations: Vec::new(),
-        conflict_policy: OperationConflictPolicyDto::Ask,
-        name: None,
-        archive_format: None,
-        archive_compression_level: None,
-        create_intermediate_directories: false,
-        symlink_policy: fm_transport_dto::SymlinkPolicyDto::default(),
-        permanent_delete_confirmed: true,
-        override_read_only: false,
-    })
-}
-
-const fn comparison_criteria(dto: ComparisonCriteriaDto) -> ComparisonCriteria {
-    match dto {
-        ComparisonCriteriaDto::NameOnly => ComparisonCriteria::NameOnly,
-        ComparisonCriteriaDto::SizeAndTimestamp => ComparisonCriteria::SizeAndTimestamp,
-        ComparisonCriteriaDto::ContentHash => ComparisonCriteria::ContentHash,
-    }
-}
-
-const fn comparison_criteria_dto(criteria: ComparisonCriteria) -> ComparisonCriteriaDto {
-    match criteria {
-        ComparisonCriteria::NameOnly => ComparisonCriteriaDto::NameOnly,
-        ComparisonCriteria::SizeAndTimestamp => ComparisonCriteriaDto::SizeAndTimestamp,
-        ComparisonCriteria::ContentHash => ComparisonCriteriaDto::ContentHash,
-    }
-}
-
-const fn comparison_status_dto(status: ComparisonStatus) -> ComparisonStatusDto {
-    match status {
-        ComparisonStatus::OnlyLeft => ComparisonStatusDto::OnlyLeft,
-        ComparisonStatus::OnlyRight => ComparisonStatusDto::OnlyRight,
-        ComparisonStatus::Newer => ComparisonStatusDto::Newer,
-        ComparisonStatus::Older => ComparisonStatusDto::Older,
-        ComparisonStatus::DifferentSize => ComparisonStatusDto::DifferentSize,
-        ComparisonStatus::Identical => ComparisonStatusDto::Identical,
-        ComparisonStatus::TypeMismatch => ComparisonStatusDto::TypeMismatch,
-    }
-}
-
-fn comparison_entry_side_dto(side: &ComparisonEntrySide) -> ComparisonEntrySideDto {
-    ComparisonEntrySideDto {
-        kind: side.kind.into(),
-        size: side.size,
-        modified_at: side.modified_at,
-        content_hash: side.content_hash.clone(),
-    }
-}
-
-fn comparison_entry_dto(entry: &ComparisonEntry) -> ComparisonEntryDto {
-    ComparisonEntryDto {
-        relative_path: entry.relative_path.clone(),
-        left: entry.left.as_ref().map(comparison_entry_side_dto),
-        right: entry.right.as_ref().map(comparison_entry_side_dto),
-        status: comparison_status_dto(entry.status),
-    }
-}
-
-const fn sync_mode(dto: SyncModeDto) -> SyncMode {
-    match dto {
-        SyncModeDto::MirrorLeftToRight => SyncMode::MirrorLeftToRight,
-        SyncModeDto::MirrorRightToLeft => SyncMode::MirrorRightToLeft,
-        SyncModeDto::TwoWayUpdate => SyncMode::TwoWayUpdate,
-    }
-}
-
-const fn sync_action(dto: SyncActionDto) -> SyncAction {
-    match dto {
-        SyncActionDto::CopyLeftToRight => SyncAction::CopyLeftToRight,
-        SyncActionDto::CopyRightToLeft => SyncAction::CopyRightToLeft,
-        SyncActionDto::DeleteLeft => SyncAction::DeleteLeft,
-        SyncActionDto::DeleteRight => SyncAction::DeleteRight,
-        SyncActionDto::Skip => SyncAction::Skip,
-    }
-}
-
-const fn sync_action_dto(action: SyncAction) -> SyncActionDto {
-    match action {
-        SyncAction::CopyLeftToRight => SyncActionDto::CopyLeftToRight,
-        SyncAction::CopyRightToLeft => SyncActionDto::CopyRightToLeft,
-        SyncAction::DeleteLeft => SyncActionDto::DeleteLeft,
-        SyncAction::DeleteRight => SyncActionDto::DeleteRight,
-        SyncAction::Skip => SyncActionDto::Skip,
-    }
-}
-
-fn sync_plan_item_dto(item: &SyncPlanItem) -> SyncPlanItemDto {
-    SyncPlanItemDto {
-        relative_path: item.relative_path.clone(),
-        status: comparison_status_dto(item.status),
-        action: sync_action_dto(item.action),
-        left: item.left.as_ref().map(comparison_entry_side_dto),
-        right: item.right.as_ref().map(comparison_entry_side_dto),
-    }
-}
-
-fn operation_kind(kind: OperationKindDto) -> fm_operations::OperationKind {
-    match kind {
-        OperationKindDto::CreateArchive => fm_operations::OperationKind::CreateArchive,
-        OperationKindDto::MoveToArchive => fm_operations::OperationKind::MoveToArchive,
-        OperationKindDto::CreateDirectory => fm_operations::OperationKind::CreateDirectory,
-        OperationKindDto::CreateFile => fm_operations::OperationKind::CreateFile,
-        OperationKindDto::Rename => fm_operations::OperationKind::Rename,
-        OperationKindDto::Copy => fm_operations::OperationKind::Copy,
-        OperationKindDto::Move => fm_operations::OperationKind::Move,
-        OperationKindDto::Duplicate => fm_operations::OperationKind::Duplicate,
-        OperationKindDto::Trash => fm_operations::OperationKind::Trash,
-        OperationKindDto::Delete => fm_operations::OperationKind::Delete,
-        // Search is handled via start_search, not the executor.
-        OperationKindDto::Search => {
-            unreachable!("search must be handled before calling operation_kind")
-        }
-        // Compare is handled via start_comparison, not the executor.
-        OperationKindDto::Compare => {
-            unreachable!("compare must be handled before calling operation_kind")
-        }
-    }
-}
-
-const fn conflict_policy(
-    policy: fm_transport_dto::OperationConflictPolicyDto,
-) -> fm_operations::ConflictPolicy {
-    match policy {
-        fm_transport_dto::OperationConflictPolicyDto::Ask => fm_operations::ConflictPolicy::Ask,
-        fm_transport_dto::OperationConflictPolicyDto::Skip => fm_operations::ConflictPolicy::Skip,
-        fm_transport_dto::OperationConflictPolicyDto::Overwrite => {
-            fm_operations::ConflictPolicy::Overwrite
-        }
-        fm_transport_dto::OperationConflictPolicyDto::RenameNew => {
-            fm_operations::ConflictPolicy::RenameNew
-        }
-        fm_transport_dto::OperationConflictPolicyDto::KeepNewer => {
-            fm_operations::ConflictPolicy::KeepNewer
-        }
-    }
-}
-
-/// Maps a mutating action id to the operation kind it delegates to, or
-/// `None` for actions with no backing operation (unimplemented actions, and
-/// the frontend-only selection/navigation actions reserved by task 0028).
-fn mutating_operation_kind(id: &ActionId) -> Option<OperationKindDto> {
-    match id.as_str() {
-        "core.pack" => Some(OperationKindDto::CreateArchive),
-        "core.moveToArchive" => Some(OperationKindDto::MoveToArchive),
-        "core.copy" => Some(OperationKindDto::Copy),
-        "core.move" => Some(OperationKindDto::Move),
-        "core.rename" => Some(OperationKindDto::Rename),
-        "core.trash" => Some(OperationKindDto::Trash),
-        "core.delete" => Some(OperationKindDto::Delete),
-        "core.createDirectory" => Some(OperationKindDto::CreateDirectory),
-        "core.createFile" => Some(OperationKindDto::CreateFile),
-        "core.duplicate" => Some(OperationKindDto::Duplicate),
-        _ => None,
-    }
-}
-
-/// Which platform adapter method an action dispatches to (task 0061).
-/// `core.view` shares [`PlatformActionKind::Open`] with `core.open`: it is
-/// an explicit stopgap for a real viewer (task 0088). `core.openWith`
-/// dispatches to [`PlatformActionKind::OpenWithChooser`], a native "choose
-/// application" dialog (see `core_actions`'s doc comment in `action.rs`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum PlatformActionKind {
-    Open,
-    OpenWithChooser,
-    Reveal,
-    OpenTerminal,
-    EditInTextEditor,
-}
-
-/// Maps an action id to the platform adapter operation it dispatches to
-/// (task 0061), or `None` for actions with no platform-adapter effect.
-fn platform_action_kind(id: &ActionId) -> Option<PlatformActionKind> {
-    match id.as_str() {
-        "core.open" | "core.view" => Some(PlatformActionKind::Open),
-        "core.openWith" => Some(PlatformActionKind::OpenWithChooser),
-        "core.edit" => Some(PlatformActionKind::EditInTextEditor),
-        "core.revealInSystemFileManager" => Some(PlatformActionKind::Reveal),
-        "core.openTerminal" => Some(PlatformActionKind::OpenTerminal),
-        _ => None,
-    }
-}
-
-/// Maps a platform adapter failure to a user-readable application error
-/// (task 0061). An adapter reporting [`fm_platform::PlatformError::Unsupported`]
-/// despite the registry's capability check (e.g. a race between capability
-/// detection and invocation) is reported the same way as any other
-/// unavailable action; any other failure keeps its sanitized, user-readable
-/// message rather than a silent no-op or a generic "internal error".
-fn map_platform_error(action_id: &ActionId, error: fm_platform::PlatformError) -> ApplicationError {
-    match error {
-        fm_platform::PlatformError::Unsupported { .. } => {
-            ApplicationError::ActionUnavailable(action_id.clone())
-        }
-        other => ApplicationError::PlatformOperationFailed(other.to_string()),
-    }
-}
-
-/// Missing native icon support is an expected fallback condition rather than
-/// a host failure; genuine platform errors remain visible as a 502/IPC error.
-fn map_file_icon_error(error: fm_platform::PlatformError) -> ApplicationError {
-    match error {
-        fm_platform::PlatformError::Unsupported { .. } => ApplicationError::NotFound,
-        other => ApplicationError::PlatformOperationFailed(other.to_string()),
-    }
-}
-
-fn settings_to_dto(settings: Settings) -> SettingsDto {
-    SettingsDto {
-        schema_version: settings.schema_version,
-        theme: match settings.theme {
-            Theme::Auto => ThemeDto::Auto,
-            Theme::Light => ThemeDto::Light,
-            Theme::Dark => ThemeDto::Dark,
-        },
-        font_size: settings.font_size,
-        row_height: settings.row_height,
-        date_format: match settings.date_format {
-            DateFormat::Short => DateFormatDto::Short,
-            DateFormat::Medium => DateFormatDto::Medium,
-            DateFormat::Iso => DateFormatDto::Iso,
-        },
-        size_format: match settings.size_format {
-            SizeFormat::Binary => SizeFormatDto::Binary,
-            SizeFormat::Decimal => SizeFormatDto::Decimal,
-            SizeFormat::Bytes => SizeFormatDto::Bytes,
-        },
-        show_hidden_files: settings.show_hidden_files,
-        confirm_permanent_delete: settings.confirm_permanent_delete,
-        default_conflict_policy: match settings.default_conflict_policy {
-            ConflictPolicy::Ask => ConflictPolicyDto::Ask,
-            ConflictPolicy::Overwrite => ConflictPolicyDto::Overwrite,
-            ConflictPolicy::KeepBoth => ConflictPolicyDto::KeepBoth,
-            ConflictPolicy::Skip => ConflictPolicyDto::Skip,
-        },
-        operation_concurrency: settings.operation_concurrency,
-        default_pane_layout: match settings.default_pane_layout {
-            DefaultPaneLayout::Dual => DefaultPaneLayoutDto::Dual,
-            DefaultPaneLayout::Single => DefaultPaneLayoutDto::Single,
-        },
-        default_columns: settings.default_columns,
-        keybindings: settings.keybindings,
-        enabled_plugins: settings.enabled_plugins,
-        plugin_settings: serde_json::to_value(settings.plugin_settings)
-            .unwrap_or_else(|_| serde_json::Value::Object(serde_json::Map::new())),
-        terminal_command: settings.terminal_command,
-        editor_command: settings.editor_command,
-        default_start_locations: settings.default_start_locations,
-        favourite_locations: settings
-            .favourite_locations
-            .into_iter()
-            .map(|favourite| fm_transport_dto::FavouriteLocationDto {
-                label: favourite.label,
-                location: favourite.location.into(),
-            })
-            .collect(),
-        recent_locations_by_workspace: settings
-            .recent_locations_by_workspace
-            .into_iter()
-            .map(|(workspace_id, locations)| {
-                (
-                    workspace_id,
-                    locations.into_iter().map(Into::into).collect(),
-                )
-            })
-            .collect(),
-        icon_theme: settings.icon_theme,
-    }
-}
-
-fn settings_from_dto(settings: SettingsDto) -> Settings {
-    Settings {
-        schema_version: fm_settings::CURRENT_SCHEMA_VERSION,
-        theme: match settings.theme {
-            ThemeDto::Auto => Theme::Auto,
-            ThemeDto::Light => Theme::Light,
-            ThemeDto::Dark => Theme::Dark,
-        },
-        font_size: settings.font_size,
-        row_height: settings.row_height,
-        date_format: match settings.date_format {
-            DateFormatDto::Short => DateFormat::Short,
-            DateFormatDto::Medium => DateFormat::Medium,
-            DateFormatDto::Iso => DateFormat::Iso,
-        },
-        size_format: match settings.size_format {
-            SizeFormatDto::Binary => SizeFormat::Binary,
-            SizeFormatDto::Decimal => SizeFormat::Decimal,
-            SizeFormatDto::Bytes => SizeFormat::Bytes,
-        },
-        show_hidden_files: settings.show_hidden_files,
-        confirm_permanent_delete: settings.confirm_permanent_delete,
-        default_conflict_policy: match settings.default_conflict_policy {
-            ConflictPolicyDto::Ask => ConflictPolicy::Ask,
-            ConflictPolicyDto::Overwrite => ConflictPolicy::Overwrite,
-            ConflictPolicyDto::KeepBoth => ConflictPolicy::KeepBoth,
-            ConflictPolicyDto::Skip => ConflictPolicy::Skip,
-        },
-        operation_concurrency: settings.operation_concurrency,
-        default_pane_layout: match settings.default_pane_layout {
-            DefaultPaneLayoutDto::Dual => DefaultPaneLayout::Dual,
-            DefaultPaneLayoutDto::Single => DefaultPaneLayout::Single,
-        },
-        default_columns: settings.default_columns,
-        keybindings: settings.keybindings,
-        enabled_plugins: settings.enabled_plugins,
-        plugin_settings: serde_json::from_value(settings.plugin_settings).unwrap_or_default(),
-        terminal_command: settings.terminal_command,
-        editor_command: settings.editor_command,
-        default_start_locations: settings.default_start_locations,
-        favourite_locations: settings
-            .favourite_locations
-            .into_iter()
-            .map(|favourite| fm_settings::FavouriteLocation {
-                label: favourite.label,
-                location: favourite.location.into(),
-            })
-            .collect(),
-        recent_locations_by_workspace: settings
-            .recent_locations_by_workspace
-            .into_iter()
-            .map(|(workspace_id, locations)| {
-                (
-                    workspace_id,
-                    locations.into_iter().map(Into::into).collect(),
-                )
-            })
-            .collect(),
-        icon_theme: settings.icon_theme,
-    }
-}
-
-/// Detects the host operating system from the compiled target (spec §21).
-fn detect_platform() -> PlatformKindDto {
-    match std::env::consts::OS {
-        "macos" => PlatformKindDto::Macos,
-        "windows" => PlatformKindDto::Windows,
-        "linux" => PlatformKindDto::Linux,
-        _ => PlatformKindDto::Unknown,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1866,7 +1470,8 @@ mod tests {
 
     use fm_events::{SessionId, SubscriptionEvent};
     use fm_transport_dto::{
-        LoadEditableFileRequestDto, OperationStateDto, SaveEditableFileRequestDto,
+        LoadEditableFileRequestDto, OperationKindDto, OperationStateDto, PlatformKindDto,
+        SaveEditableFileRequestDto,
     };
 
     use crate::file_editor::MAX_EDITABLE_FILE_BYTES;

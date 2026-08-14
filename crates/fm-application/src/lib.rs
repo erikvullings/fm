@@ -6,6 +6,7 @@
 //! this crate, which is what guarantees the two behave identically.
 
 mod action;
+mod comparison_mapping;
 mod connection_dto;
 mod connection_facade;
 mod directory;
@@ -14,9 +15,12 @@ mod file_editor;
 mod ftp;
 mod operation_history;
 mod operation_planner;
+mod operation_requests;
+mod platform_mapping;
 mod plugin_manager;
 mod remote_terminal;
 mod service;
+mod settings_mapping;
 mod ssh;
 pub mod workspace;
 
