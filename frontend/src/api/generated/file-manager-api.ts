@@ -52,6 +52,7 @@ import type {
   StartOperationRequestDto,
   StartSearchRequestDto,
   StartSearchResponseDto,
+  StartWorkspaceParams,
   SyncPlanDto,
   SystemLocationDto,
   UpdateConnectionRequestDto,
@@ -2358,6 +2359,50 @@ export const createWorkspace = async (createWorkspaceRequestDto: CreateWorkspace
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
     body: JSON.stringify(createWorkspaceRequestDto)
+  }
+);}
+
+
+
+export type startWorkspaceResponse200 = {
+  data: WorkspaceDto
+  status: 200
+}
+
+export type startWorkspaceResponseSuccess = (startWorkspaceResponse200) & {
+  headers: Headers;
+};
+;
+
+export type startWorkspaceResponse = (startWorkspaceResponseSuccess)
+
+export const getStartWorkspaceUrl = (params?: StartWorkspaceParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/workspaces/start?${stringifiedParams}` : `/api/v1/workspaces/start`
+}
+
+/**
+ * @summary Runs the workspace startup lifecycle (spec §5.3.7): opens the requested
+workspace, otherwise the last-active one, otherwise creates a default.
+ */
+export const startWorkspace = async (params?: StartWorkspaceParams, options?: Parameters<typeof fetchMutator>[1]): Promise<startWorkspaceResponse> => {
+
+  return fetchMutator<startWorkspaceResponse>(getStartWorkspaceUrl(params),
+  {
+    ...options,
+    method: 'POST'
+
+
   }
 );}
 

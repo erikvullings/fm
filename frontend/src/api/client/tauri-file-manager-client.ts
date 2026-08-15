@@ -128,6 +128,16 @@ export class TauriFileManagerClient implements FileManagerClient {
     return invoke<WorkspaceSummary[]>('list_workspaces');
   }
 
+  async startWorkspace(
+    workspaceId?: WorkspaceId,
+    _signal?: AbortSignal,
+  ): Promise<WorkspaceProjection> {
+    return workspaceProjectionFromDto(
+      await invoke<WorkspaceDto>('start_workspace', { workspaceId }),
+      { redirectSessionOnlyTabs: true },
+    );
+  }
+
   async createWorkspace(
     request: CreateWorkspaceRequest,
     _signal?: AbortSignal,

@@ -6827,6 +6827,36 @@
         "summary": "Creates and persists a new workspace."
       }
     },
+    "/api/v1/workspaces/start": {
+      "post": {
+        "operationId": "startWorkspace",
+        "parameters": [
+          {
+            "description": "Opens this workspace explicitly. When absent, the last-active\nworkspace is reopened, falling back to a fresh default if none exists\nor the last-active one is missing/corrupt (spec §5.3.7).",
+            "in": "query",
+            "name": "workspaceId",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceDto"
+                }
+              }
+            },
+            "description": "The selected or created workspace"
+          }
+        },
+        "summary": "Runs the workspace startup lifecycle (spec §5.3.7): opens the requested\nworkspace, otherwise the last-active one, otherwise creates a default."
+      }
+    },
     "/api/v1/workspaces/{workspaceId}": {
       "delete": {
         "operationId": "deleteWorkspace",

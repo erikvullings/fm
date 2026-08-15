@@ -1,9 +1,9 @@
 # 0143 Workspace last-active restore and per-window desktop placement
 
-Status: open
+Status: in_progress
 Priority: medium
 Owner: unassigned
-Agent: unassigned
+Agent: claude
 Area: backend, frontend, desktop
 Depends on: none
 
@@ -74,3 +74,36 @@ Spaces-assignment itself as a known macOS limitation.
   instances behave; no implementation started yet. See Context above for the full investigation
   (file paths, line-level findings) already done — a future agent should not need to re-derive the
   `WorkspaceService::start`-is-unwired finding or the macOS Spaces API limitation from scratch.
+- 2026-08-15: Implemented sub-task (a) — `WorkspaceService::start` is now actually reachable:
+  - `apps/fm-server/src/routes/workspace.rs`: new `POST /api/v1/workspaces/start` handler
+    (`start_workspace`, optional `workspaceId` query param via `StartWorkspaceQuery`), registered in
+    `apps/fm-server/src/lib.rs`. Route ordering vs. `/workspaces/{workspaceId}` isn't an issue —
+    axum's matchit router prefers the static `start` segment over the dynamic one automatically.
+  - `apps/fm-desktop/src-tauri/src/commands.rs`: new `start_workspace` Tauri command wrapping
+    `state.service.start_workspace`, registered in both `invoke_handler!` lists in `lib.rs` (there
+    are two — one per build variant).
+  - Regenerated `frontend/openapi/openapi.json` (`pnpm api:export`, needs a built `fm-server`) and
+    the Orval client (`pnpm api:generate`) to pick up the new `startWorkspace` operation.
+  - `FileManagerClient` interface (`frontend/src/api/client/file-manager-client.ts`) gained
+    `startWorkspace(workspaceId?, signal?)`; implemented in the HTTP client (wraps the generated
+    `startWorkspace` fn), the Tauri client (invokes `start_workspace`), and the mock client (returns
+    the requested workspace if given, else the first stored one, else creates a "Default" — mirrors
+    backend semantics closely enough for tests; mock has no real last-active tracking).
+  - `frontend/src/features/workspace/workspace-controller.ts`'s `openOrCreateDefaultWorkspace` now
+    calls `client.startWorkspace(undefined, signal)` instead of `listWorkspaces()[0]` — this is the
+    actual fix: relaunch now goes through the backend's real last-active selection instead of an
+    arbitrary filesystem-order first entry.
+  - Verified: `cargo test -p fm-server -p fm-application --lib` (186 + 29 passed), `cargo clippy -p
+    fm-server -p fm-desktop --all-targets -- -D warnings` (clean), `cargo fmt --all -- --check`
+    (clean), `cargo build -p fm-desktop` (clean). Frontend: `tsc --noEmit`, `biome check` (both
+    clean), `vitest run` (all 1116 existing tests still pass — no new tests added for this specific
+    plumbing, see below). Manually verified end-to-end in the browser preview against a live
+    `fm-server`: `POST /api/v1/workspaces/start` returns 200 and reopens the correct workspace with
+    its persisted state (same on-disk workspace used to verify the column-width persistence fix
+    earlier this session).
+  - **Not done / still open for this task**: no new automated test specifically exercises the new
+    route/command/client method or the `openOrCreateDefaultWorkspace` behavior change (relied on
+    existing suite + manual verification) — worth adding if this task is picked up again. Also
+    still fully open: `last-active.json`'s lack of revision/CAS protection (noted in Implementation
+    Notes above, not addressed), and all of sub-tasks (b) multi-window model and (c) per-workspace
+    window-frame persistence/restore — no code written for either yet.

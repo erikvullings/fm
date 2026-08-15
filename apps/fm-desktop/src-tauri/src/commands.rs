@@ -472,6 +472,21 @@ pub(crate) async fn list_workspaces(
         .map_err(|error| error.into_dto(Uuid::new_v4()))
 }
 
+/// Runs the workspace startup lifecycle, identical in shape to
+/// `POST /api/v1/workspaces/start`: opens `workspace_id` if given, otherwise
+/// the last-active workspace, otherwise creates a default.
+#[tauri::command]
+pub(crate) async fn start_workspace(
+    state: State<'_, AppState>,
+    workspace_id: Option<Uuid>,
+) -> Result<WorkspaceDto, ApplicationErrorDto> {
+    state
+        .service
+        .start_workspace(workspace_id)
+        .await
+        .map_err(|error| error.into_dto(Uuid::new_v4()))
+}
+
 /// Creates and persists a new workspace, identical in shape to
 /// `POST /api/v1/workspaces`.
 #[tauri::command]

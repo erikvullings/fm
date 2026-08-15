@@ -98,6 +98,10 @@ export interface FileManagerClient {
 
   listWorkspaces(signal?: AbortSignal): Promise<WorkspaceSummary[]>;
 
+  /** Runs the workspace startup lifecycle (spec §5.3.7): opens `workspaceId` if given, otherwise
+   * the last-active workspace, otherwise creates a default. */
+  startWorkspace(workspaceId?: WorkspaceId, signal?: AbortSignal): Promise<WorkspaceProjection>;
+
   createWorkspace(
     request: CreateWorkspaceRequest,
     signal?: AbortSignal,

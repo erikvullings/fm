@@ -39,6 +39,40 @@ pub(crate) async fn list_workspaces(
     Ok(Json(summaries))
 }
 
+/// Query parameters accepted by [`start_workspace`].
+#[derive(Debug, Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct StartWorkspaceQuery {
+    /// Opens this workspace explicitly. When absent, the last-active
+    /// workspace is reopened, falling back to a fresh default if none exists
+    /// or the last-active one is missing/corrupt (spec §5.3.7).
+    workspace_id: Option<Uuid>,
+}
+
+/// Runs the workspace startup lifecycle (spec §5.3.7): opens the requested
+/// workspace, otherwise the last-active one, otherwise creates a default.
+#[utoipa::path(
+    post,
+    path = "/api/v1/workspaces/start",
+    operation_id = "startWorkspace",
+    params(StartWorkspaceQuery),
+    responses((status = 200, description = "The selected or created workspace", body = WorkspaceDto))
+)]
+pub(crate) async fn start_workspace(
+    State(state): State<AppState>,
+    Extension(request_id): Extension<RequestId>,
+    Query(query): Query<StartWorkspaceQuery>,
+) -> Result<Json<WorkspaceDto>, ApiError> {
+    let request_id = extract_request_id(&request_id);
+    let workspace = state
+        .service
+        .start_workspace(query.workspace_id)
+        .await
+        .map_err(|error| ApiError::new(error, request_id))?;
+    Ok(Json(workspace))
+}
+
 /// Creates and persists a new workspace.
 #[utoipa::path(
     post,
