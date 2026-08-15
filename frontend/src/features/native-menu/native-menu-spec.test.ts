@@ -38,7 +38,7 @@ describe('buildNativeMenuSpec', () => {
   it('emits every top-level menu in order', () => {
     const spec = buildNativeMenuSpec(inputs());
     expect(spec.menus.map((menu) => menu.title)).toEqual([
-      'fm',
+      'Procyon',
       'File',
       'Edit',
       'View',

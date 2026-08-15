@@ -67,7 +67,10 @@ function actionItems(
 
 function appMenu(): NativeMenu {
   return {
-    title: 'fm',
+    // The platform adapter also uses this as the process's displayed name (task 0133 follow-up),
+    // so AppKit's bold app-menu title reads "Procyon" even in an unbundled `cargo tauri dev` run,
+    // matching the title bar label elsewhere in this file.
+    title: 'Procyon',
     items: [
       { kind: 'role', role: 'about' },
       { kind: 'separator' },

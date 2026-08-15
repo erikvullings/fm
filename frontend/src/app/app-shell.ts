@@ -62,6 +62,11 @@ import {
 } from '../features/keybindings/global-keydown-handler';
 import { ShortcutsHelpDialog } from '../features/keybindings/shortcuts-help-dialog';
 import {
+  dispatchNativeMenuAction,
+  type NativeMenuDispatchContext,
+} from '../features/native-menu/native-menu-dispatch';
+import { buildNativeMenuSpec, type NativeMenuTab } from '../features/native-menu/native-menu-spec';
+import {
   createNavigationController,
   type NavigationController,
   type PaneDirectoryView,
@@ -77,11 +82,6 @@ import {
   type TabController,
   type TabControllerContext,
 } from '../features/panes/tab-controller';
-import {
-  dispatchNativeMenuAction,
-  type NativeMenuDispatchContext,
-} from '../features/native-menu/native-menu-dispatch';
-import { buildNativeMenuSpec, type NativeMenuTab } from '../features/native-menu/native-menu-spec';
 import {
   createFileViewerController,
   type FileViewerController,
@@ -341,16 +341,24 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
    * fallback given there is no existing deep-equal utility in this codebase to reuse). */
   let lastSentNativeMenuSpecJson: string | undefined;
 
+  /** Set once `subscribe_native_menu_actions` has actually resolved. `syncNativeMenu` must not
+   * push a spec before this: `set_native_menu` binds whatever channel is *currently* subscribed
+   * as the click callback, and installs are memoized by spec content - if the very first push
+   * raced ahead of the subscribe call, the backend would bind a no-op callback (nothing
+   * subscribed yet) and then never rebuild the menu again to pick up the real one, since nothing
+   * about the spec's content changes once subscribed. Every menu click would silently no-op. */
+  let nativeMenuChannelReady = false;
+
   /** Pushes the full native menu bar spec to the backend whenever it might have changed. Called
    * from the view rather than threaded through every individual mutation site (registered
    * actions/settings/favourites/workspace tabs are each reassigned from several different
    * closures across this file) - safe and cheap because of the diff above, and it can never miss
    * a state change that affects the menu. */
   function syncNativeMenu(): void {
-    if (runtimeKind !== 'tauri') return;
+    if (runtimeKind !== 'tauri' || !nativeMenuChannelReady) return;
     const spec: NativeMenuSpec = buildNativeMenuSpec({
       actions: registeredActions,
-      favouriteActions: actionsWithFavourites(),
+      favouriteActions: favouriteActions(),
       tabs: nativeMenuWindowTabs(),
     });
     const serialized = JSON.stringify(spec);
@@ -1881,9 +1889,12 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
             dispatchNativeMenuAction(nativeMenuDispatchContext, event.id);
             m.redraw();
           };
-          void invoke('subscribe_native_menu_actions', { channel: nativeMenuActions }).catch(
-            () => undefined,
-          );
+          void invoke('subscribe_native_menu_actions', { channel: nativeMenuActions })
+            .then(() => {
+              nativeMenuChannelReady = true;
+              m.redraw();
+            })
+            .catch(() => undefined);
         } catch {
           // No Tauri host available; the native menu bar is cosmetic desktop chrome.
         }

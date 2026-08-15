@@ -52,8 +52,9 @@ use objc2_app_kit::{
 };
 use objc2_foundation::{
     NSArray, NSDictionary, NSFileAttributeKey, NSFileManager, NSFileSystemFreeSize,
-    NSFileSystemSize, NSNumber, NSString, NSURL, NSURLResourceKey, NSURLVolumeIsLocalKey,
-    NSURLVolumeIsReadOnlyKey, NSURLVolumeMountFromLocationKey, NSVolumeEnumerationOptions,
+    NSFileSystemSize, NSNumber, NSProcessInfo, NSString, NSURL, NSURLResourceKey,
+    NSURLVolumeIsLocalKey, NSURLVolumeIsReadOnlyKey, NSURLVolumeMountFromLocationKey,
+    NSVolumeEnumerationOptions,
 };
 
 /// macOS implementation of [`PlatformAdapter`].
@@ -722,6 +723,16 @@ impl PlatformAdapter for MacosPlatformAdapter {
         *MENU_ACTION_CALLBACK
             .lock()
             .unwrap_or_else(|error| error.into_inner()) = Some(on_action);
+        // AppKit always replaces the App menu's own displayed title with the process name,
+        // regardless of the NSMenuItem title given to it - but in an unbundled `cargo tauri dev`
+        // run (no real .app bundle/Info.plist) that process name is just the raw executable name
+        // (e.g. "fm-desktop"), not the product name a real release build would show. Overriding
+        // NSProcessInfo's processName here makes the menu bar read correctly in dev mode too,
+        // using the first top-level menu's title (spec.menus[0].title) as that name, since the
+        // caller already supplies it for exactly this slot.
+        if let Some(first_menu) = spec.menus.first() {
+            NSProcessInfo::processInfo().setProcessName(&NSString::from_str(&first_menu.title));
+        }
         let target = MenuActionTarget::shared(main_thread);
         let menu_bar = NSMenu::new(main_thread);
         for menu in &spec.menus {
@@ -819,18 +830,21 @@ const MODIFIER_COMMAND_BIT: usize = 1 << 20;
 /// Maps a [`fm_domain::KeyChord`] to the `(key equivalent, modifier mask)`
 /// pair an `NSMenuItem` needs (task 0133). Only a lowercased single
 /// character is handled, enough for the common cases ("c", "v", "a", ","),
-/// so function-key equivalents (e.g. `"F2"`) are deliberately left
-/// untranslated rather than over-engineered, matching this task's scope.
+/// so function-key equivalents (e.g. `"F2"`) are deliberately left blank
+/// (no key equivalent shown at all) rather than over-engineered, matching
+/// this task's scope. Blank, not truncated: taking just the first character
+/// of a multi-character key name (e.g. "F3".."F7") would silently collide
+/// every one of them onto the same displayed "^F" equivalent instead of
+/// leaving them untranslated, which is worse than showing nothing.
 /// The returned mask mirrors `NSEventModifierFlags`'s own bit positions 1:1,
 /// so the only remaining step at the call site is widening it into that
 /// real type.
 fn key_equivalent(chord: &fm_domain::KeyChord) -> (String, usize) {
-    let key = chord
-        .key
-        .chars()
-        .next()
-        .map(|first| first.to_ascii_lowercase().to_string())
-        .unwrap_or_default();
+    let key = if chord.key.chars().count() == 1 {
+        chord.key.to_ascii_lowercase()
+    } else {
+        String::new()
+    };
     let mut mask = 0usize;
     if chord.shift {
         mask |= MODIFIER_SHIFT_BIT;
@@ -1305,11 +1319,30 @@ mod tests {
     fn key_equivalent_reports_no_modifiers_for_a_plain_chord() {
         assert_eq!(
             key_equivalent(&fm_domain::KeyChord {
-                key: "Escape".to_owned(),
+                key: "a".to_owned(),
                 ..fm_domain::KeyChord::default()
             }),
-            ("e".to_owned(), 0)
+            ("a".to_owned(), 0)
         );
+    }
+
+    /// A regression test for a real bug (task 0133 follow-up): taking just the first character of
+    /// a multi-character key name collided every one of `core.sortByName`..`core.sortUnsorted`'s
+    /// distinct `"F3"`..`"F7"` shortcuts onto the same displayed "^F" key equivalent in the View
+    /// menu. Multi-character key names must produce a blank key equivalent instead.
+    #[test]
+    fn key_equivalent_leaves_multi_character_key_names_blank_instead_of_colliding() {
+        for key in ["F3", "F4", "F5", "F6", "F7", "Escape", "Enter", "Tab"] {
+            assert_eq!(
+                key_equivalent(&fm_domain::KeyChord {
+                    key: key.to_owned(),
+                    ctrl: true,
+                    ..fm_domain::KeyChord::default()
+                }),
+                (String::new(), MODIFIER_CONTROL_BIT),
+                "key {key:?} must produce a blank key equivalent, not a truncated one"
+            );
+        }
     }
 
     #[test]

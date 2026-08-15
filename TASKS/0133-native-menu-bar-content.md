@@ -136,3 +136,58 @@ the app's capabilities and which text fields/inputs rely on for their built-in E
     lint, architecture fitness, an actual `fm-desktop` boot test asserting the Tauri runtime starts
     with the new commands registered) is green.
   - **Follow-up**: Windows menu content (task 0131, still open/unstarted).
+- 2026-08-15 claude: The user ran the macOS build themselves (the manual-verification step flagged
+  above) and reported four real bugs from an actual screenshot of the running menu bar. All four
+  are fixed and covered by the automated checks below; none required design changes.
+  1. **Go menu dumped every registered action** (~60 items, scrolling off-screen, duplicating Edit,
+     including irrelevant items like "extend selection") instead of just favourites. Root cause:
+     `app-shell.ts`'s `syncNativeMenu()` passed `actionsWithFavourites()` (registered actions *plus*
+     favourites) as `buildNativeMenuSpec`'s `favouriteActions` input, not the plain `favouriteActions()`
+     synthetic list — a naming collision between the local function and the input field. The pure
+     `buildNativeMenuSpec` function itself was already correct and already tested for this
+     ("builds the Go menu from favourite actions, not the plain registered actions"); only the
+     call site was wrong, which is why the existing test suite didn't catch it. Fixed by passing
+     `favouriteActions()` instead.
+  2. **File/Edit/View menu clicks did nothing.** Root cause: a startup race. `set_native_menu`
+     binds whichever click-callback channel is *currently* subscribed on the Rust side at call
+     time; `subscribe_native_menu_actions` and the very first `syncNativeMenu()` push both fire
+     from `oninit` as independent promises with no ordering guarantee. If the first menu push won
+     the race, the backend installed the menu bound to a no-op callback (nothing subscribed yet)
+     - and since nothing about the spec's *content* changes just because the subscription later
+     completes, the memoized diff in `syncNativeMenu()` never re-pushed, leaving every click
+     permanently wired to nothing. Fixed with an explicit `nativeMenuChannelReady` flag, set only
+     once `subscribe_native_menu_actions` actually resolves and gating `syncNativeMenu()` entirely
+     until then, guaranteeing the first successful push always carries the real callback.
+  3. **Every View-menu sort item showed the identical "^F" shortcut** and none of them worked as
+     shortcuts either. Root cause: `fm-platform-macos`'s `key_equivalent` took only the *first
+     character* of the `KeyChord.key` string; `"F3"`..`"F7"` (the five sort actions' real shortcuts)
+     all start with `'F'`, so every one collided onto the same displayed (and functionally wrong)
+     `Ctrl+F` key equivalent. The doc comment claimed multi-character keys were "left untranslated"
+     but the code didn't actually do that. Fixed to return a blank key equivalent for any
+     multi-character key name instead of truncating it - caught an existing test
+     (`key_equivalent_reports_no_modifiers_for_a_plain_chord`) that had enshrined the buggy
+     first-character behavior as correct (`"Escape"` → `"e"`); fixed that test and added
+     `key_equivalent_leaves_multi_character_key_names_blank_instead_of_colliding` covering all five
+     sort shortcuts plus Escape/Enter/Tab.
+  4. **App menu showed "fm-desktop" instead of "Procyon."** Not actually a code bug: AppKit always
+     replaces the App menu's displayed title with the process name, and `cargo tauri dev` runs the
+     raw unbundled binary (no `.app`/`Info.plist` for `CFBundleName` to come from), so the OS falls
+     back to the executable name. Fixed anyway by having `install_native_menu` call
+     `NSProcessInfo::processInfo().setProcessName(...)` using `spec.menus[0].title` - repurposing
+     the App menu's already-supplied (and until now AppKit-ignored) title for exactly this. The
+     frontend's `appMenu()` title changed from the placeholder `'fm'` to `'Procyon'` to match the
+     title bar label already used elsewhere in `app-shell.ts`.
+  - Verified: `fm-platform-macos` lib tests (28 passed, 1 pre-existing ignored, including the new
+    regression test), `cargo clippy -p fm-platform-macos --all-targets -- -D warnings` clean, full
+    frontend `vitest run` (1112 passed) and `tsc --noEmit` clean.
+  - **Still not independently re-verified by the agent**: the four fixes above address the reported
+    symptoms with clear, confirmed root causes, but the actual rebuilt menu bar has not been
+    re-screenshotted by a human yet (same screen-recording/automation limitation as before). Also
+    unverified: whether other Edit/File items beyond what was screenshotted work correctly, and
+    whether the Go-menu/click-dispatch fixes fully resolve "most functions do not work" or only the
+    specific failures identified - recommend another `pnpm run dev:tauri` pass.
+- 2026-08-15 claude: Separately, added `.claude/settings.json` (project-level, committed) with a
+  `PreToolUse` hook that auto-extends the Bash tool timeout to 15 minutes for any `git commit`/`git
+  push` command, since this repo's pre-commit/pre-push hooks routinely exceed the default 2-minute
+  timeout and were repeatedly stalling agents. Not part of this task's scope, but landed alongside
+  it at the user's request after repeated commit timeouts during this same session.
