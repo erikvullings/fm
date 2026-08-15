@@ -17,7 +17,10 @@ import type {
   WorkspaceLayout,
   WorkspaceProjection,
 } from '../../models';
-import type { DirectoryColumnDescriptor } from '../directory-table/directory-table';
+import type {
+  ColumnWidthEntry,
+  DirectoryColumnDescriptor,
+} from '../directory-table/directory-table';
 import type { NativeIconLoader } from '../directory-table/native-icon-loader';
 import type { EntryFormatSettings } from '../entry-formatting/entry-formatting';
 import type {
@@ -86,6 +89,8 @@ export interface WorkspacePaneContent {
   readonly onRetry: () => void | Promise<void>;
   readonly onLoadNextPage: () => void | Promise<void>;
   readonly onSortChange: (sort: readonly SortDescriptor[]) => void;
+  readonly columnWidths?: readonly ColumnWidthEntry[] | undefined;
+  readonly onColumnWidthChange?: (columnId: string, width: number) => void;
   readonly onFilterQueryChange: (query: string) => void;
   readonly onFilterCommit: () => void;
   readonly onFilterClose: () => void;
@@ -495,6 +500,8 @@ export const WorkspaceLayoutView: FactoryComponent<WorkspaceLayoutViewAttrs> = (
           formatSettings: content.formatSettings,
           pluginColumns: content.pluginColumns,
           nativeIconLoader: content.nativeIconLoader,
+          columnWidths: content.columnWidths,
+          onColumnWidthChange: content.onColumnWidthChange,
         } satisfies TableConfigAttrs,
         directorySummary: {
           hasMore: content.hasMore,

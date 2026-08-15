@@ -27,6 +27,7 @@ import {
   remoteRootLocation,
 } from '../connections/connections-model';
 import {
+  type ColumnWidthEntry,
   type DirectoryColumnDescriptor,
   DirectoryTable,
   entryArraySource,
@@ -100,6 +101,8 @@ export interface TableConfigAttrs {
   readonly formatSettings?: EntryFormatSettings | undefined;
   readonly pluginColumns?: readonly DirectoryColumnDescriptor[] | undefined;
   readonly nativeIconLoader?: NativeIconLoader | undefined;
+  readonly columnWidths?: readonly ColumnWidthEntry[] | undefined;
+  readonly onColumnWidthChange?: ((columnId: string, width: number) => void) | undefined;
 }
 
 /** Path navigation callbacks and history state. */
@@ -1098,6 +1101,12 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
             ...(attrs.tableConfig.nativeIconLoader === undefined
               ? {}
               : { nativeIconLoader: attrs.tableConfig.nativeIconLoader }),
+            ...(attrs.tableConfig.columnWidths === undefined
+              ? {}
+              : { columnWidths: attrs.tableConfig.columnWidths }),
+            ...(attrs.tableConfig.onColumnWidthChange === undefined
+              ? {}
+              : { onColumnWidthChange: attrs.tableConfig.onColumnWidthChange }),
             label: `${attrs.tabTitle} directory`,
             showFullPath: isSearchLocation,
             ...(renameCtrl.entry === undefined ? {} : { renamingEntryId: renameCtrl.entry.id }),

@@ -97,22 +97,23 @@
   text-align: start;
 }
 
-.fm-directory-header > button::after {
+.fm-directory-resize-handle {
   position: absolute;
-  top: 20%;
-  right: -3px;
-  bottom: 20%;
-  width: 6px;
+  top: 0;
+  bottom: 0;
+  right: -4px;
+  width: 8px;
   cursor: col-resize;
-  content: "";
+  touch-action: none;
+}
+
+.fm-directory-resize-handle:hover,
+.fm-directory-resize-handle:active {
+  background: var(--fm-selection);
 }
 
 .fm-directory-header > button:last-child {
   border-inline-end: 0;
-}
-
-.fm-directory-header > button:last-child::after {
-  display: none;
 }
 
 .fm-directory-header > button:hover,

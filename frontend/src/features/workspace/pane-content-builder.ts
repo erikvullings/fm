@@ -476,6 +476,32 @@ export function createPaneContentBuilder(
           context.replaceWorkspace,
         ).catch(() => undefined);
       },
+      columnWidths: tab?.view.columns.map((column) => ({
+        columnId: column.columnId,
+        width: column.width,
+      })),
+      onColumnWidthChange: (columnId, width) => {
+        const liveWorkspace = context.getWorkspace();
+        if (liveWorkspace === undefined || tab === undefined) return;
+        const alreadyPresent = tab.view.columns.some((column) => column.columnId === columnId);
+        const nextColumns = alreadyPresent
+          ? tab.view.columns.map((column) =>
+              column.columnId === columnId ? { ...column, width } : column,
+            )
+          : [...tab.view.columns, { columnId, width, visible: true }];
+        void dispatchWorkspaceCommand(
+          client,
+          {
+            type: 'updateView',
+            workspaceId: liveWorkspace.id,
+            paneId,
+            tabId: tab.id,
+            patch: { columns: nextColumns },
+            expectedRevision: liveWorkspace.revision,
+          },
+          context.replaceWorkspace,
+        ).catch(() => undefined);
+      },
       onFilterQueryChange: (query) => {
         if (key === undefined) return;
         const appState = context.getAppState();

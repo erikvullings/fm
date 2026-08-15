@@ -77,10 +77,14 @@ export const TerminalDrawer: FactoryComponent<TerminalDrawerAttrs> = () => {
     if (live === undefined) {
       const inheritedFontSize = Number.parseFloat(getComputedStyle(element).fontSize);
       const style = getComputedStyle(element);
+      // xterm.js otherwise defaults to "courier-new, courier, monospace", which renders
+      // noticeably larger than the app's own text at the same nominal font size.
+      const inheritedFontFamily = style.getPropertyValue('--fm-font-mono').trim();
       const terminal = new Terminal({
         cursorBlink: true,
         convertEol: true,
         fontSize: Number.isFinite(inheritedFontSize) ? inheritedFontSize : 12.88,
+        ...(inheritedFontFamily === '' ? {} : { fontFamily: inheritedFontFamily }),
         theme: {
           background: style.getPropertyValue('--fm-surface').trim(),
           foreground: style.getPropertyValue('--fm-text').trim(),
