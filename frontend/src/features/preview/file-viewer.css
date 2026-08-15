@@ -1,10 +1,68 @@
 .fm-file-viewer {
+  position: relative;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: auto auto minmax(0, 1fr);
   flex: 1;
   min-width: 0;
   min-height: 0;
   background: var(--fm-surface);
+}
+
+.fm-file-viewer-metadata {
+  position: absolute;
+  top: var(--fm-header-height);
+  right: 0;
+  bottom: 0;
+  z-index: 5;
+  width: 20rem;
+  max-width: 80%;
+  overflow: auto;
+  padding: 0.75rem 1rem;
+  border-left: 1px solid var(--fm-border);
+  background: var(--fm-surface-elevated);
+  color: var(--fm-text);
+  font-size: 0.92em;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.fm-file-viewer-metadata dl {
+  margin: 0;
+}
+
+.fm-file-viewer-metadata-field {
+  margin: 0 0 0.75rem;
+}
+
+.fm-file-viewer-metadata-field dt {
+  color: var(--fm-text-muted);
+  font-size: 0.85em;
+  margin-bottom: 0.15rem;
+}
+
+.fm-file-viewer-metadata-field dd {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin: 0;
+  word-break: break-word;
+}
+
+.fm-file-viewer-metadata-field dd a {
+  color: var(--fm-accent);
+}
+
+.fm-file-viewer-metadata-copy {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--fm-text-muted);
+  cursor: pointer;
 }
 
 .fm-file-viewer-header {
@@ -62,6 +120,89 @@
   background: var(--fm-surface);
   color: inherit;
   cursor: pointer;
+}
+
+.fm-file-viewer-page-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin-inline-start: auto;
+}
+
+.fm-file-viewer-page-controls button {
+  border: 1px solid var(--fm-border);
+  background: var(--fm-surface);
+  color: inherit;
+  cursor: pointer;
+}
+
+.fm-file-viewer-page-controls button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.fm-file-viewer-page-count {
+  min-width: 4rem;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.fm-file-viewer-body-pdf {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 1rem;
+}
+
+.fm-file-viewer-pdf-canvas {
+  max-width: 100%;
+  box-shadow: 0 0 0 1px var(--fm-border);
+}
+
+.fm-file-viewer-pdf-page-error {
+  padding: 1rem;
+  color: var(--fm-error, var(--fm-text-muted));
+}
+
+.fm-file-viewer-body-epub {
+  display: flex;
+  justify-content: center;
+  padding: 1rem;
+}
+
+.fm-file-viewer-epub-chapter {
+  max-width: 42rem;
+  width: 100%;
+  color: var(--fm-text);
+  font-family: var(--fm-font-family);
+  font-size: var(--fm-font-size);
+  line-height: 1.6;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.fm-file-viewer-epub-chapter img {
+  max-width: 100%;
+}
+
+.fm-file-viewer-copy,
+.fm-file-viewer-metadata-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  margin-inline-start: auto;
+  width: var(--fm-header-height);
+  height: var(--fm-header-height);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.fm-file-viewer-metadata-toggle[aria-pressed="true"] {
+  color: var(--fm-accent);
 }
 
 .fm-file-viewer-zoom-level {
@@ -146,6 +287,21 @@
   line-height: 1.45;
   user-select: text;
   -webkit-user-select: text;
+}
+
+/* Lister-style viewer is the deliberate exception to the app-wide `user-select: none` (see
+ * `frontend/src/themes/theme.css`) - unlike directory listings and chrome, viewed file content is
+ * meant to be selected and copied (mouse-drag or the copy button in the header). */
+.fm-file-viewer-body-text .cm-content {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+/* The viewer is read-only (edits are blocked at the CodeMirror state level, not via DOM
+ * contenteditable, so the content stays mouse-selectable - see code-mirror-editor.ts) - hide the
+ * blinking text-insertion caret that contenteditable would otherwise show. */
+.fm-file-viewer-body-text .cm-cursor {
+  display: none;
 }
 
 .fm-file-viewer-markdown h1,

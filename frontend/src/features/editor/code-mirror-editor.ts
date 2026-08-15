@@ -59,7 +59,12 @@ export const CodeMirrorEditor: FactoryComponent<CodeMirrorEditorAttrs> = () => {
     lineNumbers(),
     syntaxHighlighting(fmHighlightStyle, { fallback: true }),
     EditorState.readOnly.of(attrs.readOnly === true),
-    EditorView.editable.of(attrs.readOnly !== true),
+    // Always DOM-editable (contenteditable), even in read-only mode: `readOnly` above already
+    // blocks every edit transaction, so this only controls whether the content is selectable.
+    // Setting `editable: false` for the F3 viewer used to make `.cm-content` non-contenteditable,
+    // which silently defeated the app's `user-select: text` override and made the viewed text
+    // impossible to select/copy with the mouse.
+    EditorView.editable.of(true),
     ...(attrs.readOnly === true
       ? []
       : [

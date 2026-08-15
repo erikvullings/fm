@@ -8,7 +8,20 @@ import { AUDIO_EXTENSIONS, IMAGE_EXTENSIONS } from '../directory-table/entry-ico
  * alone never proves an entry is safely textual - callers must also check the fetched chunk's
  * `probablyBinary` flag before rendering "text" content.
  */
-export type PreviewKind = 'text' | 'image' | 'audio' | 'metadata' | 'unsupported';
+export type PreviewKind =
+  | 'text'
+  | 'image'
+  | 'audio'
+  | 'pdf'
+  | 'comic'
+  | 'epub'
+  | 'metadata'
+  | 'unsupported';
+
+/** Comic book archive extensions (zip/rar containers of page images) rendered page-by-page by the
+ * F3 viewer's comic renderer, matching the archive-navigation extension list
+ * (`frontend/src/features/navigation/archive-location.ts`). */
+export const COMIC_ARCHIVE_EXTENSIONS = ['cbz', 'cbr'];
 
 /**
  * Above this size, the lightweight cursor-driven preview panel shows a "too large to preview"
@@ -32,6 +45,15 @@ export function resolvePreviewKind(entry: EntrySummary): PreviewKind {
   }
   if (extension !== undefined && AUDIO_EXTENSIONS.includes(extension)) {
     return 'audio';
+  }
+  if (extension === 'pdf') {
+    return 'pdf';
+  }
+  if (extension !== undefined && COMIC_ARCHIVE_EXTENSIONS.includes(extension)) {
+    return 'comic';
+  }
+  if (extension === 'epub') {
+    return 'epub';
   }
   return 'text';
 }
@@ -100,7 +122,7 @@ export type ImageRangeClient = Pick<FileManagerClient, 'readFileRange'>;
  * {@link PREVIEW_SIZE_LIMIT_BYTES}) nor the Lister-style viewer (which has no such limit - full
  * images/audio are always loaded, per Total Commander convention) impose a size cap here.
  */
-async function readEntireFileBytes(
+export async function readEntireFileBytes(
   client: ImageRangeClient,
   entry: EntrySummary,
   signal: AbortSignal,

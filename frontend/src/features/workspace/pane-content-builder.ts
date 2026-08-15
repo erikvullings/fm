@@ -151,7 +151,12 @@ export interface PaneContentContext {
   getOpsController(): OperationsController;
 
   // Action functions
-  openViewer(paneId: PaneId, entry: EntrySummary, initialSearch?: InitialSearch): void;
+  openViewer(
+    paneId: PaneId,
+    entry: EntrySummary,
+    initialSearch?: InitialSearch,
+    openMetadata?: boolean,
+  ): void;
   closeViewer(paneId: PaneId): void;
   closeEditor(paneId: PaneId): void;
   updateLocationSettings(
@@ -435,7 +440,17 @@ export function createPaneContentBuilder(
           return;
         }
         context.getCursorLoadTokens().delete(key);
-        const next = reduceSelection(selection, action, entryIds);
+        // Re-read the latest selection rather than the `selection` closed over when this attrs
+        // object was built: `toggleCursorSelectionAndAdvance` (Insert/Space) dispatches two
+        // `onSelectionAction` calls back-to-back in the same synchronous keydown handler, before
+        // Mithril redraws in between - using the stale closure here for the second call would
+        // silently discard the first call's effect (e.g. the toggle) once this overwrites the map
+        // with a `next` computed from pre-toggle state.
+        const next = reduceSelection(
+          context.getSelections().get(key) ?? selection,
+          action,
+          entryIds,
+        );
         context.getSelections().set(key, next);
         m.redraw();
       },
@@ -645,6 +660,13 @@ export function createPaneContentBuilder(
                   onZoomIn: () => viewer.controller.zoomIn(),
                   onZoomOut: () => viewer.controller.zoomOut(),
                   onResetZoom: () => viewer.controller.resetZoom(),
+                  onCopy: () => viewer.controller.copyContent(),
+                  onToggleMetadata: () => viewer.controller.toggleMetadataPanel(),
+                  onNextPage: () => viewer.controller.nextPage(),
+                  onPreviousPage: () => viewer.controller.previousPage(),
+                  onPdfSearchQueryChange: (query) => viewer.controller.setPdfSearchQuery(query),
+                  onNextPdfMatch: () => viewer.controller.goToNextPdfMatch(),
+                  onPreviousPdfMatch: () => viewer.controller.goToPreviousPdfMatch(),
                   onClose: () => context.closeViewer(paneId),
                 });
               })(),

@@ -791,7 +791,7 @@ fn selection_actions() -> Vec<ActionDescriptor> {
                 ..KeyChord::default()
             }],
         ),
-        ("core.toggleSelection", "Toggle Selection", vec![key(" ")]),
+        ("core.toggleSelection", "Toggle Selection", vec![]),
         ("core.selectAll", "Select All", vec![primary("a")]),
         (
             "core.invertSelection",
@@ -826,7 +826,7 @@ fn selection_actions() -> Vec<ActionDescriptor> {
         (
             "core.toggleSelectionAndAdvance",
             "Toggle Selection and Advance",
-            vec![key("Insert")],
+            vec![key("Insert"), key(" ")],
         ),
         (
             "core.restoreSelection",
@@ -1338,12 +1338,21 @@ mod tests {
     #[test]
     fn selection_only_actions_include_insert_and_numpad_slash() {
         let registry = ActionRegistry::with_core_actions(PlatformCapabilities::empty());
+        // Space is bound here rather than to `core.toggleSelection` (Total Commander parity: both
+        // Insert and Space toggle the cursor row's selection *and* advance to the next row).
         assert_eq!(
             registry
                 .get(&ActionId::new("core.toggleSelectionAndAdvance"))
                 .expect("core.toggleSelectionAndAdvance must be registered")
                 .default_shortcuts,
-            vec![key("Insert")]
+            vec![key("Insert"), key(" ")]
+        );
+        assert_eq!(
+            registry
+                .get(&ActionId::new("core.toggleSelection"))
+                .expect("core.toggleSelection must be registered")
+                .default_shortcuts,
+            Vec::<KeyChord>::new(),
         );
         assert_eq!(
             registry

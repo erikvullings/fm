@@ -23,6 +23,7 @@ feature to be useful, but (1) alone also improves the existing table view (a thu
 the icon in the existing icon column for image/video rows without a new view mode).
 
 ## Acceptance Criteria
+
 - Backend: a thumbnail service that generates downscaled previews for common image formats (at
   minimum JPEG/PNG/GIF/WebP) and, capability-permitting, video (first-frame extraction) and PDF
   (first-page render) — reuse the same "capability may not exist on every provider/platform, report
@@ -39,10 +40,17 @@ the icon in the existing icon column for image/video rows without a new view mod
   this is the "view-mode architecture" flagged as a prerequisite in 0129's Ctrl+F1/Ctrl+F2/
   Ctrl+Shift+F1 cluster; build the view-mode switch generally enough that a future "brief"/"full
   details" mode could reuse it, but only ship grid/icon view now.
+- CBR/CBZ display the first image (front/title page).
+- The Grid view can operate in photo app mode (toggled on/off or selected) and separate images
+  per day.
+- Allow for sorting by date/size/extension ascending or descending. Includes filters and
+  type-to select functionality. Icon size is small, medium and large.
+- Selected thumbnails can use F3 to see the full screen version.
 - Tests: thumbnail generation for each supported format, cache invalidation on file change, size/
   count budget enforcement, and a frontend test for the view-mode toggle and thumbnail rendering.
 
 ## Implementation Notes
+
 - Check `frontend/src/features/panes/` (post-0114 decomposition) for where the table-vs-future-grid
   split should live; the pane component should own view-mode state, not `app-shell.ts`.
 - macOS Quick Look (`qlmanage -t`) can generate high-quality thumbnails for a very wide range of
@@ -52,4 +60,5 @@ the icon in the existing icon column for image/video rows without a new view mod
 - Windows has an equivalent shell thumbnail cache (`IThumbnailProvider`) worth the same evaluation.
 
 ## Agent Notes
+
 - (none yet)

@@ -181,6 +181,7 @@ describe('MockFileManagerClient API', () => {
       'core.extendSelectionUp',
       'core.extendSelectionDown',
       'core.toggleSelection',
+      'core.toggleSelectionAndAdvance',
       'core.selectAll',
       'core.clearSelection',
     ]);

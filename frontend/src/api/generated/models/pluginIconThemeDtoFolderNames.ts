@@ -4,4 +4,4 @@
  */
 
 /** Exact directory name to icon definition key. */
-export type PluginIconThemeDtoFolderNames = {[key: string]: string};
+export type PluginIconThemeDtoFolderNames = { [key: string]: string };

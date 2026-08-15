@@ -1,12 +1,33 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import type { EntrySummary } from '../../models';
+import type { EntrySummary, PaneId } from '../../models';
 import {
   createFileViewerController,
   type FileViewerClient,
   type FileViewerState,
   TEXT_WINDOW_BYTES,
 } from './file-viewer-controller';
+import { loadPdfDocument } from './pdf-preview';
+
+vi.mock('./pdf-preview', () => ({
+  loadPdfDocument: vi.fn().mockResolvedValue({ numPages: 3 }),
+}));
+
+/** Builds a fake pdf.js document whose pages' text content is `pageText[pageNumber - 1]`. */
+function fakePdfDocument(pageText: readonly string[]): {
+  readonly numPages: number;
+  readonly getPage: (
+    pageNumber: number,
+  ) => Promise<{ getTextContent: () => Promise<{ items: { str: string }[] }> }>;
+} {
+  return {
+    numPages: pageText.length,
+    getPage: (pageNumber: number) =>
+      Promise.resolve({
+        getTextContent: () => Promise.resolve({ items: [{ str: pageText[pageNumber - 1] ?? '' }] }),
+      }),
+  };
+}
 
 function entry(overrides: Partial<EntrySummary> = {}): EntrySummary {
   return {
@@ -26,7 +47,7 @@ function setup(): {
   readonly states: FileViewerState[];
 } {
   return {
-    client: { readFileRange: vi.fn(), searchInFile: vi.fn() },
+    client: { readFileRange: vi.fn(), searchInFile: vi.fn(), listDirectory: vi.fn() },
     states: [],
   };
 }
@@ -382,6 +403,395 @@ describe('file viewer controller', () => {
 
     await vi.waitFor(() => expect(context.states.at(-1)?.status).toBe('error'));
     expect(context.states.at(-1)).toEqual({ status: 'error', entry: entry(), message: 'boom' });
+  });
+
+  it('copies the loaded text window to the clipboard', async () => {
+    const context = setup();
+    vi.mocked(context.client.readFileRange).mockResolvedValue({
+      data: [104, 105],
+      offset: 0,
+      length: 2,
+      eof: true,
+    });
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal('navigator', { clipboard: { writeText } });
+    const controller = createFileViewerController({
+      client: context.client,
+      entry: entry(),
+      update: (state) => context.states.push(state),
+    });
+    await vi.waitFor(() => expect(context.states.at(-1)?.status).toBe('ready'));
+
+    await controller.copyContent();
+
+    expect(writeText).toHaveBeenCalledWith('hi');
+    vi.unstubAllGlobals();
+  });
+
+  it('copies the loaded image to the clipboard as image bytes', async () => {
+    const context = setup();
+    vi.mocked(context.client.readFileRange).mockResolvedValue({
+      data: [1, 2, 3],
+      offset: 0,
+      length: 3,
+      eof: true,
+    });
+    const write = vi.fn().mockResolvedValue(undefined);
+    class FakeClipboardItem {
+      constructor(readonly items: Record<string, Blob>) {}
+    }
+    vi.stubGlobal('navigator', { clipboard: { write } });
+    vi.stubGlobal('ClipboardItem', FakeClipboardItem);
+    const controller = createFileViewerController({
+      client: context.client,
+      entry: entry({ name: 'photo.png', extension: 'png' }),
+      update: (state) => context.states.push(state),
+    });
+    await vi.waitFor(() => expect(context.states.at(-1)?.status).toBe('ready'));
+
+    await controller.copyContent();
+
+    expect(write).toHaveBeenCalledTimes(1);
+    vi.unstubAllGlobals();
+  });
+
+  it('computes text metadata (size/lines/characters/language) when the panel is opened', async () => {
+    const context = setup();
+    vi.mocked(context.client.readFileRange).mockResolvedValue({
+      data: [104, 105, 10, 104, 105],
+      offset: 0,
+      length: 5,
+      eof: true,
+    });
+    const controller = createFileViewerController({
+      client: context.client,
+      entry: entry({ extension: 'ts', name: 'report.ts', size: 5 }),
+      update: (state) => context.states.push(state),
+    });
+    await vi.waitFor(() => expect(context.states.at(-1)?.status).toBe('ready'));
+
+    controller.toggleMetadataPanel();
+
+    const state = context.states.at(-1);
+    expect(state).toMatchObject({
+      metadataPanelOpen: true,
+      metadata: {
+        kind: 'text',
+        sizeBytes: 5,
+        lineCount: 2,
+        characterCount: 5,
+        language: 'typescript',
+      },
+    });
+  });
+
+  it('toggles the metadata panel closed again without discarding the computed metadata', async () => {
+    const context = setup();
+    vi.mocked(context.client.readFileRange).mockResolvedValue({
+      data: [104],
+      offset: 0,
+      length: 1,
+      eof: true,
+    });
+    const controller = createFileViewerController({
+      client: context.client,
+      entry: entry(),
+      update: (state) => context.states.push(state),
+    });
+    await vi.waitFor(() => expect(context.states.at(-1)?.status).toBe('ready'));
+
+    controller.toggleMetadataPanel();
+    controller.toggleMetadataPanel();
+
+    const state = context.states.at(-1);
+    expect(state).toMatchObject({ metadataPanelOpen: false });
+    expect((state as { metadata?: unknown }).metadata).toBeDefined();
+  });
+
+  it('loads a PDF and exposes page count/current page, navigable via next/previousPage', async () => {
+    const context = setup();
+    vi.mocked(context.client.readFileRange).mockResolvedValue({
+      data: [1, 2, 3],
+      offset: 0,
+      length: 3,
+      eof: true,
+    });
+    const controller = createFileViewerController({
+      client: context.client,
+      entry: entry({ name: 'report.pdf', extension: 'pdf' }),
+      update: (state) => context.states.push(state),
+    });
+    await vi.waitFor(() => expect(context.states.at(-1)?.status).toBe('ready'));
+    expect(context.states.at(-1)).toMatchObject({
+      content: { kind: 'pdf', pageCount: 3, currentPage: 1 },
+    });
+
+    controller.nextPage();
+    expect(context.states.at(-1)).toMatchObject({ content: { currentPage: 2 } });
+    controller.previousPage();
+    controller.previousPage();
+    expect(context.states.at(-1)).toMatchObject({ content: { currentPage: 1 } });
+
+    controller.nextPage();
+    controller.nextPage();
+    controller.nextPage();
+    expect(context.states.at(-1)).toMatchObject({ content: { currentPage: 3 } });
+  });
+
+  it('finds matching PDF pages via simple text search and jumps between them', async () => {
+    const context = setup();
+    vi.mocked(context.client.readFileRange).mockResolvedValue({
+      data: [1, 2, 3],
+      offset: 0,
+      length: 3,
+      eof: true,
+    });
+    vi.mocked(loadPdfDocument).mockResolvedValueOnce(
+      fakePdfDocument(['apple pie', 'banana bread', 'apple crumble']) as never,
+    );
+    const controller = createFileViewerController({
+      client: context.client,
+      entry: entry({ name: 'report.pdf', extension: 'pdf' }),
+      update: (state) => context.states.push(state),
+    });
+    await vi.waitFor(() => expect(context.states.at(-1)?.status).toBe('ready'));
+
+    controller.setPdfSearchQuery('apple');
+    await vi.waitFor(() =>
+      expect(context.states.at(-1)).toMatchObject({
+        pdfSearch: { matches: [1, 3], currentMatchIndex: 0 },
+        content: { currentPage: 1 },
+      }),
+    );
+
+    controller.goToNextPdfMatch();
+    expect(context.states.at(-1)).toMatchObject({
+      content: { currentPage: 3 },
+      pdfSearch: { currentMatchIndex: 1 },
+    });
+
+    controller.goToPreviousPdfMatch();
+    expect(context.states.at(-1)).toMatchObject({
+      content: { currentPage: 1 },
+      pdfSearch: { currentMatchIndex: 0 },
+    });
+  });
+
+  it('clears PDF search matches when the query is emptied', async () => {
+    const context = setup();
+    vi.mocked(context.client.readFileRange).mockResolvedValue({
+      data: [1, 2, 3],
+      offset: 0,
+      length: 3,
+      eof: true,
+    });
+    vi.mocked(loadPdfDocument).mockResolvedValueOnce(fakePdfDocument(['apple', 'banana']) as never);
+    const controller = createFileViewerController({
+      client: context.client,
+      entry: entry({ name: 'report.pdf', extension: 'pdf' }),
+      update: (state) => context.states.push(state),
+    });
+    await vi.waitFor(() => expect(context.states.at(-1)?.status).toBe('ready'));
+
+    controller.setPdfSearchQuery('apple');
+    await vi.waitFor(() =>
+      expect(context.states.at(-1)).toMatchObject({ pdfSearch: { matches: [1] } }),
+    );
+
+    controller.setPdfSearchQuery('');
+    expect(context.states.at(-1)).toMatchObject({ pdfSearch: { query: '', matches: [] } });
+  });
+
+  it('loads an EPUB, parsing container.xml/OPF and rendering the first chapter', async () => {
+    const context = setup();
+    const containerXml =
+      '<container><rootfiles><rootfile full-path="OEBPS/content.opf"/></rootfiles></container>';
+    const opfXml =
+      '<package><metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title>Book</dc:title></metadata>' +
+      '<manifest>' +
+      '<item id="c1" href="c1.xhtml" media-type="application/xhtml+xml"/>' +
+      '<item id="c2" href="c2.xhtml" media-type="application/xhtml+xml"/>' +
+      '</manifest>' +
+      '<spine><itemref idref="c1"/><itemref idref="c2"/></spine>' +
+      '</package>';
+    const chapterHtml: Record<string, string> = {
+      'archive:///tmp/report.txt!/OEBPS/c1.xhtml': '<p>Chapter one</p>',
+      'archive:///tmp/report.txt!/OEBPS/c2.xhtml': '<p>Chapter two</p>',
+    };
+    vi.mocked(context.client.readFileRange).mockImplementation(async (request) => {
+      const uri = request.location.uri;
+      const text = uri.endsWith('META-INF/container.xml')
+        ? containerXml
+        : uri.endsWith('OEBPS/content.opf')
+          ? opfXml
+          : (chapterHtml[uri] ?? '');
+      const data = Array.from(new TextEncoder().encode(text));
+      return { data, offset: 0, length: data.length, eof: true };
+    });
+    const controller = createFileViewerController({
+      client: context.client,
+      entry: entry({ name: 'book.epub', extension: 'epub' }),
+      update: (state) => context.states.push(state),
+    });
+    await vi.waitFor(() =>
+      expect(context.states.at(-1)).toMatchObject({
+        content: { kind: 'epub', currentChapterHtml: expect.any(String) },
+      }),
+    );
+    expect(context.states.at(-1)).toMatchObject({
+      content: { title: 'Book', chapterCount: 2, currentChapter: 0, loadingChapter: false },
+    });
+    expect(
+      (context.states.at(-1) as { content: { currentChapterHtml: string } }).content
+        .currentChapterHtml,
+    ).toContain('Chapter one');
+
+    controller.nextPage();
+    await vi.waitFor(() =>
+      expect(
+        (context.states.at(-1) as { content: { currentChapterHtml?: string } }).content
+          .currentChapterHtml,
+      ).toContain('Chapter two'),
+    );
+    expect(context.states.at(-1)).toMatchObject({ content: { currentChapter: 1 } });
+  });
+
+  it('shows an error for an EPUB without a locatable OPF package document', async () => {
+    const context = setup();
+    vi.mocked(context.client.readFileRange).mockResolvedValue({
+      data: Array.from(new TextEncoder().encode('<container><rootfiles/></container>')),
+      offset: 0,
+      length: 10,
+      eof: true,
+    });
+    createFileViewerController({
+      client: context.client,
+      entry: entry({ name: 'book.epub', extension: 'epub' }),
+      update: (state) => context.states.push(state),
+    });
+    await vi.waitFor(() => expect(context.states.at(-1)?.status).toBe('error'));
+  });
+
+  it('loads a comic archive, fetching the first page and paginating on demand', async () => {
+    const context = setup();
+    const paneId = 'pane-a' as PaneId;
+    vi.mocked(context.client.listDirectory).mockResolvedValue({
+      paneId,
+      requestId: 'req-1',
+      revision: 1,
+      location: { providerId: 'archive', uri: 'archive:///tmp/book.cbz!/' },
+      writable: false,
+      hasMore: false,
+      loadingState: { type: 'loaded' },
+      entries: [
+        entry({
+          id: 'page-2',
+          name: 'page02.jpg',
+          extension: 'jpg',
+          location: { providerId: 'archive', uri: 'archive:///tmp/book.cbz!/page02.jpg' },
+        }),
+        entry({
+          id: 'page-1',
+          name: 'page01.jpg',
+          extension: 'jpg',
+          location: { providerId: 'archive', uri: 'archive:///tmp/book.cbz!/page01.jpg' },
+        }),
+      ],
+    });
+    vi.mocked(context.client.readFileRange).mockResolvedValue({
+      data: [1, 2, 3],
+      offset: 0,
+      length: 3,
+      eof: true,
+    });
+    const controller = createFileViewerController({
+      client: context.client,
+      entry: entry({ name: 'book.cbz', extension: 'cbz' }),
+      workspaceId: 'workspace-1',
+      update: (state) => context.states.push(state),
+    });
+    await vi.waitFor(() =>
+      expect(context.states.at(-1)).toMatchObject({
+        content: { kind: 'comic', currentPageDataUri: expect.any(String) },
+      }),
+    );
+    expect(context.states.at(-1)).toMatchObject({
+      content: { pageCount: 2, currentPage: 0, loadingPage: false },
+    });
+
+    controller.nextPage();
+    await vi.waitFor(() =>
+      expect(context.states.at(-1)).toMatchObject({
+        content: { currentPage: 1, loadingPage: false },
+      }),
+    );
+  });
+
+  it('finds comic pages nested inside a single wrapper folder at the archive root', async () => {
+    // Some CBR/CBZ archives (e.g. "one folder per volume" scans) wrap their pages in a top-level
+    // directory instead of placing them at the archive root - the root listing alone finds no
+    // images, so the controller must descend into subdirectories before giving up.
+    const context = setup();
+    vi.mocked(context.client.listDirectory).mockImplementation(async (request) => {
+      const atRoot = request.location.uri === 'archive:///tmp/book.cbr!/';
+      return {
+        paneId: 'pane-a' as PaneId,
+        requestId: 'req-1',
+        revision: 1,
+        location: request.location,
+        writable: false,
+        hasMore: false,
+        loadingState: { type: 'loaded' },
+        entries: atRoot
+          ? [
+              entry({
+                id: 'wrapper',
+                name: 'Volume 1',
+                kind: 'directory',
+                location: { providerId: 'archive', uri: 'archive:///tmp/book.cbr!/Volume 1' },
+              }),
+            ]
+          : [
+              entry({
+                id: 'page-1',
+                name: 'page01.jpg',
+                extension: 'jpg',
+                location: {
+                  providerId: 'archive',
+                  uri: 'archive:///tmp/book.cbr!/Volume 1/page01.jpg',
+                },
+              }),
+            ],
+      };
+    });
+    vi.mocked(context.client.readFileRange).mockResolvedValue({
+      data: [1, 2, 3],
+      offset: 0,
+      length: 3,
+      eof: true,
+    });
+    createFileViewerController({
+      client: context.client,
+      entry: entry({ name: 'book.cbr', extension: 'cbr' }),
+      workspaceId: 'workspace-1',
+      update: (state) => context.states.push(state),
+    });
+    await vi.waitFor(() =>
+      expect(context.states.at(-1)).toMatchObject({
+        content: { kind: 'comic', pageCount: 1, currentPageDataUri: expect.any(String) },
+      }),
+    );
+  });
+
+  it('shows an error for a comic opened without workspace context', async () => {
+    const context = setup();
+    const controller = createFileViewerController({
+      client: context.client,
+      entry: entry({ name: 'book.cbz', extension: 'cbz' }),
+      update: (state) => context.states.push(state),
+    });
+    void controller;
+    await vi.waitFor(() => expect(context.states.at(-1)?.status).toBe('error'));
   });
 
   it('stops publishing after dispose', async () => {

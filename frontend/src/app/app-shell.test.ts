@@ -299,10 +299,14 @@ describe('AppShell', () => {
     expect(activePane?.querySelectorAll('.fm-selected-row')).toHaveLength(entryCount);
     expect(activePane?.querySelector('.fm-cursor-row')?.textContent).not.toBe(cursorBefore);
 
-    // Space toggles only the entry under the cursor, dropping the selection by exactly one.
+    // Space toggles the entry under the cursor (and then advances the cursor, Total Commander
+    // parity) - every rendered row stays selected except the one just toggled off. Re-querying
+    // the rendered row count after the keypress (rather than reusing `entryCount`) keeps this
+    // assertion robust to the cursor's advance changing which rows are virtualized into the DOM.
     activePane?.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true }));
     m.redraw.sync();
-    expect(activePane?.querySelectorAll('.fm-selected-row')).toHaveLength(entryCount - 1);
+    const renderedAfterSpace = activePane?.querySelectorAll('.fm-directory-row').length ?? 0;
+    expect(activePane?.querySelectorAll('.fm-selected-row')).toHaveLength(renderedAfterSpace - 1);
   });
 
   it('sorts the loaded page from a column header and reports the active direction', async () => {

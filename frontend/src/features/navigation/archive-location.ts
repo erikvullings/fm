@@ -31,3 +31,11 @@ export function archiveRootForEntry(entry: EntrySummary): Location | undefined {
     uri: `archive://${entry.location.uri.slice('file://'.length)}!/`,
   };
 }
+
+/** Builds the location of a known entry inside an archive, given the archive's root (from
+ * {@link archiveRootForEntry}) and the entry's path relative to the archive root (e.g. from an
+ * OPF manifest `href` or a hardcoded path like `META-INF/container.xml`) - a direct read by a
+ * path the caller already knows, without listing the archive first. */
+export function archiveEntryLocation(archiveRoot: Location, innerPath: string): Location {
+  return { providerId: archiveRoot.providerId, uri: `${archiveRoot.uri}${innerPath}` };
+}

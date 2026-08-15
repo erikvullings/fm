@@ -38,7 +38,8 @@
   ,{ "id": "core.moveCursorLast", "title": "Last", "category": "selection", "defaultShortcuts": [{ "key": "End" }], "contextRequirements": {}, "source": { "kind": "core" } }
   ,{ "id": "core.extendSelectionUp", "title": "Extend up", "category": "selection", "defaultShortcuts": [{ "key": "ArrowUp", "shift": true }], "contextRequirements": {}, "source": { "kind": "core" } }
   ,{ "id": "core.extendSelectionDown", "title": "Extend down", "category": "selection", "defaultShortcuts": [{ "key": "ArrowDown", "shift": true }], "contextRequirements": {}, "source": { "kind": "core" } }
-  ,{ "id": "core.toggleSelection", "title": "Toggle", "category": "selection", "defaultShortcuts": [{ "key": " " }], "contextRequirements": {}, "source": { "kind": "core" } }
+  ,{ "id": "core.toggleSelection", "title": "Toggle", "category": "selection", "defaultShortcuts": [], "contextRequirements": {}, "source": { "kind": "core" } }
+  ,{ "id": "core.toggleSelectionAndAdvance", "title": "Toggle and advance", "category": "selection", "defaultShortcuts": [{ "key": "Insert" }, { "key": " " }], "contextRequirements": {}, "source": { "kind": "core" } }
   ,{ "id": "core.selectAll", "title": "Select all", "category": "selection", "defaultShortcuts": [{ "key": "a", "ctrl": true }], "contextRequirements": {}, "source": { "kind": "core" } }
   ,{ "id": "core.clearSelection", "title": "Clear selection", "category": "selection", "defaultShortcuts": [{ "key": "Escape" }], "contextRequirements": {}, "source": { "kind": "core" } }
 ]

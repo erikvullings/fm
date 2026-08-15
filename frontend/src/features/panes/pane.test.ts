@@ -82,7 +82,7 @@ const keybindingActions = [
     title: 'Extend up',
     defaultShortcuts: [{ key: 'ARROWUP', shift: true }],
   },
-  { id: 'core.toggleSelection', title: 'Toggle selection', defaultShortcuts: [{ key: ' ' }] },
+  { id: 'core.toggleSelection', title: 'Toggle selection', defaultShortcuts: [] },
   { id: 'core.selectAll', title: 'Select all', defaultShortcuts: [{ key: 'A', ctrl: true }] },
   {
     id: 'core.invertSelection',
@@ -98,7 +98,7 @@ const keybindingActions = [
   {
     id: 'core.toggleSelectionAndAdvance',
     title: 'Toggle selection and advance',
-    defaultShortcuts: [{ key: 'INSERT' }],
+    defaultShortcuts: [{ key: 'INSERT' }, { key: ' ' }],
   },
   {
     id: 'core.restoreSelection',
@@ -985,6 +985,7 @@ describe('Pane navigation input', () => {
     expect(onSelectionAction.mock.calls.map(([action]) => action)).toEqual([
       { type: 'extendRange', offset: 1 },
       { type: 'toggle', entryId: 'one' },
+      { type: 'moveCursor', offset: 1 },
       { type: 'selectAll' },
     ]);
   });

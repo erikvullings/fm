@@ -23,10 +23,10 @@ export interface PluginIconThemeDto {
   fileExtensions: PluginIconThemeDtoFileExtensions;
   /** Exact file name to icon definition key, matched before `file_extensions`. */
   fileNames: PluginIconThemeDtoFileNames;
-   /** Exact directory name to icon definition key. */
-   folderNames: PluginIconThemeDtoFolderNames;
-   /** Exact expanded directory name to icon definition key. */
-   folderNamesExpanded: PluginIconThemeDtoFolderNamesExpanded;
+  /** Exact directory name to icon definition key. */
+  folderNames: PluginIconThemeDtoFolderNames;
+  /** Exact expanded directory name to icon definition key. */
+  folderNamesExpanded: PluginIconThemeDtoFolderNamesExpanded;
   /**
      * Default icon definition key for `directory` entries.
      * @nullable

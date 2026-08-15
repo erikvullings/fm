@@ -410,4 +410,104 @@ describe('createGlobalKeydownHandler - task 0128 shortcuts', () => {
     createGlobalKeydownHandler(context)(keydown('F1'));
     expect(setShortcutsHelpOpen).toHaveBeenCalledWith(true);
   });
+
+  it('Alt+Space toggles the metadata panel when a viewer is open in the active pane', () => {
+    const toggleMetadataPanel = vi.fn();
+    const context = makeContext({
+      getViewer: (paneId) =>
+        paneId === PANE_A
+          ? ({ controller: { toggleMetadataPanel } as never, state: {} as never } as never)
+          : undefined,
+    });
+    const event = keydown(' ', { altKey: true, code: 'Space' });
+    const preventDefault = vi.spyOn(event, 'preventDefault');
+    createGlobalKeydownHandler(context)(event);
+    expect(toggleMetadataPanel).toHaveBeenCalledTimes(1);
+    expect(preventDefault).toHaveBeenCalled();
+  });
+
+  it('Alt+Space toggles the metadata panel of a viewer open in the inactive pane (no pane switch needed)', () => {
+    const toggleMetadataPanel = vi.fn();
+    const context = makeContext({
+      // Default active pane is PANE_A; the viewer lives in PANE_B, mirroring F3 opening the
+      // viewer in the *opposite* pane from the one the user pressed F3 in.
+      getViewer: (paneId) =>
+        paneId === PANE_B
+          ? ({ controller: { toggleMetadataPanel } as never, state: {} as never } as never)
+          : undefined,
+    });
+    const event = keydown(' ', { altKey: true, code: 'Space' });
+    createGlobalKeydownHandler(context)(event);
+    expect(toggleMetadataPanel).toHaveBeenCalledTimes(1);
+  });
+
+  it('ArrowLeft/ArrowRight page a PDF viewer open in the inactive pane (no pane switch needed)', () => {
+    const nextPage = vi.fn();
+    const previousPage = vi.fn();
+    const context = makeContext({
+      getViewer: (paneId) =>
+        paneId === PANE_B
+          ? ({
+              controller: { nextPage, previousPage } as never,
+              state: { status: 'ready', content: { kind: 'pdf' } } as never,
+            } as never)
+          : undefined,
+    });
+    createGlobalKeydownHandler(context)(keydown('ArrowRight'));
+    createGlobalKeydownHandler(context)(keydown('ArrowLeft'));
+    expect(nextPage).toHaveBeenCalledTimes(1);
+    expect(previousPage).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not intercept ArrowLeft/ArrowRight when no viewer is open (or it is showing non-paged content)', () => {
+    const nextPage = vi.fn();
+    const context = makeContext({
+      getViewer: (paneId) =>
+        paneId === PANE_B
+          ? ({
+              controller: { nextPage } as never,
+              state: { status: 'ready', content: { kind: 'text' } } as never,
+            } as never)
+          : undefined,
+    });
+    const event = keydown('ArrowRight');
+    const preventDefault = vi.spyOn(event, 'preventDefault');
+    createGlobalKeydownHandler(context)(event);
+    expect(nextPage).not.toHaveBeenCalled();
+    expect(preventDefault).not.toHaveBeenCalled();
+  });
+
+  it('Alt+Space opens a viewer (with the info panel shown) for the cursor file when none is open yet', () => {
+    const openViewer = vi.fn();
+    const cursorFile: EntrySummary = {
+      id: 'file-1' as never,
+      location: { providerId: 'local', uri: 'file:///a/b/report.txt' },
+      name: 'report.txt',
+      kind: 'file',
+      hidden: false,
+      readOnly: false,
+      metadataRevision: 0,
+    };
+    const context = makeContext({
+      getViewer: () => undefined,
+      openViewer,
+      getSelections: () =>
+        new Map([['pane-a:tab', { selectedEntryIds: [], cursorEntryId: 'file-1' as never }]]),
+      getDirectories: () =>
+        new Map([['pane-a:tab', { entries: [cursorFile] } as unknown as PaneDirectoryView]]),
+    });
+    const event = keydown(' ', { altKey: true, code: 'Space' });
+    const preventDefault = vi.spyOn(event, 'preventDefault');
+    createGlobalKeydownHandler(context)(event);
+    expect(preventDefault).toHaveBeenCalled();
+    expect(openViewer).toHaveBeenCalledWith(PANE_B, cursorFile, undefined, true);
+  });
+
+  it('Alt+Space does nothing when no viewer is open', () => {
+    const context = makeContext({ getViewer: () => undefined });
+    const event = keydown(' ', { altKey: true, code: 'Space' });
+    const preventDefault = vi.spyOn(event, 'preventDefault');
+    createGlobalKeydownHandler(context)(event);
+    expect(preventDefault).not.toHaveBeenCalled();
+  });
 });

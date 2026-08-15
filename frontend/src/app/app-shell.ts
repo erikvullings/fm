@@ -619,7 +619,9 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     };
   }
 
-  /** Opens the Lister-style viewer in a new tab in `paneId`. */
+  /** Opens the Lister-style viewer in a new tab in `paneId`. `openMetadata` shows the Alt+Space
+   * info panel immediately (used when Alt+Space is pressed with no viewer already open, so the
+   * shortcut works from the directory listing too, not just inside an already-open viewer). */
   function openViewer(
     client: FileManagerClient,
     paneId: PaneId,
@@ -630,6 +632,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       readonly caseSensitive: boolean;
       readonly wholeWord: boolean;
     },
+    openMetadata?: boolean,
   ): void {
     const existingViewer = [...viewerByTab.entries()][0];
     if (existingViewer !== undefined) {
@@ -643,7 +646,9 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       const controller = createFileViewerController({
         client,
         entry,
+        ...(workspace ? { workspaceId: workspace.id } : {}),
         ...(initialSearch ? { initialSearch } : {}),
+        initialMetadataPanelOpen: openMetadata === true,
         update: (state) => {
           const current = viewerByTab.get(key);
           if (current === undefined) return;
@@ -689,7 +694,9 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
         const controller = createFileViewerController({
           client,
           entry,
+          workspaceId: currentWorkspace.id,
           ...(initialSearch ? { initialSearch } : {}),
+          initialMetadataPanelOpen: openMetadata === true,
           update: (state) => {
             const existing = viewerByTab.get(key);
             if (existing === undefined) return;
@@ -1253,8 +1260,8 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     selectedLocations,
     invokeActionById: (actionId, parameters, context) =>
       actionCommandController.invokeActionById(actionId, parameters, context),
-    openViewer: (paneId, entry, initialSearch) =>
-      openViewer(attrsClient, paneId, entry, initialSearch),
+    openViewer: (paneId, entry, initialSearch, openMetadata) =>
+      openViewer(attrsClient, paneId, entry, initialSearch, openMetadata),
     openEditor: (paneId, entry) => openEditor(attrsClient, paneId, entry),
     actionContext: () => actionCommandController.actionContext(),
     commandAvailabilityContext: (selectedEntries, paneId) =>
@@ -1517,8 +1524,8 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     getNavigation: () => navigation,
     getWorkspaceController: () => workspaceController,
     getOpsController: () => opsController,
-    openViewer: (paneId, entry, initialSearch) =>
-      openViewer(attrsClient, paneId, entry, initialSearch),
+    openViewer: (paneId, entry, initialSearch, openMetadata) =>
+      openViewer(attrsClient, paneId, entry, initialSearch, openMetadata),
     closeViewer,
     closeEditor,
     updateLocationSettings,

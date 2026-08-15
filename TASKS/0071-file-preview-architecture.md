@@ -8,10 +8,12 @@ Area: backend
 Depends on: 0069
 
 ## Context
+
 `file-manager-coding-agent-spec.md` §25 (preview architecture) and §16 milestone 3 (basic file
 preview).
 
 ## Acceptance Criteria
+
 - A preview service with a renderer registry supporting the initial types: plain text, common image
   formats, file metadata, and an unsupported-file placeholder (§25).
 - Preview data is delivered via ranged or streamed reads; entire large files are never loaded into
@@ -23,7 +25,7 @@ preview).
   cancelled on move (§35). **Superseded 2026-08-04**: automatic cursor-driven preview loading was
   explicitly removed by product direction; preview is now triggered only via F3 (task 0088), not
   automatically as the cursor moves. See Agent Notes.
-- Markdown, PDF, media metadata, archive summary, syntax highlighting and plugin previews are
+- Markdown (already done), PDF, media metadata, archive summary, syntax highlighting and plugin previews are
   designed for but not implemented; the registry makes adding them additive.
 - Pressing the preview trigger key (F3/0088, or a dedicated key — evaluate `Space`, TC's binding for
   this) on a **directory** entry computes and displays its recursive total size, matching Total
@@ -31,13 +33,13 @@ preview).
   distinct from 0097's aggregate totals (which only sum the *currently listed* entries in the
   active pane, one level, non-recursive) and from 0118's full treemap view (which visualizes the
   breakdown, not just a number) — this is the lightweight "just tell me the number, recursively,
-  on demand" case. Treat it as a "directory" renderer in this task's registry (parallel to the
-  existing "file metadata" renderer for files) rather than a bolt-on elsewhere.
+  on demand" case. Fills the Size column, which is normally empty for directories.
 - Tests: renderer selection by MIME/extension, size-limit enforcement, cancellation on cursor move,
   binary detection, recursive directory-size computation (including cancellation if the cursor
   moves away mid-walk).
 
 ## Implementation Notes
+
 - Reuse `mime_type`/`icon_key` from `EntrySummary` where available, but sniff content rather than
   trusting the extension for the text/binary decision.
 - Image previews should use a downscaled/streamed representation rather than the original bytes for
@@ -53,6 +55,7 @@ preview).
   decision made yet — flag for product input before scoping PDF/CBR renderer work.
 
 ## Agent Notes
+
 - Not started.
 - 2026-08-04: The "collapsible preview panel that updates as the cursor moves" acceptance criterion
   above was explicitly reversed by product direction: automatic, cursor-driven preview loading is

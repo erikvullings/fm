@@ -308,7 +308,16 @@ export class HttpFileManagerClient implements FileManagerClient {
   ): Promise<DirectorySnapshot> {
     const response = await requestDirectory(request, signal !== undefined ? { signal } : undefined);
     if (response.status !== 200) {
-      throw new Error(`Unexpected listDirectory response status: ${response.status}`);
+      // Surface the backend's actual `ApplicationErrorDto.message` (e.g. "unsupported RAR
+      // compression method") rather than a generic status-code message - this is the archive
+      // listing path the comic (.cbz/.cbr) and EPUB viewers depend on, where the underlying
+      // cause (an archive format/feature the backend's reader can't handle) is exactly what a
+      // user needs to see to tell "this app has a bug" from "this file can't be read".
+      const message =
+        typeof response.data === 'object' && response.data !== null && 'message' in response.data
+          ? String((response.data as { message: unknown }).message)
+          : `Unexpected listDirectory response status: ${response.status}`;
+      throw new Error(message);
     }
     return directorySnapshotFromDto(response.data);
   }

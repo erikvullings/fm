@@ -140,3 +140,16 @@ export const activityIcon = trustedStrokeIcon(
   '<path d="M3 12h3l3 -8l3 16l3 -8h3" />',
   'fm-icon-activity',
 );
+
+/** "copy" — copy text/image content or a metadata field to the clipboard. */
+export const copyIcon = trustedStrokeIcon(
+  '<path d="M9 3m0 2a2 2 0 0 1 2 -2h2a2 2 0 0 1 2 2v0a2 2 0 0 1 -2 2h-2a2 2 0 0 1 -2 -2z" />' +
+    '<path d="M9 5h-2a2 2 0 0 0 -2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2 -2v-12a2 2 0 0 0 -2 -2h-2" />',
+  'fm-icon-copy',
+);
+
+/** "info-circle" — the F3 viewer's metadata/properties sub-panel toggle. */
+export const infoCircleIcon = trustedStrokeIcon(
+  '<path d="M3 12a9 9 0 1 0 18 0a9 9 0 0 0 -18 0" /><path d="M12 9h.01" /><path d="M11 12h1v4h1" />',
+  'fm-icon-info-circle',
+);

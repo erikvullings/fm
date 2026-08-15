@@ -103,7 +103,12 @@ export interface GlobalKeydownContext {
   replaceClipboard(next?: ClipboardState): void;
   selectedLocations(): readonly Location[];
   invokeActionById(actionId: string, parameters: unknown, ctx: ActionInvocationContext): void;
-  openViewer(paneId: PaneId, entry: EntrySummary, initialSearch?: InitialSearch): void;
+  openViewer(
+    paneId: PaneId,
+    entry: EntrySummary,
+    initialSearch?: InitialSearch,
+    openMetadata?: boolean,
+  ): void;
   openEditor(paneId: PaneId, entry: EntrySummary): void;
   actionContext(): ActionInvocationContext;
   commandAvailabilityContext(
@@ -158,6 +163,66 @@ function selectedEntriesOrCursor(
   return cursor === undefined ? [] : [cursor];
 }
 
+/** Resolves the cursor entry F3 (or Alt+Space, when no viewer is already open) would open: the
+ * single non-parent file entry under the active pane's cursor, and the opposite pane to open it
+ * into. Shared so Alt+Space can open a viewer exactly the way F3 would, rather than duplicating
+ * this resolution logic. */
+function resolveViewTarget(
+  context: GlobalKeydownContext,
+):
+  | {
+      readonly paneId: PaneId;
+      readonly entry: EntrySummary;
+      readonly initialSearch?: InitialSearch;
+    }
+  | undefined {
+  const workspace = context.getWorkspace();
+  const active = context.activeDirectory();
+  const selection =
+    active === undefined
+      ? undefined
+      : context.getSelections().get(context.activeTabKey(active.paneId));
+  const directory =
+    active === undefined
+      ? undefined
+      : context.getDirectories().get(context.activeTabKey(active.paneId));
+  const viewEntry =
+    selection?.cursorEntryId === undefined
+      ? undefined
+      : directory?.entries.find((entry) => entry.id === selection.cursorEntryId);
+  const otherPaneId = workspace?.paneOrder.find((paneId) => paneId !== active?.paneId);
+  if (viewEntry === undefined || viewEntry.kind !== 'file' || isParentEntry(viewEntry.id))
+    return undefined;
+  if (otherPaneId === undefined) return undefined;
+  const initialSearch =
+    active === undefined
+      ? undefined
+      : context.contentSearchInitialQuery(active.location.uri, viewEntry);
+  return {
+    paneId: otherPaneId,
+    entry: viewEntry,
+    ...(initialSearch === undefined ? {} : { initialSearch }),
+  };
+}
+
+/** Finds the currently open F3 viewer, regardless of which pane is active. There is only ever one
+ * viewer open at a time app-wide (`openViewer` reuses/replaces the existing one rather than
+ * allowing several), and F3 opens it in the *opposite* pane from the one the user pressed F3 in
+ * without switching keyboard focus there - so gating on `getViewer(activePaneId)` alone made
+ * next-match/Alt+Space/arrow-key paging only work while the source listing pane happened to be
+ * the one showing the viewer, forcing a pane switch first. Checking every pane fixes that. */
+function findOpenViewer(
+  context: GlobalKeydownContext,
+): ReturnType<GlobalKeydownContext['getViewer']> {
+  const workspace = context.getWorkspace();
+  if (workspace === undefined) return undefined;
+  for (const paneId of workspace.paneOrder) {
+    const viewer = context.getViewer(paneId);
+    if (viewer !== undefined) return viewer;
+  }
+  return undefined;
+}
+
 function canUseSystemTrash(locations: readonly Location[]): boolean {
   return locations.every(
     (location) => location.providerId === 'file' || location.providerId === 'local',
@@ -205,6 +270,57 @@ export function createGlobalKeydownHandler(
       !isEditableTarget(event.target) &&
       (event.ctrlKey || event.metaKey) &&
       event.key.toUpperCase() === 'F4';
+    // ArrowLeft/ArrowRight page through an open PDF/comic/EPUB viewer - Total Commander's Lister
+    // convention for paged content. Works regardless of which pane is active (see
+    // `findOpenViewer`): F3 opens the viewer in the *opposite* pane without moving keyboard focus
+    // there, so requiring the viewer's own pane to be active would force a pane switch first just
+    // to page through it. Unbound elsewhere in the directory table (only ArrowUp/Down move the
+    // cursor there), so no conflict/stopPropagation is needed.
+    if (
+      !isEditableTarget(event.target) &&
+      !event.altKey &&
+      !event.ctrlKey &&
+      !event.metaKey &&
+      !event.shiftKey &&
+      (event.key === 'ArrowLeft' || event.key === 'ArrowRight')
+    ) {
+      const activeViewer = findOpenViewer(context);
+      const content =
+        activeViewer !== undefined && activeViewer.state.status === 'ready'
+          ? activeViewer.state.content
+          : undefined;
+      if (
+        content !== undefined &&
+        (content.kind === 'pdf' || content.kind === 'comic' || content.kind === 'epub')
+      ) {
+        event.preventDefault();
+        if (event.key === 'ArrowLeft') activeViewer?.controller.previousPage();
+        else activeViewer?.controller.nextPage();
+        context.redraw();
+        return;
+      }
+    }
+    // Alt+Space shows the metadata/info panel: if a viewer is already open in the active pane, it
+    // toggles that viewer's panel; otherwise it opens a viewer for the cursor entry (exactly like
+    // F3) with the panel shown immediately - so the shortcut works from the directory listing too,
+    // not only once a viewer happens to be open. Plain Space is left alone - it already toggles
+    // (and, per Total Commander, advances past) the cursor row's selection in the pane
+    // (`selection/keybindings.ts`), and must not collide with this.
+    if (!isEditableTarget(event.target) && event.altKey && event.code === 'Space') {
+      const activeViewer = findOpenViewer(context);
+      if (activeViewer !== undefined) {
+        event.preventDefault();
+        activeViewer.controller.toggleMetadataPanel();
+        context.redraw();
+        return;
+      }
+      const target = resolveViewTarget(context);
+      if (target !== undefined) {
+        event.preventDefault();
+        context.openViewer(target.paneId, target.entry, target.initialSearch, true);
+        return;
+      }
+    }
     if (dispatchedAction === 'core.favourites') {
       event.preventDefault();
       context.setCommandPaletteOpen(true);
@@ -693,7 +809,11 @@ export function createGlobalKeydownHandler(
       return;
     }
     if (dispatchedAction === 'core.view' && !forceSystemView) {
-      // If a viewer is open in the active pane, F3 navigates to the next search match.
+      // If a viewer is open *in the active pane*, F3 navigates to the next search match rather
+      // than opening/toggling anything - deliberately narrower than `findOpenViewer` (used by
+      // Alt+Space/arrow-key paging below): F3 pressed again while the viewer sits in the other,
+      // inactive pane must fall through to `resolveViewTarget`/`openViewer`'s own toggle-close-
+      // or-switch-file logic below, not hijack the keypress as "next match".
       const workspace = context.getWorkspace();
       const activeViewer =
         workspace === undefined ? undefined : context.getViewer(workspace.activePaneId);
@@ -702,39 +822,15 @@ export function createGlobalKeydownHandler(
         activeViewer.controller.goToNextMatch();
         return;
       }
-      const active = context.activeDirectory();
-      const selection =
-        active === undefined
-          ? undefined
-          : context.getSelections().get(context.activeTabKey(active.paneId));
-      const directory =
-        active === undefined
-          ? undefined
-          : context.getDirectories().get(context.activeTabKey(active.paneId));
-      const viewEntry =
-        selection?.cursorEntryId === undefined
-          ? undefined
-          : directory?.entries.find((entry) => entry.id === selection.cursorEntryId);
-      const otherPaneId = workspace?.paneOrder.find((paneId) => paneId !== active?.paneId);
       // F3 acts on the cursor file regardless of the wider selection. Directories and
       // single-pane workspaces (no opposite pane to open into) fall through
       // to the generic core.view/core.edit/core.openWith block below, which opens the OS default
       // application instead. The viewer itself closes and shows a toast for content that turns
       // out to be binary once its first chunk is fetched, rather than falling back further.
-      if (
-        viewEntry !== undefined &&
-        viewEntry.kind === 'file' &&
-        !isParentEntry(viewEntry.id) &&
-        otherPaneId !== undefined
-      ) {
+      const target = resolveViewTarget(context);
+      if (target !== undefined) {
         event.preventDefault();
-        context.openViewer(
-          otherPaneId,
-          viewEntry,
-          active === undefined
-            ? undefined
-            : context.contentSearchInitialQuery(active.location.uri, viewEntry),
-        );
+        context.openViewer(target.paneId, target.entry, target.initialSearch);
         return;
       }
     }

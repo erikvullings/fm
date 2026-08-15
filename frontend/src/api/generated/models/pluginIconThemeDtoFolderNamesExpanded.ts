@@ -4,4 +4,4 @@
  */
 
 /** Exact expanded directory name to icon definition key. */
-export type PluginIconThemeDtoFolderNamesExpanded = {[key: string]: string};
+export type PluginIconThemeDtoFolderNamesExpanded = { [key: string]: string };

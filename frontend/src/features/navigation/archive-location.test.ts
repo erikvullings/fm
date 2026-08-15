@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { EntrySummary } from '../../models/entry';
-import { archiveRootForEntry } from './archive-location';
+import { archiveEntryLocation, archiveRootForEntry } from './archive-location';
 
 function entry(name: string, uri = `file:///tmp/${name}`): EntrySummary {
   return {
@@ -41,5 +41,18 @@ describe('archiveRootForEntry', () => {
         location: { providerId: 'archive', uri: 'archive:///tmp/outer.zip!/nested.zip' },
       }),
     ).toBeUndefined();
+  });
+});
+
+describe('archiveEntryLocation', () => {
+  it('appends the inner path to the archive root', () => {
+    const root = archiveRootForEntry(entry('book.epub'));
+    expect(root).toBeDefined();
+    expect(
+      archiveEntryLocation(root as NonNullable<typeof root>, 'META-INF/container.xml'),
+    ).toEqual({
+      providerId: 'archive',
+      uri: 'archive:///tmp/book.epub!/META-INF/container.xml',
+    });
   });
 });
