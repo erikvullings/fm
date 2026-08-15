@@ -167,9 +167,7 @@ function selectedEntriesOrCursor(
  * single non-parent file entry under the active pane's cursor, and the opposite pane to open it
  * into. Shared so Alt+Space can open a viewer exactly the way F3 would, rather than duplicating
  * this resolution logic. */
-function resolveViewTarget(
-  context: GlobalKeydownContext,
-):
+function resolveViewTarget(context: GlobalKeydownContext):
   | {
       readonly paneId: PaneId;
       readonly entry: EntrySummary;
