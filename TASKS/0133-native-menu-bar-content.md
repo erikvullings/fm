@@ -191,3 +191,41 @@ the app's capabilities and which text fields/inputs rely on for their built-in E
   push` command, since this repo's pre-commit/pre-push hooks routinely exceed the default 2-minute
   timeout and were repeatedly stalling agents. Not part of this task's scope, but landed alongside
   it at the user's request after repeated commit timeouts during this same session.
+- 2026-08-15 claude: A second manual-testing round surfaced three more real bugs, all fixed.
+  1. **View menu sort items did nothing.** Root cause: `core.sortByName`/`Extension`/`Date`/`Size`/
+     `Unsorted` have no backend effect - like `core.preferences`, sorting is entirely frontend-owned
+     workspace view state, applied via `GlobalKeydownContext.setSort` from the Ctrl+F3..Ctrl+F7
+     keydown handler, never through `invoke_action`. Routing these ids through the generic
+     `invokePaletteAction` path (as every other menu item does) was therefore always a no-op.
+     Fixed by exporting the keydown handler's `SORT_SHORTCUT_DESCRIPTORS` mapping (single source of
+     truth, not duplicated) and adding a dedicated case in `dispatchNativeMenuAction`: a sort id
+     resolves the active pane and calls a new `setSort` context field, which app-shell.ts wires to
+     `globalKeydownHandlerContext.setSort` - the exact same call the keyboard shortcut makes.
+  2. **Go menu's "Open favourites" opened the Command Palette instead of navigating.** Not a bug in
+     what `core.favourites` does (that's its correct, intentional behaviour when invoked from the
+     palette/keyboard - open the palette pre-filtered to favourites) but a bad fit for a native
+     menu, which already lists every individual favourite as its own `core.favourite.<index>` item
+     immediately below. Fixed by excluding `core.favourites` itself from the Go menu's items in
+     `goMenu()` - the menu itself is the favourites browser, it doesn't need a launcher for one.
+  3. **Switching tabs via the Window menu unexpectedly selected the first file.** First confirmed
+     with the user that normal in-app tab-bar clicks do *not* do this (so this was not the
+     already-known, out-of-scope, pre-existing "first visit to a tab defaults its cursor to the
+     first entry" behaviour in `updatePane` - that stays untouched). The actual cause: the Window
+     menu lists every open tab per pane (not just each pane's active one), so clicking an item that
+     represents a pane's *already*-active/displayed tab - the common case when using the Window
+     menu purely to switch keyboard focus to another pane - hit `tabController.activateTab`'s
+     "re-click the same tab" branch. That branch triggers a background directory reload without
+     ever updating `activePaneId` (so focus never actually moved) and the reload's `updatePane`
+     call is what disturbed the pane's selection. Fixed `activateTabByKey` in app-shell.ts to check
+     for this case first and call the existing `activatePane` helper instead (a lightweight,
+     no-reload "just switch focus" operation already used by `selectTab`'s own re-click handling) -
+     only a genuine cross-tab switch still goes through `tabController.activateTab`.
+  - New tests: `native-menu-dispatch.test.ts` gained three sort-dispatch cases (resolves the
+    active pane, `core.sortUnsorted` sends an empty sort, no-ops with no active pane) and
+    `native-menu-spec.test.ts`'s Go-menu test was corrected plus a new case added asserting
+    `core.favourites` itself never appears. Verified: `npx tsc --noEmit` clean, full frontend
+    `vitest run` (1116 passed, up from 1112).
+  - **Still open, explicitly out of scope**: the user separately confirmed the normal in-app tab
+    bar *does* reset the cursor to the first entry the first time a tab's directory is (re)loaded
+    with no prior selection (`updatePane` in app-shell.ts) - pre-existing, unrelated to this task,
+    not touched here.

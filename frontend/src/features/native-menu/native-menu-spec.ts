@@ -124,8 +124,15 @@ function viewMenu(actions: readonly ActionDescriptor[]): NativeMenu {
   };
 }
 
+/** Excludes `core.favourites` itself: invoking it opens the command palette pre-filtered to
+ * favourites (its intended behaviour from the palette/keyboard), which makes no sense as a native
+ * menu item - the Go menu already lists each saved favourite as its own `core.favourite.<index>`
+ * item below, so it's the menu itself acting as the favourites browser, not a launcher for one. */
 function goMenu(favouriteActions: readonly ActionDescriptor[]): NativeMenu {
-  return { title: 'Go', items: favouriteActions.map(actionItem) };
+  return {
+    title: 'Go',
+    items: favouriteActions.filter((action) => action.id !== 'core.favourites').map(actionItem),
+  };
 }
 
 function windowMenu(tabs: readonly NativeMenuTab[]): NativeMenu {

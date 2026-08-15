@@ -1,4 +1,5 @@
-import type { ActionDescriptor } from '../../models';
+import type { ActionDescriptor, PaneId, SortDescriptor } from '../../models';
+import { SORT_SHORTCUT_DESCRIPTORS } from '../keybindings/global-keydown-handler';
 
 /** Frontend-local id for the App menu's Preferences item; never an action-registry id (there is
  * no `core.preferences` backend action - Preferences is, and must remain, a pure UI toggle). */
@@ -18,6 +19,14 @@ export interface NativeMenuDispatchContext {
   /** Activates the tab encoded in a `ui.window.tab.<tabKey>` id (the `${paneId}:${tabId}` key
    * app-shell.ts's tab caches are keyed by). */
   readonly activateTabByKey: (tabKey: string) => void;
+  /** The pane the sort-menu items apply to - same "active pane" concept the Ctrl+F3..Ctrl+F7
+   * shortcuts use (`activeDirectory()`'s `paneId` in app-shell.ts). */
+  readonly activePaneId: () => PaneId | undefined;
+  /** Applies a sort-menu item's fixed sort to a pane - the same local view-state update the
+   * Ctrl+F3..Ctrl+F7 shortcuts make (`GlobalKeydownContext.setSort`), not a backend action
+   * dispatch: `core.sortByName` etc. have no backend effect to invoke, exactly like
+   * `core.preferences` has none - sorting is frontend-owned workspace view state. */
+  readonly setSort: (paneId: PaneId, sort: readonly SortDescriptor[]) => void;
   /** The single dispatch function already used by the command palette/context menu
    * (`action-command-controller.ts`'s `invokePaletteAction`) - reused here rather than duplicated
    * or bypassed, so its `core.favourites`/`core.favourite.N`/`core.createDirectory`/clipboard
@@ -36,6 +45,12 @@ export function dispatchNativeMenuAction(context: NativeMenuDispatchContext, id:
   }
   if (id.startsWith(WINDOW_TAB_MENU_ID_PREFIX)) {
     context.activateTabByKey(id.slice(WINDOW_TAB_MENU_ID_PREFIX.length));
+    return;
+  }
+  if (id in SORT_SHORTCUT_DESCRIPTORS) {
+    const paneId = context.activePaneId();
+    if (paneId === undefined) return;
+    context.setSort(paneId, SORT_SHORTCUT_DESCRIPTORS[id] ?? []);
     return;
   }
   const action = context.findAction(id);

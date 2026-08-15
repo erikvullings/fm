@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import type { ActionDescriptor } from '../../models';
+import type { ActionDescriptor, PaneId, SortDescriptor } from '../../models';
 import {
   dispatchNativeMenuAction,
   type NativeMenuDispatchContext,
@@ -22,20 +22,37 @@ interface ContextMocks {
   readonly findAction: ReturnType<typeof vi.fn<(id: string) => ActionDescriptor | undefined>>;
   readonly openSettingsDialog: ReturnType<typeof vi.fn<() => void>>;
   readonly activateTabByKey: ReturnType<typeof vi.fn<(tabKey: string) => void>>;
+  readonly activePaneId: ReturnType<typeof vi.fn<() => PaneId | undefined>>;
+  readonly setSort: ReturnType<
+    typeof vi.fn<(paneId: PaneId, sort: readonly SortDescriptor[]) => void>
+  >;
   readonly invokeAction: ReturnType<typeof vi.fn<(action: ActionDescriptor) => void>>;
 }
 
-function contextMocks(): ContextMocks & { readonly context: NativeMenuDispatchContext } {
+function contextMocks(
+  paneId?: PaneId,
+): ContextMocks & { readonly context: NativeMenuDispatchContext } {
   const findAction = vi.fn<(id: string) => ActionDescriptor | undefined>(() => undefined);
   const openSettingsDialog = vi.fn<() => void>();
   const activateTabByKey = vi.fn<(tabKey: string) => void>();
+  const activePaneId = vi.fn<() => PaneId | undefined>(() => paneId);
+  const setSort = vi.fn<(paneId: PaneId, sort: readonly SortDescriptor[]) => void>();
   const invokeAction = vi.fn<(action: ActionDescriptor) => void>();
   return {
     findAction,
     openSettingsDialog,
     activateTabByKey,
+    activePaneId,
+    setSort,
     invokeAction,
-    context: { findAction, openSettingsDialog, activateTabByKey, invokeAction },
+    context: {
+      findAction,
+      openSettingsDialog,
+      activateTabByKey,
+      activePaneId,
+      setSort,
+      invokeAction,
+    },
   };
 }
 
@@ -70,5 +87,27 @@ describe('dispatchNativeMenuAction', () => {
     expect(mocks.invokeAction).not.toHaveBeenCalled();
     expect(mocks.openSettingsDialog).not.toHaveBeenCalled();
     expect(mocks.activateTabByKey).not.toHaveBeenCalled();
+  });
+
+  it('applies a sort-menu id as a local setSort call to the active pane, not a registry dispatch', () => {
+    const mocks = contextMocks('pane-1' as PaneId);
+    dispatchNativeMenuAction(mocks.context, 'core.sortByName');
+    expect(mocks.setSort).toHaveBeenCalledExactlyOnceWith('pane-1', [
+      { columnId: 'core.name', direction: 'ascending' },
+    ]);
+    expect(mocks.invokeAction).not.toHaveBeenCalled();
+    expect(mocks.findAction).not.toHaveBeenCalled();
+  });
+
+  it('applies core.sortUnsorted as an empty sort', () => {
+    const mocks = contextMocks('pane-1' as PaneId);
+    dispatchNativeMenuAction(mocks.context, 'core.sortUnsorted');
+    expect(mocks.setSort).toHaveBeenCalledExactlyOnceWith('pane-1', []);
+  });
+
+  it('no-ops a sort-menu click when there is no active pane', () => {
+    const mocks = contextMocks(undefined);
+    dispatchNativeMenuAction(mocks.context, 'core.sortByName');
+    expect(mocks.setSort).not.toHaveBeenCalled();
   });
 });

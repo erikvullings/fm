@@ -377,8 +377,24 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     activateTabByKey: (key) => {
       const separator = key.indexOf(':');
       if (separator < 0) return;
-      tabController.activateTab(key.slice(0, separator), key.slice(separator + 1));
+      const paneId = key.slice(0, separator);
+      const tabId = key.slice(separator + 1);
+      if (workspace?.panesById[paneId]?.activeTabId === tabId) {
+        // The Window menu lists every open tab per pane, so clicking one that's already its
+        // pane's active/displayed tab is a normal, common case: switching keyboard focus to
+        // another pane without changing what it shows - there's no equivalent single click for
+        // this in the tab bar (you'd click the pane's content area instead). Routing it through
+        // tabController.activateTab would hit its "re-click the same tab" branch, which triggers
+        // a background reload without ever updating which pane has focus and can disturb that
+        // pane's existing selection. activatePane is the lightweight, no-reload "just switch
+        // focus" operation this needs instead.
+        void activatePane(attrsClient, paneId).catch(() => undefined);
+        return;
+      }
+      tabController.activateTab(paneId, tabId);
     },
+    activePaneId: () => activeDirectory()?.paneId,
+    setSort: (paneId, sort) => globalKeydownHandlerContext.setSort(paneId, sort),
     invokeAction: (action) => actionCommandController.invokePaletteAction(action),
   };
   let installedIconThemeId: string | undefined;

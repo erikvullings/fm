@@ -156,14 +156,6 @@ describe('buildNativeMenuSpec', () => {
     expect(goMenu?.items).toEqual([
       {
         kind: 'action',
-        id: 'core.favourites',
-        title: 'Open favourites',
-        shortcut: { key: 'h', ctrl: true, shift: true },
-        enabled: true,
-        checked: false,
-      },
-      {
-        kind: 'action',
         id: 'core.favourite.0',
         title: 'Open favourite: Downloads',
         shortcut: { key: '1', ctrl: true },
@@ -171,6 +163,16 @@ describe('buildNativeMenuSpec', () => {
         checked: false,
       },
     ]);
+  });
+
+  it('excludes core.favourites from the Go menu (it opens the command palette, not a location)', () => {
+    const favouriteActions = [
+      action('core.favourites', 'Open favourites', [{ key: 'h', ctrl: true, shift: true }]),
+    ];
+    const goMenu = buildNativeMenuSpec(inputs({ favouriteActions })).menus.find(
+      (menu) => menu.title === 'Go',
+    );
+    expect(goMenu?.items).toEqual([]);
   });
 
   it('builds the Window menu with the minimize/zoom roles and one item per open tab', () => {
