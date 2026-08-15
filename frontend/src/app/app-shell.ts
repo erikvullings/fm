@@ -1869,10 +1869,14 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
           ) {
             // After `..` navigation, land the cursor back on the child directory
             // just navigated away from instead of always the listing's first entry.
+            // Landing here (a fresh tab, a `..` navigation, switching back to a tab that was
+            // never given a cursor) only positions the keyboard cursor - it must never also
+            // select the entry. Selecting is a deliberate user action (click, keyboard select),
+            // not a side effect of simply looking at a directory or switching to it.
             const preferredEntry = view.entries.find((entry) => entry.name === preferredCursorName);
             const firstEntry = preferredEntry ?? view.entries[0];
             selections.set(key, {
-              selectedEntryIds: firstEntry === undefined ? [] : [firstEntry.id],
+              selectedEntryIds: [],
               ...(firstEntry === undefined
                 ? {}
                 : { cursorEntryId: firstEntry.id, anchorEntryId: firstEntry.id }),

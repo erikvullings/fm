@@ -225,7 +225,20 @@ the app's capabilities and which text fields/inputs rely on for their built-in E
     `native-menu-spec.test.ts`'s Go-menu test was corrected plus a new case added asserting
     `core.favourites` itself never appears. Verified: `npx tsc --noEmit` clean, full frontend
     `vitest run` (1116 passed, up from 1112).
-  - **Still open, explicitly out of scope**: the user separately confirmed the normal in-app tab
-    bar *does* reset the cursor to the first entry the first time a tab's directory is (re)loaded
-    with no prior selection (`updatePane` in app-shell.ts) - pre-existing, unrelated to this task,
-    not touched here.
+  - Follow-up: the user separately confirmed the normal in-app tab bar *also* auto-selects the
+    first entry the first time a tab's directory is (re)loaded with no prior cursor - not native
+    menu specific, so initially logged as out of scope above. The user then asked for it to be
+    fixed anyway, for every trigger (mouse, Ctrl+Tab, and the native menu): landing somewhere
+    should position the keyboard cursor, never also select an entry - selecting is a deliberate
+    user action. Fixed in `updatePane` (app-shell.ts): the auto-positioning branch now always sets
+    `selectedEntryIds: []`, only ever setting `cursorEntryId`/`anchorEntryId`. Verified this
+    doesn't regress single-selection keyboard actions like F3/`core.view`, which already act "on
+    the cursor file regardless of the wider selection" per its own comment in
+    `global-keydown-handler.ts` - the app has multiple `getSelectedEntriesOrCursor` call sites
+    that already treat "cursor with no selection" as a normal, handled state. Three existing tests
+    had encoded the old auto-select behaviour as an explicit, deliberate guarantee (with their own
+    "so single-selection actions work immediately" rationale) - now stale given `core.view`'s later
+    cursor-only handling - updated to assert `.fm-selected-row` is absent instead. Verified:
+    `tsc --noEmit` clean, full `vitest run` green (1115 passed; the one other failure,
+    `config/mithril-inspector.test.ts`, is an unrelated pre-existing timeout flake, confirmed by
+    passing cleanly in isolation).

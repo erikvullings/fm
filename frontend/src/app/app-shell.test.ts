@@ -147,9 +147,11 @@ describe('AppShell', () => {
 
     await vi.waitFor(() => expect(activePane?.textContent).toContain('report.pdf'));
     expect(activePane?.querySelector('.fm-cursor-row')?.textContent).toContain('Projects');
-    // The first entry of a freshly entered directory must be selected too, not
-    // just highlighted, so single-selection actions (e.g. F3) work immediately.
-    expect(activePane?.querySelector('.fm-selected-row')?.textContent).toContain('Projects');
+    // Landing on a freshly entered directory positions the keyboard cursor only - it must not
+    // also select the entry (selecting is a deliberate user action, not a side effect of simply
+    // arriving somewhere). Single-selection actions like F3 already act on the cursor entry
+    // "regardless of the wider selection" (see the core.view case in global-keydown-handler.ts).
+    expect(activePane?.querySelector('.fm-selected-row')).toBeNull();
     activePane?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
     m.redraw.sync();
     expect(activePane?.querySelector('.fm-cursor-row')?.textContent).toContain('report.pdf');
@@ -362,10 +364,10 @@ describe('AppShell', () => {
     await vi.waitFor(() => expect(activePane?.textContent).not.toContain('report.pdf'));
     expect(activePane?.textContent).toContain('Documents');
     expect(activePane?.querySelector('.fm-directory-row')?.textContent).not.toContain('..');
-    // Navigating back up must select (not just highlight) the child directory
-    // just exited, matching how entering a fresh directory selects its first entry.
+    // Navigating back up must position the keyboard cursor on the child directory just exited,
+    // but not also select it - landing somewhere is not a selection action.
     expect(activePane?.querySelector('.fm-cursor-row')?.textContent).toContain('Documents');
-    expect(activePane?.querySelector('.fm-selected-row')?.textContent).toContain('Documents');
+    expect(activePane?.querySelector('.fm-selected-row')).toBeNull();
   });
 
   it('composes the complete main-window workspace regions', async () => {
@@ -2026,7 +2028,7 @@ describe('AppShell', () => {
     );
   });
 
-  it('shows the search term in the breadcrumb/tab title and focuses/selects the first result so ArrowDown moves the cursor', async () => {
+  it('shows the search term in the breadcrumb/tab title and focuses/cursors the first result so ArrowDown moves the cursor', async () => {
     const client = new MockFileManagerClient();
     m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
     await vi.waitFor(() => expect(root.textContent).toContain('Documents'));
@@ -2061,9 +2063,9 @@ describe('AppShell', () => {
     await vi.waitFor(() => expect(document.activeElement).toBe(activePane));
     const firstCursorRow = activePane?.querySelector('.fm-cursor-row')?.textContent;
     expect(firstCursorRow).not.toBeUndefined();
-    // The first result is selected too, not just cursored (matches the same guarantee as
-    // freshly entering a real directory - see the "selects a row... with Enter" test above).
-    expect(activePane?.querySelector('.fm-selected-row')?.textContent).toBe(firstCursorRow);
+    // The first result is cursored, not selected - landing on results is not a selection action
+    // (matches freshly entering a real directory - see the "selects a row... with Enter" test).
+    expect(activePane?.querySelector('.fm-selected-row')).toBeNull();
 
     document.activeElement?.dispatchEvent(
       new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }),
