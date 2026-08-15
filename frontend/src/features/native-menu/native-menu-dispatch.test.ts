@@ -1,0 +1,74 @@
+import { describe, expect, it, vi } from 'vitest';
+
+import type { ActionDescriptor } from '../../models';
+import {
+  dispatchNativeMenuAction,
+  type NativeMenuDispatchContext,
+  OPEN_SETTINGS_MENU_ID,
+} from './native-menu-dispatch';
+
+function action(id: string): ActionDescriptor {
+  return {
+    id,
+    title: id,
+    category: 'test',
+    defaultShortcuts: [],
+    contextRequirements: {},
+    source: { kind: 'core' },
+  };
+}
+
+interface ContextMocks {
+  readonly findAction: ReturnType<typeof vi.fn<(id: string) => ActionDescriptor | undefined>>;
+  readonly openSettingsDialog: ReturnType<typeof vi.fn<() => void>>;
+  readonly activateTabByKey: ReturnType<typeof vi.fn<(tabKey: string) => void>>;
+  readonly invokeAction: ReturnType<typeof vi.fn<(action: ActionDescriptor) => void>>;
+}
+
+function contextMocks(): ContextMocks & { readonly context: NativeMenuDispatchContext } {
+  const findAction = vi.fn<(id: string) => ActionDescriptor | undefined>(() => undefined);
+  const openSettingsDialog = vi.fn<() => void>();
+  const activateTabByKey = vi.fn<(tabKey: string) => void>();
+  const invokeAction = vi.fn<(action: ActionDescriptor) => void>();
+  return {
+    findAction,
+    openSettingsDialog,
+    activateTabByKey,
+    invokeAction,
+    context: { findAction, openSettingsDialog, activateTabByKey, invokeAction },
+  };
+}
+
+describe('dispatchNativeMenuAction', () => {
+  it('opens Settings for the frontend-local ui.openSettings id without touching the registry', () => {
+    const mocks = contextMocks();
+    dispatchNativeMenuAction(mocks.context, OPEN_SETTINGS_MENU_ID);
+    expect(mocks.openSettingsDialog).toHaveBeenCalledOnce();
+    expect(mocks.activateTabByKey).not.toHaveBeenCalled();
+    expect(mocks.invokeAction).not.toHaveBeenCalled();
+  });
+
+  it('activates the tab encoded after the ui.window.tab. prefix', () => {
+    const mocks = contextMocks();
+    dispatchNativeMenuAction(mocks.context, 'ui.window.tab.pane-1:tab-2');
+    expect(mocks.activateTabByKey).toHaveBeenCalledExactlyOnceWith('pane-1:tab-2');
+    expect(mocks.openSettingsDialog).not.toHaveBeenCalled();
+    expect(mocks.invokeAction).not.toHaveBeenCalled();
+  });
+
+  it('looks up any other id in the action registry and invokes it via invokePaletteAction', () => {
+    const copy = action('core.copy');
+    const mocks = contextMocks();
+    mocks.findAction.mockImplementation((id) => (id === 'core.copy' ? copy : undefined));
+    dispatchNativeMenuAction(mocks.context, 'core.copy');
+    expect(mocks.invokeAction).toHaveBeenCalledExactlyOnceWith(copy);
+  });
+
+  it('silently no-ops for a stale id no longer present in the registry', () => {
+    const mocks = contextMocks();
+    expect(() => dispatchNativeMenuAction(mocks.context, 'core.longRemovedAction')).not.toThrow();
+    expect(mocks.invokeAction).not.toHaveBeenCalled();
+    expect(mocks.openSettingsDialog).not.toHaveBeenCalled();
+    expect(mocks.activateTabByKey).not.toHaveBeenCalled();
+  });
+});

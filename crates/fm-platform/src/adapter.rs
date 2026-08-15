@@ -144,11 +144,23 @@ pub trait PlatformAdapter: Send + Sync {
         })
     }
 
-    /// Installs the application's native menu bar.
+    /// Installs the application's native menu bar (task 0133), replacing
+    /// whatever menu is currently installed.
     ///
-    /// A hook point only: menu content/structure is deliberately out of
-    /// scope for task 0058 (see its Implementation Notes).
-    fn install_native_menu(&self) -> Result<(), PlatformError> {
+    /// `on_action` is invoked (on the main thread) whenever the user clicks
+    /// an [`fm_domain::NativeMenuItem::Action`] item, with that item's
+    /// action-registry id - the same id the caller would dispatch through
+    /// `fm-application`'s action registry for a matching keyboard shortcut,
+    /// so a menu click and its shortcut share one code path rather than
+    /// diverging. [`fm_domain::NativeMenuItem::Role`] items have no
+    /// application callback: the adapter wires them directly to the
+    /// matching native OS selector instead.
+    fn install_native_menu(
+        &self,
+        spec: &fm_domain::NativeMenuSpec,
+        on_action: std::sync::Arc<dyn Fn(String) + Send + Sync>,
+    ) -> Result<(), PlatformError> {
+        let _ = (spec, on_action);
         Err(PlatformError::Unsupported {
             capability: PlatformCapabilities::NATIVE_MENUS,
         })

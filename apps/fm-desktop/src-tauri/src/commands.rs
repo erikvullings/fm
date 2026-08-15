@@ -1,6 +1,9 @@
 //! Tauri commands: thin wrappers over `FileManagerService`, mirroring the
 //! semantic REST API rather than reproducing HTTP concepts (spec §11).
 //!
+use std::sync::Arc;
+
+use serde::Serialize;
 use tauri::ipc::Channel;
 use tauri::{AppHandle, Runtime, State, Window};
 use uuid::Uuid;
@@ -24,6 +27,7 @@ use fm_transport_dto::{
 use crate::{
     AppState,
     event_stream::EventSubscriptionRegistry,
+    native_menu::NativeMenuActionChannel,
     terminal::{TerminalError, TerminalEvent, TerminalRegistry},
 };
 
@@ -938,9 +942,107 @@ pub(crate) async fn accept_ssh_host_key(
         .map_err(|error| error.into_dto(Uuid::new_v4()))
 }
 
+/// One native menu bar click (task 0133), streamed to the frontend over
+/// [`subscribe_native_menu_actions`]'s channel rather than the global
+/// `emit`/`listen` event API, matching this app's existing IPC convention
+/// (see `event_stream.rs`, `open_embedded_terminal`).
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct NativeMenuActionEvent {
+    id: String,
+}
+
+/// Subscribes the frontend to native menu action clicks (task 0133). Called
+/// once at startup; a later call replaces the previous subscription.
+#[tauri::command]
+pub(crate) fn subscribe_native_menu_actions(
+    registry: State<'_, NativeMenuActionChannel>,
+    channel: Channel<NativeMenuActionEvent>,
+) {
+    registry.set(channel);
+}
+
+/// Builds the callback [`set_native_menu`] hands to
+/// `FileManagerService::install_native_menu`: forwards each click's action
+/// id over whichever channel is currently subscribed, or does nothing if
+/// the frontend hasn't subscribed yet - installing a menu before that
+/// happens still succeeds, it just has nowhere to report clicks to yet.
+fn native_menu_action_callback(
+    channel: Option<Channel<NativeMenuActionEvent>>,
+) -> Arc<dyn Fn(String) + Send + Sync> {
+    match channel {
+        Some(channel) => Arc::new(move |id: String| {
+            let _ = channel.send(NativeMenuActionEvent { id });
+        }),
+        None => Arc::new(|_id: String| {}),
+    }
+}
+
+/// Installs (or replaces) the native menu bar (task 0133) from `spec`, built
+/// by the frontend from the action registry (task 0049). Native menu APIs
+/// require the main thread, so this follows the same
+/// `run_on_main_thread`-plus-`oneshot` pattern as [`start_native_drag`].
+#[tauri::command]
+pub(crate) async fn set_native_menu<R: Runtime>(
+    state: State<'_, AppState>,
+    registry: State<'_, NativeMenuActionChannel>,
+    app: AppHandle<R>,
+    spec: fm_domain::NativeMenuSpec,
+) -> Result<(), ApplicationErrorDto> {
+    let service = Arc::clone(&state.service);
+    let on_action = native_menu_action_callback(registry.get());
+    let (sender, receiver) = tokio::sync::oneshot::channel();
+    app.run_on_main_thread(move || {
+        let result = service.install_native_menu(&spec, on_action);
+        let _ = sender.send(result);
+    })
+    .map_err(|_| fm_application::ApplicationError::Internal.into_dto(Uuid::new_v4()))?;
+    receiver
+        .await
+        .map_err(|_| fm_application::ApplicationError::Internal.into_dto(Uuid::new_v4()))?
+        .map_err(|error| error.into_dto(Uuid::new_v4()))
+}
+
 #[cfg(test)]
 mod tests {
+    use std::sync::Mutex;
+
+    use tauri::ipc::InvokeResponseBody;
+
     use super::*;
+
+    #[test]
+    fn native_menu_action_callback_forwards_the_id_over_the_subscribed_channel() {
+        let received = Arc::new(Mutex::new(Vec::new()));
+        let received_by_channel = Arc::clone(&received);
+        let channel = Channel::new(move |body| {
+            let json = match body {
+                InvokeResponseBody::Json(json) => json,
+                InvokeResponseBody::Raw(bytes) => String::from_utf8_lossy(&bytes).into_owned(),
+            };
+            received_by_channel
+                .lock()
+                .unwrap_or_else(|error| error.into_inner())
+                .push(json);
+            Ok(())
+        });
+
+        let callback = native_menu_action_callback(Some(channel));
+        callback("core.preferences".to_owned());
+
+        assert_eq!(
+            received.lock().expect("channel lock").as_slice(),
+            [r#"{"id":"core.preferences"}"#.to_owned()]
+        );
+    }
+
+    #[test]
+    fn native_menu_action_callback_is_a_no_op_without_a_subscription() {
+        // Installing a menu before the frontend subscribes must still succeed silently rather
+        // than panicking or erroring - there is simply nowhere to report clicks to yet.
+        let callback = native_menu_action_callback(None);
+        callback("core.copy".to_owned());
+    }
 
     #[test]
     fn native_drag_paths_require_a_non_empty_selection() {

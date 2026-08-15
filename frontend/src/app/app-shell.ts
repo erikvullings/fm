@@ -1,3 +1,4 @@
+import { Channel, invoke } from '@tauri-apps/api/core';
 import m, { type FactoryComponent } from 'mithril';
 import { IconButton, type Theme, ThemeManager, toast } from 'mithril-materialized';
 
@@ -77,6 +78,11 @@ import {
   type TabControllerContext,
 } from '../features/panes/tab-controller';
 import {
+  dispatchNativeMenuAction,
+  type NativeMenuDispatchContext,
+} from '../features/native-menu/native-menu-dispatch';
+import { buildNativeMenuSpec, type NativeMenuTab } from '../features/native-menu/native-menu-spec';
+import {
   createFileViewerController,
   type FileViewerController,
   type FileViewerState,
@@ -135,6 +141,7 @@ import type {
   DirectoryDelta,
   EntrySummary,
   Location,
+  NativeMenuSpec,
   OperationConflict,
   OperationId,
   OperationState,
@@ -305,6 +312,67 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
   function actionsWithFavourites(): readonly ActionDescriptor[] {
     return [...registeredActions, ...favouriteActions()];
   }
+
+  /** Every open tab across every pane, flattened for the native Window menu (task 0133). */
+  function nativeMenuWindowTabs(): readonly NativeMenuTab[] {
+    if (workspace === undefined) return [];
+    const tabs: NativeMenuTab[] = [];
+    for (const paneId of workspace.paneOrder) {
+      const pane = workspace.panesById[paneId];
+      if (pane === undefined) continue;
+      for (const tabId of pane.tabOrder) {
+        const projection = pane.tabsById[tabId];
+        if (projection === undefined) continue;
+        tabs.push({
+          paneId,
+          tabId,
+          tabKey: tabKey(paneId, tabId),
+          title: projection.title,
+          active: pane.activeTabId === tabId,
+        });
+      }
+    }
+    return tabs;
+  }
+
+  /** Serialized form of the last spec pushed to the native menu bar - `syncNativeMenu` diffs
+   * against this so an unchanged spec never re-triggers `set_native_menu` (the menu bar is
+   * desktop-only chrome, not app state, so a cheap `JSON.stringify` comparison is an acceptable
+   * fallback given there is no existing deep-equal utility in this codebase to reuse). */
+  let lastSentNativeMenuSpecJson: string | undefined;
+
+  /** Pushes the full native menu bar spec to the backend whenever it might have changed. Called
+   * from the view rather than threaded through every individual mutation site (registered
+   * actions/settings/favourites/workspace tabs are each reassigned from several different
+   * closures across this file) - safe and cheap because of the diff above, and it can never miss
+   * a state change that affects the menu. */
+  function syncNativeMenu(): void {
+    if (runtimeKind !== 'tauri') return;
+    const spec: NativeMenuSpec = buildNativeMenuSpec({
+      actions: registeredActions,
+      favouriteActions: actionsWithFavourites(),
+      tabs: nativeMenuWindowTabs(),
+    });
+    const serialized = JSON.stringify(spec);
+    if (serialized === lastSentNativeMenuSpecJson) return;
+    lastSentNativeMenuSpecJson = serialized;
+    void invoke('set_native_menu', { spec }).catch(() => {
+      // The native menu bar is cosmetic desktop chrome; a failed push shouldn't surface an error.
+    });
+  }
+
+  const nativeMenuDispatchContext: NativeMenuDispatchContext = {
+    findAction: (id) => actionsWithFavourites().find((candidate) => candidate.id === id),
+    openSettingsDialog: () => {
+      openSettingsDialog();
+    },
+    activateTabByKey: (key) => {
+      const separator = key.indexOf(':');
+      if (separator < 0) return;
+      tabController.activateTab(key.slice(0, separator), key.slice(separator + 1));
+    },
+    invokeAction: (action) => actionCommandController.invokePaletteAction(action),
+  };
   let installedIconThemeId: string | undefined;
   let keybindingRuntime: KeybindingRuntime = 'browser';
   let runtimeKind: RuntimeKind = 'http';
@@ -1802,6 +1870,24 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
           m.redraw();
         })
         .catch(() => undefined);
+      if (attrs.runtime === 'tauri') {
+        try {
+          // `new Channel()` synchronously reaches for `window.__TAURI_INTERNALS__` (unlike plain
+          // `invoke()` calls, which are async and turn a missing host into a rejected promise
+          // instead), so this needs its own guard for runtime:'tauri' test mounts with no real
+          // Tauri host behind them.
+          const nativeMenuActions = new Channel<{ id: string }>();
+          nativeMenuActions.onmessage = (event) => {
+            dispatchNativeMenuAction(nativeMenuDispatchContext, event.id);
+            m.redraw();
+          };
+          void invoke('subscribe_native_menu_actions', { channel: nativeMenuActions }).catch(
+            () => undefined,
+          );
+        } catch {
+          // No Tauri host available; the native menu bar is cosmetic desktop chrome.
+        }
+      }
       void attrs.client
         .listPlugins()
         .then((listed) => {
@@ -1864,6 +1950,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     },
 
     view: ({ attrs }) => {
+      syncNativeMenu();
       const pendingDelete = Object.values(operations.byId).find(
         (operation) =>
           operation?.kind === 'delete' && operation.state === 'waitingForConflictResolution',

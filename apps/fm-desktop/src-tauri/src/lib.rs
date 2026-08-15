@@ -7,6 +7,7 @@
 mod commands;
 mod credentials;
 mod event_stream;
+mod native_menu;
 mod platform;
 mod terminal;
 
@@ -61,6 +62,7 @@ pub fn run() {
         })
         .manage(event_stream::EventSubscriptionRegistry::default())
         .manage(terminal::TerminalRegistry::default())
+        .manage(native_menu::NativeMenuActionChannel::default())
         .on_window_event(|window, event| {
             if matches!(event, tauri::WindowEvent::Destroyed) {
                 window
@@ -130,6 +132,8 @@ pub fn run() {
             commands::write_embedded_terminal,
             commands::resize_embedded_terminal,
             commands::set_caption_colours,
+            commands::subscribe_native_menu_actions,
+            commands::set_native_menu,
         ])
         .run(build_context())
         .expect("error while running the Tauri application");
@@ -212,6 +216,7 @@ mod tests {
                 ),
             })
             .manage(event_stream::EventSubscriptionRegistry::default())
+            .manage(native_menu::NativeMenuActionChannel::default())
             .invoke_handler(tauri::generate_handler![
                 commands::subscribe_events,
                 commands::unsubscribe_events,
@@ -270,6 +275,8 @@ mod tests {
                 commands::test_connection,
                 commands::probe_ssh_host_key,
                 commands::accept_ssh_host_key,
+                commands::subscribe_native_menu_actions,
+                commands::set_native_menu,
             ])
             // Uses the app's real `tauri.conf.json` config (same as `run()`)
             // rather than `mock_context(noop_assets())`'s empty default config,

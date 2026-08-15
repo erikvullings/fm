@@ -9,6 +9,7 @@ pub mod action;
 pub mod entry;
 pub mod ids;
 pub mod location;
+pub mod menu;
 pub mod snapshot;
 pub mod workspace;
 pub mod workspace_command;
@@ -24,6 +25,7 @@ pub use ids::{
     ActionId, EntryId, IdParseError, OperationId, PaneId, PluginId, ProviderId, TabId, WorkspaceId,
 };
 pub use location::{Location, LocationError};
+pub use menu::{NativeMenu, NativeMenuItem, NativeMenuRole, NativeMenuSpec};
 pub use snapshot::{DirectoryDelta, DirectorySnapshot, LoadingState};
 pub use workspace::{
     CURRENT_WORKSPACE_SCHEMA_VERSION, ColumnConfiguration, DirectoryViewConfiguration,

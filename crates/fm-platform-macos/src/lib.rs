@@ -34,17 +34,22 @@
 // (see docs/decisions/0010-native-platform-adapters.md).
 #![allow(unsafe_code)]
 
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use fm_platform::{
     FallbackPlatformAdapter, MountedVolume, PlatformAdapter, PlatformCapabilities, PlatformError,
     SystemLocation, SystemLocationKind, VolumeCapacity, cloud_provider_hint,
 };
-use objc2::MainThreadMarker;
-use objc2::runtime::AnyObject;
-use objc2_app_kit::{NSApplication, NSBitmapImageFileType, NSBitmapImageRep, NSMenu, NSWorkspace};
+use objc2::rc::Retained;
+use objc2::runtime::{AnyObject, NSObject};
+use objc2::{MainThreadMarker, MainThreadOnly, define_class, msg_send, sel};
+use objc2_app_kit::{
+    NSApplication, NSBitmapImageFileType, NSBitmapImageRep, NSControlStateValueOff,
+    NSControlStateValueOn, NSEventModifierFlags, NSMenu, NSMenuItem, NSWorkspace,
+};
 use objc2_foundation::{
     NSArray, NSDictionary, NSFileAttributeKey, NSFileManager, NSFileSystemFreeSize,
     NSFileSystemSize, NSNumber, NSString, NSURL, NSURLResourceKey, NSURLVolumeIsLocalKey,
@@ -694,23 +699,296 @@ impl PlatformAdapter for MacosPlatformAdapter {
         })
     }
 
-    /// Installs an empty native main menu.
+    /// Installs a real, populated native menu bar (task 0133) built from
+    /// `spec`, replacing whatever menu bar (if any) is currently installed.
+    /// Native menu APIs require the main thread; off it, this reports
+    /// [`PlatformError::Io`] rather than panicking (unchanged from task
+    /// 0058's original hook-point-only behaviour).
     ///
-    /// Deliberately minimal: menu *content* is out of scope here (mirroring
-    /// task 0058's `install_native_menu` doc comment), and this method only
-    /// wires up an `NSApplication` main menu hook that `apps/fm-desktop` can
-    /// populate later. Native menu APIs require the main thread; off it, this
-    /// reports [`PlatformError::Io`] rather than panicking.
-    fn install_native_menu(&self) -> Result<(), PlatformError> {
+    /// `on_action` becomes the new process-wide "current menu action
+    /// callback" - see [`MENU_ACTION_CALLBACK`]'s doc comment for why a
+    /// single shared slot is an honest design here rather than a
+    /// per-item closure-capture mechanism.
+    fn install_native_menu(
+        &self,
+        spec: &fm_domain::NativeMenuSpec,
+        on_action: Arc<dyn Fn(String) + Send + Sync>,
+    ) -> Result<(), PlatformError> {
         let Some(main_thread) = MainThreadMarker::new() else {
             return Err(PlatformError::Io {
                 message: "installing the native menu bar requires the main thread".to_owned(),
             });
         };
-        let app = NSApplication::sharedApplication(main_thread);
-        let menu = NSMenu::new(main_thread);
-        app.setMainMenu(Some(&menu));
+        *MENU_ACTION_CALLBACK
+            .lock()
+            .unwrap_or_else(|error| error.into_inner()) = Some(on_action);
+        let target = MenuActionTarget::shared(main_thread);
+        let menu_bar = NSMenu::new(main_thread);
+        for menu in &spec.menus {
+            menu_bar.addItem(&build_menu_bar_item(main_thread, menu, &target));
+        }
+        NSApplication::sharedApplication(main_thread).setMainMenu(Some(&menu_bar));
         Ok(())
+    }
+}
+
+/// The callback most recently installed by
+/// [`MacosPlatformAdapter::install_native_menu`] (task 0133).
+///
+/// There is only ever one native menu bar for the process, so a single
+/// process-wide slot is an honest design here rather than a per-item
+/// closure-capture mechanism: every `Action` item built from a
+/// [`fm_domain::NativeMenuSpec`] shares one [`MenuActionTarget`] instance,
+/// and its `handleMenuItem:` looks up whichever callback is current here.
+/// Only ever touched from [`MacosPlatformAdapter::install_native_menu`]
+/// (which requires a [`MainThreadMarker`]) and
+/// `MenuActionTarget::handle_menu_item` (which AppKit only ever invokes on
+/// the main thread), so the `Mutex` exists to satisfy `Sync` for the
+/// `static`, not because of real cross-thread contention.
+type MenuActionCallback = Arc<dyn Fn(String) + Send + Sync>;
+
+static MENU_ACTION_CALLBACK: Mutex<Option<MenuActionCallback>> = Mutex::new(None);
+
+define_class!(
+    // SAFETY:
+    // - `NSObject` has no subclassing requirements beyond calling `init`.
+    // - `MenuActionTarget` does not implement `Drop`.
+    #[unsafe(super(NSObject))]
+    #[thread_kind = MainThreadOnly]
+    #[derive(Debug)]
+    struct MenuActionTarget;
+
+    impl MenuActionTarget {
+        /// Target-action handler for every `NativeMenuItem::Action` item
+        /// (task 0133): reads the clicked item's `representedObject` (the
+        /// action id, stashed there as an `NSString` when the item was
+        /// built - see [`build_menu_item`]) and forwards it to whichever
+        /// callback [`MacosPlatformAdapter::install_native_menu`] last
+        /// installed via [`MENU_ACTION_CALLBACK`].
+        #[unsafe(method(handleMenuItem:))]
+        fn handle_menu_item(&self, sender: &NSMenuItem) {
+            let Some(represented) = sender.representedObject() else {
+                return;
+            };
+            let Ok(action_id) = represented.downcast::<NSString>() else {
+                return;
+            };
+            let callback = MENU_ACTION_CALLBACK
+                .lock()
+                .unwrap_or_else(|error| error.into_inner())
+                .clone();
+            if let Some(callback) = callback {
+                callback(action_id.to_string());
+            }
+        }
+    }
+);
+
+impl MenuActionTarget {
+    /// Returns this thread's shared `MenuActionTarget` instance, creating it
+    /// on first use. Kept in a `thread_local!` (rather than a process-wide
+    /// `static`) because `MenuActionTarget` is `MainThreadOnly` and so isn't
+    /// `Send`/`Sync`; every caller already holds a [`MainThreadMarker`], so
+    /// this is always called from the same (main) thread in practice.
+    fn shared(mtm: MainThreadMarker) -> Retained<Self> {
+        thread_local! {
+            static INSTANCE: RefCell<Option<Retained<MenuActionTarget>>> = const { RefCell::new(None) };
+        }
+        INSTANCE.with(|instance| {
+            let mut instance = instance.borrow_mut();
+            if let Some(existing) = instance.as_ref() {
+                return existing.clone();
+            }
+            let allocated = mtm.alloc::<Self>().set_ivars(());
+            let created: Retained<Self> = unsafe { msg_send![super(allocated), init] };
+            *instance = Some(created.clone());
+            created
+        })
+    }
+}
+
+/// Bit positions for `NSEventModifierFlags::{Shift,Control,Option,Command}`,
+/// duplicated here (rather than depending on the real AppKit type) so
+/// [`key_equivalent`] stays a pure function unit tests can exercise without
+/// a windowing system.
+const MODIFIER_SHIFT_BIT: usize = 1 << 17;
+const MODIFIER_CONTROL_BIT: usize = 1 << 18;
+const MODIFIER_OPTION_BIT: usize = 1 << 19;
+const MODIFIER_COMMAND_BIT: usize = 1 << 20;
+
+/// Maps a [`fm_domain::KeyChord`] to the `(key equivalent, modifier mask)`
+/// pair an `NSMenuItem` needs (task 0133). Only a lowercased single
+/// character is handled, enough for the common cases ("c", "v", "a", ","),
+/// so function-key equivalents (e.g. `"F2"`) are deliberately left
+/// untranslated rather than over-engineered, matching this task's scope.
+/// The returned mask mirrors `NSEventModifierFlags`'s own bit positions 1:1,
+/// so the only remaining step at the call site is widening it into that
+/// real type.
+fn key_equivalent(chord: &fm_domain::KeyChord) -> (String, usize) {
+    let key = chord
+        .key
+        .chars()
+        .next()
+        .map(|first| first.to_ascii_lowercase().to_string())
+        .unwrap_or_default();
+    let mut mask = 0usize;
+    if chord.shift {
+        mask |= MODIFIER_SHIFT_BIT;
+    }
+    if chord.ctrl {
+        mask |= MODIFIER_CONTROL_BIT;
+    }
+    if chord.alt {
+        mask |= MODIFIER_OPTION_BIT;
+    }
+    if chord.meta {
+        mask |= MODIFIER_COMMAND_BIT;
+    }
+    (key, mask)
+}
+
+/// Builds a top-level `NSMenuItem` (e.g. the "File" entry in the menu bar)
+/// holding a submenu built from `menu.items`. AppKit ignores this item's
+/// title for the very first menu in the bar (it shows the process name
+/// instead) but the title is still required structurally.
+fn build_menu_bar_item(
+    mtm: MainThreadMarker,
+    menu: &fm_domain::NativeMenu,
+    target: &Retained<MenuActionTarget>,
+) -> Retained<NSMenuItem> {
+    let item = unsafe {
+        NSMenuItem::initWithTitle_action_keyEquivalent(
+            mtm.alloc(),
+            &NSString::from_str(&menu.title),
+            None,
+            &NSString::from_str(""),
+        )
+    };
+    item.setSubmenu(Some(&build_submenu(mtm, &menu.title, &menu.items, target)));
+    item
+}
+
+/// Builds an `NSMenu` titled `title` from `items` (task 0133), used for both
+/// top-level menus and nested `NativeMenuItem::Submenu` items.
+fn build_submenu(
+    mtm: MainThreadMarker,
+    title: &str,
+    items: &[fm_domain::NativeMenuItem],
+    target: &Retained<MenuActionTarget>,
+) -> Retained<NSMenu> {
+    let menu = NSMenu::new(mtm);
+    menu.setTitle(&NSString::from_str(title));
+    for item in items {
+        menu.addItem(&build_menu_item(mtm, item, target));
+    }
+    menu
+}
+
+/// Builds one `NSMenuItem` from a [`fm_domain::NativeMenuItem`] (task 0133).
+///
+/// `Action` items are wired back to `target`'s `handleMenuItem:` (rather
+/// than a per-item closure) with their action-registry id stashed in
+/// `representedObject`, so a click and the matching keyboard shortcut
+/// dispatch through the exact same id. `Role` items get no application
+/// callback at all: their target stays nil so AppKit routes them through the
+/// normal first-responder chain, exactly like a standard macOS app menu.
+fn build_menu_item(
+    mtm: MainThreadMarker,
+    item: &fm_domain::NativeMenuItem,
+    target: &Retained<MenuActionTarget>,
+) -> Retained<NSMenuItem> {
+    match item {
+        fm_domain::NativeMenuItem::Separator => NSMenuItem::separatorItem(mtm),
+        fm_domain::NativeMenuItem::Action {
+            id,
+            title,
+            shortcut,
+            enabled,
+            checked,
+        } => {
+            let (key, mask) = shortcut.as_ref().map(key_equivalent).unwrap_or_default();
+            let ns_item = unsafe {
+                NSMenuItem::initWithTitle_action_keyEquivalent(
+                    mtm.alloc(),
+                    &NSString::from_str(title),
+                    Some(sel!(handleMenuItem:)),
+                    &NSString::from_str(&key),
+                )
+            };
+            ns_item.setKeyEquivalentModifierMask(NSEventModifierFlags(mask));
+            ns_item.setEnabled(*enabled);
+            ns_item.setState(if *checked {
+                NSControlStateValueOn
+            } else {
+                NSControlStateValueOff
+            });
+            let target_ref: &AnyObject = target;
+            let action_id = NSString::from_str(id);
+            let action_id_ref: &AnyObject = &action_id;
+            unsafe {
+                ns_item.setTarget(Some(target_ref));
+                ns_item.setRepresentedObject(Some(action_id_ref));
+            }
+            ns_item
+        }
+        fm_domain::NativeMenuItem::Submenu { title, items } => {
+            let ns_item = unsafe {
+                NSMenuItem::initWithTitle_action_keyEquivalent(
+                    mtm.alloc(),
+                    &NSString::from_str(title),
+                    None,
+                    &NSString::from_str(""),
+                )
+            };
+            ns_item.setSubmenu(Some(&build_submenu(mtm, title, items, target)));
+            ns_item
+        }
+        fm_domain::NativeMenuItem::Role { role } => build_role_item(mtm, *role),
+    }
+}
+
+/// Builds a standard OS-provided menu item for `role` (task 0133), with no
+/// application callback: target stays nil (except for `Services`, which has
+/// no target at all - it's registered directly via
+/// `NSApplication::setServicesMenu`) so AppKit dispatches through the normal
+/// first-responder chain, exactly like a stock macOS app menu.
+fn build_role_item(mtm: MainThreadMarker, role: fm_domain::NativeMenuRole) -> Retained<NSMenuItem> {
+    use fm_domain::NativeMenuRole;
+
+    if role == NativeMenuRole::Services {
+        let item = unsafe {
+            NSMenuItem::initWithTitle_action_keyEquivalent(
+                mtm.alloc(),
+                &NSString::from_str("Services"),
+                None,
+                &NSString::from_str(""),
+            )
+        };
+        let services_menu = NSMenu::new(mtm);
+        services_menu.setTitle(&NSString::from_str("Services"));
+        item.setSubmenu(Some(&services_menu));
+        NSApplication::sharedApplication(mtm).setServicesMenu(Some(&services_menu));
+        return item;
+    }
+
+    let (title, selector) = match role {
+        NativeMenuRole::About => ("About", sel!(orderFrontStandardAboutPanel:)),
+        NativeMenuRole::Services => unreachable!("handled above"),
+        NativeMenuRole::HideApp => ("Hide", sel!(hide:)),
+        NativeMenuRole::HideOthers => ("Hide Others", sel!(hideOtherApplications:)),
+        NativeMenuRole::ShowAll => ("Show All", sel!(unhideAllApplications:)),
+        NativeMenuRole::Quit => ("Quit", sel!(terminate:)),
+        NativeMenuRole::Minimize => ("Minimize", sel!(performMiniaturize:)),
+        NativeMenuRole::Zoom => ("Zoom", sel!(performZoom:)),
+        NativeMenuRole::BringAllToFront => ("Bring All to Front", sel!(arrangeInFront:)),
+    };
+    unsafe {
+        NSMenuItem::initWithTitle_action_keyEquivalent(
+            mtm.alloc(),
+            &NSString::from_str(title),
+            Some(selector),
+            &NSString::from_str(""),
+        )
     }
 }
 
@@ -973,12 +1251,65 @@ mod tests {
     fn install_native_menu_reports_an_io_error_off_the_main_thread() {
         // The test harness runs each test on a worker thread, never the
         // process's actual main thread, so this deterministically exercises
-        // the off-main-thread error path; the happy path is exercised via
-        // manual verification inside a running desktop app (see Agent Notes).
+        // the off-main-thread error path; the happy path (real `NSMenu`
+        // construction) can't be asserted against in this CI environment
+        // (no real windowing system) and is instead exercised via manual
+        // verification inside a running desktop app (see Agent Notes). The
+        // pure `key_equivalent` mapping this method relies on is unit
+        // tested directly below, without needing `NSMenu` at all.
         let error = MacosPlatformAdapter::new()
-            .install_native_menu()
+            .install_native_menu(&fm_domain::NativeMenuSpec::default(), Arc::new(|_id| {}))
             .expect_err("must fail off the main thread");
         assert!(matches!(error, PlatformError::Io { .. }));
+    }
+
+    #[test]
+    fn key_equivalent_lowercases_the_key_and_maps_each_modifier_to_its_own_bit() {
+        assert_eq!(
+            key_equivalent(&fm_domain::KeyChord {
+                key: "C".to_owned(),
+                meta: true,
+                ..fm_domain::KeyChord::default()
+            }),
+            ("c".to_owned(), MODIFIER_COMMAND_BIT)
+        );
+        assert_eq!(
+            key_equivalent(&fm_domain::KeyChord {
+                key: ",".to_owned(),
+                meta: true,
+                ..fm_domain::KeyChord::default()
+            }),
+            (",".to_owned(), MODIFIER_COMMAND_BIT)
+        );
+        assert_eq!(
+            key_equivalent(&fm_domain::KeyChord {
+                key: "z".to_owned(),
+                meta: true,
+                shift: true,
+                ..fm_domain::KeyChord::default()
+            }),
+            ("z".to_owned(), MODIFIER_COMMAND_BIT | MODIFIER_SHIFT_BIT)
+        );
+        assert_eq!(
+            key_equivalent(&fm_domain::KeyChord {
+                key: "a".to_owned(),
+                ctrl: true,
+                alt: true,
+                ..fm_domain::KeyChord::default()
+            }),
+            ("a".to_owned(), MODIFIER_CONTROL_BIT | MODIFIER_OPTION_BIT)
+        );
+    }
+
+    #[test]
+    fn key_equivalent_reports_no_modifiers_for_a_plain_chord() {
+        assert_eq!(
+            key_equivalent(&fm_domain::KeyChord {
+                key: "Escape".to_owned(),
+                ..fm_domain::KeyChord::default()
+            }),
+            ("e".to_owned(), 0)
+        );
     }
 
     #[test]
