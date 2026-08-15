@@ -441,18 +441,22 @@ export function createPaneContentBuilder(
         }
         context.getCursorLoadTokens().delete(key);
         // Re-read the latest selection rather than the `selection` closed over when this attrs
-        // object was built: `toggleCursorSelectionAndAdvance` (Insert/Space) dispatches two
-        // `onSelectionAction` calls back-to-back in the same synchronous keydown handler, before
-        // Mithril redraws in between - using the stale closure here for the second call would
-        // silently discard the first call's effect (e.g. the toggle) once this overwrites the map
-        // with a `next` computed from pre-toggle state.
+        // object was built - other in-flight dispatches (e.g. a background `moveCursorTo`
+        // resolution above) may have already updated it since this closure was created, and using
+        // the stale value here would silently discard that update once this overwrites the map.
         const next = reduceSelection(
           context.getSelections().get(key) ?? selection,
           action,
           entryIds,
         );
         context.getSelections().set(key, next);
-        m.redraw();
+        // `m.redraw()` is throttled to the next animation frame, not synchronous. A plain
+        // `m.redraw()` here left a window where a keypress arriving before that frame paints
+        // (e.g. Space right after a click) still saw the *previous* render's `cursorIndex`/
+        // `entries` props in the pane's `onkeydown` handler - toggling/advancing from the old
+        // cursor position instead of the one this action just set. `sync()` forces the redraw to
+        // land before this handler returns, so the very next keydown always sees fresh state.
+        m.redraw.sync();
       },
       onRetry: () => context.getNavigation().retry(paneId),
       onLoadNextPage: () => context.getNavigation().loadNextPage(paneId),

@@ -3,5 +3,7 @@
  * Run `pnpm api:generate` (or `pnpm api:check`) to regenerate.
  */
 
-/** Exact directory name to icon definition key. */
-export type PluginIconThemeDtoFolderNames = { [key: string]: string };
+/**
+ * Exact directory name (e.g. `".git"`) to icon definition key.
+ */
+export type PluginIconThemeDtoFolderNames = {[key: string]: string};

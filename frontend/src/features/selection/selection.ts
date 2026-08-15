@@ -15,8 +15,19 @@ export type SelectionAction =
   | { readonly type: 'moveCursor'; readonly offset: number }
   | { readonly type: 'moveCursorTo'; readonly edge: 'first' | 'last' }
   | { readonly type: 'setCursor'; readonly entryId: EntryId }
+  /** Moves the cursor to `entryId` without marking it (Total Commander parity: a plain click only
+   * repositions the cursor) - but, like `moveCursor`/`moveCursorTo`, still drops a stale lone mark
+   * left over from an earlier action rather than leaving it to linger indefinitely at whatever
+   * unrelated row the user last marked. A real multi-selection (built via Shift/Ctrl) is preserved,
+   * exactly as arrow-key navigation without Shift already does. */
+  | { readonly type: 'positionCursor'; readonly entryId: EntryId }
   | { readonly type: 'selectOnly'; readonly entryId: EntryId }
   | { readonly type: 'toggle'; readonly entryId: EntryId }
+  /** Toggles `entryId`'s selection and moves the cursor by `offset` in one atomic transition
+   * (Insert/Space, Total Commander parity) - a single reducer step rather than a `toggle` dispatch
+   * immediately followed by a `moveCursor` dispatch, which observably dropped the toggle in
+   * practice (see the 2026-08 investigation in `pane.ts`'s dispatch comment for this command). */
+  | { readonly type: 'toggleAndAdvance'; readonly entryId: EntryId; readonly offset: number }
   | { readonly type: 'extendRange'; readonly offset: number }
   | { readonly type: 'extendRangeTo'; readonly entryId: EntryId }
   | { readonly type: 'selectAll' }
@@ -73,7 +84,7 @@ export function reduceSelection(
       const { baseSelectedEntryIds: _b1, ...withoutBase1 } = state;
       return {
         ...withoutBase1,
-        selectedEntryIds: [entryId],
+        selectedEntryIds: [],
         cursorEntryId: entryId,
         anchorEntryId: entryId,
       };
@@ -95,13 +106,33 @@ export function reduceSelection(
       const { baseSelectedEntryIds: _b2, ...withoutBase2 } = state;
       return {
         ...withoutBase2,
-        selectedEntryIds: [entryId],
+        selectedEntryIds: [],
         cursorEntryId: entryId,
         anchorEntryId: entryId,
       };
     }
     case 'setCursor':
       return { ...state, cursorEntryId: action.entryId };
+    case 'positionCursor': {
+      if (
+        state.selectedEntryIds.length > 1 &&
+        state.selectedEntryIds.every((selectedId) => visibleIds.has(selectedId))
+      ) {
+        return {
+          ...state,
+          cursorEntryId: action.entryId,
+          anchorEntryId: action.entryId,
+          baseSelectedEntryIds: state.selectedEntryIds,
+        };
+      }
+      const { baseSelectedEntryIds: _b3, ...withoutBase3 } = state;
+      return {
+        ...withoutBase3,
+        selectedEntryIds: [],
+        cursorEntryId: action.entryId,
+        anchorEntryId: action.entryId,
+      };
+    }
     case 'selectOnly':
       return {
         selectedEntryIds: [action.entryId],
@@ -119,6 +150,26 @@ export function reduceSelection(
         selectedEntryIds: [...selected],
         cursorEntryId: action.entryId,
         anchorEntryId: action.entryId,
+      };
+    }
+    case 'toggleAndAdvance': {
+      const selected = new Set(state.selectedEntryIds);
+      if (selected.has(action.entryId)) {
+        selected.delete(action.entryId);
+      } else {
+        selected.add(action.entryId);
+      }
+      const toggledEntryIndex = orderedEntryIds.indexOf(action.entryId);
+      const nextIndex = clampedIndex(
+        (toggledEntryIndex < 0 ? 0 : toggledEntryIndex) + action.offset,
+        orderedEntryIds,
+      );
+      const nextCursorEntryId =
+        (nextIndex === undefined ? undefined : orderedEntryIds[nextIndex]) ?? action.entryId;
+      return {
+        selectedEntryIds: [...selected],
+        cursorEntryId: nextCursorEntryId,
+        anchorEntryId: nextCursorEntryId,
       };
     }
     case 'extendRange': {
@@ -240,6 +291,25 @@ export function reduceSelection(
   }
   const idSet = new Set(selection.selectedEntryIds);
   return entries.filter((entry) => idSet.has(entry.id) === true && !isParentEntry(entry.id));
+}
+
+/**
+ * `getSelectedEntries`, falling back to the cursor entry when nothing is explicitly marked -
+ * Total Commander convention: a plain click only moves the cursor (see `setCursor` above), so a
+ * command invoked right after (Delete, Copy, cut/paste, pack, ...) must still act on the file the
+ * cursor is sitting on rather than silently doing nothing because no row was ever marked.
+ */
+export function getSelectedEntriesOrCursor(
+  selection: SelectionState | undefined,
+  entries: readonly EntrySummary[],
+): readonly EntrySummary[] {
+  const selected = getSelectedEntries(selection, entries);
+  if (selected.length > 0) return selected;
+  const cursor =
+    selection?.cursorEntryId === undefined
+      ? undefined
+      : entries.find((entry) => entry.id === selection.cursorEntryId);
+  return cursor === undefined ? [] : [cursor];
 }
 
 /**

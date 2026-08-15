@@ -8,6 +8,8 @@ import type {
   ApplySyncPlanResult,
   ArchiveCredentialRequest,
   BackendEvent,
+  CalculateFolderSizeRequest,
+  CalculateFolderSizeResult,
   ComparisonPage,
   Connection,
   ConnectionId,
@@ -229,6 +231,13 @@ export class TauriFileManagerClient implements FileManagerClient {
 
   searchInFile(request: SearchInFileRequest, _signal?: AbortSignal): Promise<SearchInFileResult> {
     return invoke<SearchInFileResult>('search_in_file', { request });
+  }
+
+  calculateFolderSize(
+    request: CalculateFolderSizeRequest,
+    _signal?: AbortSignal,
+  ): Promise<CalculateFolderSizeResult> {
+    return invoke<CalculateFolderSizeResult>('calculate_folder_size', { request });
   }
 
   startOperation(request: StartOperationRequest, _signal?: AbortSignal): Promise<Operation> {

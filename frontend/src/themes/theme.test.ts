@@ -165,7 +165,12 @@ describe('theme stylesheet', () => {
       /\.fm-pane\[data-active="true"\]\s+\.fm-selected-row\s*\{[^}]*background:[^}]*18%/s,
     );
     expect(themeCss).toMatch(
-      /\.fm-pane\[data-active="true"\]\s+\.fm-cursor-row\s*\{[^}]*background-color:[^}]*48%[^}]*color:\s*var\(--fm-cursor-row-text\)/s,
+      /\.fm-pane\[data-active="true"\]\s+\.fm-cursor-row:not\(\.fm-selected-row\)\s*\{[^}]*background-color:[^}]*48%[^}]*color:\s*var\(--fm-cursor-row-text\)/s,
+    );
+    // The cursor row keeps a distinctive outline even when it's also marked, so the mark's amber
+    // text color (above) isn't washed out by the cursor's own background/text override.
+    expect(themeCss).toMatch(
+      /\.fm-pane\[data-active="true"\]\s+\.fm-cursor-row\s*\{[^}]*box-shadow:[^}]*var\(--fm-accent\)/s,
     );
     expect(themeCss).toMatch(
       /\[data-theme="dark"\][^}]*\.fm-pane\[data-active="true"\]\s+\.fm-selected-row\s*\{[^}]*background:/s,

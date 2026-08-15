@@ -73,6 +73,11 @@ const ACTIONS: readonly ActionDescriptor[] = [
   },
   { id: 'core.quit', title: 'Quit', defaultShortcuts: [{ key: 'F4', alt: true }] },
   { id: 'core.showShortcutsHelp', title: 'Shortcuts', defaultShortcuts: [{ key: 'F1' }] },
+  {
+    id: 'core.calculateFolderSize',
+    title: 'Calculate folder size',
+    defaultShortcuts: [{ key: '.', ctrl: true }],
+  },
 ].map(
   (action): ActionDescriptor => ({
     category: 'test',
@@ -172,6 +177,8 @@ function makeContext(overrides: Partial<GlobalKeydownContext> = {}): GlobalKeydo
     invokeActionById: vi.fn(),
     openViewer: vi.fn(),
     openEditor: vi.fn(),
+    calculateFolderSize: vi.fn(),
+    openSettingsDialog: vi.fn(),
     actionContext: () => ({ selectedEntryIds: [] }),
     commandAvailabilityContext: () => ({}) as never,
     contentSearchInitialQuery: () => undefined,
@@ -409,6 +416,57 @@ describe('createGlobalKeydownHandler - task 0128 shortcuts', () => {
     const context = makeContext({ setShortcutsHelpOpen });
     createGlobalKeydownHandler(context)(keydown('F1'));
     expect(setShortcutsHelpOpen).toHaveBeenCalledWith(true);
+  });
+
+  it('Ctrl+, opens the Settings dialog', () => {
+    const openSettingsDialog = vi.fn();
+    const context = makeContext({ openSettingsDialog });
+    createGlobalKeydownHandler(context)(keydown(',', { ctrlKey: true }));
+    expect(openSettingsDialog).toHaveBeenCalled();
+  });
+
+  it('Ctrl+. calculates the folder size for a directory under the cursor', () => {
+    const calculateFolderSize = vi.fn();
+    const cursorDir: EntrySummary = {
+      id: 'dir-1' as never,
+      location: { providerId: 'local', uri: 'file:///a/dir' },
+      name: 'dir',
+      kind: 'directory',
+      hidden: false,
+      readOnly: false,
+      metadataRevision: 0,
+    };
+    const context = makeContext({
+      calculateFolderSize,
+      getSelections: () =>
+        new Map([['pane-a:tab', { selectedEntryIds: [], cursorEntryId: 'dir-1' as never }]]),
+      getDirectories: () =>
+        new Map([['pane-a:tab', { entries: [cursorDir] } as unknown as PaneDirectoryView]]),
+    });
+    createGlobalKeydownHandler(context)(keydown('.', { ctrlKey: true }));
+    expect(calculateFolderSize).toHaveBeenCalledWith(PANE_A, cursorDir);
+  });
+
+  it('Ctrl+. does nothing when the cursor is on a file rather than a directory', () => {
+    const calculateFolderSize = vi.fn();
+    const cursorFile: EntrySummary = {
+      id: 'file-1' as never,
+      location: { providerId: 'local', uri: 'file:///a/report.txt' },
+      name: 'report.txt',
+      kind: 'file',
+      hidden: false,
+      readOnly: false,
+      metadataRevision: 0,
+    };
+    const context = makeContext({
+      calculateFolderSize,
+      getSelections: () =>
+        new Map([['pane-a:tab', { selectedEntryIds: [], cursorEntryId: 'file-1' as never }]]),
+      getDirectories: () =>
+        new Map([['pane-a:tab', { entries: [cursorFile] } as unknown as PaneDirectoryView]]),
+    });
+    createGlobalKeydownHandler(context)(keydown('.', { ctrlKey: true }));
+    expect(calculateFolderSize).not.toHaveBeenCalled();
   });
 
   it('Alt+Space toggles the metadata panel when a viewer is open in the active pane', () => {

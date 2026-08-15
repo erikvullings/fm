@@ -12,14 +12,14 @@ import {
 const ids = (...values: string[]): readonly EntryId[] => values;
 
 describe('selection reducer', () => {
-  it('moves the cursor and selects the new row', () => {
+  it('moves the cursor without marking the new row, dropping a stale lone mark', () => {
     expect(
       reduceSelection(
         { ...emptySelection, selectedEntryIds: ['b'], cursorEntryId: 'b' },
         { type: 'moveCursor', offset: 1 },
         ids('a', 'b', 'c'),
       ),
-    ).toEqual({ selectedEntryIds: ['c'], cursorEntryId: 'c', anchorEntryId: 'c' });
+    ).toEqual({ selectedEntryIds: [], cursorEntryId: 'c', anchorEntryId: 'c' });
   });
 
   it('moves by a page and clamps at the list boundary', () => {
@@ -71,6 +71,38 @@ describe('selection reducer', () => {
       reduceSelection(discontinuous, { type: 'toggle', entryId: 'a' }, ids('a', 'b', 'c'))
         .selectedEntryIds,
     ).toEqual(['c']);
+  });
+
+  it('toggles the given entry and advances the cursor in one atomic step (Insert/Space)', () => {
+    const toggled = reduceSelection(
+      { ...emptySelection, cursorEntryId: 'a' },
+      { type: 'toggleAndAdvance', entryId: 'a', offset: 1 },
+      ids('a', 'b', 'c'),
+    );
+    expect(toggled).toEqual({ selectedEntryIds: ['a'], cursorEntryId: 'b', anchorEntryId: 'b' });
+  });
+
+  it('toggleAndAdvance can toggle an entry back off and still advance', () => {
+    const initial: SelectionState = {
+      selectedEntryIds: ['a'],
+      cursorEntryId: 'a',
+      anchorEntryId: 'a',
+    };
+    const toggled = reduceSelection(
+      initial,
+      { type: 'toggleAndAdvance', entryId: 'a', offset: 1 },
+      ids('a', 'b', 'c'),
+    );
+    expect(toggled).toEqual({ selectedEntryIds: [], cursorEntryId: 'b', anchorEntryId: 'b' });
+  });
+
+  it('toggleAndAdvance clamps the cursor at the last entry instead of losing the toggle', () => {
+    const toggled = reduceSelection(
+      { ...emptySelection, cursorEntryId: 'c' },
+      { type: 'toggleAndAdvance', entryId: 'c', offset: 1 },
+      ids('a', 'b', 'c'),
+    );
+    expect(toggled).toEqual({ selectedEntryIds: ['c'], cursorEntryId: 'c', anchorEntryId: 'c' });
   });
 
   it('extends a range from its stable anchor across a sort change', () => {
@@ -219,19 +251,28 @@ describe('selection reducer', () => {
     ).toEqual({ selectedEntryIds: [], cursorEntryId: 'a' });
   });
 
-  it('keeps hidden selected ids across filtering and pruning only removes delta ids', () => {
+  it('pruning only removes the targeted ids, regardless of what is currently visible', () => {
     const state: SelectionState = {
       selectedEntryIds: ['hidden', 'visible', 'removed'],
       cursorEntryId: 'removed',
       anchorEntryId: 'hidden',
     };
-    const filtered = reduceSelection(state, { type: 'moveCursor', offset: 1 }, ids('visible'));
-    expect(filtered.selectedEntryIds).toEqual(['visible']);
-
     expect(
-      reduceSelection(filtered, { type: 'prune', removedEntryIds: ids('removed') }, ids('visible')),
+      reduceSelection(state, { type: 'prune', removedEntryIds: ids('removed') }, ids('visible')),
     ).toEqual({
-      selectedEntryIds: ['visible'],
+      selectedEntryIds: ['hidden', 'visible'],
+      anchorEntryId: 'hidden',
+    });
+  });
+
+  it('moving the cursor drops a multi-selection that is only partially visible', () => {
+    const state: SelectionState = {
+      selectedEntryIds: ['hidden', 'visible', 'removed'],
+      cursorEntryId: 'removed',
+      anchorEntryId: 'hidden',
+    };
+    expect(reduceSelection(state, { type: 'moveCursor', offset: 1 }, ids('visible'))).toEqual({
+      selectedEntryIds: [],
       cursorEntryId: 'visible',
       anchorEntryId: 'visible',
     });

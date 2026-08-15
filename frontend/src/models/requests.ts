@@ -1,3 +1,4 @@
+import type { CalculateFolderSizeResponseDto } from '../api/generated/models/calculateFolderSizeResponseDto';
 import type { ComparisonPageDto } from '../api/generated/models/comparisonPageDto';
 import type { LoadEditableFileResponseDto } from '../api/generated/models/loadEditableFileResponseDto';
 import type { ReadFileRangeResponseDto } from '../api/generated/models/readFileRangeResponseDto';
@@ -192,6 +193,18 @@ export type SearchInFileMatch = SearchInFileMatchDto;
 
 /** The result of a {@link SearchInFileRequest}. */
 export type SearchInFileResult = SearchInFileResponseDto;
+
+/**
+ * Requests a directory's recursive total size (`POST /api/v1/directories/size`, task 0071's
+ * Total Commander-style "press a key on a folder to see how much space it consumes" behaviour),
+ * mirroring `fm_transport_dto::CalculateFolderSizeRequestDto`.
+ */
+export interface CalculateFolderSizeRequest {
+  location: Location;
+}
+
+/** The result of a {@link CalculateFolderSizeRequest}. */
+export type CalculateFolderSizeResult = CalculateFolderSizeResponseDto;
 
 /**
  * Starts a recursive, cancellable directory comparison

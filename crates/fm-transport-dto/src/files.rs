@@ -161,6 +161,30 @@ pub struct SearchInFileResponseDto {
     pub truncated: bool,
 }
 
+/// Requests a directory's recursive total size (`POST /api/v1/directories/size`), for the Total
+/// Commander-style "press a key on a folder to see how much space it consumes" behaviour
+/// (task 0071).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(example = json!({
+    "location": {"providerId": "local", "uri": "file:///Users/erik/Documents"}
+}))]
+pub struct CalculateFolderSizeRequestDto {
+    /// The directory to sum.
+    pub location: LocationDto,
+}
+
+/// The recursive total size of a directory and how many files were counted.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(example = json!({"totalBytes": 104857600, "fileCount": 42}))]
+pub struct CalculateFolderSizeResponseDto {
+    /// Sum of every descendant file's (and unfollowed symlink's) size, in bytes.
+    pub total_bytes: u64,
+    /// Number of files (and symlinks) counted.
+    pub file_count: u64,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -186,6 +210,32 @@ mod tests {
         let parsed: ReadFileRangeRequestDto =
             serde_json::from_str(&json).expect("deserialization must succeed");
         assert_eq!(request, parsed);
+    }
+
+    #[test]
+    fn calculate_folder_size_request_round_trips_and_uses_camel_case_field_names() {
+        let request = CalculateFolderSizeRequestDto {
+            location: sample_location(),
+        };
+        let json = serde_json::to_string(&request).expect("serialization must succeed");
+        assert!(json.contains("\"location\""));
+        let parsed: CalculateFolderSizeRequestDto =
+            serde_json::from_str(&json).expect("deserialization must succeed");
+        assert_eq!(request, parsed);
+    }
+
+    #[test]
+    fn calculate_folder_size_response_round_trips_and_uses_camel_case_field_names() {
+        let response = CalculateFolderSizeResponseDto {
+            total_bytes: 104_857_600,
+            file_count: 42,
+        };
+        let json = serde_json::to_string(&response).expect("serialization must succeed");
+        assert!(json.contains("\"totalBytes\""));
+        assert!(json.contains("\"fileCount\""));
+        let parsed: CalculateFolderSizeResponseDto =
+            serde_json::from_str(&json).expect("deserialization must succeed");
+        assert_eq!(response, parsed);
     }
 
     #[test]

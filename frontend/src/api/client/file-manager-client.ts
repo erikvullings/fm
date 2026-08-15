@@ -5,6 +5,8 @@ import type {
   ApplySyncPlanResult,
   ArchiveCredentialRequest,
   BackendEvent,
+  CalculateFolderSizeRequest,
+  CalculateFolderSizeResult,
   ComparisonPage,
   Connection,
   ConnectionId,
@@ -147,6 +149,14 @@ export interface FileManagerClient {
 
   /** Searches a single file's content, for the in-app large file viewer (task 0088). */
   searchInFile(request: SearchInFileRequest, signal?: AbortSignal): Promise<SearchInFileResult>;
+
+  /** Recursively sums a directory's total size (task 0071's Total Commander-style folder-size
+   * key). Aborting `signal` (e.g. because the cursor moved to a different entry) stops the walk
+   * being applied - the same one-shot cancellation convention as `readFileRange`/`searchInFile`. */
+  calculateFolderSize(
+    request: CalculateFolderSizeRequest,
+    signal?: AbortSignal,
+  ): Promise<CalculateFolderSizeResult>;
 
   startOperation(request: StartOperationRequest, signal?: AbortSignal): Promise<Operation>;
 

@@ -20,9 +20,13 @@ describe('entry presentation formatting', () => {
     expect(formatEntrySize({ kind: 'file', size: 1_536 }, settings('bytes'))).toBe('1,536 B');
   });
 
-  it('displays an em dash for directories and missing sizes', () => {
-    expect(formatEntrySize({ kind: 'directory', size: 4_096 }, settings('binary'))).toBe('--');
+  it('displays two dashes for a directory with no computed size, and missing file sizes', () => {
+    expect(formatEntrySize({ kind: 'directory' }, settings('binary'))).toBe('--');
     expect(formatEntrySize({ kind: 'file' }, settings('binary'))).toBe('--');
+  });
+
+  it('formats a directory size once one has been computed (task 0071 Ctrl+.)', () => {
+    expect(formatEntrySize({ kind: 'directory', size: 4_096 }, settings('binary'))).toBe('4 KiB');
   });
 
   it('formats a raw timestamp with the selected short date format', () => {

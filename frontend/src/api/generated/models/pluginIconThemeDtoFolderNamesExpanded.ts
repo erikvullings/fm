@@ -3,5 +3,7 @@
  * Run `pnpm api:generate` (or `pnpm api:check`) to regenerate.
  */
 
-/** Exact expanded directory name to icon definition key. */
-export type PluginIconThemeDtoFolderNamesExpanded = { [key: string]: string };
+/**
+ * Exact expanded directory name to icon definition key.
+ */
+export type PluginIconThemeDtoFolderNamesExpanded = {[key: string]: string};

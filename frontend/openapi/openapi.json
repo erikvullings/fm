@@ -364,6 +364,51 @@
         },
         "type": "object"
       },
+      "CalculateFolderSizeRequestDto": {
+        "description": "Requests a directory's recursive total size (`POST /api/v1/directories/size`), for the Total\nCommander-style \"press a key on a folder to see how much space it consumes\" behaviour\n(task 0071).",
+        "example": {
+          "location": {
+            "providerId": "local",
+            "uri": "file:///Users/erik/Documents"
+          }
+        },
+        "properties": {
+          "location": {
+            "$ref": "#/components/schemas/LocationDto",
+            "description": "The directory to sum."
+          }
+        },
+        "required": [
+          "location"
+        ],
+        "type": "object"
+      },
+      "CalculateFolderSizeResponseDto": {
+        "description": "The recursive total size of a directory and how many files were counted.",
+        "example": {
+          "fileCount": 42,
+          "totalBytes": 104857600
+        },
+        "properties": {
+          "fileCount": {
+            "description": "Number of files (and symlinks) counted.",
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "totalBytes": {
+            "description": "Sum of every descendant file's (and unfollowed symlink's) size, in bytes.",
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "totalBytes",
+          "fileCount"
+        ],
+        "type": "object"
+      },
       "ColumnConfigurationDto": {
         "description": "Persisted width and visibility for a single directory-table column.",
         "properties": {
@@ -2752,6 +2797,26 @@
               "null"
             ]
           },
+          "folderNames": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Exact directory name (e.g. `\".git\"`) to icon definition key.",
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "folderNamesExpanded": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Exact expanded directory name to icon definition key.",
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
           "iconDefinitions": {
             "additionalProperties": {
               "$ref": "#/components/schemas/PluginIconDefinitionDto"
@@ -2784,6 +2849,8 @@
           "iconDefinitions",
           "fileExtensions",
           "fileNames",
+          "folderNames",
+          "folderNamesExpanded",
           "mimePrefixes"
         ],
         "type": "object"
@@ -5608,6 +5675,64 @@
           }
         },
         "summary": "Refreshes one directory page."
+      }
+    },
+    "/api/v1/directories/size": {
+      "post": {
+        "operationId": "calculateFolderSize",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CalculateFolderSizeRequestDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CalculateFolderSizeResponseDto"
+                }
+              }
+            },
+            "description": "The directory's recursive total size"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationErrorDto"
+                }
+              }
+            },
+            "description": "The request was invalid"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationErrorDto"
+                }
+              }
+            },
+            "description": "The directory is unreadable"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationErrorDto"
+                }
+              }
+            },
+            "description": "The directory does not exist"
+          }
+        },
+        "summary": "Recursively sums a directory's total size (task 0071's Total Commander-style folder-size key)."
       }
     },
     "/api/v1/entries/metadata": {

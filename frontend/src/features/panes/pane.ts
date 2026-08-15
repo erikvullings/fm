@@ -276,6 +276,12 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
   let favouriteError: string | undefined;
   let favouritesPreviousFocus: HTMLElement | undefined;
   let typeaheadPath: string | undefined;
+  /** The pane's own `section.fm-pane` DOM node - the actual keyboard target (`onkeydown` is bound
+   * here, see the view below). Mouse row clicks only ever changed selection *state*; nothing moved
+   * real DOM focus here to match, so a keypress immediately after a click could still be racing (or
+   * entirely missing) this element's focus depending on whatever had focus beforehand. Captured so
+   * `onCursorChange` can call `.focus()` itself instead of relying on incidental browser behaviour. */
+  let sectionElement: HTMLElement | undefined;
 
   const typeaheadCtrl = createTypeaheadController(() => m.redraw());
   const renameCtrl = createRenameEditingController();
@@ -394,7 +400,20 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
       if (attrs.viewerContent !== undefined) {
         return m(
           'section.fm-pane.fm-pane-viewer',
-          { 'data-active': String(attrs.active), tabindex: -1 },
+          {
+            'data-active': String(attrs.active),
+            tabindex: -1,
+            oncreate: ({ dom }: VnodeDOM) => {
+              sectionElement = dom as HTMLElement;
+            },
+            // Guard against a stale removal firing after a replacement node's `oncreate` (this
+            // vnode has no explicit `key`, so a positional diff can create-then-remove rather
+            // than patch in place) - an unconditional clear here would wipe the fresh reference
+            // and leave clicks unable to grab keyboard focus until a full remount.
+            onremove: ({ dom }: VnodeDOM) => {
+              if (sectionElement === dom) sectionElement = undefined;
+            },
+          },
           [
             m(TabStrip, {
               tabs: attrs.tabs,
@@ -452,6 +471,16 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
         {
           'data-active': String(attrs.active),
           tabindex: -1,
+          oncreate: ({ dom }: VnodeDOM) => {
+            sectionElement = dom as HTMLElement;
+          },
+          // Guard against a stale removal firing after a replacement node's `oncreate` (this
+          // vnode has no explicit `key`, so a positional diff can create-then-remove rather than
+          // patch in place) - an unconditional clear here would wipe the fresh reference and
+          // leave clicks unable to grab keyboard focus until a full remount.
+          onremove: ({ dom }: VnodeDOM) => {
+            if (sectionElement === dom) sectionElement = undefined;
+          },
           onkeydown: (event: KeyboardEvent) => {
             if (isEditableTarget(event.target)) return;
             previousSelectionSnapshot = [...attrs.selectedEntryIds];
@@ -621,14 +650,15 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
                 attrs.onSelectionAction({ type: 'toggle', entryId: entry.id });
               }
             } else if (command?.type === 'toggleCursorSelectionAndAdvance') {
-              // Insert: toggle the entry under the cursor, then move down one row - composing
-              // the existing toggle/moveCursor selection actions (Total Commander parity).
+              // Insert/Space: toggle the entry under the cursor and move down one row, as a
+              // single atomic `toggleAndAdvance` dispatch (Total Commander parity) - not two
+              // separate `toggle`/`moveCursor` dispatches, which observably dropped the toggle in
+              // practice despite each individually reading fresh selection state.
               const entry =
                 attrs.cursorIndex === undefined ? undefined : attrs.entries[attrs.cursorIndex];
               if (entry !== undefined && !isParentEntry(entry.id)) {
                 event.preventDefault();
-                attrs.onSelectionAction({ type: 'toggle', entryId: entry.id });
-                attrs.onSelectionAction({ type: 'moveCursor', offset: 1 });
+                attrs.onSelectionAction({ type: 'toggleAndAdvance', entryId: entry.id, offset: 1 });
               }
             } else if (command?.type === 'restoreSelection') {
               event.preventDefault();
@@ -1096,6 +1126,12 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
             onCursorChange: (index, modifiers) => {
               const entry = attrs.entries[index];
               if (entry === undefined) return;
+              // A mouse click only ever changed selection *state* - nothing moved real DOM focus
+              // to match, so a keypress immediately after clicking a row could race (or entirely
+              // miss) this pane's `onkeydown` handler depending on whatever had focus beforehand.
+              // Grabbing focus here makes a click reliably prime keyboard input the same way
+              // clicking anywhere else in the app already does.
+              if (document.activeElement !== sectionElement) sectionElement?.focus();
               if (isParentEntry(entry.id)) {
                 attrs.onSelectionAction({ type: 'selectOnly', entryId: entry.id });
               } else if (modifiers?.shiftKey === true) {
@@ -1103,7 +1139,12 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
               } else if (modifiers?.ctrlKey === true) {
                 attrs.onSelectionAction({ type: 'toggle', entryId: entry.id });
               } else {
-                attrs.onSelectionAction({ type: 'selectOnly', entryId: entry.id });
+                // A plain click only repositions the cursor (Total Commander parity) - it must
+                // not mark the row, or the very next Space (a toggle) would immediately un-mark
+                // whatever the click just landed on instead of marking it. `positionCursor` (not
+                // `setCursor`, which typeahead uses and leaves marks untouched) also drops a
+                // stale lone mark left over from elsewhere, matching `moveCursor`'s convention.
+                attrs.onSelectionAction({ type: 'positionCursor', entryId: entry.id });
               }
             },
             onActivate: (index) => {

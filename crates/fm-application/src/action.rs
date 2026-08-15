@@ -251,6 +251,29 @@ fn core_actions(capabilities: PlatformCapabilities) -> Vec<ActionDescriptor> {
             ActionContextRequirements::single_selection(),
         ),
         core_action(
+            "core.calculateFolderSize",
+            "Calculate Folder Size",
+            "fileOperations",
+            // Plain Ctrl+Space (`primary(" ")`) doesn't work: the frontend dispatcher maps any
+            // `ctrl: true` chord to the platform's primary modifier, which is Cmd on macOS
+            // (`hasPrimaryModifier`) - so "Ctrl+Space" is actually "Cmd+Space" there, and that's
+            // Spotlight, a system-wide shortcut the OS intercepts before any app (browser or
+            // Tauri) ever sees the keystroke. There is no per-chord way to request the literal
+            // Control key on macOS instead of the Cmd translation - `KeyChord`/`matches()` only
+            // special-cases that for Tab (see the dispatcher's comment on that), and adding a
+            // second one-off "literal ctrl" concept just for this action isn't worth it. Ctrl+.
+            // (Cmd+. on macOS) was picked instead by explicit user preference over the
+            // alternative of adding Shift (Ctrl+Shift+Space) once Cmd+Space turned out reserved.
+            vec![primary(".")],
+            // Never platform-gated (task 0071): the recursive walk only needs
+            // `ProviderCapabilities::LIST`, which every provider advertises. The frontend
+            // additionally only invokes this when the cursor entry is a directory - there's no
+            // "cursor entry kind" predicate in `ActionContextRequirements` today, so that check
+            // stays client-side (mirroring how `core.view`'s "not a directory" case is also a
+            // frontend-side distinction, not a backend one).
+            ActionContextRequirements::single_selection(),
+        ),
+        core_action(
             "core.edit",
             "Edit",
             "fileOperations",
@@ -873,6 +896,7 @@ mod tests {
         for expected in [
             "core.open",
             "core.view",
+            "core.calculateFolderSize",
             "core.edit",
             "core.parent",
             "core.switchPane",

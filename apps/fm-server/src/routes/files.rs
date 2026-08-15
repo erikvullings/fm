@@ -4,10 +4,10 @@
 use axum::extract::{Extension, State};
 use axum::{Json, http::StatusCode};
 use fm_transport_dto::{
-    ApplicationErrorDto, ArchiveCredentialRequestDto, LoadEditableFileRequestDto,
-    LoadEditableFileResponseDto, ReadFileRangeRequestDto, ReadFileRangeResponseDto,
-    SaveEditableFileRequestDto, SaveEditableFileResponseDto, SearchInFileRequestDto,
-    SearchInFileResponseDto,
+    ApplicationErrorDto, ArchiveCredentialRequestDto, CalculateFolderSizeRequestDto,
+    CalculateFolderSizeResponseDto, LoadEditableFileRequestDto, LoadEditableFileResponseDto,
+    ReadFileRangeRequestDto, ReadFileRangeResponseDto, SaveEditableFileRequestDto,
+    SaveEditableFileResponseDto, SearchInFileRequestDto, SearchInFileResponseDto,
 };
 use tower_http::request_id::RequestId;
 
@@ -145,6 +145,34 @@ pub(crate) async fn search_in_file(
     state
         .service
         .search_in_file(request)
+        .await
+        .map(Json)
+        .map_err(|error| ApiError::new(error, request_id))
+}
+
+/// Recursively sums a directory's total size (task 0071's Total Commander-style folder-size key).
+#[utoipa::path(
+    post,
+    path = "/api/v1/directories/size",
+    operation_id = "calculateFolderSize",
+    request_body = CalculateFolderSizeRequestDto,
+    responses(
+        (status = 200, description = "The directory's recursive total size", body = CalculateFolderSizeResponseDto),
+        (status = 400, description = "The request was invalid", body = ApplicationErrorDto),
+        (status = 403, description = "The directory is unreadable", body = ApplicationErrorDto),
+        (status = 404, description = "The directory does not exist", body = ApplicationErrorDto),
+    )
+)]
+pub(crate) async fn calculate_folder_size(
+    State(state): State<AppState>,
+    Extension(request_id): Extension<RequestId>,
+    Json(request): Json<CalculateFolderSizeRequestDto>,
+) -> Result<Json<CalculateFolderSizeResponseDto>, ApiError> {
+    let request_id = extract_request_id(&request_id);
+    crate::error::require_within_roots(&request.location, &state.accessible_roots, request_id)?;
+    state
+        .service
+        .calculate_folder_size(request)
         .await
         .map(Json)
         .map_err(|error| ApiError::new(error, request_id))

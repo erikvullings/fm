@@ -820,6 +820,16 @@ impl FileManagerService {
         content_streaming::search_in_file(&self.providers, request).await
     }
 
+    /// Recursively sums a directory's total size (task 0071), for the Total Commander-style
+    /// "press a key on a folder to see how much space it consumes" behaviour. Provider-agnostic -
+    /// works for any location whose provider reports `ProviderCapabilities::LIST`.
+    pub async fn calculate_folder_size(
+        &self,
+        request: fm_transport_dto::CalculateFolderSizeRequestDto,
+    ) -> Result<fm_transport_dto::CalculateFolderSizeResponseDto, ApplicationError> {
+        crate::folder_size::calculate_folder_size(&self.providers, request.location.into()).await
+    }
+
     /// Starts a cancellable recursive filename search over one or more
     /// roots, streaming matches to `request.workspace_id` over the event
     /// bus as they are found (spec §24, task 0068).
@@ -2008,6 +2018,47 @@ mod tests {
                 .await,
             Err(ApplicationError::InvalidRequest(_))
         ));
+    }
+
+    #[tokio::test]
+    async fn calculate_folder_size_sums_nested_files_recursively() {
+        let (dir, service) = service();
+        // A dedicated subdirectory, isolated from whatever `service()` itself writes into the
+        // temp dir's root (e.g. its settings file), so the walk only ever sees this test's fixtures.
+        let root = dir.path().join("root");
+        std::fs::create_dir(&root).expect("create root dir");
+        std::fs::write(root.join("top.txt"), [0_u8; 10]).expect("write top-level fixture");
+        let nested = root.join("nested");
+        std::fs::create_dir(&nested).expect("create nested dir");
+        std::fs::write(nested.join("a.txt"), [0_u8; 20]).expect("write nested fixture a");
+        std::fs::write(nested.join("b.txt"), [0_u8; 5]).expect("write nested fixture b");
+        let deeper = nested.join("deeper");
+        std::fs::create_dir(&deeper).expect("create deeper dir");
+        std::fs::write(deeper.join("c.txt"), [0_u8; 7]).expect("write deeper fixture c");
+
+        let response = service
+            .calculate_folder_size(fm_transport_dto::CalculateFolderSizeRequestDto {
+                location: location_dto_for(&root),
+            })
+            .await
+            .expect("calculate_folder_size must succeed");
+
+        assert_eq!(response.total_bytes, 10 + 20 + 5 + 7);
+        assert_eq!(response.file_count, 4);
+    }
+
+    #[tokio::test]
+    async fn calculate_folder_size_reports_not_found_for_a_missing_directory() {
+        let (dir, service) = service();
+        let missing = dir.path().join("does-not-exist");
+
+        let result = service
+            .calculate_folder_size(fm_transport_dto::CalculateFolderSizeRequestDto {
+                location: location_dto_for(&missing),
+            })
+            .await;
+
+        assert!(result.is_err());
     }
 
     /// A platform adapter test double reporting a hand-picked, non-uniform

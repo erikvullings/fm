@@ -13,6 +13,7 @@ mod content_streaming;
 mod directory;
 mod error;
 mod file_editor;
+mod folder_size;
 mod ftp;
 mod operation_history;
 mod operation_planner;

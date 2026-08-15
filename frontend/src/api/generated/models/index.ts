@@ -31,6 +31,8 @@ export * from './archiveFormatDto.ts';
 export * from './archiveFormatDto';
 export * from './archiveInfoDto.ts';
 export * from './archiveInfoDto';
+export * from './calculateFolderSizeRequestDto.ts';
+export * from './calculateFolderSizeResponseDto.ts';
 export * from './columnConfigurationDto.ts';
 export * from './columnConfigurationDto';
 export * from './comparisonCriteriaDto.ts';

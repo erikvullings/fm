@@ -8,6 +8,8 @@ import type {
   ApplySyncPlanResult,
   ArchiveCredentialRequest,
   BackendEvent,
+  CalculateFolderSizeRequest,
+  CalculateFolderSizeResult,
   ComparisonCriteria,
   ComparisonEntry,
   ComparisonEntrySide,
@@ -100,6 +102,7 @@ export type MockClientMethod =
   | 'cacheArchivePassword'
   | 'readFileRange'
   | 'searchInFile'
+  | 'calculateFolderSize'
   | 'startOperation'
   | 'listOperations'
   | 'cancelOperation'
@@ -928,6 +931,36 @@ export class MockFileManagerClient implements FileManagerClient {
         fileOffset += line.length + 1;
       }
       return { matches, truncated };
+    });
+  }
+
+  calculateFolderSize(
+    request: CalculateFolderSizeRequest,
+    signal?: AbortSignal,
+  ): Promise<CalculateFolderSizeResult> {
+    return this.perform('calculateFolderSize', signal, () => {
+      if (directories[request.location.uri] === undefined) {
+        throw new MockClientError(
+          'directoryNotFound',
+          `No mock directory at ${request.location.uri}`,
+        );
+      }
+      let totalBytes = 0;
+      let fileCount = 0;
+      const stack = [request.location.uri];
+      while (stack.length > 0) {
+        const uri = stack.pop() as string;
+        for (const fixture of directories[uri] ?? []) {
+          const entry = fixtureEntry(uri, fixture);
+          if (entry.kind === 'directory') {
+            stack.push(entry.location.uri);
+          } else {
+            totalBytes += entry.size ?? 0;
+            fileCount += 1;
+          }
+        }
+      }
+      return { totalBytes, fileCount };
     });
   }
 

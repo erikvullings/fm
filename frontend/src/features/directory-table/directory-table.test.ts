@@ -372,8 +372,8 @@ describe('DirectoryTable rows', () => {
     expect(root.querySelector('.fm-hidden-entry')).not.toBeNull();
   });
 
-  it('leaves the extension blank for directories and uses two dashes for their size', () => {
-    const { extension: _extension, ...directory } = entry({ kind: 'directory' });
+  it('leaves the extension blank for directories and uses two dashes when no size is known', () => {
+    const { extension: _extension, size: _size, ...directory } = entry({ kind: 'directory' });
     mount({
       state: { type: 'loaded' },
       source: entryArraySource([directory]),
@@ -382,6 +382,17 @@ describe('DirectoryTable rows', () => {
     const row = root.querySelector('.fm-directory-row');
     expect(row?.querySelector('.fm-directory-type')?.textContent).toBe('');
     expect(row?.querySelector('.fm-directory-size')?.textContent).toBe('--');
+  });
+
+  it('shows a directory size once one has been computed (task 0071 Ctrl+.)', () => {
+    const { extension: _extension, ...directory } = entry({ kind: 'directory', size: 1_024 });
+    mount({
+      state: { type: 'loaded' },
+      source: entryArraySource([directory]),
+    });
+
+    const row = root.querySelector('.fm-directory-row');
+    expect(row?.querySelector('.fm-directory-size')?.textContent).toBe('1 KiB');
   });
 
   it('leaves parent and link metadata columns empty', () => {

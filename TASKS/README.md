@@ -16,26 +16,25 @@ cargo watch -x "run -p fm-server"
 pnpm run dev:http
 ```
 
-## Recommended near-term priority (2026-08-14)
+## Recommended near-term priority (2026-08-15)
 
 Not a new milestone, just a reading order through the currently-open tasks that matter most right
 now, agreed after a review of feature gaps against other "state-of-the-art" file managers (Marta,
 Total Commander, ForkLift, Finder/Explorer). Superseded by whatever's actually picked up next —
 update this list if priorities shift rather than treating it as fixed.
 
-1. **0071** — preview panel. Biggest missing "feels modern" gap; the folder-size-on-Space feature
-   and the PDF/CBR competitive question (see the task file) both live here now.
-2. **0134** — thumbnails + grid/icon view. Pairs with 0071; closes an explicit gap flagged on both
-   0059 and 0060.
-3. **0077** — checksums and duplicate-file detection. Commonly expected, self-contained, no blocking
+1. **0134** — thumbnails + grid/icon view. Was paired with 0071 (now done); closes an explicit gap
+   flagged on both 0059 and 0060.
+2. **0077** — checksums and duplicate-file detection. Commonly expected, self-contained, no blocking
    dependencies.
-4. **0133** — populate native menu bar content. Cheap relative to payoff: the hook point already
+3. **0133** — populate native menu bar content. Cheap relative to payoff: the hook point already
    exists (0058/0059/0131), this is populating content, not building infrastructure.
-5. **0098** — frontend i18n. Gets more expensive to retrofit the more UI strings accumulate; worth
+4. **0098** — frontend i18n. Gets more expensive to retrofit the more UI strings accumulate; worth
    doing before the app grows much further.
 
-0135–0138 (git status column, Finder tags/xattrs, Services menu/Send to, mount-share action) are
-real gaps but lower priority than the above — pick up opportunistically.
+0135–0138 (git status column, Finder tags/xattrs, Services menu/Send to, mount-share action) and
+0141–0142 (archive-summary preview, plugin-contributed preview renderers — split out of 0071 on
+2026-08-15) are real gaps but lower priority than the above — pick up opportunistically.
 
 ## Step 1 — Repository bootstrap (§33.1)
 
@@ -179,7 +178,7 @@ the workspace-service tasks; see Step 2b above).
 - [x] 0068 Recursive filesystem search
 - [x] 0069 Tabs per pane
 - [x] 0070 Favourites, bookmarks and recent locations
-- [ ] 0071 Preview service and initial preview panel
+- [x] 0071 Preview service and initial preview panel *(archive-summary/plugin-preview extensibility split out to 0141/0142)*
 - [x] 0072 Multi-rename tool
 - [x] 0084 Workspace management UI *(after 0069; 0082 already complete)*
 
@@ -263,6 +262,8 @@ Features not yet implemented.
 - [ ] 0138 OS-level "Mount share…" action *(needs 0102; low priority — only if OS-native mounting causes friction)*
 - [ ] 0139 Directory tree dialog / sidebar tree view *(split out of 0129)*
 - [ ] 0140 File/folder Properties dialog *(split out of 0129)*
+- [ ] 0141 Archive summary preview *(split out of 0071)*
+- [ ] 0142 Plugin-contributed preview renderers *(split out of 0071)*
 
 ## Architecture deepening — backend
 

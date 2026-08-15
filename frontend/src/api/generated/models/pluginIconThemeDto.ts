@@ -23,15 +23,15 @@ export interface PluginIconThemeDto {
   fileExtensions: PluginIconThemeDtoFileExtensions;
   /** Exact file name to icon definition key, matched before `file_extensions`. */
   fileNames: PluginIconThemeDtoFileNames;
-  /** Exact directory name to icon definition key. */
-  folderNames: PluginIconThemeDtoFolderNames;
-  /** Exact expanded directory name to icon definition key. */
-  folderNamesExpanded: PluginIconThemeDtoFolderNamesExpanded;
   /**
      * Default icon definition key for `directory` entries.
      * @nullable
      */
   folder?: string | null;
+  /** Exact directory name (e.g. `".git"`) to icon definition key. */
+  folderNames: PluginIconThemeDtoFolderNames;
+  /** Exact expanded directory name to icon definition key. */
+  folderNamesExpanded: PluginIconThemeDtoFolderNamesExpanded;
   /** Every icon asset this theme can reference, keyed by a theme-local name. */
   iconDefinitions: PluginIconThemeDtoIconDefinitions;
   /** MIME type prefix (e.g. `"image/"`) to icon definition key. */

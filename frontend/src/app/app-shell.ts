@@ -92,7 +92,7 @@ import type { SelectionPlatform } from '../features/selection/keybindings';
 import {
   emptySelection,
   getSelectedEntries,
-  getSelectedEntryLocations,
+  getSelectedEntriesOrCursor,
   reduceSelection,
   type SelectionState,
 } from '../features/selection/selection';
@@ -361,6 +361,9 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
    */
   const directories = new Map<string, PaneDirectoryView>();
   const selections = new Map<string, SelectionState>();
+  /** The most recently started recursive folder-size walk (task 0071, Ctrl+.) - starting a new
+   * one aborts whatever the previous one was still doing, since only one result is ever shown. */
+  let folderSizeCalculation: AbortController | undefined;
   /** Lister sessions are owned by tabs, so switching tabs never closes or obscures them. */
   const viewerByTab = new Map<
     string,
@@ -478,6 +481,15 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     settingsController.closeSettingsDialog();
   }
 
+  /** Opens the Settings dialog (Cmd+,/Ctrl+,) - mirrors the settings toolbar button's "open"
+   * branch (`settingsDisclosureElement.open = true`) rather than toggling, so pressing the
+   * shortcut again while already open is a harmless no-op instead of closing it. */
+  function openSettingsDialog(): void {
+    if (settingsDisclosureElement === undefined || settingsDialogOpen) return;
+    settingsDisclosureElement.open = true;
+    settingsDialogOpen = true;
+  }
+
   function applyIconTheme(themeId: string): void {
     settingsController.applyIconTheme(themeId);
   }
@@ -488,6 +500,17 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       : undefined;
   function handleSystemThemeChange(): void {
     if (theme === 'auto') settingsController.syncTauriWindowBackground();
+  }
+
+  /** Restores real DOM keyboard focus to the active pane whenever the OS window regains it (e.g.
+   * alt-tabbing back into the app). Without this, `document.activeElement` is left wherever it was
+   * before the app lost focus (often nowhere useful), so the cursor row still *looks* highlighted
+   * but arrow keys silently do nothing until the user clicks a row to re-establish focus manually. */
+  function handleWindowFocus(): void {
+    const activePaneId = workspace?.activePaneId;
+    if (activePaneId === undefined) return;
+    if (focusPane !== undefined) focusPane(activePaneId);
+    else void activatePane(attrsClient, activePaneId);
   }
 
   async function loadSettings(client: FileManagerClient): Promise<void> {
@@ -617,6 +640,43 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       caseSensitive: false,
       wholeWord: true,
     };
+  }
+
+  /** Recursively sums `entry`'s size (task 0071's Total Commander-style folder-size key, Ctrl+.)
+   * and patches its row's `size` field locally once the walk completes - no backend event/delta is
+   * involved, so a result that arrives after the user has navigated elsewhere (the entry no longer
+   * present in `paneId`'s current listing) is silently discarded rather than misapplied. Only the
+   * most recently started calculation is kept - starting a new one implicitly abandons any previous
+   * still in flight (mirrors the single-viewer-at-a-time convention elsewhere in this file). */
+  function calculateFolderSize(
+    client: FileManagerClient,
+    paneId: PaneId,
+    entry: EntrySummary,
+  ): void {
+    folderSizeCalculation?.abort();
+    const controller = new AbortController();
+    folderSizeCalculation = controller;
+    void client
+      .calculateFolderSize({ location: entry.location }, controller.signal)
+      .then((result) => {
+        if (controller.signal.aborted) return;
+        const key = activeTabKey(paneId);
+        const current = directories.get(key);
+        if (current === undefined) return;
+        directories.set(key, {
+          ...current,
+          entries: current.entries.map((candidate) =>
+            candidate.id === entry.id ? { ...candidate, size: result.totalBytes } : candidate,
+          ),
+        });
+        m.redraw();
+      })
+      .catch((error: unknown) => {
+        if (controller.signal.aborted) return;
+        toast({
+          html: `Couldn't calculate the size of "${entry.name}": ${error instanceof Error ? error.message : String(error)}`,
+        });
+      });
   }
 
   /** Opens the Lister-style viewer in a new tab in `paneId`. `openMetadata` shows the Alt+Space
@@ -924,7 +984,9 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       active === undefined ? undefined : directories.get(activeTabKey(active.paneId));
     const selection =
       active === undefined ? undefined : selections.get(activeTabKey(active.paneId));
-    return getSelectedEntryLocations(selection, directory?.entries ?? []);
+    return getSelectedEntriesOrCursor(selection, directory?.entries ?? []).map(
+      (entry) => entry.location,
+    );
   }
 
   /**
@@ -1263,6 +1325,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     openViewer: (paneId, entry, initialSearch, openMetadata) =>
       openViewer(attrsClient, paneId, entry, initialSearch, openMetadata),
     openEditor: (paneId, entry) => openEditor(attrsClient, paneId, entry),
+    calculateFolderSize: (paneId, entry) => calculateFolderSize(attrsClient, paneId, entry),
     actionContext: () => actionCommandController.actionContext(),
     commandAvailabilityContext: (selectedEntries, paneId) =>
       actionCommandController.commandAvailabilityContext(selectedEntries, paneId),
@@ -1375,6 +1438,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       void attrsClient.quit?.();
     },
     startComparison: () => comparisonController.startComparison('sizeAndTimestamp'),
+    openSettingsDialog,
   };
 
   const findFilesControllerContext: FindFilesControllerContext = {
@@ -1439,7 +1503,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     getWorkspace: () => workspace,
     getNavigation: () => navigation,
     getOpsController: () => opsController,
-    getGetSelectedEntries: () => getSelectedEntries,
+    getGetSelectedEntries: () => getSelectedEntriesOrCursor,
     getClipboard: () => clipboard(),
     replaceClipboard: (next) => replaceClipboard(next),
     toast: (options) => toast(options),
@@ -1667,6 +1731,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       runtimeKind = attrs.runtime;
       document.addEventListener('keydown', globalKeydownHandler);
       systemThemeQuery?.addEventListener('change', handleSystemThemeChange);
+      window.addEventListener('focus', handleWindowFocus);
       appState = applyAppPatches(
         createInitialAppState(attrs.runtime),
         connectionPatch({ status: attrs.client.connection.get() }),
@@ -1783,6 +1848,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       dialogs.clearArchiveCredential();
       document.removeEventListener('keydown', globalKeydownHandler);
       systemThemeQuery?.removeEventListener('change', handleSystemThemeChange);
+      window.removeEventListener('focus', handleWindowFocus);
       if (operationFrame !== undefined) cancelAnimationFrame(operationFrame);
       for (const timer of autoDismissTimers.values()) clearTimeout(timer);
       autoDismissTimers.clear();

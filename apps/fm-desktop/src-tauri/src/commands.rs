@@ -9,15 +9,16 @@ use fm_domain::OperationId;
 use fm_transport_dto::{
     AcceptSshHostKeyRequestDto, ActionDescriptorDto, ActionResultDto, ApplicationErrorDto,
     ApplySyncPlanRequestDto, ApplySyncPlanResponseDto, ArchiveCredentialRequestDto,
-    ComparisonPageDto, ConnectionDto, CreateConnectionRequestDto, CreateWorkspaceRequestDto,
-    DirectorySnapshotDto, EntryMetadataDto, EntryMetadataRequest, GenerateSyncPlanRequestDto,
-    HostKeyProbeDto, InvokeActionRequestDto, ListDirectoryRequest, LocationDto, NavigateRequest,
-    OperationDto, PluginDescriptorDto, PluginLogEntryDto, ReadFileRangeRequestDto,
-    ReadFileRangeResponseDto, ResolveOperationConflictRequestDto, RuntimeCapabilitiesDto,
-    SearchInFileRequestDto, SearchInFileResponseDto, SetPaneActivityRequest, SettingsDto,
-    StartComparisonRequestDto, StartComparisonResponseDto, StartOperationRequestDto,
-    StartSearchRequestDto, StartSearchResponseDto, SyncPlanDto, UpdateConnectionRequestDto,
-    WorkspaceCommandDto, WorkspaceDto, WorkspaceSummaryDto,
+    CalculateFolderSizeRequestDto, CalculateFolderSizeResponseDto, ComparisonPageDto,
+    ConnectionDto, CreateConnectionRequestDto, CreateWorkspaceRequestDto, DirectorySnapshotDto,
+    EntryMetadataDto, EntryMetadataRequest, GenerateSyncPlanRequestDto, HostKeyProbeDto,
+    InvokeActionRequestDto, ListDirectoryRequest, LocationDto, NavigateRequest, OperationDto,
+    PluginDescriptorDto, PluginLogEntryDto, ReadFileRangeRequestDto, ReadFileRangeResponseDto,
+    ResolveOperationConflictRequestDto, RuntimeCapabilitiesDto, SearchInFileRequestDto,
+    SearchInFileResponseDto, SetPaneActivityRequest, SettingsDto, StartComparisonRequestDto,
+    StartComparisonResponseDto, StartOperationRequestDto, StartSearchRequestDto,
+    StartSearchResponseDto, SyncPlanDto, UpdateConnectionRequestDto, WorkspaceCommandDto,
+    WorkspaceDto, WorkspaceSummaryDto,
 };
 
 use crate::{
@@ -436,6 +437,20 @@ pub(crate) async fn search_in_file(
     state
         .service
         .search_in_file(request)
+        .await
+        .map_err(|error| error.into_dto(Uuid::new_v4()))
+}
+
+/// Recursively sums a directory's total size through the same application service as Axum
+/// (task 0071's Total Commander-style folder-size key).
+#[tauri::command]
+pub(crate) async fn calculate_folder_size(
+    state: State<'_, AppState>,
+    request: CalculateFolderSizeRequestDto,
+) -> Result<CalculateFolderSizeResponseDto, ApplicationErrorDto> {
+    state
+        .service
+        .calculate_folder_size(request)
         .await
         .map_err(|error| error.into_dto(Uuid::new_v4()))
 }

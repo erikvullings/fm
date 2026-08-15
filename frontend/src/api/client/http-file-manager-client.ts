@@ -5,6 +5,8 @@ import type {
   ApplySyncPlanResult,
   ArchiveCredentialRequest,
   BackendEvent,
+  CalculateFolderSizeRequest,
+  CalculateFolderSizeResult,
   ComparisonPage,
   Connection,
   ConnectionId,
@@ -76,6 +78,7 @@ import {
   listDirectory as requestDirectory,
   getEntryMetadata as requestEntryMetadata,
   getFileIcon as requestFileIcon,
+  calculateFolderSize as requestFolderSizeCalculation,
   loadEditableFile as requestLoadEditableFile,
   navigatePane as requestNavigation,
   cancelOperation as requestOperationCancel,
@@ -396,6 +399,20 @@ export class HttpFileManagerClient implements FileManagerClient {
     );
     if (response.status !== 200) {
       throw new Error(`Unexpected searchInFile response status: ${response.status}`);
+    }
+    return response.data;
+  }
+
+  async calculateFolderSize(
+    request: CalculateFolderSizeRequest,
+    signal?: AbortSignal,
+  ): Promise<CalculateFolderSizeResult> {
+    const response = await requestFolderSizeCalculation(
+      request,
+      signal !== undefined ? { signal } : undefined,
+    );
+    if (response.status !== 200) {
+      throw new Error(`Unexpected calculateFolderSize response status: ${response.status}`);
     }
     return response.data;
   }

@@ -10,6 +10,8 @@ import type {
   ApplySyncPlanRequestDto,
   ApplySyncPlanResponseDto,
   ArchiveCredentialRequestDto,
+  CalculateFolderSizeRequestDto,
+  CalculateFolderSizeResponseDto,
   ComparisonPageDto,
   ConnectionDto,
   CreateConnectionRequestDto,
@@ -1041,6 +1043,59 @@ export const refreshDirectory = async (listDirectoryRequest: ListDirectoryReques
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
     body: JSON.stringify(listDirectoryRequest)
+  }
+);}
+
+
+
+export type calculateFolderSizeResponse200 = {
+  data: CalculateFolderSizeResponseDto
+  status: 200
+}
+
+export type calculateFolderSizeResponse400 = {
+  data: ApplicationErrorDto
+  status: 400
+}
+
+export type calculateFolderSizeResponse403 = {
+  data: ApplicationErrorDto
+  status: 403
+}
+
+export type calculateFolderSizeResponse404 = {
+  data: ApplicationErrorDto
+  status: 404
+}
+
+export type calculateFolderSizeResponseSuccess = (calculateFolderSizeResponse200) & {
+  headers: Headers;
+};
+export type calculateFolderSizeResponseError = (calculateFolderSizeResponse400 | calculateFolderSizeResponse403 | calculateFolderSizeResponse404) & {
+  headers: Headers;
+};
+
+export type calculateFolderSizeResponse = (calculateFolderSizeResponseSuccess | calculateFolderSizeResponseError)
+
+export const getCalculateFolderSizeUrl = () => {
+
+
+
+
+  return `/api/v1/directories/size`
+}
+
+/**
+ * @summary Recursively sums a directory's total size (task 0071's Total Commander-style folder-size key).
+ */
+export const calculateFolderSize = async (calculateFolderSizeRequestDto: CalculateFolderSizeRequestDto, options?: Parameters<typeof fetchMutator>[1]): Promise<calculateFolderSizeResponse> => {
+
+  return fetchMutator<calculateFolderSizeResponse>(getCalculateFolderSizeUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(calculateFolderSizeRequestDto)
   }
 );}
 

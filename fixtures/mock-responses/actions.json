@@ -21,6 +21,7 @@
   ,{ "id": "core.reopenClosedTab", "title": "Reopen closed tab", "category": "navigation", "defaultShortcuts": [{ "key": "T", "ctrl": true, "shift": true }], "contextRequirements": {}, "source": { "kind": "core" } }
   ,{ "id": "core.open", "title": "Open", "category": "navigation", "defaultShortcuts": [{ "key": "Enter" }], "contextRequirements": {}, "source": { "kind": "core" } }
   ,{ "id": "core.view", "title": "View", "category": "fileOperations", "defaultShortcuts": [{ "key": "F3" }], "contextRequirements": {}, "source": { "kind": "core" } }
+  ,{ "id": "core.calculateFolderSize", "title": "Calculate Folder Size", "category": "fileOperations", "defaultShortcuts": [{ "key": ".", "ctrl": true }], "contextRequirements": {}, "source": { "kind": "core" } }
   ,{ "id": "core.edit", "title": "Edit", "category": "fileOperations", "defaultShortcuts": [{ "key": "F4" }], "contextRequirements": {}, "source": { "kind": "core" } }
   ,{ "id": "core.openWith", "title": "Open With…", "category": "fileOperations", "defaultShortcuts": [{ "key": "Enter", "ctrl": true }], "contextRequirements": {}, "source": { "kind": "core" } }
   ,{ "id": "core.revealInSystemFileManager", "title": "Reveal in File Manager", "category": "fileOperations", "defaultShortcuts": [], "contextRequirements": {}, "source": { "kind": "core" } }

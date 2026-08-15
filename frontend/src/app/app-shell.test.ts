@@ -170,6 +170,24 @@ describe('AppShell', () => {
     expect(root.querySelector('[data-pane-id="right"]')?.getAttribute('data-active')).toBe('true');
   });
 
+  it('restores keyboard focus to the active pane when the window regains focus', async () => {
+    mountShell('mock');
+    await vi.waitFor(() => expect(root.querySelectorAll('.fm-workspace-pane')).toHaveLength(2));
+    const left = root.querySelector<HTMLElement>('[data-pane-id="left"] > .fm-pane');
+    left?.focus();
+    expect(document.activeElement).toBe(left);
+
+    // Simulates alt-tabbing away and back: DOM focus is left wherever the OS/browser happened to
+    // put it (here, nothing - the same as a real app losing then regaining window focus).
+    (document.activeElement as HTMLElement | null)?.blur();
+    expect(document.activeElement).not.toBe(left);
+
+    window.dispatchEvent(new Event('focus'));
+    m.redraw.sync();
+
+    expect(document.activeElement).toBe(left);
+  });
+
   it('End loads every remaining page and moves the cursor to the true last entry', async () => {
     const client = new MockFileManagerClient({ pageSize: 100 });
     m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
@@ -382,8 +400,11 @@ describe('AppShell', () => {
     input?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
     input?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
     await vi.waitFor(() => expect(invokeAction).toHaveBeenCalledOnce());
+    // "Calculate Folder Size" (task 0071) sorts alphabetically first among the unfiltered,
+    // always-available action list, so one ArrowDown from the palette's initial state now lands
+    // there instead of "Clear selection".
     expect(invokeAction).toHaveBeenCalledWith(
-      expect.objectContaining({ actionId: 'core.clearSelection' }),
+      expect.objectContaining({ actionId: 'core.calculateFolderSize' }),
     );
 
     document.dispatchEvent(

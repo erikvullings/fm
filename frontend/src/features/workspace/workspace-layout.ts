@@ -345,7 +345,13 @@ export const WorkspaceLayoutView: FactoryComponent<WorkspaceLayoutViewAttrs> = (
         'data-active': String(active),
         tabindex: active ? 0 : -1,
         oncreate: ({ dom }) => paneElements.set(paneId, dom as HTMLElement),
-        onremove: () => paneElements.delete(paneId),
+        // Guard against removal firing *after* a replacement node's `oncreate` (possible since
+        // this vnode has no explicit `key`, so a positional diff can create-then-remove instead
+        // of patching in place) - an unconditional delete here would wipe the fresh reference and
+        // leave `paneId` permanently unfocusable via click/Tab until a full remount.
+        onremove: ({ dom }) => {
+          if (paneElements.get(paneId) === dom) paneElements.delete(paneId);
+        },
         onfocusin: (event: FocusEvent) => {
           // The pane's keyboard surface is the focus/active-pane authority. Ignore descendant
           // controls here: their click handler activates the pane, avoiding a competing

@@ -163,6 +163,7 @@ describe('MockFileManagerClient API', () => {
       'core.reopenClosedTab',
       'core.open',
       'core.view',
+      'core.calculateFolderSize',
       'core.edit',
       'core.openWith',
       'core.revealInSystemFileManager',
@@ -618,5 +619,26 @@ describe('MockFileManagerClient file range and content search methods', () => {
         wholeWord: false,
       }),
     ).rejects.toMatchObject({ code: 'invalidRequest' });
+  });
+
+  it('recursively sums a directory tree, descending into subdirectories', async () => {
+    const client = new MockFileManagerClient();
+
+    const result = await client.calculateFolderSize({
+      location: { providerId: 'file', uri: 'mock:///Documents' },
+    });
+
+    // mock:///Documents/report.pdf (8192) + mock:///Documents/Projects/file-manager.md (2048)
+    expect(result).toEqual({ totalBytes: 10_240, fileCount: 2 });
+  });
+
+  it('rejects a folder-size request for an unknown directory', async () => {
+    const client = new MockFileManagerClient();
+
+    await expect(
+      client.calculateFolderSize({
+        location: { providerId: 'file', uri: 'mock:///does-not-exist' },
+      }),
+    ).rejects.toMatchObject({ code: 'directoryNotFound' });
   });
 });

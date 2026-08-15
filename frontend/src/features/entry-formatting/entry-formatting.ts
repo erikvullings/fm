@@ -46,12 +46,15 @@ function scaledSize(
   return `${formatted} ${units[unitIndex]}`;
 }
 
-/** Formats the raw entry byte count according to settings; directories never expose a size. */
+/** Formats the raw entry byte count according to settings. Directories normally have no `size`
+ * (the backend never populates one), so they render blank by default too - unless `size` has been
+ * explicitly filled in client-side after a recursive folder-size calculation (task 0071's Total
+ * Commander-style Ctrl+. key), in which case it's formatted exactly like a file's. */
 export function formatEntrySize(
   entry: EntrySizeValue,
   settings: EntryFormatSettings = DEFAULT_ENTRY_FORMAT_SETTINGS,
 ): string {
-  if (entry.kind === 'directory' || entry.size === undefined) {
+  if (entry.size === undefined) {
     return '--';
   }
   if (settings.sizeFormat === 'bytes') {

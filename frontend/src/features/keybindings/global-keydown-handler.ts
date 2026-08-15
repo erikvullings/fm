@@ -30,7 +30,7 @@ import { isParentEntry } from '../panes/parent-entry';
 import type { TabController } from '../panes/tab-controller';
 import type { FileViewerController, FileViewerState } from '../preview/file-viewer-controller';
 import type { SelectionPlatform } from '../selection/keybindings';
-import { getSelectedEntries, type SelectionState } from '../selection/selection';
+import { getSelectedEntriesOrCursor, type SelectionState } from '../selection/selection';
 
 /** Fixed sort applied by the Ctrl+F3..Ctrl+F7 shortcuts (Total Commander parity, task 0128). */
 const SORT_SHORTCUT_DESCRIPTORS: Readonly<Record<string, readonly SortDescriptor[]>> = {
@@ -110,6 +110,9 @@ export interface GlobalKeydownContext {
     openMetadata?: boolean,
   ): void;
   openEditor(paneId: PaneId, entry: EntrySummary): void;
+  /** Recursively sums a directory's total size and fills in its Size cell once known (task 0071's
+   * Total Commander-style folder-size key, Ctrl+.). */
+  calculateFolderSize(paneId: PaneId, entry: EntrySummary): void;
   actionContext(): ActionInvocationContext;
   commandAvailabilityContext(
     entries?: readonly EntrySummary[],
@@ -139,6 +142,8 @@ export interface GlobalKeydownContext {
   /** Starts (or re-runs) a directory comparison of the first two panes (Shift+F2, task 0075).
    * Self-guards on fewer than two open panes, same as the toolbar's Compare button. */
   startComparison(): void;
+  /** Opens the Settings dialog (Cmd+,/Ctrl+,) - a no-op if already open. */
+  openSettingsDialog(): void;
 }
 
 function isEditableTarget(target: EventTarget | null): boolean {
@@ -150,12 +155,14 @@ function isEditableTarget(target: EventTarget | null): boolean {
   );
 }
 
-function selectedEntriesOrCursor(
+/** Resolves *only* the cursor entry, ignoring any marked selection - F3/F4/Ctrl+Enter (view, edit,
+ * open-with) are single-file commands that always act on whatever the cursor is on, Total
+ * Commander style, unlike F5/F6 (copy/move) which prefer the marked set and fall back to the
+ * cursor only when nothing is marked (`getSelectedEntriesOrCursor`). */
+function cursorOnlyEntry(
   selection: SelectionState | undefined,
   entries: readonly EntrySummary[],
 ): readonly EntrySummary[] {
-  const selected = getSelectedEntries(selection, entries);
-  if (selected.length > 0) return selected;
   const cursor =
     selection?.cursorEntryId === undefined
       ? undefined
@@ -246,6 +253,15 @@ export function createGlobalKeydownHandler(
     ) {
       event.preventDefault();
       context.setCommandPaletteOpen(true);
+      context.redraw();
+      return;
+    }
+    // Cmd+, (Ctrl+, elsewhere) opens Settings - the standard desktop-app "Preferences" shortcut,
+    // same treatment as Ctrl+P above (a pure UI toggle with no backend action, so it's
+    // special-cased here rather than routed through the action registry/`dispatchKeybinding`).
+    if (hasPrimaryModifier(event, context.getPlatform()) && !event.altKey && event.key === ',') {
+      event.preventDefault();
+      context.openSettingsDialog();
       context.redraw();
       return;
     }
@@ -414,7 +430,7 @@ export function createGlobalKeydownHandler(
         active === undefined
           ? undefined
           : context.getDirectories().get(context.activeTabKey(active.paneId));
-      const selected = getSelectedEntries(selection, directory?.entries ?? []);
+      const selected = getSelectedEntriesOrCursor(selection, directory?.entries ?? []);
       const workspace = context.getWorkspace();
       const otherPaneId = workspace?.paneOrder.find((paneId) => paneId !== active?.paneId);
       const destination =
@@ -440,7 +456,7 @@ export function createGlobalKeydownHandler(
         active === undefined
           ? undefined
           : context.getDirectories().get(context.activeTabKey(active.paneId));
-      const selected = getSelectedEntries(selection, directory?.entries ?? []);
+      const selected = getSelectedEntriesOrCursor(selection, directory?.entries ?? []);
       if (selected.length > 0 && directory?.location !== undefined) {
         event.preventDefault();
         context.setArchiveCreateRequest({
@@ -461,7 +477,7 @@ export function createGlobalKeydownHandler(
         active === undefined
           ? undefined
           : context.getDirectories().get(context.activeTabKey(active.paneId));
-      const selected = getSelectedEntries(selection, directory?.entries ?? []);
+      const selected = getSelectedEntriesOrCursor(selection, directory?.entries ?? []);
       if (selected.length > 0 && directory?.location !== undefined) {
         event.preventDefault();
         context.setArchiveCreateRequest({
@@ -507,7 +523,7 @@ export function createGlobalKeydownHandler(
         active === undefined
           ? undefined
           : context.getDirectories().get(context.activeTabKey(active.paneId));
-      const selected = selectedEntriesOrCursor(selection, directory?.entries ?? []);
+      const selected = getSelectedEntriesOrCursor(selection, directory?.entries ?? []);
       const workspace = context.getWorkspace();
       const otherPaneId = workspace?.paneOrder.find((paneId) => paneId !== active?.paneId);
       const destination =
@@ -533,7 +549,7 @@ export function createGlobalKeydownHandler(
         active === undefined
           ? undefined
           : context.getDirectories().get(context.activeTabKey(active.paneId));
-      const selected = selectedEntriesOrCursor(selection, directory?.entries ?? []);
+      const selected = getSelectedEntriesOrCursor(selection, directory?.entries ?? []);
       if (selected.length > 0) {
         event.preventDefault();
         const locations = selected.map((entry) => entry.location);
@@ -561,7 +577,7 @@ export function createGlobalKeydownHandler(
         active === undefined
           ? undefined
           : context.getDirectories().get(context.activeTabKey(active.paneId));
-      const selected = selectedEntriesOrCursor(selection, directory?.entries ?? []);
+      const selected = getSelectedEntriesOrCursor(selection, directory?.entries ?? []);
       if (selected.length > 0) {
         event.preventDefault();
         void context.getOpsController().delete(
@@ -832,6 +848,33 @@ export function createGlobalKeydownHandler(
         return;
       }
     }
+    if (dispatchedAction === 'core.calculateFolderSize') {
+      // No backend "cursor entry must be a directory" predicate exists (see action.rs's comment
+      // on this action) - files/parent-row are silently ignored here instead.
+      const active = context.activeDirectory();
+      const selection =
+        active === undefined
+          ? undefined
+          : context.getSelections().get(context.activeTabKey(active.paneId));
+      const directory =
+        active === undefined
+          ? undefined
+          : context.getDirectories().get(context.activeTabKey(active.paneId));
+      const cursorEntry =
+        selection?.cursorEntryId === undefined
+          ? undefined
+          : directory?.entries.find((entry) => entry.id === selection.cursorEntryId);
+      if (
+        active !== undefined &&
+        cursorEntry !== undefined &&
+        cursorEntry.kind === 'directory' &&
+        !isParentEntry(cursorEntry.id)
+      ) {
+        event.preventDefault();
+        context.calculateFolderSize(active.paneId, cursorEntry);
+        return;
+      }
+    }
     if (dispatchedAction === 'core.edit' && !forceSystemEdit) {
       const active = context.activeDirectory();
       const selection =
@@ -842,7 +885,7 @@ export function createGlobalKeydownHandler(
         active === undefined
           ? undefined
           : context.getDirectories().get(context.activeTabKey(active.paneId));
-      const selected = getSelectedEntries(selection, directory?.entries ?? []);
+      const selected = cursorOnlyEntry(selection, directory?.entries ?? []);
       const editEntry = selected?.length === 1 ? selected[0] : undefined;
       const workspace = context.getWorkspace();
       const otherPaneId = workspace?.paneOrder.find((paneId) => paneId !== active?.paneId);
@@ -892,7 +935,7 @@ export function createGlobalKeydownHandler(
         active === undefined
           ? undefined
           : context.getDirectories().get(context.activeTabKey(active.paneId));
-      const selected = getSelectedEntries(selection, directory?.entries ?? []);
+      const selected = cursorOnlyEntry(selection, directory?.entries ?? []);
       const parameters = context.platformActionParameters(
         viewActionId,
         selected ?? [],

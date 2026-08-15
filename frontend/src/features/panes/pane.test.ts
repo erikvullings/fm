@@ -984,8 +984,7 @@ describe('Pane navigation input', () => {
 
     expect(onSelectionAction.mock.calls.map(([action]) => action)).toEqual([
       { type: 'extendRange', offset: 1 },
-      { type: 'toggle', entryId: 'one' },
-      { type: 'moveCursor', offset: 1 },
+      { type: 'toggleAndAdvance', entryId: 'one', offset: 1 },
       { type: 'selectAll' },
     ]);
   });
@@ -1016,8 +1015,7 @@ describe('Pane navigation input', () => {
     pane?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Insert', bubbles: true }));
 
     expect(onSelectionAction.mock.calls.map(([action]) => action)).toEqual([
-      { type: 'toggle', entryId: 'one' },
-      { type: 'moveCursor', offset: 1 },
+      { type: 'toggleAndAdvance', entryId: 'one', offset: 1 },
     ]);
   });
 
@@ -1076,7 +1074,7 @@ describe('Pane navigation input', () => {
       ?.dispatchEvent(new KeyboardEvent('keydown', { key: 't', bubbles: true }));
 
     expect(onSelectionAction.mock.calls.map(([action]) => action)).toEqual([
-      { type: 'selectOnly', entryId: 'two' },
+      { type: 'positionCursor', entryId: 'two' },
       { type: 'selectOnly', entryId: 'one' },
     ]);
     vi.useRealTimers();
@@ -1108,6 +1106,18 @@ describe('Pane navigation input', () => {
       { type: 'extendRangeTo', entryId: 'two' },
       { type: 'toggle', entryId: 'one' },
     ]);
+  });
+
+  it('clicking a row moves real DOM focus onto the pane, not just selection state', () => {
+    mount(attrs({ cursorIndex: 0 }));
+    const pane = root.querySelector<HTMLElement>('.fm-pane');
+    expect(document.activeElement).not.toBe(pane);
+
+    root
+      .querySelectorAll<HTMLElement>('.fm-directory-row')[0]
+      ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+
+    expect(document.activeElement).toBe(pane);
   });
 
   it('keeps and highlights a matching typeahead prefix until explicitly cleared', () => {
