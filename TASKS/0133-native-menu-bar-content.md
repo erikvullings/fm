@@ -1,6 +1,6 @@
 # 0133 Populate native menu bar content (macOS + Windows)
 
-Status: in-progress (automated phase complete, manual testing required)
+Status: done
 Priority: high
 Owner: unassigned
 Agent: claude
@@ -242,3 +242,6 @@ the app's capabilities and which text fields/inputs rely on for their built-in E
     `tsc --noEmit` clean, full `vitest run` green (1115 passed; the one other failure,
     `config/mithril-inspector.test.ts`, is an unrelated pre-existing timeout flake, confirmed by
     passing cleanly in isolation).
+- 2026-08-15 claude: User confirmed via manual testing (`pnpm run dev:tauri`) that the macOS menu
+  bar and all reported fixes work as expected. Marking done. Windows half remains explicitly out
+  of scope, deferred to task 0131 (still open/unstarted) per this task's own acceptance criteria.

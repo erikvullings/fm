@@ -27,9 +27,7 @@ update this list if priorities shift rather than treating it as fixed.
    flagged on both 0059 and 0060.
 2. **0077** — checksums and duplicate-file detection. Commonly expected, self-contained, no blocking
    dependencies.
-3. **0133** — populate native menu bar content. Cheap relative to payoff: the hook point already
-   exists (0058/0059/0131), this is populating content, not building infrastructure.
-4. **0098** — frontend i18n. Gets more expensive to retrofit the more UI strings accumulate; worth
+3. **0098** — frontend i18n. Gets more expensive to retrofit the more UI strings accumulate; worth
    doing before the app grows much further.
 
 0135–0138 (git status column, Finder tags/xattrs, Services menu/Send to, mount-share action) and
@@ -254,7 +252,7 @@ Features not yet implemented.
 - [x] 0130 Windows native file icon extraction *(split out of 0060; layers onto the 0091 overlay pipeline)*
 - [ ] 0131 Windows native menu bar *(split out of 0060; hook-point-only, mirrors the macOS 0058 implementation)*
 - [x] 0132 Windows defect: operation routes return 500 / deadlock *(pre-existing, found while verifying 0060; blocks the Windows pre-commit hook)*
-- [ ] 0133 Populate native menu bar content (macOS + Windows) *(needs 0059; Windows half also needs 0131)*
+- [x] 0133 Populate native menu bar content (macOS + Windows) *(macOS done; Windows half deferred, still needs 0131)*
 - [ ] 0134 Thumbnails for images/video and a grid/icon view mode
 - [ ] 0135 Git status column/badges
 - [ ] 0136 Extended attributes, Finder tags and Spotlight comments editor
