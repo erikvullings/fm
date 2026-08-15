@@ -3,7 +3,7 @@
 Status: in_progress
 Priority: medium
 Owner: unassigned
-Agent: claude
+Agent: unassigned
 Area: backend, frontend, desktop
 Depends on: none
 
