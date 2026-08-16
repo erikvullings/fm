@@ -95,6 +95,10 @@ export class TauriFileManagerClient implements FileManagerClient {
     await getCurrentWindow().close();
   }
 
+  async openWorkspaceWindow(workspaceId: WorkspaceId): Promise<void> {
+    await invoke<void>('open_workspace_window', { workspaceId });
+  }
+
   subscribeNativeFileDrops(listener: (drop: NativeFileDrop) => void): Promise<Unsubscribe> {
     return getCurrentWindow().onDragDropEvent(async ({ payload }) => {
       if (payload.type !== 'drop') return;

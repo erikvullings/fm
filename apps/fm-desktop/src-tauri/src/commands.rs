@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use serde::Serialize;
 use tauri::ipc::Channel;
-use tauri::{AppHandle, Runtime, State, Window};
+use tauri::{AppHandle, Manager, Runtime, State, Window};
 use uuid::Uuid;
 
 use fm_domain::OperationId;
@@ -457,6 +457,45 @@ pub(crate) async fn calculate_folder_size(
         .calculate_folder_size(request)
         .await
         .map_err(|error| error.into_dto(Uuid::new_v4()))
+}
+
+/// The window label used for a given workspace's dedicated window (task
+/// 0143 sub-task (b)). Every window this app creates for a workspace uses
+/// this label so a repeat request focuses the existing window instead of
+/// creating a duplicate.
+fn workspace_window_label(workspace_id: Uuid) -> String {
+    format!("workspace-{workspace_id}")
+}
+
+/// Opens a new OS window showing `workspace_id`, or focuses it if a window
+/// for that workspace is already open. The window's frontend loads with
+/// `?workspaceId=<id>` in its URL so it calls `start_workspace` with that id
+/// explicitly on boot instead of falling back to the last-active workspace
+/// (spec §5.3.7; see `frontend/src/app/app-shell.ts`'s startup path).
+///
+/// Deliberately does not reuse the `AppState`-managed `FileManagerService`
+/// through any window-specific state: every window shares the same `Arc`
+/// already `.manage()`d once in `run()`, so no new service wiring is needed
+/// here - only window lifecycle.
+#[tauri::command]
+pub(crate) async fn open_workspace_window(
+    app: AppHandle,
+    workspace_id: Uuid,
+) -> Result<(), String> {
+    let label = workspace_window_label(workspace_id);
+    if let Some(existing) = app.get_webview_window(&label) {
+        existing.set_focus().map_err(|error| error.to_string())?;
+        return Ok(());
+    }
+    let url = tauri::WebviewUrl::App(format!("index.html?workspaceId={workspace_id}").into());
+    tauri::WebviewWindowBuilder::new(&app, &label, url)
+        .title("Procyon")
+        .inner_size(1280.0, 800.0)
+        .title_bar_style(tauri::TitleBarStyle::Overlay)
+        .hidden_title(true)
+        .build()
+        .map_err(|error| error.to_string())?;
+    Ok(())
 }
 
 /// Lists every stored workspace as a lightweight summary, identical in shape

@@ -2151,6 +2151,13 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
                       workspaceController.renameWorkspaceAction(workspaceId, name),
                     onDelete: (workspaceId) =>
                       workspaceController.deleteWorkspaceAction(workspaceId),
+                    ...(attrsClient.openWorkspaceWindow === undefined
+                      ? {}
+                      : {
+                          onOpenInNewWindow: (workspaceId) => {
+                            void attrsClient.openWorkspaceWindow?.(workspaceId);
+                          },
+                        }),
                   }),
                 ]),
               ],

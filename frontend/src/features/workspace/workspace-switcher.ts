@@ -11,6 +11,9 @@ export interface WorkspaceSwitcherAttrs {
   readonly onCreate: () => void;
   readonly onRename: (workspaceId: WorkspaceId, name: string) => void;
   readonly onDelete: (workspaceId: WorkspaceId) => void;
+  /** Opens the workspace in its own OS window (task 0143 sub-task (b)); omitted entirely on hosts
+   * with no window concept (browser/HTTP), so the button below only renders on desktop. */
+  readonly onOpenInNewWindow?: (workspaceId: WorkspaceId) => void;
 }
 
 /**
@@ -98,6 +101,17 @@ export const WorkspaceSwitcher: FactoryComponent<WorkspaceSwitcherAttrs> = () =>
                             },
                           },
                           summary.name,
+                        ),
+                    renaming || attrs.onOpenInNewWindow === undefined
+                      ? undefined
+                      : m(
+                          'button.fm-workspace-open-window-button',
+                          {
+                            type: 'button',
+                            'aria-label': `Open ${summary.name} in a new window`,
+                            onclick: () => attrs.onOpenInNewWindow?.(summary.id),
+                          },
+                          'Open in New Window',
                         ),
                     renaming
                       ? undefined

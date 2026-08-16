@@ -88,7 +88,11 @@ export function createWorkspaceController(
     // Goes through the backend's startup lifecycle (spec §5.3.7) rather than picking
     // `listWorkspaces()[0]` (an unsorted filesystem-order listing): this reliably reopens the
     // workspace that was actually last active, not just an arbitrary one when several exist.
-    const loaded = await client.startWorkspace(undefined, signal);
+    // A window opened for a specific workspace (task 0143 sub-task (b), see
+    // `open_workspace_window` on the Tauri side) carries that workspace's id in the URL so this
+    // window starts on it explicitly instead of racing every other open window for last-active.
+    const requestedWorkspaceId = new URLSearchParams(window.location.search).get('workspaceId');
+    const loaded = await client.startWorkspace(requestedWorkspaceId ?? undefined, signal);
     const summaries = await client.listWorkspaces(signal);
     return { loaded, summaries };
   }

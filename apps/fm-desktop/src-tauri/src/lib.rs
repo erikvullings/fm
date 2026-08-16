@@ -45,6 +45,16 @@ fn build_context<R: tauri::Runtime>() -> tauri::Context<R> {
 pub fn run() {
     init_tracing();
     tauri::Builder::default()
+        // Registered first (per the plugin's own docs) so a second launch of the app is caught
+        // before any other setup runs: rather than starting a second OS process that would race
+        // this one over the same on-disk workspace store (task 0143), the second process hands its
+        // launch off to this callback and exits, and this instance just focuses its main window.
+        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.unminimize();
+                let _ = window.set_focus();
+            }
+        }))
         .manage(AppState {
             service: Arc::new(
                 FileManagerService::with_platform_adapter_and_credential_store(
@@ -93,6 +103,7 @@ pub fn run() {
             commands::cache_archive_password,
             commands::list_workspaces,
             commands::start_workspace,
+            commands::open_workspace_window,
             commands::create_workspace,
             commands::get_workspace,
             commands::delete_workspace,

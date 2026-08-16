@@ -107,3 +107,62 @@ Spaces-assignment itself as a known macOS limitation.
     still fully open: `last-active.json`'s lack of revision/CAS protection (noted in Implementation
     Notes above, not addressed), and all of sub-tasks (b) multi-window model and (c) per-workspace
     window-frame persistence/restore — no code written for either yet.
+- 2026-08-16: Implemented sub-task (b), the multi-window model — two parts:
+  - **Single-instance handoff** (the "don't race a second process" half of the acceptance
+    criteria): added `tauri-plugin-single-instance` (workspace dep in root `Cargo.toml`, crate dep
+    in `apps/fm-desktop/src-tauri/Cargo.toml`), registered as the *first* `.plugin()` call in
+    `run()` (`apps/fm-desktop/src-tauri/src/lib.rs`) per the plugin's own docs. Its callback just
+    focuses/unminimizes the `"main"` window — a second OS-level launch (Dock icon, `open -a`,
+    double-clicking the .app again) now hands off to the already-running process instead of
+    spawning a second one that would race the same on-disk workspace store. Not yet handled: the
+    callback ignores `argv`/`cwd`, so a second launch can't yet request opening a *specific*
+    workspace's window — see "not done" below.
+  - **Per-workspace windows**: new `open_workspace_window` Tauri command
+    (`apps/fm-desktop/src-tauri/src/commands.rs`) — labels each workspace's window
+    `workspace-<uuid>` and either focuses the existing one (`app.get_webview_window`) or builds a
+    new one via `WebviewWindowBuilder` with `WebviewUrl::App("index.html?workspaceId=<uuid>")`,
+    matching the main window's chrome (`title_bar_style(Overlay)`, `hidden_title(true)`,
+    1280x800). Registered in both `invoke_handler!` lists in `lib.rs`. The service itself needed no
+    new wiring: `AppState`'s `Arc<FileManagerService>` is already `.manage()`d once and shared by
+    every window Tauri creates.
+  - Frontend: `openOrCreateDefaultWorkspace`
+    (`frontend/src/features/workspace/workspace-controller.ts`) now reads `?workspaceId=` off
+    `window.location.search` and passes it to `client.startWorkspace(...)` explicitly when present
+    — this is what makes a workspace-specific window actually start on that workspace instead of
+    racing every other open window for "last-active". `FileManagerClient` gained an optional
+    `openWorkspaceWindow?(workspaceId)` (desktop-only, same `?`-optional pattern as the existing
+    `quit?()`), implemented only in `tauri-file-manager-client.ts` (invokes
+    `open_workspace_window`). `WorkspaceSwitcher` gained an "Open in New Window" button per
+    workspace row, rendered only when `onOpenInNewWindow` is passed — wired in `app-shell.ts` only
+    when `attrsClient.openWorkspaceWindow` exists, so the button is simply absent on the
+    browser/HTTP host (verified: HTTP-mode workspace switcher shows only
+    Default/Rename/Delete, no new button).
+  - Verified: `cargo test -p fm-desktop --lib` (16 passed), `cargo clippy -p fm-desktop --all-targets
+    -- -D warnings` (clean), `cargo fmt --all -- --check` (clean), `cargo build -p fm-desktop`
+    (clean, including the new `tauri-plugin-single-instance` dependency resolving and building).
+    Frontend: `tsc --noEmit`, `biome check` (both clean), `vitest run` (all 1116 tests still pass).
+    Manually re-verified in the browser preview (HTTP mode) that the workspace switcher renders
+    correctly with the button absent, and that the earlier column-resize fix and `startWorkspace`
+    plumbing are both still intact (450px persisted Name-column width survives reload, matching the
+    verification from the (a) note above) — this was prompted by the user reporting column resize
+    "still doesn't work," which did not reproduce in this browser-based dev preview; likely
+    explanation is the user was testing the actual Tauri desktop app before its `cargo tauri dev`
+    file-watcher had rebuilt with the fix (that watcher was mid-rebuild/lock-contended with this
+    session's own `cargo build` calls at least once during this session) — **could not confirm
+    directly**, since no tool in this session can drive or screenshot the real native macOS window.
+    Worth the user re-testing directly and reporting back if it's still broken there specifically.
+  - **Not done / still open for this task**:
+    - The single-instance callback doesn't parse `argv` to open a specific workspace on a second
+      launch (e.g. `open -a Procyon --args --workspace <id>`, or a Finder "open with" on a
+      particular file) — right now every second launch just focuses whatever's already open.
+    - No native menu entry (e.g. "File > New Window") drives `open_workspace_window` yet — the only
+      entry point is the new switcher button. `windowMenu()` in
+      `frontend/src/features/native-menu/native-menu-spec.ts` currently lists *tabs*, not real OS
+      windows, and reconciling that terminology overlap was out of scope for this pass.
+    - No tests (Rust or frontend) added specifically for `open_workspace_window`,
+      the single-instance callback, or the new switcher button — relied on the existing suites plus
+      manual/API-level verification, matching (a)'s note above.
+    - Sub-task (c), per-workspace window-frame (position/size/display) persistence and restore, is
+      still fully open — no code written. This is the natural next slice: now that
+      `open_workspace_window` exists as the one place windows get created, it's the right place to
+      also apply a persisted frame before `.build()`.
