@@ -361,6 +361,8 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       favouriteActions: favouriteActions(),
       tabs: nativeMenuWindowTabs(),
       canOpenNewWindow: attrsClient.openWorkspaceWindow !== undefined,
+      workspaces: sortWorkspaceSummaries(workspaceSummaries),
+      currentWorkspaceId: workspace?.id,
     });
     const serialized = JSON.stringify(spec);
     if (serialized === lastSentNativeMenuSpecJson) return;
@@ -400,6 +402,9 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     openNewWorkspaceWindow: () => {
       if (workspace === undefined) return;
       void attrsClient.openWorkspaceWindow?.(workspace.id);
+    },
+    openWorkspaceWindowById: (workspaceId) => {
+      void attrsClient.openWorkspaceWindow?.(workspaceId);
     },
   };
   let installedIconThemeId: string | undefined;

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import type { ActionDescriptor, KeyChord } from '../../models';
+import type { ActionDescriptor, KeyChord, WorkspaceSummary } from '../../models';
 import { buildNativeMenuSpec, type NativeMenuInputs, type NativeMenuTab } from './native-menu-spec';
 
 function action(
@@ -30,8 +30,26 @@ function tab(overrides: Partial<NativeMenuTab> = {}): NativeMenuTab {
   };
 }
 
+function workspaceSummary(overrides: Partial<WorkspaceSummary> = {}): WorkspaceSummary {
+  return {
+    id: 'workspace-1',
+    name: 'Default',
+    revision: 0,
+    updatedAt: '2026-01-01T00:00:00Z',
+    ...overrides,
+  };
+}
+
 function inputs(overrides: Partial<NativeMenuInputs> = {}): NativeMenuInputs {
-  return { actions: [], favouriteActions: [], tabs: [], canOpenNewWindow: false, ...overrides };
+  return {
+    actions: [],
+    favouriteActions: [],
+    tabs: [],
+    canOpenNewWindow: false,
+    workspaces: [],
+    currentWorkspaceId: undefined,
+    ...overrides,
+  };
 }
 
 describe('buildNativeMenuSpec', () => {
@@ -253,6 +271,51 @@ describe('buildNativeMenuSpec', () => {
       .filter((item) => item.checked)
       .map((item) => item.id);
     expect(checkedIds).toEqual(['ui.window.tab.pane-1:tab-2']);
+  });
+
+  it('adds an Open Workspace submenu listing every workspace when the host can open windows', () => {
+    const workspaces = [
+      workspaceSummary({ id: 'workspace-1', name: 'Default' }),
+      workspaceSummary({ id: 'workspace-2', name: 'Photos' }),
+    ];
+    const windowMenu = buildNativeMenuSpec(
+      inputs({ canOpenNewWindow: true, workspaces, currentWorkspaceId: 'workspace-2' }),
+    ).menus.find((menu) => menu.title === 'Window');
+    expect(windowMenu?.items).toEqual([
+      { kind: 'role', role: 'minimize' },
+      { kind: 'role', role: 'zoom' },
+      { kind: 'separator' },
+      {
+        kind: 'submenu',
+        title: 'Open Workspace',
+        items: [
+          {
+            kind: 'action',
+            id: 'ui.window.openWorkspace.workspace-1',
+            title: 'Default',
+            enabled: true,
+            checked: false,
+          },
+          {
+            kind: 'action',
+            id: 'ui.window.openWorkspace.workspace-2',
+            title: 'Photos',
+            enabled: true,
+            checked: true,
+          },
+        ],
+      },
+    ]);
+  });
+
+  it('omits the Open Workspace submenu on a host with no window concept', () => {
+    const windowMenu = buildNativeMenuSpec(
+      inputs({ canOpenNewWindow: false, workspaces: [workspaceSummary()] }),
+    ).menus.find((menu) => menu.title === 'Window');
+    expect(windowMenu?.items).toEqual([
+      { kind: 'role', role: 'minimize' },
+      { kind: 'role', role: 'zoom' },
+    ]);
   });
 
   it('populates the Help menu with the shortcuts-help action when registered', () => {

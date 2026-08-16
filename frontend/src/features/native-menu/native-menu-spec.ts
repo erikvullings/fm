@@ -5,8 +5,13 @@ import type {
   NativeMenuSpec,
   PaneId,
   TabId,
+  WorkspaceId,
+  WorkspaceSummary,
 } from '../../models';
-import { NEW_WORKSPACE_WINDOW_MENU_ID } from './native-menu-dispatch';
+import {
+  NEW_WORKSPACE_WINDOW_MENU_ID,
+  WINDOW_OPEN_WORKSPACE_MENU_ID_PREFIX,
+} from './native-menu-dispatch';
 
 /** One open tab, flattened for the Window menu (task 0133). */
 export interface NativeMenuTab {
@@ -30,9 +35,15 @@ export interface NativeMenuInputs {
   /** Every open tab across every pane, in display order. */
   readonly tabs: readonly NativeMenuTab[];
   /** Whether the host can open a workspace in its own OS window (task 0143) - `false` on hosts
-   * with no window concept (browser/HTTP), in which case the File menu's "New Window" item is
-   * omitted entirely rather than added disabled. */
+   * with no window concept (browser/HTTP), in which case the File menu's "New Window" item and
+   * the Window menu's "Open Workspace" submenu are omitted entirely rather than added disabled. */
   readonly canOpenNewWindow: boolean;
+  /** Every stored workspace, in display order - backs the Window menu's "Open Workspace"
+   * submenu (task 0143 follow-up), the native-menu equivalent of the workspace switcher's list. */
+  readonly workspaces: readonly WorkspaceSummary[];
+  /** The workspace currently shown in this window, if any - the "Open Workspace" submenu checks
+   * its matching entry, mirroring the switcher's active-workspace highlight. */
+  readonly currentWorkspaceId: WorkspaceId | undefined;
 }
 
 const PREFERENCES_SHORTCUT = { key: ',', meta: true } as const;
@@ -154,11 +165,30 @@ function goMenu(favouriteActions: readonly ActionDescriptor[]): NativeMenu {
   };
 }
 
-function windowMenu(tabs: readonly NativeMenuTab[]): NativeMenu {
+function windowMenu(
+  tabs: readonly NativeMenuTab[],
+  canOpenNewWindow: boolean,
+  workspaces: readonly WorkspaceSummary[],
+  currentWorkspaceId: WorkspaceId | undefined,
+): NativeMenu {
   const items: NativeMenuItem[] = [
     { kind: 'role', role: 'minimize' },
     { kind: 'role', role: 'zoom' },
   ];
+  if (canOpenNewWindow && workspaces.length > 0) {
+    items.push({ kind: 'separator' });
+    items.push({
+      kind: 'submenu',
+      title: 'Open Workspace',
+      items: workspaces.map((workspace) => ({
+        kind: 'action',
+        id: `${WINDOW_OPEN_WORKSPACE_MENU_ID_PREFIX}${workspace.id}`,
+        title: workspace.name,
+        enabled: true,
+        checked: workspace.id === currentWorkspaceId,
+      })),
+    });
+  }
   if (tabs.length > 0) {
     items.push({ kind: 'separator' });
     for (const tab of tabs) {
@@ -191,7 +221,12 @@ export function buildNativeMenuSpec(inputs: NativeMenuInputs): NativeMenuSpec {
       editMenu(inputs.actions),
       viewMenu(inputs.actions),
       goMenu(inputs.favouriteActions),
-      windowMenu(inputs.tabs),
+      windowMenu(
+        inputs.tabs,
+        inputs.canOpenNewWindow,
+        inputs.workspaces,
+        inputs.currentWorkspaceId,
+      ),
       helpMenu(inputs.actions),
     ],
   };
