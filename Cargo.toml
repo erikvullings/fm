@@ -41,6 +41,7 @@ fm-search = { path = "crates/fm-search" }
 fm-settings = { path = "crates/fm-settings" }
 fm-ssh = { path = "crates/fm-ssh" }
 fm-transport-dto = { path = "crates/fm-transport-dto" }
+fm-vcs-status = { path = "crates/fm-vcs-status" }
 fm-vfs = { path = "crates/fm-vfs" }
 fm-vfs-local = { path = "crates/fm-vfs-local" }
 fm-vfs-ftp = { path = "crates/fm-vfs-ftp" }
@@ -58,6 +59,7 @@ dirs = "6.0.0"
 drag = "2.1.1"
 futures = "0.3.31"
 fs2 = "0.4.3"
+git2 = { version = "0.20.4", default-features = false, features = ["vendored-libgit2"] }
 ignore = "0.4.23"
 mlua = { version = "0.12.0", features = [
   "lua54",

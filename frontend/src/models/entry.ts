@@ -1,6 +1,7 @@
 import type { ArchiveInfoDto } from '../api/generated/models/archiveInfoDto';
 import type { EntryMetadataDto } from '../api/generated/models/entryMetadataDto';
 import type { EntrySummaryDto } from '../api/generated/models/entrySummaryDto';
+import type { GitFileStatusDto } from '../api/generated/models/gitFileStatusDto';
 import type { MediaMetadataDto } from '../api/generated/models/mediaMetadataDto';
 import type { OwnershipInfoDto } from '../api/generated/models/ownershipInfoDto';
 import type { PermissionsInfoDto } from '../api/generated/models/permissionsInfoDto';
@@ -9,6 +10,9 @@ import type { Location } from './location';
 
 /** The kind of a directory entry, mirroring `fm_transport_dto::EntryKindDto`. */
 export type EntryKind = 'file' | 'directory' | 'symlink';
+
+/** An entry's git working-tree status (task 0135), mirroring `fm_domain::GitFileStatus`. */
+export type GitFileStatus = GitFileStatusDto;
 
 /**
  * A compact summary of a directory entry, suitable for directory listings
@@ -40,6 +44,8 @@ export interface EntrySummary {
   metadataRevision: number;
   /** Content matches from recursive search, when this entry came from a content query (task 0089). */
   contentMatches?: ContentMatchSummary[];
+  /** Git working-tree status, when this entry sits inside a local git working tree (task 0135). */
+  gitStatus?: GitFileStatus;
 }
 
 /** Filesystem permission information for an entry. */
@@ -142,6 +148,7 @@ export function entrySummaryFromDto(dto: EntrySummaryDto): EntrySummary {
     ...(dto.extension == null ? {} : { extension: dto.extension }),
     ...(dto.mimeType == null ? {} : { mimeType: dto.mimeType }),
     ...(dto.iconKey == null ? {} : { iconKey: dto.iconKey }),
+    ...(dto.gitStatus == null ? {} : { gitStatus: dto.gitStatus }),
   };
 }
 

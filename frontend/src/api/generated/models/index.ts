@@ -99,6 +99,7 @@ export * from './getFileIconParams.ts';
 export * from './getFileIconParams';
 export * from './getPluginIconThemeAssetParams.ts';
 export * from './getPluginIconThemeAssetParams';
+export * from './gitFileStatusDto.ts';
 export * from './healthDto.ts';
 export * from './healthDto';
 export * from './healthStatusDto.ts';

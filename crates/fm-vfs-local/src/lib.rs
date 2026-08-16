@@ -826,6 +826,7 @@ async fn summarize_entry(
         mime_type: None,
         icon_key: None,
         metadata_revision: 0,
+        git_status: None,
     })
 }
 
@@ -863,6 +864,7 @@ async fn summarize_path(path: &Path, location: &Location) -> Result<EntrySummary
         mime_type: None,
         icon_key: None,
         metadata_revision: 0,
+        git_status: None,
     })
 }
 

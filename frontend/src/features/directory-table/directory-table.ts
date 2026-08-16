@@ -1,6 +1,12 @@
 import m, { type FactoryComponent, type VnodeDOM } from 'mithril';
 import { eyeOffIcon, linkIcon } from '../../components/tabler-icons';
-import type { EntryId, EntrySummary, LoadingState, SortDescriptor } from '../../models';
+import type {
+  EntryId,
+  EntrySummary,
+  GitFileStatus,
+  LoadingState,
+  SortDescriptor,
+} from '../../models';
 import {
   DEFAULT_ENTRY_FORMAT_SETTINGS,
   type EntryFormatSettings,
@@ -167,6 +173,22 @@ function displayName(entry: EntrySummary, showFullPath = false): string {
   }
 }
 
+const GIT_STATUS_LETTERS: Record<GitFileStatus, string> = {
+  clean: '',
+  modified: 'M',
+  staged: 'S',
+  untracked: 'U',
+  ignored: 'I',
+};
+
+const GIT_STATUS_LABELS: Record<GitFileStatus, string> = {
+  clean: 'Clean',
+  modified: 'Modified',
+  staged: 'Staged',
+  untracked: 'Untracked',
+  ignored: 'Ignored',
+};
+
 const INITIAL_COLUMNS: readonly DirectoryColumnDescriptor[] = [
   {
     id: 'core.name',
@@ -234,6 +256,22 @@ const INITIAL_COLUMNS: readonly DirectoryColumnDescriptor[] = [
     cellClass: 'fm-directory-size',
     render: (entry, _nameMatchPrefix, settings = DEFAULT_ENTRY_FORMAT_SETTINGS) =>
       isParentEntry(entry.id) || entry.kind === 'symlink' ? '' : formatEntrySize(entry, settings),
+  },
+  {
+    id: 'core.gitStatus',
+    label: 'Git',
+    cellClass: 'fm-directory-git-status',
+    render: (entry) => {
+      if (isParentEntry(entry.id) || entry.gitStatus === undefined) return '';
+      const letter = GIT_STATUS_LETTERS[entry.gitStatus];
+      return letter === ''
+        ? ''
+        : m(
+            `span.fm-directory-git-status-badge.fm-directory-git-status-badge--${entry.gitStatus}`,
+            { title: GIT_STATUS_LABELS[entry.gitStatus] },
+            letter,
+          );
+    },
   },
   {
     id: 'core.modified',
@@ -390,6 +428,7 @@ function gridTemplate(
     'minmax(12rem, 1fr)',
     'minmax(6rem, 0.25fr)',
     'minmax(6rem, 0.2fr)',
+    'minmax(2.5rem, 0.08fr)',
     'minmax(10rem, 0.35fr)',
   ];
   return columns
