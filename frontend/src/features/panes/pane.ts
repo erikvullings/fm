@@ -706,6 +706,16 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
               if (action !== undefined) {
                 attrs.onSelectionAction(action);
               }
+              if (typeaheadCtrl.prefix !== undefined && attrs.directorySummary.hasMore === true) {
+                // Only the entries loaded so far were searched above - a better (or the only)
+                // match may exist among the entries not loaded yet. Let the workspace layer
+                // background-load the rest of the directory and retry once it's in (task:
+                // type-to-select only searching loaded entries).
+                attrs.onSelectionAction({
+                  type: 'typeaheadPending',
+                  prefix: typeaheadCtrl.prefix,
+                });
+              }
               m.redraw();
             }
           },
