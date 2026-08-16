@@ -1,6 +1,6 @@
 # 0098 Frontend i18n with translate.js
 
-Status: open
+Status: done
 Priority: medium
 Owner: unassigned
 Agent: unassigned
@@ -62,3 +62,15 @@ i18n framework around it.
   includes a second complete locale and persisted runtime switching so this is demonstrably more
   than extracting English constants. No locale other than English was prescribed; choose one with
   the user when implementation starts if product direction requires a specific language.
+- 2026-08-16 opencode: Implemented end-to-end i18n layer. Backend: `Language`/`LanguageDto` enum in
+  fm-settings/fm-transport-dto, settings mapping, schema v4 migration with default locale.
+  Frontend: `translate.js` added as dependency; `src/i18n/` module with typed `Translator`, English
+  and Dutch catalogues covering shell, settings, pane, operation, viewer, and state surfaces. All
+  hardcoded UI strings in app-shell.ts and settings-editor.ts replaced with `t()` calls. Language
+  selector added to settings Appearance section; locale persists through settings service and
+  applies at startup via `applyAppearance` → `setLocale`. Catalogue parity test prevents NL from
+  falling behind EN. **Verified**: 18 i18n tests (initial locale, runtime switching, interpolation,
+  pluralisation, missing-key, catalogue parity, 2 component redraws), full suite 1135 tests green,
+  `tsc --noEmit` clean. Known: operation dialog UIs (conflict, create directory/file, permanent
+  delete) and panes Chrome (favourites, tabs) are not yet wired — they use hardcoded strings
+  because their catalogue keys exist but the components haven't been converted.

@@ -78,8 +78,8 @@ pub use requests::{
 pub use runtime::{PlatformKindDto, RuntimeCapabilitiesDto, RuntimeKindDto};
 pub use search::{StartSearchRequestDto, StartSearchResponseDto};
 pub use settings::{
-    ConflictPolicyDto, DateFormatDto, DefaultPaneLayoutDto, FavouriteLocationDto, SettingsDto,
-    SizeFormatDto, ThemeDto,
+    ConflictPolicyDto, DateFormatDto, DefaultPaneLayoutDto, FavouriteLocationDto, LanguageDto,
+    SettingsDto, SizeFormatDto, ThemeDto,
 };
 pub use snapshot::{DirectorySnapshotDto, LoadingStateDto, VolumeCapacityDto};
 pub use system_location::{SystemLocationDto, SystemLocationKindDto};

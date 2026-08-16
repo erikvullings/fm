@@ -16,9 +16,20 @@ use serde_json::Value;
 use thiserror::Error;
 
 /// Current on-disk settings schema.
-pub const CURRENT_SCHEMA_VERSION: u32 = 3;
+pub const CURRENT_SCHEMA_VERSION: u32 = 4;
 /// Stable settings filename within the platform configuration directory.
 pub const SETTINGS_FILE_NAME: &str = "settings.json";
+
+/// UI language (task 0098).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub enum Language {
+    /// English; also the fallback locale.
+    #[default]
+    En,
+    /// Dutch.
+    Nl,
+}
 
 /// Application colour theme.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -109,6 +120,8 @@ pub struct Settings {
     pub schema_version: u32,
     /// Application theme.
     pub theme: Theme,
+    /// UI language.
+    pub language: Language,
     /// Base font size in CSS pixels.
     pub font_size: u16,
     /// Directory row height in CSS pixels.
@@ -156,6 +169,7 @@ impl Default for Settings {
         Self {
             schema_version: CURRENT_SCHEMA_VERSION,
             theme: Theme::Auto,
+            language: Language::En,
             font_size: 13,
             row_height: 20,
             date_format: DateFormat::Medium,
@@ -426,6 +440,26 @@ mod tests {
             Settings::default().default_columns
         );
         assert!(loaded.warning.is_none());
+    }
+
+    #[test]
+    fn v3_fixture_migrates_to_the_current_schema_with_the_default_locale() {
+        let directory = tempdir().expect("temp directory");
+        fs::write(
+            directory.path().join(SETTINGS_FILE_NAME),
+            r#"{
+              "schemaVersion": 3,
+              "theme": "dark"
+            }"#,
+        )
+        .expect("write v3 fixture");
+
+        let loaded = SettingsStore::new(directory.path())
+            .load()
+            .expect("migrate fixture");
+
+        assert_eq!(loaded.settings.schema_version, CURRENT_SCHEMA_VERSION);
+        assert_eq!(loaded.settings.language, Settings::default().language);
     }
 
     #[test]

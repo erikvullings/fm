@@ -477,6 +477,7 @@ export class MockFileManagerClient implements FileManagerClient {
   private settings: Settings = {
     schemaVersion: 2,
     theme: 'auto',
+    language: 'en',
     fontSize: 13,
     rowHeight: 20,
     dateFormat: 'medium',

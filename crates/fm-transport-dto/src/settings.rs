@@ -20,6 +20,16 @@ pub enum ThemeDto {
     Dark,
 }
 
+/// UI language.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub enum LanguageDto {
+    /// English; also the fallback locale.
+    En,
+    /// Dutch.
+    Nl,
+}
+
 /// Timestamp presentation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
@@ -86,6 +96,8 @@ pub struct SettingsDto {
     pub schema_version: u32,
     /// Application theme.
     pub theme: ThemeDto,
+    /// UI language.
+    pub language: LanguageDto,
     /// Base font size in CSS pixels.
     pub font_size: u16,
     /// Directory row height in CSS pixels.
