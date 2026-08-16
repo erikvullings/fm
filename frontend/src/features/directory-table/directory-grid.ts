@@ -1,8 +1,9 @@
 import m, { type FactoryComponent, type VnodeDOM } from 'mithril';
-import type { EntryId, LoadingState } from '../../models';
+import type { EntryId, EntrySummary, LoadingState } from '../../models';
 import type { CursorClickModifiers, DirectoryEntrySource } from './directory-table';
 import { entryIcon } from './entry-icons';
 import type { NativeIconLoader } from './native-icon-loader';
+import { type GridLine, layoutPhotoLines } from './photo-grouping';
 import type { ThumbnailLoader, ThumbnailSize } from './thumbnail-loader';
 import { calculateVisibleWindow } from './windowing';
 import './directory-grid.css';
@@ -12,6 +13,7 @@ const DEFAULT_TILE_HEIGHT = 148;
 const DEFAULT_VIEWPORT_HEIGHT = 300;
 const DEFAULT_VIEWPORT_WIDTH = 300;
 const DEFAULT_OVERSCAN = 1;
+const DAY_HEADER_HEIGHT = 40;
 
 /** Icon/grid-view mode a pane can be switched to (task 0134). Reuses
  * {@link ThumbnailSize} directly since a tile's on-disk thumbnail size and
@@ -33,6 +35,10 @@ export interface DirectoryGridAttrs {
   readonly overscan?: number;
   readonly label?: string;
   readonly iconSize?: GridIconSize;
+  /** "Photo app mode" (task 0134): groups tiles into day sections with a header, derived from
+   * each entry's `modifiedAt`. Only the entries already loaded into `source` can be grouped -
+   * exactly like the plain grid, an unloaded tail triggers `onEndReached` rather than guessing. */
+  readonly photoMode?: boolean;
   readonly nativeIconLoader?: NativeIconLoader;
   readonly thumbnailLoader?: ThumbnailLoader;
   readonly onCursorChange?: (index: number, modifiers?: CursorClickModifiers) => void;
@@ -88,6 +94,77 @@ export const DirectoryGrid: FactoryComponent<DirectoryGridAttrs> = () => {
   let element: HTMLElement | undefined;
   let scrollTop = 0;
 
+  function renderTile(
+    attrs: DirectoryGridAttrs,
+    size: GridIconSize,
+    tileWidth: number,
+    tileHeight: number,
+    index: number,
+    entry: EntrySummary,
+    x: number,
+    y: number,
+  ): m.Children {
+    const cursor = index === attrs.cursorIndex;
+    const selected = attrs.selectedEntryIds?.has(entry.id) ?? false;
+    const thumbnailDataUri = attrs.thumbnailLoader?.thumbnailDataUri(entry, size);
+    const nativeIconDataUri = attrs.nativeIconLoader?.iconDataUri(entry);
+    return m(
+      '.fm-grid-tile',
+      {
+        key: entry.id,
+        role: 'gridcell',
+        'aria-selected': selected ? 'true' : 'false',
+        draggable: attrs.onDragStart === undefined ? undefined : true,
+        ondragstart: (event: DragEvent) => attrs.onDragStart?.(index, event),
+        ondragover: (event: DragEvent) => {
+          if (attrs.onDragOver?.(index, event) !== true) return;
+          event.preventDefault();
+        },
+        ondrop: (event: DragEvent) => {
+          event.preventDefault();
+          attrs.onDrop?.(index, event);
+        },
+        onclick: (event: MouseEvent) =>
+          attrs.onCursorChange?.(index, {
+            shiftKey: event.shiftKey,
+            ctrlKey: event.ctrlKey || event.metaKey,
+          }),
+        oncontextmenu: (event: MouseEvent) => {
+          event.preventDefault();
+          attrs.onContextMenu?.(index, event.clientX, event.clientY);
+        },
+        ondblclick: () => attrs.onActivate?.(index),
+        class: [
+          entry.hidden ? 'fm-hidden-entry' : '',
+          cursor ? 'fm-cursor-tile' : '',
+          selected ? 'fm-selected-tile' : '',
+          attrs.cutEntryIds?.has(entry.id) === true ? 'fm-cut-entry' : '',
+        ].join(' '),
+        style: {
+          transform: `translate(${x}px, ${y}px)`,
+          width: `${tileWidth}px`,
+          height: `${tileHeight}px`,
+        },
+      },
+      [
+        thumbnailDataUri !== undefined
+          ? m('img.fm-grid-thumbnail', {
+              src: thumbnailDataUri,
+              alt: '',
+              'aria-hidden': 'true',
+            })
+          : nativeIconDataUri === undefined
+            ? entryIcon(entry, { className: 'fm-grid-icon', size: 32 })
+            : m('img.fm-grid-icon.fm-native-grid-icon', {
+                src: nativeIconDataUri,
+                alt: '',
+                'aria-hidden': 'true',
+              }),
+        m('span.fm-grid-tile-name', entry.name),
+      ],
+    );
+  }
+
   return {
     view: ({ attrs }) => {
       const state = stateView(attrs);
@@ -99,95 +176,104 @@ export const DirectoryGrid: FactoryComponent<DirectoryGridAttrs> = () => {
       const viewportWidth = element?.clientWidth || DEFAULT_VIEWPORT_WIDTH;
       const columnsPerRow = Math.max(1, Math.floor(viewportWidth / tileWidth));
       const entryCount = source?.length ?? 0;
-      const rowCount = Math.ceil(entryCount / columnsPerRow);
-      const window =
-        source === undefined
-          ? undefined
-          : calculateVisibleWindow({
-              entryCount: rowCount,
-              rowHeight: tileHeight,
-              scrollTop,
-              viewportHeight,
-              overscan: attrs.overscan ?? DEFAULT_OVERSCAN,
-            });
 
       const tiles: m.Children[] = [];
       let sawUnloadedEntry = false;
-      if (source !== undefined && window !== undefined && state === undefined) {
-        const startIndex = window.start * columnsPerRow;
-        const endIndex = Math.min(entryCount, window.end * columnsPerRow);
-        for (let index = startIndex; index < endIndex; index += 1) {
-          const entry = source.entryAt(index);
-          if (entry === undefined) {
-            sawUnloadedEntry = true;
-            continue;
+      let contentHeight = 0;
+
+      if (attrs.photoMode === true) {
+        const loadedEntries: EntrySummary[] = [];
+        if (source !== undefined && state === undefined) {
+          for (let index = 0; index < entryCount; index += 1) {
+            const entry = source.entryAt(index);
+            if (entry === undefined) {
+              sawUnloadedEntry = true;
+              break;
+            }
+            loadedEntries.push(entry);
           }
-          const row = Math.floor(index / columnsPerRow);
-          const col = index % columnsPerRow;
-          const cursor = index === attrs.cursorIndex;
-          const selected = attrs.selectedEntryIds?.has(entry.id) ?? false;
-          const thumbnailDataUri = attrs.thumbnailLoader?.thumbnailDataUri(entry, size);
-          const nativeIconDataUri = attrs.nativeIconLoader?.iconDataUri(entry);
-          tiles.push(
-            m(
-              '.fm-grid-tile',
-              {
-                key: entry.id,
-                role: 'gridcell',
-                'aria-selected': selected ? 'true' : 'false',
-                draggable: attrs.onDragStart === undefined ? undefined : true,
-                ondragstart: (event: DragEvent) => attrs.onDragStart?.(index, event),
-                ondragover: (event: DragEvent) => {
-                  if (attrs.onDragOver?.(index, event) !== true) return;
-                  event.preventDefault();
-                },
-                ondrop: (event: DragEvent) => {
-                  event.preventDefault();
-                  attrs.onDrop?.(index, event);
-                },
-                onclick: (event: MouseEvent) =>
-                  attrs.onCursorChange?.(index, {
-                    shiftKey: event.shiftKey,
-                    ctrlKey: event.ctrlKey || event.metaKey,
-                  }),
-                oncontextmenu: (event: MouseEvent) => {
-                  event.preventDefault();
-                  attrs.onContextMenu?.(index, event.clientX, event.clientY);
-                },
-                ondblclick: () => attrs.onActivate?.(index),
-                class: [
-                  entry.hidden ? 'fm-hidden-entry' : '',
-                  cursor ? 'fm-cursor-tile' : '',
-                  selected ? 'fm-selected-tile' : '',
-                  attrs.cutEntryIds?.has(entry.id) === true ? 'fm-cut-entry' : '',
-                ].join(' '),
-                style: {
-                  transform: `translate(${col * tileWidth}px, ${
-                    window.offsetTop + (row - window.start) * tileHeight
-                  }px)`,
-                  width: `${tileWidth}px`,
-                  height: `${tileHeight}px`,
-                },
-              },
-              [
-                thumbnailDataUri !== undefined
-                  ? m('img.fm-grid-thumbnail', {
-                      src: thumbnailDataUri,
-                      alt: '',
-                      'aria-hidden': 'true',
-                    })
-                  : nativeIconDataUri === undefined
-                    ? entryIcon(entry, { className: 'fm-grid-icon', size: 32 })
-                    : m('img.fm-grid-icon.fm-native-grid-icon', {
-                        src: nativeIconDataUri,
-                        alt: '',
-                        'aria-hidden': 'true',
-                      }),
-                m('span.fm-grid-tile-name', entry.name),
-              ],
-            ),
-          );
         }
+        const lines: GridLine[] = layoutPhotoLines(loadedEntries, columnsPerRow);
+        const lineHeights = lines.map((line) =>
+          line.kind === 'header' ? DAY_HEADER_HEIGHT : tileHeight,
+        );
+        const lineOffsets: number[] = [];
+        let cursorY = 0;
+        for (const height of lineHeights) {
+          lineOffsets.push(cursorY);
+          cursorY += height;
+        }
+        contentHeight = cursorY;
+        const overscanPx = (attrs.overscan ?? DEFAULT_OVERSCAN) * tileHeight;
+        const viewStart = scrollTop - overscanPx;
+        const viewEnd = scrollTop + viewportHeight + overscanPx;
+        for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
+          const line = lines[lineIndex];
+          const top = lineOffsets[lineIndex];
+          const height = lineHeights[lineIndex];
+          if (line === undefined || top === undefined || height === undefined) continue;
+          if (top + height < viewStart || top > viewEnd) continue;
+          if (line.kind === 'header') {
+            tiles.push(
+              m(
+                '.fm-grid-day-header',
+                {
+                  key: `day-${lineIndex}`,
+                  role: 'rowheader',
+                  style: { transform: `translateY(${top}px)`, height: `${height}px` },
+                },
+                line.label,
+              ),
+            );
+          } else {
+            for (let col = 0; col < line.count; col += 1) {
+              const index = line.startIndex + col;
+              const entry = loadedEntries[index];
+              if (entry === undefined) continue;
+              tiles.push(
+                renderTile(attrs, size, tileWidth, tileHeight, index, entry, col * tileWidth, top),
+              );
+            }
+          }
+        }
+      } else {
+        const rowCount = Math.ceil(entryCount / columnsPerRow);
+        const window =
+          source === undefined
+            ? undefined
+            : calculateVisibleWindow({
+                entryCount: rowCount,
+                rowHeight: tileHeight,
+                scrollTop,
+                viewportHeight,
+                overscan: attrs.overscan ?? DEFAULT_OVERSCAN,
+              });
+        if (source !== undefined && window !== undefined && state === undefined) {
+          const startIndex = window.start * columnsPerRow;
+          const endIndex = Math.min(entryCount, window.end * columnsPerRow);
+          for (let index = startIndex; index < endIndex; index += 1) {
+            const entry = source.entryAt(index);
+            if (entry === undefined) {
+              sawUnloadedEntry = true;
+              continue;
+            }
+            const row = Math.floor(index / columnsPerRow);
+            const col = index % columnsPerRow;
+            tiles.push(
+              renderTile(
+                attrs,
+                size,
+                tileWidth,
+                tileHeight,
+                index,
+                entry,
+                col * tileWidth,
+                window.offsetTop + (row - window.start) * tileHeight,
+              ),
+            );
+          }
+        }
+        contentHeight = window?.totalHeight ?? 0;
       }
       if (sawUnloadedEntry) attrs.onEndReached?.();
 
@@ -212,11 +298,7 @@ export const DirectoryGrid: FactoryComponent<DirectoryGridAttrs> = () => {
             },
           },
           state === undefined
-            ? m(
-                '.fm-directory-grid-content',
-                { style: { height: `${window?.totalHeight ?? 0}px` } },
-                tiles,
-              )
+            ? m('.fm-directory-grid-content', { style: { height: `${contentHeight}px` } }, tiles)
             : undefined,
         ),
       ]);

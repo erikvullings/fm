@@ -1,6 +1,6 @@
 # 0134 Thumbnails for images/video and a grid/icon view mode
 
-Status: in-progress (image/CBZ/CBR/video/PDF thumbnails, table icon-column overlay, and a basic grid view with three icon sizes are shipped; photo-day grouping, grid sort/filter/type-select, and F3 fullscreen preview remain follow-up work — see Agent Notes)
+Status: done (image/CBZ/CBR/video/PDF thumbnails, table icon-column overlay, grid view with three icon sizes, grid sort menu, photo-day grouping, filter/type-select, and F3 fullscreen preview are all shipped and verified — see Agent Notes)
 Priority: high
 Owner: unassigned
 Agent: unassigned
@@ -238,3 +238,79 @@ the icon in the existing icon column for image/video rows without a new view mod
   **Still deferred** (unchanged from the entry above): photo-day grouping, grid sort/filter/
   type-to-select, F3 fullscreen preview, inline rename UI in the grid, and delta-driven cache
   invalidation (still unnecessary given the content-addressed cache key).
+
+- 2026-08-16 claude: Follow-up pass closing out the three remaining acceptance-criteria items
+  (photo-day grouping, grid sort/filter/type-to-select, F3 fullscreen preview), completing the task.
+
+  **Investigation first**: before writing anything, re-read how the pane wires sort, the quick
+  filter, and type-ahead. All three turned out to already be pane-level, not table-specific:
+  `Pane`'s `onkeydown` (in `frontend/src/features/panes/pane.ts`) drives type-to-select
+  (`TypeaheadController`) and dispatches `onSelectionAction` regardless of which child component is
+  mounted; the quick filter (`attrs.filter`) renders in the breadcrumb row above either child and
+  filters `attrs.entries` before either view ever sees them; and F3's viewer resolution
+  (`resolveViewTarget`/`openViewer` in `frontend/src/features/keybindings/global-keydown-handler.ts`)
+  reads only `getSelections`/`getDirectories`, which carry no view-mode concept at all. So filtering,
+  type-to-select, and F3 fullscreen preview **already worked correctly for the grid view** with zero
+  code changes needed - confirmed by tracing the call paths, then locked in with regression tests
+  (`Pane grid view type-to-select and quick filter` in `pane.test.ts`; a new `F3 opens the viewer for
+  the cursor entry regardless of the active pane's view mode` test in
+  `global-keydown-handler.test.ts`) and manually in the browser (mock runtime): selected a grid tile,
+  pressed F3, and the Lister viewer opened showing the file's real content in the opposite pane,
+  identical to table-view F3.
+
+  **What was actually missing and got built:**
+  - **Grid sort menu** (`frontend/src/features/panes/pane.ts`): the grid has no column headers to
+    click, so there was no way to trigger `onSortChange` while in grid view even though the
+    underlying sort mechanism (`attrs.tableConfig.sort`/`attrs.onSortChange`, already resorting
+    `attrs.entries` upstream for the table) works identically for whichever view is mounted. Added a
+    `.fm-pane-grid-sort` "Sort" button (visible only when `viewMode === 'grid'`) opening a menu with
+    Name/Date modified/Size/Extension × ascending/descending (8 items, matching the `core.name`/
+    `core.modified`/`core.size`/`core.extension` column ids the Ctrl+F3..F6 shortcuts already use),
+    dispatching the exact same `onSortChange([{ columnId, direction }])` shape `DirectoryTable`'s
+    headers do. Reuses the existing `.fm-view-mode-menu`/`.fm-view-mode-menu-item` styling.
+  - **Photo-day grouping** (`frontend/src/features/directory-table/photo-grouping.ts`, new pure
+    module + `directory-grid.ts`): `groupEntriesByDay` buckets entries into contiguous same-day runs
+    (by `modifiedAt.slice(0, 10)`, localized via `Intl.DateTimeFormat({ dateStyle: 'full' })` for the
+    header label; entries with a missing/unparseable `modifiedAt` bucket under a single "Unknown
+    date" group) and `layoutPhotoLines` expands each group into a header line plus wrapped tile rows.
+    `DirectoryGrid` gained a `photoMode?: boolean` attr; when set, its view function takes a second
+    code path that loads every already-fetched entry (stopping at the first not-yet-loaded one and
+    triggering `onEndReached`, exactly like the plain grid's existing lazy-load convention - grouping
+    can only be computed over what's actually loaded), computes cumulative line offsets (header lines
+    fixed at `DAY_HEADER_HEIGHT=40px`, tile rows at the measured tile height), and virtualizes over
+    that line list the same way the plain path virtualizes over uniform rows - only lines whose
+    offset range overlaps `[scrollTop - overscan, scrollTop + viewportHeight + overscan]` are
+    rendered. Tile rendering itself was factored into a shared `renderTile` closure so both code
+    paths (grouped and ungrouped) produce identical tile markup/behaviour. A "Photo" toggle button
+    (`.fm-pane-photo-mode`, `aria-pressed`) sits next to the sort menu in `pane.ts`, state kept in a
+    per-tab `Map<TabId, boolean>` local to the pane component - **not** persisted through
+    `DirectoryViewConfiguration`/the `updateView` workspace command the way `viewMode`/`iconSize` are,
+    unlike those two settings. This was a deliberate scope call: persisting it would mean touching
+    `fm-domain`, `fm-transport-dto`, the OpenAPI schema, and regenerating the TS client for a
+    session-local display toggle the acceptance criteria only requires to be "toggled on/off or
+    selected," not persisted across restarts - flagged here rather than silently decided.
+
+  **Verified**: `pnpm exec tsc --noEmit` clean; `biome check .` clean (the one pre-existing
+  `noDescendingSpecificity` warning in `theme.css` is unrelated, present before this change).
+  New/changed tests, verified by running exactly these files: 7 in `photo-grouping.test.ts`
+  (grouping + line layout, including non-contiguous same-day runs and missing-date bucketing), 4 new
+  in `directory-grid.test.ts` (`describe('photo mode')` - header insertion, no headers when off, tile
+  content preserved, unknown-date bucketing), 6 new in `pane.test.ts` (`Pane grid sort menu` × 3,
+  `Pane photo mode toggle` × 1, `Pane grid view type-to-select and quick filter` × 2, plus a hidden-
+  in-table-view check), 1 new in `global-keydown-handler.test.ts` (F3 view-mode independence). Full
+  `pnpm exec vitest run`: 1140/1141 passing - the one failure is the same pre-existing
+  `config/mithril-inspector.test.ts` production-build timeout flake documented in the first Agent
+  Notes entry above (confirmed unrelated: it fails on machine load, not on any file this task
+  touches). Manually verified in the browser (mock runtime, `VITE_RUNTIME=mock`): switched a pane to
+  grid view, opened the Sort menu and re-sorted by date descending (tile order visibly changed),
+  toggled Photo mode on (an "Unknown date" section header appeared, matching the mock fixtures' lack
+  of realistic `modifiedAt` values), and pressed F3 on a grid-selected file (the Lister viewer opened
+  in the opposite pane showing real file content) - all three previously-deferred acceptance-criteria
+  items confirmed end-to-end, not just via unit tests.
+
+  **Remaining known gaps** (unchanged, out of this task's scope per the original MVP-phasing
+  decision): no dedicated CBR (RAR) test with real archive bytes (documented above - shared code path
+  with tested CBZ); inline rename UI in the grid (callback plumbing exists, no visible input
+  overlay); delta-driven thumbnail cache invalidation (unnecessary given the content-addressed cache
+  key). Photo mode's toggle state is session/tab-local rather than persisted (see above) - a
+  reasonable small follow-up if a future task wants it durable across restarts.

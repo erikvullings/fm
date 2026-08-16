@@ -176,4 +176,54 @@ describe('DirectoryGrid', () => {
     mount({ state: { type: 'loaded' }, source: entryArraySource([]) });
     expect(root.querySelector('[role="status"]')?.textContent).toBe('This directory is empty.');
   });
+
+  describe('photo mode', () => {
+    it('inserts a day header before tiles from a new day and none between same-day tiles', () => {
+      const entries = [
+        entry({ id: 'a', modifiedAt: '2026-07-30T09:00:00.000Z' }),
+        entry({ id: 'b', name: 'b.png', modifiedAt: '2026-07-30T18:00:00.000Z' }),
+        entry({ id: 'c', name: 'c.png', modifiedAt: '2026-07-29T09:00:00.000Z' }),
+      ];
+      mount({ state: { type: 'loaded' }, source: entryArraySource(entries), photoMode: true });
+
+      const headers = root.querySelectorAll('.fm-grid-day-header');
+      const tiles = root.querySelectorAll('.fm-grid-tile');
+      expect(headers).toHaveLength(2);
+      expect(tiles).toHaveLength(3);
+    });
+
+    it('renders no day headers when photo mode is off', () => {
+      const entries = [
+        entry({ id: 'a', modifiedAt: '2026-07-30T09:00:00.000Z' }),
+        entry({ id: 'b', name: 'b.png', modifiedAt: '2026-07-29T09:00:00.000Z' }),
+      ];
+      mount({ state: { type: 'loaded' }, source: entryArraySource(entries) });
+
+      expect(root.querySelectorAll('.fm-grid-day-header')).toHaveLength(0);
+      expect(root.querySelectorAll('.fm-grid-tile')).toHaveLength(2);
+    });
+
+    it('still renders tile content (thumbnail/icon/name) for grouped tiles', () => {
+      mount({
+        state: { type: 'loaded' },
+        source: entryArraySource([entry({ name: 'holiday.jpg' })]),
+        photoMode: true,
+      });
+
+      expect(root.querySelector('.fm-grid-tile-name')?.textContent).toBe('holiday.jpg');
+    });
+
+    it('groups an entry with a missing modifiedAt under a single "Unknown date" header', () => {
+      const withoutDate = (overrides: Partial<EntrySummary>): EntrySummary => {
+        const { modifiedAt: _unused, ...rest } = entry(overrides);
+        return rest as EntrySummary;
+      };
+      const entries = [withoutDate({ id: 'a' }), withoutDate({ id: 'b', name: 'b.png' })];
+      mount({ state: { type: 'loaded' }, source: entryArraySource(entries), photoMode: true });
+
+      const headers = root.querySelectorAll('.fm-grid-day-header');
+      expect(headers).toHaveLength(1);
+      expect(headers[0]?.textContent).toBe('Unknown date');
+    });
+  });
 });

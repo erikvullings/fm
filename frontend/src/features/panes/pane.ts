@@ -293,6 +293,8 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
   let favouriteError: string | undefined;
   let favouritesPreviousFocus: HTMLElement | undefined;
   let viewMenuOpen = false;
+  let sortMenuOpen = false;
+  let photoModeByTab = new Map<TabId, boolean>();
   let typeaheadPath: string | undefined;
   /** The pane's own `section.fm-pane` DOM node - the actual keyboard target (`onkeydown` is bound
    * here, see the view below). Mouse row clicks only ever changed selection *state*; nothing moved
@@ -1143,6 +1145,86 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
                   ]
                 : undefined,
             ]),
+            (attrs.tableConfig.viewMode ?? 'table') === 'grid'
+              ? m('.fm-grid-sort-menu-wrapper', [
+                  tooltip(
+                    'Sort',
+                    m(
+                      'button.fm-pane-grid-sort',
+                      {
+                        type: 'button',
+                        'aria-label': 'Sort',
+                        'aria-haspopup': 'menu',
+                        'aria-expanded': String(sortMenuOpen),
+                        onclick: () => {
+                          sortMenuOpen = !sortMenuOpen;
+                          m.redraw();
+                        },
+                      },
+                      'Sort',
+                    ),
+                  ),
+                  sortMenuOpen
+                    ? [
+                        m('.fm-view-mode-menu-backdrop', { onclick: () => (sortMenuOpen = false) }),
+                        m(
+                          '.fm-view-mode-menu.fm-grid-sort-menu',
+                          { role: 'menu', 'aria-label': 'Sort by' },
+                          (
+                            [
+                              { label: 'Name', columnId: 'core.name' },
+                              { label: 'Date modified', columnId: 'core.modified' },
+                              { label: 'Size', columnId: 'core.size' },
+                              { label: 'Extension', columnId: 'core.extension' },
+                            ] as const
+                          ).flatMap((column) =>
+                            (['ascending', 'descending'] as const).map((direction) => {
+                              const active =
+                                attrs.tableConfig.sort[0]?.columnId === column.columnId &&
+                                attrs.tableConfig.sort[0]?.direction === direction;
+                              return m(
+                                'button.fm-view-mode-menu-item',
+                                {
+                                  key: `${column.columnId}-${direction}`,
+                                  type: 'button',
+                                  role: 'menuitemradio',
+                                  'aria-checked': String(active),
+                                  onclick: () => {
+                                    sortMenuOpen = false;
+                                    attrs.onSortChange([{ columnId: column.columnId, direction }]);
+                                  },
+                                },
+                                `${column.label} (${direction === 'ascending' ? 'A–Z' : 'Z–A'})`,
+                              );
+                            }),
+                          ),
+                        ),
+                      ]
+                    : undefined,
+                ])
+              : undefined,
+            (attrs.tableConfig.viewMode ?? 'table') === 'grid'
+              ? tooltip(
+                  photoModeByTab.get(attrs.activeTabId) === true
+                    ? 'Turn off photo mode'
+                    : 'Photo mode (group by day)',
+                  m(
+                    'button.fm-pane-photo-mode',
+                    {
+                      type: 'button',
+                      'aria-label': 'Photo mode',
+                      'aria-pressed': String(photoModeByTab.get(attrs.activeTabId) === true),
+                      onclick: () => {
+                        const next = new Map(photoModeByTab);
+                        next.set(attrs.activeTabId, next.get(attrs.activeTabId) !== true);
+                        photoModeByTab = next;
+                        m.redraw();
+                      },
+                    },
+                    'Photo',
+                  ),
+                )
+              : undefined,
             tooltip(
               'Favourites',
               m(
@@ -1252,6 +1334,7 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
               ? m(DirectoryGrid, {
                   ...sharedListAttrs,
                   iconSize: attrs.tableConfig.iconSize ?? 'medium',
+                  photoMode: photoModeByTab.get(attrs.activeTabId) === true,
                 })
               : m(DirectoryTable, {
                   ...sharedListAttrs,

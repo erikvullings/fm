@@ -437,6 +437,111 @@ describe('Pane view-mode menu', () => {
     expect(root.querySelector('.fm-directory-grid')).not.toBeNull();
     expect(root.querySelector('.fm-directory-table')).toBeNull();
   });
+
+  it('hides the grid-only sort and photo-mode controls in table view', () => {
+    mount(attrs({ viewMode: 'table' }));
+
+    expect(root.querySelector('.fm-pane-grid-sort')).toBeNull();
+    expect(root.querySelector('.fm-pane-photo-mode')).toBeNull();
+  });
+});
+
+describe('Pane grid sort menu', () => {
+  it('offers name/date/size/extension ascending and descending, dispatching onSortChange', () => {
+    const onSortChange = vi.fn();
+    mount(attrs({ viewMode: 'grid', onSortChange }));
+
+    expect(root.querySelector('.fm-grid-sort-menu')).toBeNull();
+    root.querySelector<HTMLButtonElement>('.fm-pane-grid-sort')?.click();
+    m.redraw.sync();
+
+    const items = Array.from(
+      root.querySelectorAll('.fm-grid-sort-menu [role="menuitemradio"]'),
+    ).map((item) => item.textContent);
+    expect(items).toEqual([
+      'Name (A–Z)',
+      'Name (Z–A)',
+      'Date modified (A–Z)',
+      'Date modified (Z–A)',
+      'Size (A–Z)',
+      'Size (Z–A)',
+      'Extension (A–Z)',
+      'Extension (Z–A)',
+    ]);
+
+    root
+      .querySelectorAll<HTMLButtonElement>('.fm-grid-sort-menu .fm-view-mode-menu-item')[2]
+      // "Date modified (A–Z)"
+      ?.click();
+    m.redraw.sync();
+
+    expect(onSortChange).toHaveBeenCalledWith([
+      { columnId: 'core.modified', direction: 'ascending' },
+    ]);
+    expect(root.querySelector('.fm-grid-sort-menu')).toBeNull();
+  });
+
+  it('marks the active sort column/direction as checked', () => {
+    mount(attrs({ viewMode: 'grid', sort: [{ columnId: 'core.size', direction: 'descending' }] }));
+
+    root.querySelector<HTMLButtonElement>('.fm-pane-grid-sort')?.click();
+    m.redraw.sync();
+
+    const items = root.querySelectorAll('.fm-grid-sort-menu .fm-view-mode-menu-item');
+    expect(items[5]?.textContent).toBe('Size (Z–A)');
+    expect(items[5]?.getAttribute('aria-checked')).toBe('true');
+    expect(items[4]?.getAttribute('aria-checked')).toBe('false');
+  });
+
+  it('closes on backdrop click without changing sort', () => {
+    const onSortChange = vi.fn();
+    mount(attrs({ viewMode: 'grid', onSortChange }));
+
+    root.querySelector<HTMLButtonElement>('.fm-pane-grid-sort')?.click();
+    m.redraw.sync();
+    expect(root.querySelector('.fm-grid-sort-menu')).not.toBeNull();
+
+    root.querySelector<HTMLElement>('.fm-view-mode-menu-backdrop')?.click();
+    m.redraw.sync();
+
+    expect(root.querySelector('.fm-grid-sort-menu')).toBeNull();
+    expect(onSortChange).not.toHaveBeenCalled();
+  });
+});
+
+describe('Pane photo mode toggle', () => {
+  it('toggles aria-pressed and forwards photoMode to DirectoryGrid', () => {
+    mount(attrs({ viewMode: 'grid' }));
+
+    const button = root.querySelector<HTMLButtonElement>('.fm-pane-photo-mode');
+    expect(button?.getAttribute('aria-pressed')).toBe('false');
+
+    button?.click();
+    m.redraw.sync();
+
+    expect(root.querySelector('.fm-pane-photo-mode')?.getAttribute('aria-pressed')).toBe('true');
+  });
+});
+
+describe('Pane grid view type-to-select and quick filter', () => {
+  // task 0134: type-to-select and the quick filter are handled entirely at the pane level
+  // (`onkeydown` on `.fm-pane`, and `attrs.filter` in the breadcrumb row) with no branch on
+  // `tableConfig.viewMode` - so they already work unchanged once a pane is showing its grid view.
+  it('type-to-select dispatches the same cursor action in grid view as in table view', () => {
+    const onSelectionAction = vi.fn();
+    mount(attrs({ viewMode: 'grid', cursorIndex: 0, onSelectionAction }));
+    const pane = root.querySelector<HTMLElement>('.fm-pane');
+
+    pane?.dispatchEvent(new KeyboardEvent('keydown', { key: 't', bubbles: true }));
+
+    expect(onSelectionAction).toHaveBeenCalledWith({ type: 'selectOnly', entryId: 'one' });
+  });
+
+  it('renders the quick filter input in grid view exactly as in table view', () => {
+    mount(attrs({ viewMode: 'grid', filterOpen: true, filterQuery: 'txt' }));
+
+    expect(root.querySelector('.fm-quick-filter')).not.toBeNull();
+  });
 });
 
 function mount(paneAttrs: PaneAttrs): void {

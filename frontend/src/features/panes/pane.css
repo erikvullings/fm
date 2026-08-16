@@ -265,8 +265,34 @@
   display: block;
 }
 
-.fm-view-mode-menu-wrapper {
+.fm-view-mode-menu-wrapper,
+.fm-grid-sort-menu-wrapper {
   position: relative;
+}
+
+.fm-pane-grid-sort,
+.fm-pane-photo-mode {
+  flex: 0 0 auto;
+  height: var(--fm-row-height);
+  min-width: var(--fm-row-height);
+  padding: 0 0.6rem;
+  border: 0;
+  background: transparent;
+  color: var(--fm-text-muted);
+  font: inherit;
+  font-size: 0.85em;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.fm-pane-grid-sort:hover,
+.fm-pane-photo-mode:hover {
+  background: var(--fm-hover);
+}
+
+.fm-pane-photo-mode[aria-pressed="true"] {
+  color: var(--fm-accent);
+  font-weight: 600;
 }
 
 .fm-view-mode-menu-backdrop {
