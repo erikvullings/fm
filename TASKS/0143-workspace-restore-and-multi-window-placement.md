@@ -244,3 +244,42 @@ Spaces-assignment itself as a known macOS limitation.
     (sub-task b), per-workspace window frames persist and restore via public APIs (sub-task c), and
     macOS Space placement is explicitly and deliberately out of scope with the reasoning recorded
     above. Marking this task done.
+- 2026-08-16 (same day, third pass): the user actually tried "Open in New Window" and found sub-task
+  (b) was never really working — the new window opened frozen (immovable, only resizable) with
+  "Unable to load Workspace" as its only content. Root cause: **`apps/fm-desktop/src-tauri/capabilities/default.json`
+  scoped `"windows": ["main"]`** — every permission in that file (all commands, plus
+  `core:window:allow-start-dragging`) applied only to a window literally labeled `"main"`. A
+  per-workspace window's label is `workspace-<uuid>`, so it matched *no* capability at all: every
+  IPC call it made was silently rejected by Tauri's ACL, starting with the very first one
+  (`getRuntimeCapabilities`) in the frontend's boot sequence — hence the generic "Unable to load
+  workspace" error screen and, separately, no drag permission at all (hence frozen/immovable, while
+  native OS-level resize still worked since that's not gated by this permission).
+  - Confirmed by reading `tauri-utils`' capability docs
+    (`~/.cargo/registry/.../tauri-utils-2.9.3/src/acl/capability.rs`): the `windows` field
+    explicitly supports glob patterns ("List of windows that affected by this capability. Can be a
+    glob pattern"). Fix: `"windows": ["main", "workspace-*"]`.
+  - This was a real gap in the "verified" state from the earlier same-day note above — `cargo build`/
+    `clippy`/`fmt`/the mock-runtime smoke test all stay green regardless of capability-file content,
+    since ACL enforcement happens at IPC-call time in the running app, not at compile/lint time, and
+    the mock-runtime test harness doesn't invoke it through the real ACL layer either. **Lesson for
+    next time**: a new window label needs an explicit capability-file entry; this is easy to miss
+    since nothing in the Rust or TS type system enforces it, and no automated test in this repo
+    currently exercises the ACL layer at all — worth a regression test if this area gets touched
+    again (e.g. a mock-runtime test that builds a `workspace-*`-labeled window and asserts a command
+    succeeds through the real ACL, not just the mock IPC bypass the existing smoke tests use).
+  - Verified: `cargo build -p fm-desktop` (clean, capability file changes are picked up by
+    `tauri-build` at build time), `cargo test -p fm-desktop --lib` (16 passed). Still not manually
+    verified in the real native window (same standing limitation) — this is the one that most needs
+    the user's own confirmation, given it was the exact bug reported.
+  - Also fixed in this pass, reported alongside the frozen-window bug: pointer capture on the
+    column-resize handle (a fast/excessive drag that carried the pointer outside the window lost its
+    `pointerup` and reverted on the next drag's cleanup — `setPointerCapture` fixes it); Size column
+    now uses Total Commander-style single-letter units (B/K/M/G/T/P) instead of "KiB"/"MiB"
+    (`frontend/src/features/entry-formatting/entry-formatting.ts`); Modified column gained
+    `font-variant-numeric: tabular-nums` so digits align without a font change; and the Workspace
+    Switcher's Rename/Delete/Open-in-New-Window buttons were rebuilt as `IconButton` + the app's own
+    `tooltip()` helper (matching the rest of the toolbar) instead of cramped text buttons, fixing
+    both the "looks ugly" complaint and the workspace name being ellipsis-truncated to "Def...".
+    None of these four are part of this task's original acceptance criteria (general polish/bugs
+    surfaced while testing it) — noted here only because they landed in the same commit
+    (`a0c20cd`).
