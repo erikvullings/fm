@@ -283,3 +283,24 @@ Spaces-assignment itself as a known macOS limitation.
     None of these four are part of this task's original acceptance criteria (general polish/bugs
     surfaced while testing it) — noted here only because they landed in the same commit
     (`a0c20cd`).
+- 2026-08-16 (fourth pass): user's own multi-window matrix testing (main → opens workspace A's
+  window fine → from A's window, opening A again "does nothing", opening B works → from B's window,
+  opening either A or B "does nothing") pinned down the remaining sub-task (b) bug precisely: **not**
+  a dedup/label-matching failure (`get_webview_window(&label)` was finding the right window every
+  time) but `existing.set_focus()` alone silently failing to visibly raise a window that isn't
+  already frontmost/visible. `apps/fm-desktop/src-tauri/src/commands.rs`'s `open_workspace_window`
+  now calls `.show()` and `.unminimize()` before `.set_focus()`, mirroring the pairing already used
+  by the single-instance callback in `lib.rs`. Also: the switcher panel now closes itself after
+  "Open in New Window" is clicked (`frontend/src/app/app-shell.ts`), per explicit user request,
+  instead of staying open over a window that's no longer the relevant one. Commit `ec076cc`.
+  Verified: `cargo build/test/clippy/fmt -p fm-desktop` all clean, frontend `tsc`/`biome`/`vitest`
+  clean. **Still not confirmed in the real app** — this fix is inferred from the reported symptom
+  pattern, not from seeing the actual failure directly (no tool here can drive the native window);
+  ask the user to re-run the same open-A/open-B/open-either matrix and confirm each window now
+  visibly raises.
+  - Separately clarified for the user (not a code issue, no fix applied): "no permission" opening
+    `~/Downloads` in both the browser and the Tauri app is a macOS TCC (Files and Folders) grant
+    that dev-binary rebuilds routinely invalidate, not something introduced by this task's changes —
+    confirmed by `ls ~/Downloads` failing from this session's own shell tool too, and by
+    `crates/fm-vfs-local/src/lib.rs` mapping the error straight from `io::ErrorKind::PermissionDenied`.
+    User needs to re-grant it themselves in System Settings; not actionable from here.
