@@ -484,6 +484,12 @@ pub(crate) async fn open_workspace_window(
 ) -> Result<(), String> {
     let label = workspace_window_label(workspace_id);
     if let Some(existing) = app.get_webview_window(&label) {
+        // `set_focus` alone can silently no-op on a minimized or not-yet-visible window (observed
+        // as "opening an already-open workspace does nothing" - it was actually finding the
+        // existing window correctly every time, just failing to visibly raise it). Mirrors the
+        // single-instance callback's unminimize-then-focus pairing in `lib.rs`.
+        existing.show().map_err(|error| error.to_string())?;
+        existing.unminimize().map_err(|error| error.to_string())?;
         existing.set_focus().map_err(|error| error.to_string())?;
         return Ok(());
     }

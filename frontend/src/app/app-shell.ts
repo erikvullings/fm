@@ -2156,6 +2156,9 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
                       : {
                           onOpenInNewWindow: (workspaceId) => {
                             void attrsClient.openWorkspaceWindow?.(workspaceId);
+                            if (workspaceDisclosureElement !== undefined) {
+                              workspaceDisclosureElement.open = false;
+                            }
                           },
                         }),
                   }),
