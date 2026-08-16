@@ -1312,6 +1312,10 @@
             "description": "Whether directories are grouped before files.",
             "type": "boolean"
           },
+          "iconSize": {
+            "$ref": "#/components/schemas/IconSizeDto",
+            "description": "Grid tile size, used only when `view_mode` is `grid` (task 0134)."
+          },
           "quickFilter": {
             "oneOf": [
               {
@@ -1333,6 +1337,10 @@
               "$ref": "#/components/schemas/SortDescriptorDto"
             },
             "type": "array"
+          },
+          "viewMode": {
+            "$ref": "#/components/schemas/DirectoryViewModeDto",
+            "description": "The active view mode (task 0134)."
           }
         },
         "required": [
@@ -1342,6 +1350,14 @@
           "foldersFirst"
         ],
         "type": "object"
+      },
+      "DirectoryViewModeDto": {
+        "description": "The active view mode for a directory listing tab (task 0134).",
+        "enum": [
+          "table",
+          "grid"
+        ],
+        "type": "string"
       },
       "DirectoryViewPatchDto": {
         "description": "A partial update to a tab's persisted view configuration; only fields\nset to `Some` are changed (spec §5.3.9 `UpdateView`).",
@@ -1361,6 +1377,17 @@
             "type": [
               "boolean",
               "null"
+            ]
+          },
+          "iconSize": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/IconSizeDto",
+                "description": "Replace the grid tile size, if present (task 0134)."
+              }
             ]
           },
           "quickFilter": {
@@ -1389,6 +1416,17 @@
             "type": [
               "array",
               "null"
+            ]
+          },
+          "viewMode": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/DirectoryViewModeDto",
+                "description": "Replace the active view mode, if present (task 0134)."
+              }
             ]
           }
         },
@@ -1817,6 +1855,15 @@
             "type": "object"
           }
         ]
+      },
+      "IconSizeDto": {
+        "description": "Grid tile / icon size (task 0134).",
+        "enum": [
+          "small",
+          "medium",
+          "large"
+        ],
+        "type": "string"
       },
       "ImageDimensionsDto": {
         "description": "Pixel dimensions of an image entry.",
@@ -6768,6 +6815,59 @@
           }
         },
         "summary": "Lists currently reachable OS-managed filesystem locations."
+      }
+    },
+    "/api/v1/thumbnails": {
+      "get": {
+        "operationId": "getThumbnail",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "uri",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "One of `small`, `medium`, `large`.",
+            "in": "query",
+            "name": "size",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "image/jpeg": {}
+            },
+            "description": "Downscaled JPEG preview"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationErrorDto"
+                }
+              }
+            },
+            "description": "The location URI or size was invalid"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationErrorDto"
+                }
+              }
+            },
+            "description": "No thumbnail is available for this entry"
+          }
+        },
+        "summary": "Returns JPEG thumbnail bytes for an image or CBZ/CBR comic archive\nentry, if supported."
       }
     },
     "/api/v1/workspaces": {

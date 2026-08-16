@@ -265,6 +265,51 @@
   display: block;
 }
 
+.fm-view-mode-menu-wrapper {
+  position: relative;
+}
+
+.fm-view-mode-menu-backdrop {
+  position: fixed;
+  z-index: 4;
+  inset: 0;
+}
+
+.fm-view-mode-menu {
+  position: absolute;
+  z-index: 5;
+  top: calc(var(--fm-row-height) + 0.25rem);
+  right: 0.25rem;
+  display: grid;
+  min-width: 10rem;
+  padding: 0.25rem;
+  border: 1px solid var(--fm-border);
+  border-radius: 0.25rem;
+  background: var(--fm-surface-elevated);
+  box-shadow: 0 0.5rem 1.5rem rgb(0 0 0 / 25%);
+}
+
+.fm-view-mode-menu-item {
+  display: block;
+  width: 100%;
+  padding: 0.35rem 0.5rem;
+  border: 0;
+  border-radius: var(--fm-radius);
+  background: transparent;
+  color: var(--fm-text);
+  text-align: left;
+  font-size: inherit;
+}
+
+.fm-view-mode-menu-item:hover {
+  background: var(--fm-hover);
+}
+
+.fm-view-mode-menu-item[aria-checked="true"] {
+  color: var(--fm-accent);
+  font-weight: 600;
+}
+
 .fm-favourites-menu-backdrop {
   position: fixed;
   z-index: 4;

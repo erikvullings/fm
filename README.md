@@ -56,7 +56,7 @@ crates/
   fm-search/            recursive filesystem search
   fm-settings/          versioned JSON settings with migrations
   fm-ssh/               SSH session and host-key verification
-  fm-metadata/          file metadata helpers
+  fm-metadata/          file metadata helpers; pure-Rust thumbnail generation + disk cache
   fm-archive/           archive VFS provider (zip, tar, …)
   fm-comparison/        directory comparison and sync-plan generation
   fm-test-support/      shared test fixtures and helpers

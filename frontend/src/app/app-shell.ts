@@ -41,6 +41,7 @@ import { DiagnosticsViewComponent } from '../features/diagnostics/diagnostics-vi
 import { type AppDialogsContext, renderAppDialogs } from '../features/dialogs/app-dialogs';
 import { createDialogUIController } from '../features/dialogs/dialog-ui-controller';
 import type { NativeIconLoader } from '../features/directory-table/native-icon-loader';
+import type { ThumbnailLoader } from '../features/directory-table/thumbnail-loader';
 import {
   createFileEditorController,
   type FileEditorController,
@@ -344,6 +345,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
   const openTerminalLocations = new Set<string>();
   let openTerminalSupported = false;
   let nativeIconLoader: NativeIconLoader | undefined;
+  let thumbnailLoader: ThumbnailLoader | undefined;
   let contextMenu:
     | {
         readonly paneId: PaneId;
@@ -1146,6 +1148,9 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     setNativeIconLoader: (loader) => {
       nativeIconLoader = loader;
     },
+    setThumbnailLoader: (loader) => {
+      thumbnailLoader = loader;
+    },
     getSystemLocations: () => systemLocations,
     setSystemLocations: (locs) => {
       systemLocations = locs;
@@ -1527,6 +1532,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     getConnections: () => connections,
     getUnavailableLocations: () => unavailableLocations,
     getNativeIconLoader: () => nativeIconLoader,
+    getThumbnailLoader: () => thumbnailLoader,
     getPlugins: () => plugins,
     getPlatform: () => platform,
     getKeybindingRuntime: () => keybindingRuntime,

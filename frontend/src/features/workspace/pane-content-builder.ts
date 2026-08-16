@@ -28,6 +28,7 @@ import { isCutLocation } from '../clipboard/clipboard';
 import { loadConnections } from '../connections/connections-model';
 import { SAMPLE_FILE_AGE_COLUMN } from '../directory-table/directory-table';
 import type { NativeIconLoader } from '../directory-table/native-icon-loader';
+import type { ThumbnailLoader } from '../directory-table/thumbnail-loader';
 import { operationForDrop, resolveDropTarget, validateDropTarget } from '../drag-drop/drag-drop';
 import { FileEditor } from '../editor/file-editor';
 import type { FileEditorController, FileEditorState } from '../editor/file-editor-controller';
@@ -72,6 +73,7 @@ export interface PaneContentContext {
   getConnections(): readonly Connection[];
   getUnavailableLocations(): ReadonlySet<string>;
   getNativeIconLoader(): NativeIconLoader | undefined;
+  getThumbnailLoader(): ThumbnailLoader | undefined;
   getPlugins(): readonly PluginDescriptor[];
   getPlatform(): SelectionPlatform;
   getKeybindingRuntime(): KeybindingRuntime;
@@ -222,6 +224,7 @@ export function createPaneContentBuilder(
     const currentSettings = context.getCurrentSettings();
     const systemLocationsError = context.getSystemLocationsError();
     const nativeIconLoader = context.getNativeIconLoader();
+    const thumbnailLoader = context.getThumbnailLoader();
     const viewerTitles = new Map(
       (pane?.tabOrder ?? []).flatMap((tabId) => {
         const title = context.getViewerByTab().get(context.tabKey(paneId, tabId))?.state.entry.name;
@@ -265,6 +268,7 @@ export function createPaneContentBuilder(
       filterQuery: quickFilterQuery,
       formatSettings: entryFormatSettings,
       ...(nativeIconLoader === undefined ? {} : { nativeIconLoader }),
+      ...(thumbnailLoader === undefined ? {} : { thumbnailLoader }),
       pluginColumns: [
         ...(context
           .getPlugins()
@@ -471,6 +475,24 @@ export function createPaneContentBuilder(
             paneId,
             tabId: tab.id,
             patch: { sort: [...sort] },
+            expectedRevision: liveWorkspace.revision,
+          },
+          context.replaceWorkspace,
+        ).catch(() => undefined);
+      },
+      viewMode: tab?.view.viewMode ?? 'table',
+      iconSize: tab?.view.iconSize ?? 'medium',
+      onViewModeChange: (viewMode, iconSize) => {
+        const liveWorkspace = context.getWorkspace();
+        if (liveWorkspace === undefined || tab === undefined) return;
+        void dispatchWorkspaceCommand(
+          client,
+          {
+            type: 'updateView',
+            workspaceId: liveWorkspace.id,
+            paneId,
+            tabId: tab.id,
+            patch: { viewMode, iconSize },
             expectedRevision: liveWorkspace.revision,
           },
           context.replaceWorkspace,

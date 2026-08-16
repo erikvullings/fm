@@ -27,9 +27,9 @@ pub use location::{Location, LocationError};
 pub use snapshot::{DirectoryDelta, DirectorySnapshot, LoadingState};
 pub use workspace::{
     CURRENT_WORKSPACE_SCHEMA_VERSION, ColumnConfiguration, DirectoryViewConfiguration,
-    MAX_NAVIGATION_HISTORY_LEN, NavigationHistory, OperationCentrePreferences, PaneState,
-    PersistedFilter, SPLIT_RATIO_RANGE, SortDescriptor, SortDirection, SplitAxis, TabState,
-    Workspace, WorkspaceLayout, WorkspaceValidationError,
+    DirectoryViewMode, IconSize, MAX_NAVIGATION_HISTORY_LEN, NavigationHistory,
+    OperationCentrePreferences, PaneState, PersistedFilter, SPLIT_RATIO_RANGE, SortDescriptor,
+    SortDirection, SplitAxis, TabState, Workspace, WorkspaceLayout, WorkspaceValidationError,
 };
 pub use workspace_command::{
     DirectoryViewPatch, NavigationMode, QuickFilterPatch, WorkspaceCommand,

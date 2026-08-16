@@ -81,6 +81,9 @@ const directories = directoryFixtures as Record<string, FixtureEntry[]>;
 const actions = actionFixtures as ActionDescriptor[];
 const plugins = pluginFixtures as PluginDescriptor[];
 
+/** Extensions {@link MockFileManagerClient.getThumbnail} fakes a preview for (task 0134). */
+const THUMBNAILABLE_MOCK_EXTENSIONS = new Set(['jpg', 'jpeg', 'png', 'gif', 'webp', 'cbz', 'cbr']);
+
 export type MockClientMethod =
   | 'getRuntimeCapabilities'
   | 'getSystemLocations'
@@ -99,6 +102,7 @@ export type MockClientMethod =
   | 'getEntryMetadata'
   | 'setPaneActivity'
   | 'getFileIcon'
+  | 'getThumbnail'
   | 'cacheArchivePassword'
   | 'readFileRange'
   | 'searchInFile'
@@ -579,6 +583,23 @@ export class MockFileManagerClient implements FileManagerClient {
         : '';
       if (!this.nativeIconExtensions.has(extension)) return undefined;
       return new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+    });
+  }
+
+  getThumbnail(
+    locationUri: string,
+    _size: 'small' | 'medium' | 'large',
+    signal?: AbortSignal,
+  ): Promise<Uint8Array | undefined> {
+    return this.perform('getThumbnail', signal, () => {
+      const pathname = new URL(locationUri).pathname;
+      const name = pathname.slice(pathname.lastIndexOf('/') + 1);
+      const extension = name.includes('.')
+        ? name.slice(name.lastIndexOf('.') + 1).toLowerCase()
+        : '';
+      if (!THUMBNAILABLE_MOCK_EXTENSIONS.has(extension)) return undefined;
+      // JPEG magic bytes - just needs to look like an image, not decode as one.
+      return new Uint8Array([0xff, 0xd8, 0xff, 0xe0]);
     });
   }
 

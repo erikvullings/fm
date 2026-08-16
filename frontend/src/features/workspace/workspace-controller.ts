@@ -9,6 +9,7 @@ import type {
 } from '../../models';
 import { loadConnections } from '../connections/connections-model';
 import { NativeIconLoader } from '../directory-table/native-icon-loader';
+import { ThumbnailLoader } from '../directory-table/thumbnail-loader';
 import type { NavigationController } from '../navigation/navigation';
 import type { SelectionPlatform } from '../selection/keybindings';
 import { isWorkspaceRevisionConflict } from './dispatch-workspace-command';
@@ -34,6 +35,7 @@ export interface WorkspaceControllerContext {
   subscribeNativeFileDrops(callback: (drop: NativeFileDrop) => void): Promise<() => void>;
   setOpenTerminalSupported(v: boolean): void;
   setNativeIconLoader(loader?: NativeIconLoader): void;
+  setThumbnailLoader(loader?: ThumbnailLoader): void;
   getSystemLocations(): readonly SystemLocation[];
   setSystemLocations(locs: readonly SystemLocation[]): void;
   setSystemLocationsError(msg?: string): void;
@@ -161,6 +163,11 @@ export function createWorkspaceController(
       context.setNativeIconLoader(
         capabilities.nativeFileIcons ? new NativeIconLoader(client) : undefined,
       );
+      // Not capability-gated (task 0134): the backend's pure-Rust thumbnail
+      // pipeline works on every runtime/platform, unlike native OS icons.
+      // Unsupported formats/files simply fail per-request and fall back to
+      // the themed icon, exactly like a `nativeFileIcons: false` host does.
+      context.setThumbnailLoader(new ThumbnailLoader(client));
       const { loaded, summaries } = await openOrCreateDefaultWorkspace(request.signal);
       activateWorkspace(loaded);
       context.setWorkspaceSummaries(summaries);

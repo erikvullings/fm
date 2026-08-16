@@ -1,6 +1,12 @@
 import m, { type FactoryComponent, type VnodeDOM } from 'mithril';
 import { IconButton } from 'mithril-materialized';
-import { heartIcon, heartPlusIcon, plusIcon } from '../../components/tabler-icons';
+import {
+  heartIcon,
+  heartPlusIcon,
+  layoutGridIcon,
+  listIcon,
+  plusIcon,
+} from '../../components/tabler-icons';
 import { tooltip } from '../../components/tooltip';
 import {
   dispatchKeybinding,
@@ -26,12 +32,15 @@ import {
   isBrowsable,
   remoteRootLocation,
 } from '../connections/connections-model';
+import { DirectoryGrid, type GridIconSize } from '../directory-table/directory-grid';
 import {
+  type CursorClickModifiers,
   type DirectoryColumnDescriptor,
   DirectoryTable,
   entryArraySource,
 } from '../directory-table/directory-table';
 import type { NativeIconLoader } from '../directory-table/native-icon-loader';
+import type { ThumbnailLoader } from '../directory-table/thumbnail-loader';
 import type { EntryFormatSettings } from '../entry-formatting/entry-formatting';
 import { truncateLocationForDisplay } from '../favourites/favourites';
 import { matchesGlobMask } from '../quick-filter/quick-filter';
@@ -100,6 +109,14 @@ export interface TableConfigAttrs {
   readonly formatSettings?: EntryFormatSettings | undefined;
   readonly pluginColumns?: readonly DirectoryColumnDescriptor[] | undefined;
   readonly nativeIconLoader?: NativeIconLoader | undefined;
+  readonly thumbnailLoader?: ThumbnailLoader | undefined;
+  /** Table vs. thumbnail grid (task 0134). Defaults to `'table'`. */
+  readonly viewMode?: 'table' | 'grid' | undefined;
+  /** Grid tile size; only meaningful while `viewMode` is `'grid'`. Defaults to `'medium'`. */
+  readonly iconSize?: GridIconSize | undefined;
+  readonly onViewModeChange?:
+    | ((viewMode: 'table' | 'grid', iconSize: GridIconSize) => void)
+    | undefined;
 }
 
 /** Path navigation callbacks and history state. */
@@ -275,6 +292,7 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
   let favouriteLabel = '';
   let favouriteError: string | undefined;
   let favouritesPreviousFocus: HTMLElement | undefined;
+  let viewMenuOpen = false;
   let typeaheadPath: string | undefined;
   /** The pane's own `section.fm-pane` DOM node - the actual keyboard target (`onkeydown` is bound
    * here, see the view below). Mouse row clicks only ever changed selection *state*; nothing moved
@@ -1064,6 +1082,67 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
                 plusIcon(),
               ),
             ),
+            m('.fm-view-mode-menu-wrapper', [
+              tooltip(
+                'View',
+                m(
+                  IconButton,
+                  {
+                    className: 'fm-pane-view-mode',
+                    'aria-label': 'View',
+                    'aria-haspopup': 'menu',
+                    'aria-expanded': String(viewMenuOpen),
+                    onclick: () => {
+                      viewMenuOpen = !viewMenuOpen;
+                      m.redraw();
+                    },
+                  },
+                  (attrs.tableConfig.viewMode ?? 'table') === 'table'
+                    ? listIcon()
+                    : layoutGridIcon(),
+                ),
+              ),
+              viewMenuOpen
+                ? [
+                    m('.fm-view-mode-menu-backdrop', { onclick: () => (viewMenuOpen = false) }),
+                    m(
+                      '.fm-view-mode-menu',
+                      { role: 'menu', 'aria-label': 'View mode' },
+                      (
+                        [
+                          { label: 'List', viewMode: 'table', icon: listIcon() },
+                          { label: 'Small icons', viewMode: 'grid', size: 'small' },
+                          { label: 'Medium icons', viewMode: 'grid', size: 'medium' },
+                          { label: 'Large icons', viewMode: 'grid', size: 'large' },
+                        ] as const
+                      ).map((option) => {
+                        const active =
+                          option.viewMode === 'table'
+                            ? (attrs.tableConfig.viewMode ?? 'table') === 'table'
+                            : (attrs.tableConfig.viewMode ?? 'table') === 'grid' &&
+                              (attrs.tableConfig.iconSize ?? 'medium') === option.size;
+                        return m(
+                          'button.fm-view-mode-menu-item',
+                          {
+                            key: option.label,
+                            type: 'button',
+                            role: 'menuitemradio',
+                            'aria-checked': String(active),
+                            onclick: () => {
+                              viewMenuOpen = false;
+                              attrs.tableConfig.onViewModeChange?.(
+                                option.viewMode,
+                                option.viewMode === 'grid' ? option.size : 'medium',
+                              );
+                            },
+                          },
+                          option.label,
+                        );
+                      }),
+                    ),
+                  ]
+                : undefined,
+            ]),
             tooltip(
               'Favourites',
               m(
@@ -1082,118 +1161,135 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
               ),
             ),
           ]),
-          m(DirectoryTable, {
-            state: attrs.state,
-            source: entryArraySource(attrs.entries, ds.totalKnownEntries),
-            selectedEntryIds: attrs.selectedEntryIds,
-            cutEntryIds: attrs.cutEntryIds,
-            active: attrs.active,
-            sort: attrs.tableConfig.sort,
-            ...(attrs.tableConfig.pluginColumns === undefined
-              ? {}
-              : { pluginColumns: attrs.tableConfig.pluginColumns }),
-            ...(attrs.tableConfig.formatSettings === undefined
-              ? {}
-              : { formatSettings: attrs.tableConfig.formatSettings }),
-            ...(attrs.tableConfig.nativeIconLoader === undefined
-              ? {}
-              : { nativeIconLoader: attrs.tableConfig.nativeIconLoader }),
-            label: `${attrs.tabTitle} directory`,
-            showFullPath: isSearchLocation,
-            ...(renameCtrl.entry === undefined ? {} : { renamingEntryId: renameCtrl.entry.id }),
-            renameValue: renameCtrl.value,
-            ...(renameCtrl.error === undefined ? {} : { renameError: renameCtrl.error }),
-            onRenameInput: (value) => {
-              renameCtrl.updateValue(value);
-            },
-            onRenameCancel: () => {
-              renameCtrl.cancel();
-              m.redraw();
-            },
-            onRenameCommit: () => {
-              const committed = renameCtrl.commit();
-              if (committed !== undefined) {
-                void attrs.onRename(committed.entry, committed.name);
-              } else {
-                m.redraw();
-              }
-            },
-            ...(typeaheadCtrl.prefix === undefined
-              ? {}
-              : { nameMatchPrefix: typeaheadCtrl.prefix }),
-            onRetry: () => void attrs.onRetry(),
-            onEndReached: () => void attrs.onLoadNextPage(),
-            onCursorChange: (index, modifiers) => {
-              const entry = attrs.entries[index];
-              if (entry === undefined) return;
-              // A mouse click only ever changed selection *state* - nothing moved real DOM focus
-              // to match, so a keypress immediately after clicking a row could race (or entirely
-              // miss) this pane's `onkeydown` handler depending on whatever had focus beforehand.
-              // Grabbing focus here makes a click reliably prime keyboard input the same way
-              // clicking anywhere else in the app already does.
-              if (document.activeElement !== sectionElement) sectionElement?.focus();
-              if (isParentEntry(entry.id)) {
-                attrs.onSelectionAction({ type: 'selectOnly', entryId: entry.id });
-              } else if (modifiers?.shiftKey === true) {
-                attrs.onSelectionAction({ type: 'extendRangeTo', entryId: entry.id });
-              } else if (modifiers?.ctrlKey === true) {
-                attrs.onSelectionAction({ type: 'toggle', entryId: entry.id });
-              } else {
-                // A plain click only repositions the cursor (Total Commander parity) - it must
-                // not mark the row, or the very next Space (a toggle) would immediately un-mark
-                // whatever the click just landed on instead of marking it. `positionCursor` (not
-                // `setCursor`, which typeahead uses and leaves marks untouched) also drops a
-                // stale lone mark left over from elsewhere, matching `moveCursor`'s convention.
-                attrs.onSelectionAction({ type: 'positionCursor', entryId: entry.id });
-              }
-            },
-            onActivate: (index) => {
-              const entry = attrs.entries[index];
-              if (entry !== undefined) {
-                void attrs.onOpenEntry(entry);
-              }
-            },
-            onContextMenu: (index, x, y) => {
-              if (index === undefined) {
-                attrs.onContextMenu([], x, y);
-                return;
-              }
-              const target = attrs.entries[index];
-              if (
-                target !== undefined &&
-                !isParentEntry(target.id) &&
-                !attrs.selectedEntryIds.has(target.id)
-              ) {
-                attrs.onSelectionAction({ type: 'selectOnly', entryId: target.id });
-                attrs.onContextMenu([target], x, y);
-                return;
-              }
-              attrs.onContextMenu(
-                attrs.entries.filter(
-                  (entry) => !isParentEntry(entry.id) && attrs.selectedEntryIds.has(entry.id),
-                ),
-                x,
-                y,
-              );
-            },
-            onDragStart: (index, event) => {
-              const dragged = attrs.entries[index];
-              if (dragged === undefined || isParentEntry(dragged.id)) return;
-              const selection = attrs.selectedEntryIds.has(dragged.id)
-                ? attrs.entries.filter(
+          (() => {
+            const isGridView = attrs.tableConfig.viewMode === 'grid';
+            const sharedListAttrs = {
+              state: attrs.state,
+              source: entryArraySource(attrs.entries, ds.totalKnownEntries),
+              selectedEntryIds: attrs.selectedEntryIds,
+              cutEntryIds: attrs.cutEntryIds,
+              ...(attrs.tableConfig.nativeIconLoader === undefined
+                ? {}
+                : { nativeIconLoader: attrs.tableConfig.nativeIconLoader }),
+              ...(attrs.tableConfig.thumbnailLoader === undefined
+                ? {}
+                : { thumbnailLoader: attrs.tableConfig.thumbnailLoader }),
+              label: `${attrs.tabTitle} directory`,
+              onRetry: () => void attrs.onRetry(),
+              onEndReached: () => void attrs.onLoadNextPage(),
+              onCursorChange: (index: number, modifiers?: CursorClickModifiers) => {
+                const entry = attrs.entries[index];
+                if (entry === undefined) return;
+                // A mouse click only ever changed selection *state* - nothing moved real DOM focus
+                // to match, so a keypress immediately after clicking a row could race (or entirely
+                // miss) this pane's `onkeydown` handler depending on whatever had focus beforehand.
+                // Grabbing focus here makes a click reliably prime keyboard input the same way
+                // clicking anywhere else in the app already does.
+                if (document.activeElement !== sectionElement) sectionElement?.focus();
+                if (isParentEntry(entry.id)) {
+                  attrs.onSelectionAction({ type: 'selectOnly', entryId: entry.id });
+                } else if (modifiers?.shiftKey === true) {
+                  attrs.onSelectionAction({ type: 'extendRangeTo', entryId: entry.id });
+                } else if (modifiers?.ctrlKey === true) {
+                  attrs.onSelectionAction({ type: 'toggle', entryId: entry.id });
+                } else {
+                  // A plain click only repositions the cursor (Total Commander parity) - it must
+                  // not mark the row, or the very next Space (a toggle) would immediately un-mark
+                  // whatever the click just landed on instead of marking it. `positionCursor` (not
+                  // `setCursor`, which typeahead uses and leaves marks untouched) also drops a
+                  // stale lone mark left over from elsewhere, matching `moveCursor`'s convention.
+                  attrs.onSelectionAction({ type: 'positionCursor', entryId: entry.id });
+                }
+              },
+              onActivate: (index: number) => {
+                const entry = attrs.entries[index];
+                if (entry !== undefined) {
+                  void attrs.onOpenEntry(entry);
+                }
+              },
+              onContextMenu: (index: number | undefined, x: number, y: number) => {
+                if (index === undefined) {
+                  attrs.onContextMenu([], x, y);
+                  return;
+                }
+                const target = attrs.entries[index];
+                if (
+                  target !== undefined &&
+                  !isParentEntry(target.id) &&
+                  !attrs.selectedEntryIds.has(target.id)
+                ) {
+                  attrs.onSelectionAction({ type: 'selectOnly', entryId: target.id });
+                  attrs.onContextMenu([target], x, y);
+                  return;
+                }
+                attrs.onContextMenu(
+                  attrs.entries.filter(
                     (entry) => !isParentEntry(entry.id) && attrs.selectedEntryIds.has(entry.id),
-                  )
-                : [dragged];
-              attrs.onDragStart?.(selection, event);
-            },
-            onDragOver: (index, event) =>
-              attrs.onDragOver?.(index === undefined ? undefined : attrs.entries[index], event) ??
-              false,
-            onDrop: (index, event) =>
-              attrs.onDrop?.(index === undefined ? undefined : attrs.entries[index], event),
-            onSortChange: attrs.onSortChange,
-            ...(attrs.cursorIndex === undefined ? {} : { cursorIndex: attrs.cursorIndex }),
-          }),
+                  ),
+                  x,
+                  y,
+                );
+              },
+              onDragStart: (index: number, event: DragEvent) => {
+                const dragged = attrs.entries[index];
+                if (dragged === undefined || isParentEntry(dragged.id)) return;
+                const selection = attrs.selectedEntryIds.has(dragged.id)
+                  ? attrs.entries.filter(
+                      (entry) => !isParentEntry(entry.id) && attrs.selectedEntryIds.has(entry.id),
+                    )
+                  : [dragged];
+                attrs.onDragStart?.(selection, event);
+              },
+              onDragOver: (index: number | undefined, event: DragEvent) =>
+                attrs.onDragOver?.(index === undefined ? undefined : attrs.entries[index], event) ??
+                false,
+              onDrop: (index: number | undefined, event: DragEvent) =>
+                attrs.onDrop?.(index === undefined ? undefined : attrs.entries[index], event),
+              ...(attrs.cursorIndex === undefined ? {} : { cursorIndex: attrs.cursorIndex }),
+            };
+
+            return isGridView
+              ? m(DirectoryGrid, {
+                  ...sharedListAttrs,
+                  iconSize: attrs.tableConfig.iconSize ?? 'medium',
+                })
+              : m(DirectoryTable, {
+                  ...sharedListAttrs,
+                  active: attrs.active,
+                  sort: attrs.tableConfig.sort,
+                  ...(attrs.tableConfig.pluginColumns === undefined
+                    ? {}
+                    : { pluginColumns: attrs.tableConfig.pluginColumns }),
+                  ...(attrs.tableConfig.formatSettings === undefined
+                    ? {}
+                    : { formatSettings: attrs.tableConfig.formatSettings }),
+                  showFullPath: isSearchLocation,
+                  ...(renameCtrl.entry === undefined
+                    ? {}
+                    : { renamingEntryId: renameCtrl.entry.id }),
+                  renameValue: renameCtrl.value,
+                  ...(renameCtrl.error === undefined ? {} : { renameError: renameCtrl.error }),
+                  onRenameInput: (value: string) => {
+                    renameCtrl.updateValue(value);
+                  },
+                  onRenameCancel: () => {
+                    renameCtrl.cancel();
+                    m.redraw();
+                  },
+                  onRenameCommit: () => {
+                    const committed = renameCtrl.commit();
+                    if (committed !== undefined) {
+                      void attrs.onRename(committed.entry, committed.name);
+                    } else {
+                      m.redraw();
+                    }
+                  },
+                  ...(typeaheadCtrl.prefix === undefined
+                    ? {}
+                    : { nameMatchPrefix: typeaheadCtrl.prefix }),
+                  onSortChange: attrs.onSortChange,
+                });
+          })(),
           m('.fm-pane-status', { role: 'status' }, [
             m(
               'span',

@@ -304,6 +304,21 @@ pub(crate) fn get_file_icon(
         .map_err(|error| error.into_dto(Uuid::new_v4()))
 }
 
+/// Returns the same JPEG thumbnail bytes as `GET /api/v1/thumbnails`
+/// (task 0134). `size` must be `"small"`, `"medium"` or `"large"`.
+#[tauri::command]
+pub(crate) async fn get_thumbnail(
+    state: State<'_, AppState>,
+    uri: String,
+    size: String,
+) -> Result<Vec<u8>, ApplicationErrorDto> {
+    state
+        .service
+        .thumbnail(&uri, &size)
+        .await
+        .map_err(|error| error.into_dto(Uuid::new_v4()))
+}
+
 /// Returns the same settings document as `GET /api/v1/settings`.
 #[tauri::command]
 pub(crate) fn get_settings(state: State<'_, AppState>) -> SettingsDto {

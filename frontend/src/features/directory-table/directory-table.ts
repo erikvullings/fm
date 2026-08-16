@@ -11,6 +11,7 @@ import { isParentEntry } from '../panes/parent-entry';
 import { fileAgeColumn } from '../plugin-columns/file-age-column';
 import { entryIcon } from './entry-icons';
 import type { NativeIconLoader } from './native-icon-loader';
+import type { ThumbnailLoader } from './thumbnail-loader';
 import { calculateVisibleWindow, scrollOffsetForIndex } from './windowing';
 import './directory-table.css';
 
@@ -61,6 +62,8 @@ export interface DirectoryTableAttrs {
   readonly onSortChange?: (sort: readonly SortDescriptor[]) => void;
   readonly formatSettings?: EntryFormatSettings;
   readonly nativeIconLoader?: NativeIconLoader;
+  /** Overlays a downscaled preview onto the icon column for supported files (task 0134). */
+  readonly thumbnailLoader?: ThumbnailLoader;
   /** Enabled declarative plugin columns, already validated by the host. */
   readonly pluginColumns?: readonly DirectoryColumnDescriptor[];
   readonly onCursorChange?: (index: number, modifiers?: CursorClickModifiers) => void;
@@ -127,6 +130,7 @@ export interface DirectoryColumnDescriptor {
     now?: number,
     nativeIconLoader?: NativeIconLoader,
     showFullPath?: boolean,
+    thumbnailLoader?: ThumbnailLoader,
   ): m.Children;
 }
 
@@ -162,22 +166,39 @@ const INITIAL_COLUMNS: readonly DirectoryColumnDescriptor[] = [
     id: 'core.name',
     label: 'Name',
     cellClass: 'fm-directory-name',
-    render: (entry, nameMatchPrefix, _formatSettings, _now, nativeIconLoader, showFullPath) => {
+    render: (
+      entry,
+      nameMatchPrefix,
+      _formatSettings,
+      _now,
+      nativeIconLoader,
+      showFullPath,
+      thumbnailLoader,
+    ) => {
       const name = displayName(entry, showFullPath);
       const matchIndex =
         nameMatchPrefix === undefined
           ? -1
           : name.toLocaleLowerCase().indexOf(nameMatchPrefix.toLocaleLowerCase());
+      const thumbnailDataUri = thumbnailLoader?.thumbnailDataUri(entry, 'small');
       return [
-        nativeIconLoader?.iconDataUri(entry) === undefined
-          ? entryIcon(entry, { className: 'fm-entry-icon' })
-          : m('img.fm-entry-icon.fm-native-entry-icon', {
-              src: nativeIconLoader.iconDataUri(entry),
+        thumbnailDataUri !== undefined
+          ? m('img.fm-entry-icon.fm-thumbnail-entry-icon', {
+              src: thumbnailDataUri,
               width: 16,
               height: 16,
               alt: '',
               'aria-hidden': 'true',
-            }),
+            })
+          : nativeIconLoader?.iconDataUri(entry) === undefined
+            ? entryIcon(entry, { className: 'fm-entry-icon' })
+            : m('img.fm-entry-icon.fm-native-entry-icon', {
+                src: nativeIconLoader.iconDataUri(entry),
+                width: 16,
+                height: 16,
+                alt: '',
+                'aria-hidden': 'true',
+              }),
         m(
           showFullPath && !isParentEntry(entry.id)
             ? 'span.fm-entry-name.fm-entry-name--path'
@@ -556,6 +577,7 @@ export const DirectoryTable: FactoryComponent<DirectoryTableAttrs> = () => {
                         now,
                         attrs.nativeIconLoader,
                         attrs.showFullPath,
+                        attrs.thumbnailLoader,
                       ),
                 ),
               ),

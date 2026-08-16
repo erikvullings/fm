@@ -139,6 +139,13 @@ export interface FileManagerClient {
   /** Lazily fetches a native PNG icon; unsupported/failure is a themed-icon fallback. */
   getFileIcon(sampleLocationUri: string, signal?: AbortSignal): Promise<Uint8Array | undefined>;
 
+  /** Lazily fetches a downscaled JPEG preview; unsupported/failure is an icon fallback (task 0134). */
+  getThumbnail(
+    locationUri: string,
+    size: 'small' | 'medium' | 'large',
+    signal?: AbortSignal,
+  ): Promise<Uint8Array | undefined>;
+
   /** Reads one bounded byte range from a file, for the in-app large file viewer (task 0088). */
   readFileRange(request: ReadFileRangeRequest, signal?: AbortSignal): Promise<FileRangeChunk>;
   loadEditableFile(request: LoadEditableFileRequest, signal?: AbortSignal): Promise<EditableFile>;

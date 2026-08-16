@@ -31,6 +31,7 @@ fm-credentials-macos = { path = "crates/fm-credentials-macos" }
 fm-credentials-windows = { path = "crates/fm-credentials-windows" }
 fm-domain = { path = "crates/fm-domain" }
 fm-events = { path = "crates/fm-events" }
+fm-metadata = { path = "crates/fm-metadata" }
 fm-operations = { path = "crates/fm-operations" }
 fm-platform = { path = "crates/fm-platform" }
 fm-platform-macos = { path = "crates/fm-platform-macos" }
@@ -59,6 +60,12 @@ drag = "2.1.1"
 futures = "0.3.31"
 fs2 = "0.4.3"
 ignore = "0.4.23"
+image = { version = "0.25.10", default-features = false, features = [
+  "jpeg",
+  "png",
+  "gif",
+  "webp",
+] }
 mlua = { version = "0.12.0", features = [
   "lua54",
   "vendored",

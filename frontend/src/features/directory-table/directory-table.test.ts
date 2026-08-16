@@ -10,6 +10,7 @@ import {
   SAMPLE_FILE_AGE_COLUMN,
 } from './directory-table';
 import type { NativeIconLoader } from './native-icon-loader';
+import type { ThumbnailLoader } from './thumbnail-loader';
 
 let root: HTMLElement;
 
@@ -71,6 +72,65 @@ describe('DirectoryTable states', () => {
     expect(icon?.width).toBe(16);
     expect(icon?.height).toBe(16);
     expect(root.querySelector('.fm-entry-icon:not(.fm-native-entry-icon)')).toBeNull();
+  });
+
+  it('overlays a loaded thumbnail and otherwise keeps the themed icon', () => {
+    const thumbnailLoader = {
+      thumbnailDataUri: vi.fn().mockReturnValue('data:image/jpeg;base64,/9j/4A=='),
+    } as unknown as ThumbnailLoader;
+    mount({
+      state: { type: 'loaded' },
+      source: entryArraySource([entry({ extension: 'png' })]),
+      viewportHeight: 120,
+      thumbnailLoader,
+    });
+
+    const icon = root.querySelector<HTMLImageElement>('img.fm-thumbnail-entry-icon');
+    expect(icon?.src).toBe('data:image/jpeg;base64,/9j/4A==');
+    expect(icon?.width).toBe(16);
+    expect(icon?.height).toBe(16);
+    expect(thumbnailLoader.thumbnailDataUri).toHaveBeenCalledWith(
+      expect.objectContaining({ extension: 'png' }),
+      'small',
+    );
+  });
+
+  it('prefers a loaded thumbnail over a loaded native icon for the same entry', () => {
+    const nativeIconLoader = {
+      iconDataUri: vi.fn().mockReturnValue('data:image/png;base64,iVBORw=='),
+    } as unknown as NativeIconLoader;
+    const thumbnailLoader = {
+      thumbnailDataUri: vi.fn().mockReturnValue('data:image/jpeg;base64,/9j/4A=='),
+    } as unknown as ThumbnailLoader;
+    mount({
+      state: { type: 'loaded' },
+      source: entryArraySource([entry({ extension: 'png' })]),
+      viewportHeight: 120,
+      nativeIconLoader,
+      thumbnailLoader,
+    });
+
+    expect(root.querySelector('img.fm-thumbnail-entry-icon')).not.toBeNull();
+    expect(root.querySelector('img.fm-native-entry-icon')).toBeNull();
+  });
+
+  it('falls back to the native icon while no thumbnail is available for the entry', () => {
+    const nativeIconLoader = {
+      iconDataUri: vi.fn().mockReturnValue('data:image/png;base64,iVBORw=='),
+    } as unknown as NativeIconLoader;
+    const thumbnailLoader = {
+      thumbnailDataUri: vi.fn().mockReturnValue(undefined),
+    } as unknown as ThumbnailLoader;
+    mount({
+      state: { type: 'loaded' },
+      source: entryArraySource([entry({ extension: 'txt' })]),
+      viewportHeight: 120,
+      nativeIconLoader,
+      thumbnailLoader,
+    });
+
+    expect(root.querySelector('img.fm-native-entry-icon')).not.toBeNull();
+    expect(root.querySelector('img.fm-thumbnail-entry-icon')).toBeNull();
   });
 
   it('renders bounded loading placeholders with an accessible status', () => {

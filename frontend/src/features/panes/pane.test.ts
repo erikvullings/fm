@@ -14,6 +14,7 @@ import type {
   TabId,
   VolumeCapacity,
 } from '../../models';
+import type { GridIconSize } from '../directory-table/directory-grid';
 import type { DirectoryColumnDescriptor } from '../directory-table/directory-table';
 import type { NativeIconLoader } from '../directory-table/native-icon-loader';
 import type { EntryFormatSettings } from '../entry-formatting/entry-formatting';
@@ -178,6 +179,9 @@ type FlatAttrsInput = Partial<{
   formatSettings: EntryFormatSettings;
   pluginColumns: readonly DirectoryColumnDescriptor[];
   nativeIconLoader: NativeIconLoader;
+  viewMode: 'table' | 'grid';
+  iconSize: GridIconSize;
+  onViewModeChange: (viewMode: 'table' | 'grid', iconSize: GridIconSize) => void;
   // Directory summary props
   hasMore: boolean;
   totalEntryCount: number;
@@ -262,6 +266,9 @@ function attrs(input: FlatAttrsInput = {}): PaneAttrs {
       formatSettings: input.formatSettings,
       pluginColumns: input.pluginColumns,
       nativeIconLoader: input.nativeIconLoader,
+      viewMode: input.viewMode,
+      iconSize: input.iconSize,
+      onViewModeChange: input.onViewModeChange,
     },
     directorySummary: {
       hasMore: input.hasMore,
@@ -366,6 +373,69 @@ describe('Pane inline rename', () => {
     expect(onMultiRename).toHaveBeenCalledWith([entries[0], entries[1]]);
     expect(onRename).not.toHaveBeenCalled();
     expect(root.querySelector('.fm-inline-rename-input')).toBeNull();
+  });
+});
+
+describe('Pane view-mode menu', () => {
+  it('opens a menu offering list and three grid sizes, closing on selection', () => {
+    const onViewModeChange = vi.fn();
+    mount(attrs({ onViewModeChange }));
+
+    expect(root.querySelector('.fm-view-mode-menu')).toBeNull();
+    root.querySelector<HTMLButtonElement>('.fm-pane-view-mode')?.click();
+    m.redraw.sync();
+
+    const menu = root.querySelector('.fm-view-mode-menu');
+    expect(menu).not.toBeNull();
+    const items = Array.from(menu?.querySelectorAll('[role="menuitemradio"]') ?? []).map(
+      (item) => item.textContent,
+    );
+    expect(items).toEqual(['List', 'Small icons', 'Medium icons', 'Large icons']);
+
+    root
+      .querySelectorAll<HTMLButtonElement>('.fm-view-mode-menu-item')[2]
+      // "Medium icons"
+      ?.click();
+    m.redraw.sync();
+
+    expect(onViewModeChange).toHaveBeenCalledWith('grid', 'medium');
+    expect(root.querySelector('.fm-view-mode-menu')).toBeNull();
+  });
+
+  it('marks the active option checked and shows the grid icon once in grid mode', () => {
+    mount(attrs({ viewMode: 'grid', iconSize: 'large' }));
+
+    expect(root.querySelector('.fm-icon-list')).toBeNull();
+    expect(root.querySelector('.fm-icon-layout-grid')).not.toBeNull();
+
+    root.querySelector<HTMLButtonElement>('.fm-pane-view-mode')?.click();
+    m.redraw.sync();
+
+    const items = root.querySelectorAll('.fm-view-mode-menu-item');
+    expect(items[0]?.getAttribute('aria-checked')).toBe('false'); // List
+    expect(items[3]?.getAttribute('aria-checked')).toBe('true'); // Large icons
+  });
+
+  it('closes the menu when clicking the backdrop without changing the view mode', () => {
+    const onViewModeChange = vi.fn();
+    mount(attrs({ onViewModeChange }));
+
+    root.querySelector<HTMLButtonElement>('.fm-pane-view-mode')?.click();
+    m.redraw.sync();
+    expect(root.querySelector('.fm-view-mode-menu')).not.toBeNull();
+
+    root.querySelector<HTMLElement>('.fm-view-mode-menu-backdrop')?.click();
+    m.redraw.sync();
+
+    expect(root.querySelector('.fm-view-mode-menu')).toBeNull();
+    expect(onViewModeChange).not.toHaveBeenCalled();
+  });
+
+  it('renders a DirectoryGrid instead of the table once viewMode is grid', () => {
+    mount(attrs({ viewMode: 'grid' }));
+
+    expect(root.querySelector('.fm-directory-grid')).not.toBeNull();
+    expect(root.querySelector('.fm-directory-table')).toBeNull();
   });
 });
 
@@ -580,10 +650,17 @@ describe('Pane breadcrumb editing', () => {
     expect(root.querySelector('.fm-pane-tab-favourites')?.classList.contains('btn-icon')).toBe(
       true,
     );
+    // New tab -> view-mode toggle (task 0134) -> Favourites, in that order.
     expect(
       root
         .querySelector('.fm-pane-tab-new')
         ?.closest('.fm-tooltip')
+        ?.nextElementSibling?.querySelector('.fm-pane-view-mode'),
+    ).not.toBeNull();
+    expect(
+      root
+        .querySelector('.fm-pane-view-mode')
+        ?.closest('.fm-view-mode-menu-wrapper')
         ?.nextElementSibling?.querySelector('.fm-pane-tab-favourites'),
     ).not.toBeNull();
     expect(root.querySelector('.fm-icon-heart')).not.toBeNull();

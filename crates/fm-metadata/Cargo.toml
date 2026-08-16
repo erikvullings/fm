@@ -7,6 +7,12 @@ rust-version.workspace = true
 license.workspace = true
 
 [dependencies]
+image.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
 
 [lints]
 workspace = true

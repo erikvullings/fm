@@ -284,6 +284,12 @@ fn apply_view_patch(view: &mut DirectoryViewConfiguration, patch: DirectoryViewP
             QuickFilterPatch::Set(filter) => Some(filter),
         };
     }
+    if let Some(view_mode) = patch.view_mode {
+        view.view_mode = view_mode;
+    }
+    if let Some(icon_size) = patch.icon_size {
+        view.icon_size = icon_size;
+    }
 }
 
 #[cfg(test)]
@@ -819,6 +825,42 @@ mod tests {
 
         let tab = ws.panes[0].tabs.iter().find(|t| t.id == tab_id).unwrap();
         assert!(tab.view.quick_filter.is_none());
+    }
+
+    #[test]
+    fn update_view_patches_view_mode_and_icon_size_independently_of_other_fields() {
+        let mut ws = workspace();
+        let workspace_id = ws.id;
+        let expected_revision = ws.revision;
+        let pane_id = ws.active_pane_id;
+        let tab_id = ws.panes[0].tabs[0].id;
+        let original_sort = ws.panes[0].tabs[0].view.sort.clone();
+        assert_eq!(
+            ws.panes[0].tabs[0].view.view_mode,
+            fm_domain::DirectoryViewMode::Table
+        );
+
+        apply(
+            &mut ws,
+            WorkspaceCommand::UpdateView {
+                workspace_id,
+                pane_id,
+                tab_id,
+                patch: DirectoryViewPatch {
+                    view_mode: Some(fm_domain::DirectoryViewMode::Grid),
+                    icon_size: Some(fm_domain::IconSize::Large),
+                    ..Default::default()
+                },
+                expected_revision,
+            },
+            home(),
+        )
+        .expect("update view must succeed");
+
+        let tab = ws.panes[0].tabs.iter().find(|t| t.id == tab_id).unwrap();
+        assert_eq!(tab.view.view_mode, fm_domain::DirectoryViewMode::Grid);
+        assert_eq!(tab.view.icon_size, fm_domain::IconSize::Large);
+        assert_eq!(tab.view.sort, original_sort);
     }
 
     #[test]
