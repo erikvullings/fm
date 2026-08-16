@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use serde::Serialize;
 use tauri::ipc::Channel;
-use tauri::{AppHandle, Manager, Runtime, State, Window};
+use tauri::{AppHandle, Runtime, State, Window};
 use uuid::Uuid;
 
 use fm_domain::OperationId;
@@ -459,40 +459,40 @@ pub(crate) async fn calculate_folder_size(
         .map_err(|error| error.into_dto(Uuid::new_v4()))
 }
 
-/// The window label used for a given workspace's dedicated window (task
-/// 0143 sub-task (b)). Every window this app creates for a workspace uses
-/// this label so a repeat request focuses the existing window instead of
-/// creating a duplicate.
+/// A fresh, unique window label for a new window on `workspace_id` (task 0143 sub-task (b)).
+/// Every call returns a different label - "Open in New Window" is meant to always open another
+/// window, even for a workspace that already has one or more windows open, so labels can't be
+/// reused as a dedup key the way an earlier version of this command did. The `workspace-<id>`
+/// prefix is still what the capability glob (`capabilities/default.json`) and
+/// [`canonical_workspace_window_label`] key off of; the `_<nonce>` suffix only exists to keep
+/// labels distinct.
 fn workspace_window_label(workspace_id: Uuid) -> String {
-    format!("workspace-{workspace_id}")
+    format!("workspace-{workspace_id}_{}", Uuid::new_v4())
 }
 
-/// Opens a new OS window showing `workspace_id`, or focuses it if a window
-/// for that workspace is already open. The window's frontend loads with
-/// `?workspaceId=<id>` in its URL so it calls `start_workspace` with that id
-/// explicitly on boot instead of falling back to the last-active workspace
-/// (spec §5.3.7; see `frontend/src/app/app-shell.ts`'s startup path).
+/// Reduces a window label back to its stable `workspace-<id>` form, stripping the uniquifying
+/// nonce `workspace_window_label` appends. Passed to `tauri-plugin-window-state`'s `map_label` so
+/// every window opened for the same workspace shares one remembered frame (position/size) instead
+/// of each getting its own, now that windows for a workspace are no longer deduplicated by label.
+/// Labels with no nonce (`"main"`) pass through unchanged.
+pub(crate) fn canonical_workspace_window_label(label: &str) -> &str {
+    label.split('_').next().unwrap_or(label)
+}
+
+/// Opens a new OS window showing `workspace_id`. The window's frontend loads with
+/// `?workspaceId=<id>` in its URL so it calls `start_workspace` with that id explicitly on boot
+/// instead of falling back to the last-active workspace (spec §5.3.7; see
+/// `frontend/src/app/app-shell.ts`'s startup path).
 ///
-/// Deliberately does not reuse the `AppState`-managed `FileManagerService`
-/// through any window-specific state: every window shares the same `Arc`
-/// already `.manage()`d once in `run()`, so no new service wiring is needed
-/// here - only window lifecycle.
+/// Deliberately does not reuse the `AppState`-managed `FileManagerService` through any
+/// window-specific state: every window shares the same `Arc` already `.manage()`d once in
+/// `run()`, so no new service wiring is needed here - only window lifecycle.
 #[tauri::command]
 pub(crate) async fn open_workspace_window(
     app: AppHandle,
     workspace_id: Uuid,
 ) -> Result<(), String> {
     let label = workspace_window_label(workspace_id);
-    if let Some(existing) = app.get_webview_window(&label) {
-        // `set_focus` alone can silently no-op on a minimized or not-yet-visible window (observed
-        // as "opening an already-open workspace does nothing" - it was actually finding the
-        // existing window correctly every time, just failing to visibly raise it). Mirrors the
-        // single-instance callback's unminimize-then-focus pairing in `lib.rs`.
-        existing.show().map_err(|error| error.to_string())?;
-        existing.unminimize().map_err(|error| error.to_string())?;
-        existing.set_focus().map_err(|error| error.to_string())?;
-        return Ok(());
-    }
     let url = tauri::WebviewUrl::App(format!("index.html?workspaceId={workspace_id}").into());
     tauri::WebviewWindowBuilder::new(&app, &label, url)
         .title("Procyon")
@@ -1070,6 +1070,32 @@ mod tests {
     use tauri::ipc::InvokeResponseBody;
 
     use super::*;
+
+    #[test]
+    fn workspace_window_label_is_unique_per_call_and_reduces_to_the_same_canonical_form() {
+        let id = Uuid::new_v4();
+        let first = workspace_window_label(id);
+        let second = workspace_window_label(id);
+
+        assert_ne!(
+            first, second,
+            "each call must open another window, never dedup"
+        );
+        assert_eq!(
+            canonical_workspace_window_label(&first),
+            canonical_workspace_window_label(&second),
+            "every window opened for the same workspace must share one remembered frame"
+        );
+        assert_eq!(
+            canonical_workspace_window_label(&first),
+            format!("workspace-{id}"),
+        );
+    }
+
+    #[test]
+    fn canonical_workspace_window_label_passes_through_a_label_with_no_nonce() {
+        assert_eq!(canonical_workspace_window_label("main"), "main");
+    }
 
     #[test]
     fn native_menu_action_callback_forwards_the_id_over_the_subscribed_channel() {
