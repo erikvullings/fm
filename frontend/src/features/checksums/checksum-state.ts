@@ -16,6 +16,8 @@ export interface ChecksumState {
   readonly isCancelled: boolean;
   /** Report from the most recent "verify against checksum file" run. */
   readonly verification?: VerificationReport;
+  /** Where the results were most recently written, for a "saved to …" hint. */
+  readonly savedTo?: Location;
   readonly error?: string;
 }
 
@@ -92,6 +94,12 @@ export function withChecksumCleared(): ChecksumState {
 
 export function withChecksumError(state: ChecksumState, message: string): ChecksumState {
   return { ...state, error: message };
+}
+
+/** Records a successful save and clears any stale error. */
+export function withChecksumSaved(state: ChecksumState, location: Location): ChecksumState {
+  const { error: _cleared, ...rest } = state;
+  return { ...rest, savedTo: location };
 }
 
 export function withVerificationReport(

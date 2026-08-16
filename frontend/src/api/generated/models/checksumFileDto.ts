@@ -4,11 +4,12 @@
  */
 
 /**
- * The rendered checksum-file text, for the caller to copy or save.
+ * The rendered checksum-file text, for the caller to copy to the clipboard.
  *
- * The backend deliberately returns text rather than writing a file itself:
- * saving goes through the normal write path the caller already owns, so
- * there is no second, unaudited way to create a file (spec §35).
+ * Rendering deliberately does not write anything. Writing the same text to
+ * disk is a separate, explicit step — [`SaveChecksumFileRequestDto`] — which
+ * goes through the provider's audited `WRITE` path, so there is no second,
+ * unaudited way to create a file (spec §35).
  */
 export interface ChecksumFileDto {
   /** The complete file contents. */

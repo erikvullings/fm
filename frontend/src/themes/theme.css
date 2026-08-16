@@ -1341,3 +1341,172 @@ input[type="text"].fm-command-palette-input {
   border-width: 0 2px 2px 0;
   transform: rotate(45deg);
 }
+
+/* Checksum results and duplicate review panels (task 0077). Both dock below
+   the panes and share the surface/border treatment used by the sync-plan
+   review table above. */
+.checksum-results,
+.duplicate-review {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-height: 40vh;
+  overflow-y: auto;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.85rem;
+  background: var(--fm-surface);
+  border-top: 1px solid var(--fm-border);
+}
+
+.checksum-results__header,
+.duplicate-review__header {
+  display: flex;
+  gap: 0.75rem;
+  align-items: baseline;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding-bottom: 0.25rem;
+  background: var(--fm-surface);
+}
+
+.checksum-results__header h2,
+.duplicate-review__header h2 {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.checksum-results__progress,
+.duplicate-review__summary {
+  color: var(--fm-text-muted);
+}
+
+/* Pushes the trailing controls to the right edge of the header. */
+.checksum-results__close,
+.duplicate-review__close {
+  margin-left: auto;
+}
+
+.checksum-results__error,
+.duplicate-review__error {
+  margin: 0;
+  padding: 0.3rem 0.5rem;
+  color: var(--fm-error);
+  background: var(--fm-error-surface, rgb(255 0 0 / 8%));
+  border-radius: var(--fm-radius);
+}
+
+.duplicate-review__warnings {
+  margin: 0;
+  color: var(--fm-warning);
+}
+
+.checksum-results__saved {
+  margin: 0;
+  color: var(--fm-success);
+}
+
+.checksum-results__actions,
+.checksum-results__save {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.checksum-results__save-name {
+  min-width: 16rem;
+}
+
+.checksum-results__table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.checksum-results__table th,
+.checksum-results__table td {
+  padding: 0.3rem 0.5rem;
+  text-align: left;
+  border-bottom: 1px solid var(--fm-border);
+}
+
+.checksum-results__digest code {
+  font-family: var(--fm-font-mono, monospace);
+  word-break: break-all;
+}
+
+.checksum-results__entry-error {
+  color: var(--fm-error);
+}
+
+.checksum-results__verify-input {
+  width: 100%;
+  font-family: var(--fm-font-mono, monospace);
+}
+
+.checksum-results__verification--match {
+  color: var(--fm-success);
+}
+
+.checksum-results__verification--mismatch {
+  color: var(--fm-error);
+}
+
+.checksum-results__verification--missing {
+  color: var(--fm-warning);
+}
+
+.duplicate-review__groups,
+.duplicate-review__copies {
+  margin: 0;
+  padding-left: 1rem;
+  list-style: none;
+}
+
+.duplicate-review__group {
+  padding: 0.4rem 0;
+  border-bottom: 1px solid var(--fm-border);
+}
+
+.duplicate-review__group-title {
+  margin: 0 0 0.25rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.duplicate-review__reclaimable {
+  font-weight: 400;
+  color: var(--fm-text-muted);
+}
+
+.duplicate-review__path {
+  font-family: var(--fm-font-mono, monospace);
+  word-break: break-all;
+}
+
+.duplicate-review__keep-hint {
+  color: var(--fm-text-muted);
+}
+
+/* Hardlinked paths are one file, so they are visually set apart from the
+   true duplicates above them rather than blending into the same list. */
+.duplicate-review__hardlinks {
+  margin-top: 0.25rem;
+  padding: 0.25rem 0.5rem;
+  border-left: 3px solid var(--fm-warning);
+  background: var(--fm-hover);
+  border-radius: var(--fm-radius);
+}
+
+.duplicate-review__hardlink-note {
+  margin: 0 0 0.25rem;
+  color: var(--fm-text-muted);
+}
+
+.duplicate-review__footer {
+  position: sticky;
+  bottom: 0;
+  padding-top: 0.25rem;
+  background: var(--fm-surface);
+}

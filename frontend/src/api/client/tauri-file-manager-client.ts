@@ -40,6 +40,8 @@ import type {
   ReadFileRangeRequest,
   ResolveConflictRequest,
   RuntimeCapabilities,
+  SaveChecksumFileRequest,
+  SavedChecksumFile,
   SaveEditableFileRequest,
   SearchInFileRequest,
   SearchInFileResult,
@@ -340,6 +342,14 @@ export class TauriFileManagerClient implements FileManagerClient {
     _signal?: AbortSignal,
   ): Promise<ChecksumFile> {
     return invoke<ChecksumFile>('render_checksum_file', { jobId, request: { algorithm } });
+  }
+
+  saveChecksumFile(
+    jobId: string,
+    request: SaveChecksumFileRequest,
+    _signal?: AbortSignal,
+  ): Promise<SavedChecksumFile> {
+    return invoke<SavedChecksumFile>('save_checksum_file', { jobId, request });
   }
 
   verifyChecksumFile(

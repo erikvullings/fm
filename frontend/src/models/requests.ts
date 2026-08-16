@@ -276,6 +276,18 @@ export interface StartChecksumResult {
 }
 
 /**
+ * Writes a job's results to a checksum file on disk
+ * (`POST /api/v1/checksums/{jobId}/save`, task 0077). Saving goes through the
+ * backend's provider `WRITE` path rather than a host-native save dialog, so
+ * both hosts create files by the same audited route (spec §35).
+ */
+export interface SaveChecksumFileRequest {
+  destination: Location;
+  algorithm: ChecksumAlgorithm;
+  overwrite?: boolean;
+}
+
+/**
  * Starts a cancellable duplicate scan across one or more roots
  * (`POST /api/v1/duplicate-scans`, task 0077).
  */

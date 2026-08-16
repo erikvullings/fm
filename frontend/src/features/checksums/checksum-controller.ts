@@ -15,6 +15,7 @@ import {
   withChecksumCleared,
   withChecksumError,
   withChecksumJobStarted,
+  withChecksumSaved,
   withDuplicateCleared,
   withDuplicateError,
   withDuplicateResults,
@@ -64,6 +65,21 @@ export interface ChecksumController {
   renderChecksumFile(
     algorithm: ChecksumAlgorithm,
   ): Promise<{ suggestedName: string; content: string } | undefined>;
+
+  /** The filename a save should default to, e.g. `checksums.sha256`. */
+  suggestedFileName(algorithm: ChecksumAlgorithm): string;
+
+  /**
+   * Writes the results to `fileName` in the active pane's directory.
+   *
+   * Resolves to the saved location, or `undefined` if the save could not be
+   * attempted or failed (in which case the error is on the state).
+   */
+  saveChecksumFile(
+    algorithm: ChecksumAlgorithm,
+    fileName: string,
+    options?: { overwrite?: boolean },
+  ): Promise<Location | undefined>;
 
   /** Verifies the current results against an existing checksum file's text. */
   verifyAgainst(content: string): void;
@@ -188,6 +204,49 @@ export function createChecksumController(context: ChecksumControllerContext): Ch
           withChecksumError(
             context.getChecksumState(),
             message(error, 'Unable to render the checksum file'),
+          ),
+        );
+        context.redraw();
+        return undefined;
+      }
+    },
+
+    suggestedFileName(algorithm: ChecksumAlgorithm): string {
+      return `checksums.${algorithm}`;
+    },
+
+    async saveChecksumFile(
+      algorithm: ChecksumAlgorithm,
+      fileName: string,
+      options?: { overwrite?: boolean },
+    ): Promise<Location | undefined> {
+      const { jobId } = context.getChecksumState();
+      const directory = context.getActiveLocation();
+      const trimmed = fileName.trim();
+      if (jobId === undefined || directory === undefined || trimmed === '') return undefined;
+
+      // Join onto the pane's directory URI rather than asking the host for a
+      // native save dialog, so the file lands in the filesystem the user is
+      // actually browsing and both hosts behave identically.
+      const base = directory.uri.endsWith('/') ? directory.uri.slice(0, -1) : directory.uri;
+      const destination: Location = {
+        providerId: directory.providerId,
+        uri: `${base}/${encodeURIComponent(trimmed)}`,
+      };
+      try {
+        const saved = await context.getClient().saveChecksumFile(jobId, {
+          destination,
+          algorithm,
+          ...(options?.overwrite === undefined ? {} : { overwrite: options.overwrite }),
+        });
+        context.setChecksumState(withChecksumSaved(context.getChecksumState(), saved.location));
+        context.redraw();
+        return saved.location;
+      } catch (error: unknown) {
+        context.setChecksumState(
+          withChecksumError(
+            context.getChecksumState(),
+            message(error, 'Unable to save the checksum file'),
           ),
         );
         context.redraw();

@@ -38,6 +38,7 @@ interface Harness {
     startChecksums: ReturnType<typeof vi.fn>;
     cancelChecksums: ReturnType<typeof vi.fn>;
     renderChecksumFile: ReturnType<typeof vi.fn>;
+    saveChecksumFile: ReturnType<typeof vi.fn>;
     verifyChecksumFile: ReturnType<typeof vi.fn>;
     startDuplicateScan: ReturnType<typeof vi.fn>;
     cancelDuplicateScan: ReturnType<typeof vi.fn>;
@@ -59,6 +60,10 @@ function harness(): Harness {
     renderChecksumFile: vi
       .fn()
       .mockResolvedValue({ suggestedName: 'checksums.sha256', content: 'aa  a.txt\n' }),
+    saveChecksumFile: vi.fn().mockResolvedValue({
+      location: { providerId: 'local', uri: 'file:///root/checksums.sha256' },
+      bytesWritten: 42,
+    }),
     verifyChecksumFile: vi.fn().mockResolvedValue({
       jobId: 'job-1',
       results: [{ path: 'a.txt', status: 'match' }],
@@ -177,6 +182,62 @@ describe('ChecksumController', () => {
   it('does not render a checksum file when no job is running', async () => {
     await expect(test.controller.renderChecksumFile('sha256')).resolves.toBeUndefined();
     expect(test.client.renderChecksumFile).not.toHaveBeenCalled();
+  });
+
+  it('saves the checksum file into the active directory', async () => {
+    test.controller.calculateChecksums(['sha256']);
+    await vi.waitFor(() => expect(test.checksumState().jobId).toBe('job-1'));
+
+    await expect(test.controller.saveChecksumFile('sha256', 'checksums.sha256')).resolves.toEqual(
+      location('file:///root/checksums.sha256'),
+    );
+
+    expect(test.client.saveChecksumFile).toHaveBeenCalledWith('job-1', {
+      destination: location('file:///root/checksums.sha256'),
+      algorithm: 'sha256',
+    });
+    expect(test.checksumState().savedTo?.uri).toBe('file:///root/checksums.sha256');
+  });
+
+  it('percent-encodes a filename with spaces', async () => {
+    test.controller.calculateChecksums(['sha256']);
+    await vi.waitFor(() => expect(test.checksumState().jobId).toBe('job-1'));
+    await test.controller.saveChecksumFile('sha256', 'my sums.sha256');
+    expect(test.client.saveChecksumFile.mock.calls[0]?.[1].destination.uri).toBe(
+      'file:///root/my%20sums.sha256',
+    );
+  });
+
+  it('passes the overwrite opt-in through', async () => {
+    test.controller.calculateChecksums(['sha256']);
+    await vi.waitFor(() => expect(test.checksumState().jobId).toBe('job-1'));
+    await test.controller.saveChecksumFile('sha256', 'checksums.sha256', { overwrite: true });
+    expect(test.client.saveChecksumFile.mock.calls[0]?.[1].overwrite).toBe(true);
+  });
+
+  it('refuses to save with no job, no directory or a blank name', async () => {
+    await expect(test.controller.saveChecksumFile('sha256', 'x')).resolves.toBeUndefined();
+    test.controller.calculateChecksums(['sha256']);
+    await vi.waitFor(() => expect(test.checksumState().jobId).toBe('job-1'));
+    await expect(test.controller.saveChecksumFile('sha256', '   ')).resolves.toBeUndefined();
+    expect(test.client.saveChecksumFile).not.toHaveBeenCalled();
+  });
+
+  it('surfaces a save failure as an error rather than a silent no-op', async () => {
+    test.controller.calculateChecksums(['sha256']);
+    await vi.waitFor(() => expect(test.checksumState().jobId).toBe('job-1'));
+    test.client.saveChecksumFile.mockRejectedValueOnce(new Error('destination exists'));
+
+    await expect(
+      test.controller.saveChecksumFile('sha256', 'checksums.sha256'),
+    ).resolves.toBeUndefined();
+    expect(test.checksumState().error).toBe('destination exists');
+    expect(test.checksumState().savedTo).toBeUndefined();
+  });
+
+  it('offers a default filename derived from the algorithm', () => {
+    expect(test.controller.suggestedFileName('sha256')).toBe('checksums.sha256');
+    expect(test.controller.suggestedFileName('blake3')).toBe('checksums.blake3');
   });
 
   it('stores a verification report', async () => {

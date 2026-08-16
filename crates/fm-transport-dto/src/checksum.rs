@@ -101,11 +101,12 @@ pub struct RenderChecksumFileRequestDto {
     pub algorithm: ChecksumAlgorithmDto,
 }
 
-/// The rendered checksum-file text, for the caller to copy or save.
+/// The rendered checksum-file text, for the caller to copy to the clipboard.
 ///
-/// The backend deliberately returns text rather than writing a file itself:
-/// saving goes through the normal write path the caller already owns, so
-/// there is no second, unaudited way to create a file (spec §35).
+/// Rendering deliberately does not write anything. Writing the same text to
+/// disk is a separate, explicit step — [`SaveChecksumFileRequestDto`] — which
+/// goes through the provider's audited `WRITE` path, so there is no second,
+/// unaudited way to create a file (spec §35).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ChecksumFileDto {
@@ -113,6 +114,41 @@ pub struct ChecksumFileDto {
     pub suggested_name: String,
     /// The complete file contents.
     pub content: String,
+}
+
+/// Writes a finished job's results to a checksum file on disk
+/// (`POST /api/v1/checksums/{jobId}/save`).
+///
+/// The bytes go out through the provider's normal `WRITE` path, so saving a
+/// checksum file is audited and capability-gated exactly like any other file
+/// this application creates (spec §35) — there is no second, host-specific
+/// write path smuggled in through a native save dialog.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(example = json!({
+    "destination": {"providerId": "local", "uri": "file:///Users/erik/checksums.sha256"},
+    "algorithm": "sha256",
+    "overwrite": false
+}))]
+pub struct SaveChecksumFileRequestDto {
+    /// Where to write the file, including its filename.
+    pub destination: LocationDto,
+    /// Which of the job's algorithms to write.
+    pub algorithm: ChecksumAlgorithmDto,
+    /// Permit replacing an existing file. Defaults to `false`, so an
+    /// accidental save never silently destroys an existing checksum file.
+    #[serde(default)]
+    pub overwrite: bool,
+}
+
+/// Confirms a checksum file was written.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SaveChecksumFileResponseDto {
+    /// Where the file was written.
+    pub location: LocationDto,
+    /// Number of bytes written.
+    pub bytes_written: u64,
 }
 
 /// Verifies a job's computed digests against an existing checksum file

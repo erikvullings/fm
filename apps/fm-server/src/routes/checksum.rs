@@ -12,9 +12,9 @@ use axum::{
 };
 use fm_transport_dto::{
     ApplicationErrorDto, ChecksumFileDto, ChecksumPageDto, DuplicatePageDto,
-    RenderChecksumFileRequestDto, StartChecksumRequestDto, StartChecksumResponseDto,
-    StartDuplicateScanRequestDto, StartDuplicateScanResponseDto, VerificationReportDto,
-    VerifyChecksumFileRequestDto,
+    RenderChecksumFileRequestDto, SaveChecksumFileRequestDto, SaveChecksumFileResponseDto,
+    StartChecksumRequestDto, StartChecksumResponseDto, StartDuplicateScanRequestDto,
+    StartDuplicateScanResponseDto, VerificationReportDto, VerifyChecksumFileRequestDto,
 };
 use serde::Deserialize;
 use tower_http::request_id::RequestId;
@@ -125,6 +125,33 @@ pub(crate) async fn render_checksum_file(
         .render_checksum_file(job_id, request)
         .map(Json)
         .map_err(|error| ApiError::new(error, extract_request_id(&request_id)))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/v1/checksums/{jobId}/save",
+    operation_id = "saveChecksumFile",
+    params(("jobId" = Uuid, Path)),
+    request_body = SaveChecksumFileRequestDto,
+    responses(
+        (status = 201, body = SaveChecksumFileResponseDto),
+        (status = 400, body = ApplicationErrorDto),
+        (status = 404, body = ApplicationErrorDto)
+    )
+)]
+pub(crate) async fn save_checksum_file(
+    State(state): State<AppState>,
+    Extension(request_id): Extension<RequestId>,
+    Path(job_id): Path<Uuid>,
+    Json(request): Json<SaveChecksumFileRequestDto>,
+) -> Result<(StatusCode, Json<SaveChecksumFileResponseDto>), ApiError> {
+    let correlation_id = extract_request_id(&request_id);
+    state
+        .service
+        .save_checksum_file(job_id, request)
+        .await
+        .map(|response| (StatusCode::CREATED, Json(response)))
+        .map_err(|error| ApiError::new(error, correlation_id))
 }
 
 #[utoipa::path(

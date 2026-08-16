@@ -16,12 +16,13 @@ use fm_transport_dto::{
     ListDirectoryRequest, LocationDto, NavigateRequest, OperationDto, PluginDescriptorDto,
     PluginLogEntryDto, ReadFileRangeRequestDto, ReadFileRangeResponseDto,
     RenderChecksumFileRequestDto, ResolveOperationConflictRequestDto, RuntimeCapabilitiesDto,
-    SearchInFileRequestDto, SearchInFileResponseDto, SetPaneActivityRequest, SettingsDto,
-    StartChecksumRequestDto, StartChecksumResponseDto, StartComparisonRequestDto,
-    StartComparisonResponseDto, StartDuplicateScanRequestDto, StartDuplicateScanResponseDto,
-    StartOperationRequestDto, StartSearchRequestDto, StartSearchResponseDto, SyncPlanDto,
-    UpdateConnectionRequestDto, VerificationReportDto, VerifyChecksumFileRequestDto,
-    WorkspaceCommandDto, WorkspaceDto, WorkspaceSummaryDto,
+    SaveChecksumFileRequestDto, SaveChecksumFileResponseDto, SearchInFileRequestDto,
+    SearchInFileResponseDto, SetPaneActivityRequest, SettingsDto, StartChecksumRequestDto,
+    StartChecksumResponseDto, StartComparisonRequestDto, StartComparisonResponseDto,
+    StartDuplicateScanRequestDto, StartDuplicateScanResponseDto, StartOperationRequestDto,
+    StartSearchRequestDto, StartSearchResponseDto, SyncPlanDto, UpdateConnectionRequestDto,
+    VerificationReportDto, VerifyChecksumFileRequestDto, WorkspaceCommandDto, WorkspaceDto,
+    WorkspaceSummaryDto,
 };
 
 use crate::{
@@ -847,6 +848,25 @@ pub(crate) fn render_checksum_file(
     state
         .service
         .render_checksum_file(job_id, request)
+        .map_err(|error| error.into_dto(Uuid::new_v4()))
+}
+
+/// Writes a job's results to a checksum file, identical in shape to
+/// `POST /api/v1/checksums/{jobId}/save`.
+///
+/// Saving goes through the shared service and the provider's `WRITE` path
+/// rather than a native Tauri save dialog, so the desktop and web hosts
+/// create files by exactly the same audited route (spec §35, task 0077).
+#[tauri::command]
+pub(crate) async fn save_checksum_file(
+    state: State<'_, AppState>,
+    job_id: Uuid,
+    request: SaveChecksumFileRequestDto,
+) -> Result<SaveChecksumFileResponseDto, ApplicationErrorDto> {
+    state
+        .service
+        .save_checksum_file(job_id, request)
+        .await
         .map_err(|error| error.into_dto(Uuid::new_v4()))
 }
 

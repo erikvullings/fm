@@ -47,6 +47,8 @@ import type {
   ReadFileRangeRequest,
   ResolveConflictRequest,
   RuntimeCapabilities,
+  SaveChecksumFileRequest,
+  SavedChecksumFile,
   SaveEditableFileRequest,
   SearchInFileMatch,
   SearchInFileRequest,
@@ -136,6 +138,7 @@ export type MockClientMethod =
   | 'getChecksums'
   | 'cancelChecksums'
   | 'renderChecksumFile'
+  | 'saveChecksumFile'
   | 'verifyChecksumFile'
   | 'startDuplicateScan'
   | 'getDuplicateScan'
@@ -1399,6 +1402,24 @@ export class MockFileManagerClient implements FileManagerClient {
         suggestedName: `checksums.${algorithm}`,
         content: `# ${algorithm}\n${lines.join('\n')}\n`,
       };
+    });
+  }
+
+  saveChecksumFile(
+    jobId: string,
+    request: SaveChecksumFileRequest,
+    signal?: AbortSignal,
+  ): Promise<SavedChecksumFile> {
+    return this.perform('saveChecksumFile', signal, () => {
+      const job = this.requireChecksumJob(jobId);
+      const lines = job.entries
+        .filter((entry) => entry.checksums[request.algorithm] !== undefined)
+        .map((entry) => `${entry.checksums[request.algorithm]}  ${entry.relativePath}`);
+      const content = `# ${request.algorithm}\n${lines.join('\n')}\n`;
+      // The mock has no real filesystem; recording the bytes it would have
+      // written is enough to exercise the UI's save flow.
+      this.fileContents.set(request.destination.uri, new TextEncoder().encode(content));
+      return { location: request.destination, bytesWritten: content.length };
     });
   }
 

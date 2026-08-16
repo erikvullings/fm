@@ -47,6 +47,8 @@ import type {
   RenderChecksumFileRequestDto,
   ResolveOperationConflictRequestDto,
   RuntimeCapabilitiesDto,
+  SaveChecksumFileRequestDto,
+  SaveChecksumFileResponseDto,
   SaveEditableFileRequestDto,
   SaveEditableFileResponseDto,
   SearchInFileRequestDto,
@@ -366,6 +368,52 @@ export const renderChecksumFile = async (jobId: string,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
     body: JSON.stringify(renderChecksumFileRequestDto)
+  }
+);}
+
+
+
+export type saveChecksumFileResponse201 = {
+  data: SaveChecksumFileResponseDto
+  status: 201
+}
+
+export type saveChecksumFileResponse400 = {
+  data: ApplicationErrorDto
+  status: 400
+}
+
+export type saveChecksumFileResponse404 = {
+  data: ApplicationErrorDto
+  status: 404
+}
+
+export type saveChecksumFileResponseSuccess = (saveChecksumFileResponse201) & {
+  headers: Headers;
+};
+export type saveChecksumFileResponseError = (saveChecksumFileResponse400 | saveChecksumFileResponse404) & {
+  headers: Headers;
+};
+
+export type saveChecksumFileResponse = (saveChecksumFileResponseSuccess | saveChecksumFileResponseError)
+
+export const getSaveChecksumFileUrl = (jobId: string,) => {
+
+
+
+
+  return `/api/v1/checksums/${jobId}/save`
+}
+
+export const saveChecksumFile = async (jobId: string,
+    saveChecksumFileRequestDto: SaveChecksumFileRequestDto, options?: Parameters<typeof fetchMutator>[1]): Promise<saveChecksumFileResponse> => {
+
+  return fetchMutator<saveChecksumFileResponse>(getSaveChecksumFileUrl(jobId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(saveChecksumFileRequestDto)
   }
 );}
 

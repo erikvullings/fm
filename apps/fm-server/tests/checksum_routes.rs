@@ -171,6 +171,82 @@ async fn a_checksum_file_can_be_rendered_and_verified_against() {
 }
 
 #[tokio::test]
+async fn a_checksum_file_is_written_to_disk_and_refuses_to_clobber() {
+    let root = tempfile::tempdir().expect("must create a temp directory");
+    let alpha = root.path().join("alpha.txt");
+    std::fs::write(&alpha, b"abc").unwrap();
+    let destination = root.path().join("checksums.sha256");
+
+    let server = TestServer::spawn().await;
+    let client = reqwest::Client::new();
+    let started = start_checksums(&client, &server.base_url, &[&alpha], &["sha256"]).await;
+    let job_id = started["jobId"].as_str().unwrap();
+    poll_checksums_until_complete(&client, &server.base_url, job_id).await;
+
+    let saved = client
+        .post(format!(
+            "{}/api/v1/checksums/{job_id}/save",
+            server.base_url
+        ))
+        .json(&json!({
+            "destination": location_json(&destination),
+            "algorithm": "sha256",
+        }))
+        .send()
+        .await
+        .expect("request must succeed");
+    assert_eq!(saved.status(), reqwest::StatusCode::CREATED);
+    let body: Value = saved.json().await.expect("body must be JSON");
+    assert!(body["bytesWritten"].as_u64().unwrap() > 0);
+
+    // The file really exists on disk and is verifiable by `sha256sum --check`.
+    let written = std::fs::read_to_string(&destination).expect("checksum file must exist");
+    assert!(
+        written.contains(&format!("{SHA256_ABC}  alpha.txt")),
+        "unexpected checksum file: {written}"
+    );
+    assert_eq!(
+        body["bytesWritten"].as_u64().unwrap() as usize,
+        written.len()
+    );
+
+    // A second save must not silently destroy it.
+    let clobber = client
+        .post(format!(
+            "{}/api/v1/checksums/{job_id}/save",
+            server.base_url
+        ))
+        .json(&json!({
+            "destination": location_json(&destination),
+            "algorithm": "sha256",
+        }))
+        .send()
+        .await
+        .expect("request must succeed");
+    assert_ne!(
+        clobber.status(),
+        reqwest::StatusCode::CREATED,
+        "overwriting must be opt-in"
+    );
+
+    // ... unless the caller explicitly opts in.
+    let overwritten = client
+        .post(format!(
+            "{}/api/v1/checksums/{job_id}/save",
+            server.base_url
+        ))
+        .json(&json!({
+            "destination": location_json(&destination),
+            "algorithm": "sha256",
+            "overwrite": true,
+        }))
+        .send()
+        .await
+        .expect("request must succeed");
+    assert_eq!(overwritten.status(), reqwest::StatusCode::CREATED);
+}
+
+#[tokio::test]
 async fn duplicate_detection_groups_identical_files_and_separates_hardlinks() {
     let root = tempfile::tempdir().expect("must create a temp directory");
     std::fs::create_dir_all(root.path().join("nested")).unwrap();

@@ -463,7 +463,7 @@
         "type": "object"
       },
       "ChecksumFileDto": {
-        "description": "The rendered checksum-file text, for the caller to copy or save.\n\nThe backend deliberately returns text rather than writing a file itself:\nsaving goes through the normal write path the caller already owns, so\nthere is no second, unaudited way to create a file (spec §35).",
+        "description": "The rendered checksum-file text, for the caller to copy to the clipboard.\n\nRendering deliberately does not write anything. Writing the same text to\ndisk is a separate, explicit step — [`SaveChecksumFileRequestDto`] — which\ngoes through the provider's audited `WRITE` path, so there is no second,\nunaudited way to create a file (spec §35).",
         "properties": {
           "content": {
             "description": "The complete file contents.",
@@ -3596,6 +3596,56 @@
         ],
         "type": "object"
       },
+      "SaveChecksumFileRequestDto": {
+        "description": "Writes a finished job's results to a checksum file on disk\n(`POST /api/v1/checksums/{jobId}/save`).\n\nThe bytes go out through the provider's normal `WRITE` path, so saving a\nchecksum file is audited and capability-gated exactly like any other file\nthis application creates (spec §35) — there is no second, host-specific\nwrite path smuggled in through a native save dialog.",
+        "example": {
+          "algorithm": "sha256",
+          "destination": {
+            "providerId": "local",
+            "uri": "file:///Users/erik/checksums.sha256"
+          },
+          "overwrite": false
+        },
+        "properties": {
+          "algorithm": {
+            "$ref": "#/components/schemas/ChecksumAlgorithmDto",
+            "description": "Which of the job's algorithms to write."
+          },
+          "destination": {
+            "$ref": "#/components/schemas/LocationDto",
+            "description": "Where to write the file, including its filename."
+          },
+          "overwrite": {
+            "description": "Permit replacing an existing file. Defaults to `false`, so an\naccidental save never silently destroys an existing checksum file.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "destination",
+          "algorithm"
+        ],
+        "type": "object"
+      },
+      "SaveChecksumFileResponseDto": {
+        "description": "Confirms a checksum file was written.",
+        "properties": {
+          "bytesWritten": {
+            "description": "Number of bytes written.",
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "location": {
+            "$ref": "#/components/schemas/LocationDto",
+            "description": "Where the file was written."
+          }
+        },
+        "required": [
+          "location",
+          "bytesWritten"
+        ],
+        "type": "object"
+      },
       "SaveEditableFileRequestDto": {
         "description": "Atomically replaces a text file after an optimistic revision check.",
         "properties": {
@@ -5584,6 +5634,64 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ChecksumFileDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationErrorDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/v1/checksums/{jobId}/save": {
+      "post": {
+        "operationId": "saveChecksumFile",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "jobId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveChecksumFileRequestDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SaveChecksumFileResponseDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationErrorDto"
                 }
               }
             },

@@ -198,3 +198,9 @@ export interface ChecksumFile {
   suggestedName: string;
   content: string;
 }
+
+/** Confirms a checksum file was written to disk. */
+export interface SavedChecksumFile {
+  location: Location;
+  bytesWritten: number;
+}

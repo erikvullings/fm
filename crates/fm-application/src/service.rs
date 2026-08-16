@@ -1269,6 +1269,72 @@ impl FileManagerService {
         })
     }
 
+    /// Writes a job's results to a checksum file through the provider's
+    /// normal `WRITE` path (task 0077).
+    ///
+    /// Deliberately server-side rather than a host-native save dialog: this
+    /// keeps every file this application creates on one audited,
+    /// capability-gated path (spec §35), and makes saving behave identically
+    /// under the Axum and Tauri hosts.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ApplicationError::NotFound`] for an unknown job, and an
+    /// invalid-request error if the destination's provider cannot be
+    /// resolved, lacks `WRITE`, or already holds a file and `overwrite` is
+    /// false.
+    pub async fn save_checksum_file(
+        &self,
+        job_id: Uuid,
+        request: fm_transport_dto::SaveChecksumFileRequestDto,
+    ) -> Result<fm_transport_dto::SaveChecksumFileResponseDto, ApplicationError> {
+        use tokio::io::AsyncWriteExt as _;
+
+        let rendered = self.render_checksum_file(
+            job_id,
+            RenderChecksumFileRequestDto {
+                algorithm: request.algorithm,
+            },
+        )?;
+        let destination: Location = request.destination.into();
+        let provider = self
+            .providers
+            .resolve(&destination)
+            .map_err(ApplicationError::from)?;
+        let capabilities = provider
+            .capabilities_for(&destination)
+            .map_err(ApplicationError::from)?;
+        capabilities
+            .require(fm_vfs::ProviderCapabilities::WRITE)
+            .map_err(ApplicationError::from)?;
+
+        let cancellation = tokio_util::sync::CancellationToken::new();
+        let mut writer = provider
+            .open_write(
+                &destination,
+                fm_vfs::WriteOptions {
+                    overwrite: request.overwrite,
+                },
+                cancellation,
+            )
+            .await
+            .map_err(ApplicationError::from)?;
+        let bytes = rendered.content.into_bytes();
+        writer
+            .write_all(&bytes)
+            .await
+            .map_err(|error| ApplicationError::InvalidRequest(error.to_string()))?;
+        writer
+            .shutdown()
+            .await
+            .map_err(|error| ApplicationError::InvalidRequest(error.to_string()))?;
+
+        Ok(fm_transport_dto::SaveChecksumFileResponseDto {
+            location: destination.into(),
+            bytes_written: bytes.len() as u64,
+        })
+    }
+
     /// Verifies a job's computed digests against an existing checksum file,
     /// reporting per-entry match, mismatch or missing.
     pub fn verify_checksum_file(

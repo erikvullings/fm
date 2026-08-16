@@ -4,6 +4,7 @@ import {
   type ChecksumAlgorithm,
   type ChecksumEntry,
   checksumAlgorithmLabel,
+  type Location,
   type VerificationReport,
   type VerificationStatus,
 } from '../../models';
@@ -15,9 +16,14 @@ export interface ChecksumResultsViewAttrs {
   readonly isComplete: boolean;
   readonly isCancelled: boolean;
   readonly verification?: VerificationReport;
+  /** Where the results were last written, shown as a confirmation hint. */
+  readonly savedTo?: Location;
   readonly error?: string;
   readonly onCopy: (algorithm: ChecksumAlgorithm) => void;
-  readonly onSave: (algorithm: ChecksumAlgorithm) => void;
+  /** Writes the results to `fileName` in the active pane's directory. */
+  readonly onSave: (algorithm: ChecksumAlgorithm, fileName: string) => void;
+  /** Default filename offered when the save form opens. */
+  readonly suggestedFileName: (algorithm: ChecksumAlgorithm) => string;
   readonly onVerify: (content: string) => void;
   readonly onCancel: () => void;
   readonly onClose: () => void;
@@ -51,6 +57,11 @@ function progressLabel(attrs: ChecksumResultsViewAttrs): string {
 export const ChecksumResultsView: FactoryComponent<ChecksumResultsViewAttrs> = () => {
   let selectedAlgorithm: ChecksumAlgorithm | undefined;
   let verifyText = '';
+  // The save form is inline rather than a native dialog: saving goes through
+  // the backend's provider WRITE path, so the destination is a name inside the
+  // pane's current directory, not an arbitrary OS path (task 0077).
+  let saveOpen = false;
+  let saveFileName = '';
 
   return {
     view: ({ attrs }) => {
@@ -107,15 +118,66 @@ export const ChecksumResultsView: FactoryComponent<ChecksumResultsViewAttrs> = (
             'Copy',
           ),
           m(
-            'button',
+            'button.checksum-results__save-open',
             {
               type: 'button',
               disabled: algorithm === undefined || attrs.entries.length === 0,
-              onclick: () => algorithm !== undefined && attrs.onSave(algorithm),
+              onclick: () => {
+                if (algorithm === undefined) return;
+                saveFileName = attrs.suggestedFileName(algorithm);
+                saveOpen = true;
+              },
             },
-            'Save checksum file',
+            'Save checksum file…',
           ),
         ]),
+
+        saveOpen &&
+          algorithm !== undefined &&
+          m(
+            'form.checksum-results__save',
+            {
+              onsubmit: (event: Event) => {
+                event.preventDefault();
+                attrs.onSave(algorithm, saveFileName);
+                saveOpen = false;
+              },
+            },
+            [
+              m('label', [
+                'Save as (in the current directory): ',
+                m('input.checksum-results__save-name', {
+                  type: 'text',
+                  value: saveFileName,
+                  oninput: (event: Event) => {
+                    saveFileName = (event.target as HTMLInputElement).value;
+                  },
+                }),
+              ]),
+              m(
+                'button.checksum-results__save-confirm',
+                { type: 'submit', disabled: saveFileName.trim() === '' },
+                'Save',
+              ),
+              m(
+                'button.checksum-results__save-cancel',
+                {
+                  type: 'button',
+                  onclick: () => {
+                    saveOpen = false;
+                  },
+                },
+                'Cancel',
+              ),
+            ],
+          ),
+
+        attrs.savedTo !== undefined &&
+          m(
+            'p.checksum-results__saved',
+            { role: 'status' },
+            `Saved to ${decodeURIComponent(attrs.savedTo.uri)}`,
+          ),
 
         m('table.checksum-results__table', [
           m('thead', m('tr', [m('th', 'File'), m('th', 'Size'), m('th', 'Digest')])),

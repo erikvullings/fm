@@ -37,6 +37,8 @@ import type {
   ReadFileRangeRequest,
   ResolveConflictRequest,
   RuntimeCapabilities,
+  SaveChecksumFileRequest,
+  SavedChecksumFile,
   SaveEditableFileRequest,
   SearchInFileRequest,
   SearchInFileResult,
@@ -230,6 +232,18 @@ export interface FileManagerClient {
     algorithm: ChecksumAlgorithm,
     signal?: AbortSignal,
   ): Promise<ChecksumFile>;
+
+  /**
+   * Writes a job's results to a checksum file at `request.destination`.
+   *
+   * Server-side by design: both hosts create files through the provider's
+   * audited `WRITE` path rather than a host-specific save dialog (spec §35).
+   */
+  saveChecksumFile(
+    jobId: string,
+    request: SaveChecksumFileRequest,
+    signal?: AbortSignal,
+  ): Promise<SavedChecksumFile>;
 
   /** Verifies a job's digests against an existing checksum file's text. */
   verifyChecksumFile(

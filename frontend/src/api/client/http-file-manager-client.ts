@@ -38,6 +38,8 @@ import type {
   ReadFileRangeRequest,
   ResolveConflictRequest,
   RuntimeCapabilities,
+  SaveChecksumFileRequest,
+  SavedChecksumFile,
   SaveEditableFileRequest,
   SearchInFileRequest,
   SearchInFileResult,
@@ -79,6 +81,7 @@ import {
   cacheArchivePassword as requestArchivePasswordCache,
   cancelChecksums as requestChecksumCancel,
   renderChecksumFile as requestChecksumFileRender,
+  saveChecksumFile as requestChecksumFileSave,
   verifyChecksumFile as requestChecksumFileVerify,
   getChecksums as requestChecksumGet,
   startChecksums as requestChecksumStart,
@@ -646,6 +649,26 @@ export class HttpFileManagerClient implements FileManagerClient {
       throw new Error(`Unexpected renderChecksumFile response status: ${response.status}`);
     }
     return { suggestedName: response.data.suggestedName, content: response.data.content };
+  }
+
+  async saveChecksumFile(
+    jobId: string,
+    request: SaveChecksumFileRequest,
+    signal?: AbortSignal,
+  ): Promise<SavedChecksumFile> {
+    const response = await requestChecksumFileSave(
+      jobId,
+      {
+        destination: request.destination,
+        algorithm: request.algorithm,
+        ...(request.overwrite === undefined ? {} : { overwrite: request.overwrite }),
+      },
+      signal === undefined ? undefined : { signal },
+    );
+    if (response.status !== 201) {
+      throw new Error(`Unexpected saveChecksumFile response status: ${response.status}`);
+    }
+    return { location: response.data.location, bytesWritten: response.data.bytesWritten };
   }
 
   async verifyChecksumFile(

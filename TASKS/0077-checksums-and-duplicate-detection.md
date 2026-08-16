@@ -1,6 +1,6 @@
 # 0077 Checksums and duplicate-file detection
 
-Status: in-progress (backend + REST/Tauri + frontend complete; save-to-file picker outstanding)
+Status: done
 Priority: low
 Owner: unassigned
 Agent: unassigned
@@ -76,12 +76,40 @@ Depends on: 0047
   HEAD and untouched by this work, `biome check .` clean apart from a pre-existing CSS specificity
   warning. Throughput benchmarked and recorded in `docs/architecture/performance.md` (Apple M4 Max,
   64 MiB file): SHA-256 2.18 GiB/s, BLAKE3 1.95 GiB/s, CRC-32 6.50 GiB/s, MD5 773 MiB/s.
-- 2026-08-16 Claude: Known gaps, deliberately not papered over.
-  - **Save-to-file is not a real save.** The backend returns rendered checksum-file *text* on
-    purpose, so that writing goes through the one audited write path; but no save-file picker is
-    wired yet, so the view's "Save checksum file" button currently copies that text to the clipboard
-    like "Copy" does. The acceptance-criteria line "results can be ... saved to a checksum file" is
-    therefore only half-satisfied, which is why Status is not `done`.
+- 2026-08-16 Claude: Closed the save-to-file gap, so every acceptance-criteria line is now met and
+  Status is `done`.
+
+  Rather than reach for a host-native save dialog, saving goes through the backend:
+  `POST /api/v1/checksums/{jobId}/save` (plus the matching `save_checksum_file` Tauri command) takes
+  a destination `Location` and writes the rendered text through the provider's `open_write`, gated
+  on `ProviderCapabilities::WRITE`. Three reasons this beat a native dialog: it keeps every file the
+  application creates on the one audited, capability-gated path the DTO doc comment already promised
+  (spec §35); the Axum and Tauri hosts then behave identically instead of diverging into a browser
+  download versus an OS picker; and it needs no `tauri-plugin-dialog`, which the desktop
+  `capabilities/default.json` deliberately excludes ("no default full-filesystem plugin access",
+  spec §22). `overwrite` defaults to `false`, so a second save cannot silently destroy an existing
+  checksum file.
+
+  The results view now opens an inline "Save as" form prefilled with `checksums.<algorithm>` and
+  writes into the pane's current directory, confirming with a "Saved to …" status line; **Copy
+  remains a separate button and is unchanged**. Added 6 controller tests (destination joining,
+  percent-encoding a filename with spaces, the overwrite opt-in, refusal on missing job/blank name,
+  failure surfaced as an error rather than a silent no-op, default filename) and a new 10-test
+  `checksum-results-view.test.ts` that asserts the Save button calls the save path and *not* the
+  clipboard. A new `fm-server` route test writes a real file to a temp dir, reads it back, checks it
+  contains `<digest>  alpha.txt`, and proves the second save is rejected unless `overwrite` is set.
+
+  Also added the panels' stylesheet to `frontend/src/themes/theme.css` (they had none, so both
+  would have rendered unstyled): surface/border treatment matching the `.fm-sync-plan-*` review
+  table, sticky headers/footers, and a warning-bordered block that keeps a hardlink cluster visually
+  set apart from the true duplicates above it. All colours come from existing `--fm-*` tokens, so
+  both themes are covered.
+
+  Verification: `cargo test --workspace` 1026 passing, 0 failures; `cargo clippy --workspace
+  --all-targets -- -D warnings` and `cargo fmt --all -- --check` clean; frontend `vitest run` 1157
+  passing across 100 files; `tsc --noEmit` and `biome check .` clean apart from the same pre-existing
+  `app-shell.test.ts` errors and CSS specificity warning noted before.
+- 2026-08-16 Claude: Remaining known limitations (none block the acceptance criteria).
   - The command palette starts a job with SHA-256 hardcoded; there is no pre-flight dialog to pick
     algorithms, though every layer beneath already accepts an arbitrary set and computes them in a
     single pass.
@@ -98,3 +126,14 @@ Depends on: 0047
     UI, and its own tests say so.
   - Not manually driven in a browser: this environment has no browser available for the mock runtime,
     so the UI is covered by unit/component tests only.
+- 2026-08-16 Claude: Flaky-test note for whoever sees a red workspace run. `fm-application`'s
+  `plans_and_copies_ten_thousand_small_files` polls for a terminal operation state on a fixed
+  6000 x 10ms = 60s wall-clock deadline while copying 10,000 files. That binary takes ~59s on its
+  own on this machine, so the test sits right on its budget and fails under any extra load — it
+  failed in full `cargo test --workspace` runs while the machine was busy and passed whenever it was
+  quiet. Attribution was measured rather than assumed: the same single test timed at HEAD (56.6s,
+  57.1s) versus with this task's changes (59.5s) is ~5% apart, within run-to-run noise, and this diff
+  touches no `fm-operations`, operation-planner or `fm-vfs-local` code — the only additions to
+  `FileManagerService::new` are two empty stores and an engine struct, which are O(1) and cannot
+  affect a 10,000-file copy. A final quiet-machine `cargo test --workspace` was green at 1026. The
+  deadline is still worth widening or making load-proportional in a follow-up.

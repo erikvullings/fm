@@ -34,9 +34,10 @@ pub use action::{
 pub use checksum::{
     ChecksumAlgorithmDto, ChecksumEntryDto, ChecksumFileDto, ChecksumPageDto, DuplicateGroupDto,
     DuplicatePageDto, DuplicateStatsDto, HardlinkClusterDto, RenderChecksumFileRequestDto,
-    StartChecksumRequestDto, StartChecksumResponseDto, StartDuplicateScanRequestDto,
-    StartDuplicateScanResponseDto, VerificationReportDto, VerificationResultDto,
-    VerificationStatusDto, VerifyChecksumFileRequestDto,
+    SaveChecksumFileRequestDto, SaveChecksumFileResponseDto, StartChecksumRequestDto,
+    StartChecksumResponseDto, StartDuplicateScanRequestDto, StartDuplicateScanResponseDto,
+    VerificationReportDto, VerificationResultDto, VerificationStatusDto,
+    VerifyChecksumFileRequestDto,
 };
 pub use comparison::{
     ApplySyncPlanRequestDto, ApplySyncPlanResponseDto, ComparisonCriteriaDto, ComparisonEntryDto,

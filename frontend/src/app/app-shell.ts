@@ -2312,13 +2312,10 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
                     if (content !== undefined) void navigator.clipboard?.writeText(content);
                   });
                 },
-                onSave: (algorithm) => {
-                  void checksumController.renderChecksumFile(algorithm).then((file) => {
-                    if (file === undefined) return;
-                    // Writing the file goes through the editor's own save path,
-                    // which the user confirms; nothing is written silently.
-                    void navigator.clipboard?.writeText(file.content);
-                  });
+                ...(checksumState.savedTo === undefined ? {} : { savedTo: checksumState.savedTo }),
+                suggestedFileName: (algorithm) => checksumController.suggestedFileName(algorithm),
+                onSave: (algorithm, fileName) => {
+                  void checksumController.saveChecksumFile(algorithm, fileName);
                 },
                 onVerify: (content) => checksumController.verifyAgainst(content),
                 onCancel: () => checksumController.cancelChecksums(),
