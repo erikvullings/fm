@@ -6,6 +6,7 @@ import type {
   PaneId,
   TabId,
 } from '../../models';
+import { NEW_WORKSPACE_WINDOW_MENU_ID } from './native-menu-dispatch';
 
 /** One open tab, flattened for the Window menu (task 0133). */
 export interface NativeMenuTab {
@@ -28,6 +29,10 @@ export interface NativeMenuInputs {
   readonly favouriteActions: readonly ActionDescriptor[];
   /** Every open tab across every pane, in display order. */
   readonly tabs: readonly NativeMenuTab[];
+  /** Whether the host can open a workspace in its own OS window (task 0143) - `false` on hosts
+   * with no window concept (browser/HTTP), in which case the File menu's "New Window" item is
+   * omitted entirely rather than added disabled. */
+  readonly canOpenNewWindow: boolean;
 }
 
 const PREFERENCES_SHORTCUT = { key: ',', meta: true } as const;
@@ -94,8 +99,22 @@ function appMenu(): NativeMenu {
   };
 }
 
-function fileMenu(actions: readonly ActionDescriptor[]): NativeMenu {
-  return { title: 'File', items: actionItems(actions, ['core.newTab', 'core.closeTab']) };
+function fileMenu(actions: readonly ActionDescriptor[], canOpenNewWindow: boolean): NativeMenu {
+  const newWindowItem: NativeMenuItem = {
+    kind: 'action',
+    id: NEW_WORKSPACE_WINDOW_MENU_ID,
+    title: 'New Window',
+    shortcut: { key: 'n', meta: true, shift: true },
+    enabled: true,
+    checked: false,
+  };
+  return {
+    title: 'File',
+    items: [
+      ...(canOpenNewWindow ? [newWindowItem] : []),
+      ...actionItems(actions, ['core.newTab', 'core.closeTab']),
+    ],
+  };
 }
 
 /** Only Copy/Paste/Select All: this app has no Undo/Redo feature and no Cut action anywhere in
@@ -168,7 +187,7 @@ export function buildNativeMenuSpec(inputs: NativeMenuInputs): NativeMenuSpec {
   return {
     menus: [
       appMenu(),
-      fileMenu(inputs.actions),
+      fileMenu(inputs.actions, inputs.canOpenNewWindow),
       editMenu(inputs.actions),
       viewMenu(inputs.actions),
       goMenu(inputs.favouriteActions),

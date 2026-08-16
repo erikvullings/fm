@@ -8,6 +8,11 @@ export const OPEN_SETTINGS_MENU_ID = 'ui.openSettings';
 /** Prefix for a Window-menu tab item's id, followed by the tab's `${paneId}:${tabId}` key. */
 export const WINDOW_TAB_MENU_ID_PREFIX = 'ui.window.tab.';
 
+/** File menu's "New Window" item; never an action-registry id, like `OPEN_SETTINGS_MENU_ID` -
+ * opening a workspace in a new OS window (task 0143) is desktop-window plumbing, not a backend
+ * action. */
+export const NEW_WORKSPACE_WINDOW_MENU_ID = 'ui.newWorkspaceWindow';
+
 /** Context the click router needs; kept minimal so it's independently testable from app-shell.ts's
  * closures rather than left inline and untestable. */
 export interface NativeMenuDispatchContext {
@@ -32,6 +37,12 @@ export interface NativeMenuDispatchContext {
    * or bypassed, so its `core.favourites`/`core.favourite.N`/`core.createDirectory`/clipboard
    * special-casing stays in exactly one place. */
   readonly invokeAction: (action: ActionDescriptor) => void;
+  /** Opens the current workspace in a new OS window (task 0143); absent on hosts with no window
+   * concept, in which case `NEW_WORKSPACE_WINDOW_MENU_ID` clicks are silently ignored - the item
+   * is never added to the menu spec on those hosts in the first place (see
+   * `native-menu-spec.ts`'s `NativeMenuInputs.canOpenNewWindow`), so this should be unreachable in
+   * practice. */
+  readonly openNewWorkspaceWindow?: () => void;
 }
 
 /**
@@ -45,6 +56,10 @@ export function dispatchNativeMenuAction(context: NativeMenuDispatchContext, id:
   }
   if (id.startsWith(WINDOW_TAB_MENU_ID_PREFIX)) {
     context.activateTabByKey(id.slice(WINDOW_TAB_MENU_ID_PREFIX.length));
+    return;
+  }
+  if (id === NEW_WORKSPACE_WINDOW_MENU_ID) {
+    context.openNewWorkspaceWindow?.();
     return;
   }
   if (id in SORT_SHORTCUT_DESCRIPTORS) {

@@ -31,7 +31,7 @@ function tab(overrides: Partial<NativeMenuTab> = {}): NativeMenuTab {
 }
 
 function inputs(overrides: Partial<NativeMenuInputs> = {}): NativeMenuInputs {
-  return { actions: [], favouriteActions: [], tabs: [], ...overrides };
+  return { actions: [], favouriteActions: [], tabs: [], canOpenNewWindow: false, ...overrides };
 }
 
 describe('buildNativeMenuSpec', () => {
@@ -105,6 +105,31 @@ describe('buildNativeMenuSpec', () => {
       (menu) => menu.title === 'File',
     );
     expect(fileMenu?.items).toEqual([]);
+  });
+
+  it('adds a New Window item first in the File menu when the host can open one', () => {
+    const fileMenu = buildNativeMenuSpec(inputs({ canOpenNewWindow: true })).menus.find(
+      (menu) => menu.title === 'File',
+    );
+    expect(fileMenu?.items).toEqual([
+      {
+        kind: 'action',
+        id: 'ui.newWorkspaceWindow',
+        title: 'New Window',
+        shortcut: { key: 'n', meta: true, shift: true },
+        enabled: true,
+        checked: false,
+      },
+    ]);
+  });
+
+  it('omits New Window entirely on a host with no window concept', () => {
+    const fileMenu = buildNativeMenuSpec(inputs({ canOpenNewWindow: false })).menus.find(
+      (menu) => menu.title === 'File',
+    );
+    expect(
+      fileMenu?.items.some((item) => 'id' in item && item.id === 'ui.newWorkspaceWindow'),
+    ).toBe(false);
   });
 
   it('restricts the Edit menu to Copy, Paste and Select All only', () => {

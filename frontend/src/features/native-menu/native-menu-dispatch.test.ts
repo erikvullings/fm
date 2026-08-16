@@ -4,6 +4,7 @@ import type { ActionDescriptor, PaneId, SortDescriptor } from '../../models';
 import {
   dispatchNativeMenuAction,
   type NativeMenuDispatchContext,
+  NEW_WORKSPACE_WINDOW_MENU_ID,
   OPEN_SETTINGS_MENU_ID,
 } from './native-menu-dispatch';
 
@@ -27,6 +28,7 @@ interface ContextMocks {
     typeof vi.fn<(paneId: PaneId, sort: readonly SortDescriptor[]) => void>
   >;
   readonly invokeAction: ReturnType<typeof vi.fn<(action: ActionDescriptor) => void>>;
+  readonly openNewWorkspaceWindow: ReturnType<typeof vi.fn<() => void>>;
 }
 
 function contextMocks(
@@ -38,6 +40,7 @@ function contextMocks(
   const activePaneId = vi.fn<() => PaneId | undefined>(() => paneId);
   const setSort = vi.fn<(paneId: PaneId, sort: readonly SortDescriptor[]) => void>();
   const invokeAction = vi.fn<(action: ActionDescriptor) => void>();
+  const openNewWorkspaceWindow = vi.fn<() => void>();
   return {
     findAction,
     openSettingsDialog,
@@ -45,6 +48,7 @@ function contextMocks(
     activePaneId,
     setSort,
     invokeAction,
+    openNewWorkspaceWindow,
     context: {
       findAction,
       openSettingsDialog,
@@ -52,6 +56,7 @@ function contextMocks(
       activePaneId,
       setSort,
       invokeAction,
+      openNewWorkspaceWindow,
     },
   };
 }
@@ -73,6 +78,13 @@ describe('dispatchNativeMenuAction', () => {
     expect(mocks.invokeAction).not.toHaveBeenCalled();
   });
 
+  it('opens a new workspace window for the frontend-local ui.newWorkspaceWindow id', () => {
+    const mocks = contextMocks();
+    dispatchNativeMenuAction(mocks.context, NEW_WORKSPACE_WINDOW_MENU_ID);
+    expect(mocks.openNewWorkspaceWindow).toHaveBeenCalledOnce();
+    expect(mocks.invokeAction).not.toHaveBeenCalled();
+  });
+
   it('looks up any other id in the action registry and invokes it via invokePaletteAction', () => {
     const copy = action('core.copy');
     const mocks = contextMocks();
@@ -87,6 +99,7 @@ describe('dispatchNativeMenuAction', () => {
     expect(mocks.invokeAction).not.toHaveBeenCalled();
     expect(mocks.openSettingsDialog).not.toHaveBeenCalled();
     expect(mocks.activateTabByKey).not.toHaveBeenCalled();
+    expect(mocks.openNewWorkspaceWindow).not.toHaveBeenCalled();
   });
 
   it('applies a sort-menu id as a local setSort call to the active pane, not a registry dispatch', () => {

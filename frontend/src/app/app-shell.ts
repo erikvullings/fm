@@ -360,6 +360,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       actions: registeredActions,
       favouriteActions: favouriteActions(),
       tabs: nativeMenuWindowTabs(),
+      canOpenNewWindow: attrsClient.openWorkspaceWindow !== undefined,
     });
     const serialized = JSON.stringify(spec);
     if (serialized === lastSentNativeMenuSpecJson) return;
@@ -396,6 +397,10 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     activePaneId: () => activeDirectory()?.paneId,
     setSort: (paneId, sort) => globalKeydownHandlerContext.setSort(paneId, sort),
     invokeAction: (action) => actionCommandController.invokePaletteAction(action),
+    openNewWorkspaceWindow: () => {
+      if (workspace === undefined) return;
+      void attrsClient.openWorkspaceWindow?.(workspace.id);
+    },
   };
   let installedIconThemeId: string | undefined;
   let keybindingRuntime: KeybindingRuntime = 'browser';
