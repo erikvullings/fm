@@ -56,8 +56,8 @@ use crate::operation_requests::{
     operation_kind,
 };
 use crate::platform_mapping::{
-    PlatformActionKind, discover_system_locations, map_file_icon_error, map_platform_error,
-    platform_action_kind, runtime_capabilities_dto, volume_capacity,
+    PlatformActionKind, discover_system_locations, map_file_icon_error, map_native_menu_error,
+    map_platform_error, platform_action_kind, runtime_capabilities_dto, volume_capacity,
 };
 use crate::plugin_manager::PluginManager;
 use crate::remote_terminal::RemoteTerminalService;
@@ -1106,6 +1106,21 @@ impl FileManagerService {
             .and_then(|location| location.to_native_path())
             .map_err(|error| ApplicationError::InvalidRequest(format!("invalid `uri`: {error}")))?;
         self.platform.file_icon(&path).map_err(map_file_icon_error)
+    }
+
+    /// Installs the native menu bar from `spec` (task 0133), a thin
+    /// passthrough to the platform adapter. `on_action` is invoked whenever
+    /// the user clicks a `NativeMenuItem::Action` item, with that item's
+    /// action-registry id, so the caller can dispatch it exactly like an
+    /// `invoke_action` call from the keyboard.
+    pub fn install_native_menu(
+        &self,
+        spec: &fm_domain::NativeMenuSpec,
+        on_action: Arc<dyn Fn(String) + Send + Sync>,
+    ) -> Result<(), ApplicationError> {
+        self.platform
+            .install_native_menu(spec, on_action)
+            .map_err(map_native_menu_error)
     }
 
     /// Runs the workspace startup lifecycle (spec §5.3.7): selects an
@@ -2248,6 +2263,8 @@ mod tests {
         trashed: Mutex<Vec<PathBuf>>,
         open_error: Mutex<Option<fm_platform::PlatformError>>,
         trash_error: Mutex<Option<fm_platform::PlatformError>>,
+        installed_menus: Mutex<Vec<fm_domain::NativeMenuSpec>>,
+        install_native_menu_error: Mutex<Option<fm_platform::PlatformError>>,
     }
 
     impl RecordingPlatformAdapter {
@@ -2262,6 +2279,8 @@ mod tests {
                 trashed: Mutex::new(Vec::new()),
                 open_error: Mutex::new(None),
                 trash_error: Mutex::new(None),
+                installed_menus: Mutex::new(Vec::new()),
+                install_native_menu_error: Mutex::new(None),
             }
         }
 
@@ -2271,6 +2290,13 @@ mod tests {
 
         fn fail_next_trash_with(&self, error: fm_platform::PlatformError) {
             *self.trash_error.lock().expect("lock must not be poisoned") = Some(error);
+        }
+
+        fn fail_next_install_native_menu_with(&self, error: fm_platform::PlatformError) {
+            *self
+                .install_native_menu_error
+                .lock()
+                .expect("lock must not be poisoned") = Some(error);
         }
     }
 
@@ -2351,6 +2377,29 @@ mod tests {
                 .lock()
                 .expect("lock must not be poisoned")
                 .push(path.to_path_buf());
+            Ok(())
+        }
+
+        fn install_native_menu(
+            &self,
+            spec: &fm_domain::NativeMenuSpec,
+            on_action: Arc<dyn Fn(String) + Send + Sync>,
+        ) -> Result<(), fm_platform::PlatformError> {
+            if let Some(error) = self
+                .install_native_menu_error
+                .lock()
+                .expect("lock must not be poisoned")
+                .take()
+            {
+                return Err(error);
+            }
+            self.installed_menus
+                .lock()
+                .expect("lock must not be poisoned")
+                .push(spec.clone());
+            // Exercises the wiring end to end: a real caller's `on_action`
+            // would forward this to the frontend over a Tauri `Channel`.
+            on_action("recorded-action-id".to_owned());
             Ok(())
         }
     }
@@ -2752,6 +2801,55 @@ mod tests {
             error
                 .to_string()
                 .contains("no default application is registered for .xyz files")
+        );
+    }
+
+    /// `install_native_menu` (task 0133) is a thin passthrough: it forwards
+    /// the spec and callback unchanged to the platform adapter, and maps
+    /// whatever failure the adapter reports to a user-readable
+    /// `PlatformOperationFailed` error rather than swallowing it.
+    #[test]
+    fn install_native_menu_forwards_the_spec_and_maps_adapter_failures() {
+        let (_dir, service, adapter) = service_with_recording_adapter();
+        let spec = fm_domain::NativeMenuSpec {
+            menus: vec![fm_domain::NativeMenu {
+                title: "File".to_owned(),
+                items: vec![fm_domain::NativeMenuItem::Action {
+                    id: "core.newWindow".to_owned(),
+                    title: "New Window".to_owned(),
+                    shortcut: None,
+                    enabled: true,
+                    checked: false,
+                }],
+            }],
+        };
+        let received_ids = Arc::new(Mutex::new(Vec::new()));
+        let received_ids_clone = Arc::clone(&received_ids);
+        let on_action: Arc<dyn Fn(String) + Send + Sync> =
+            Arc::new(move |id| received_ids_clone.lock().unwrap().push(id));
+
+        service
+            .install_native_menu(&spec, Arc::clone(&on_action))
+            .expect("the recording adapter always succeeds by default");
+
+        assert_eq!(
+            adapter.installed_menus.lock().unwrap().as_slice(),
+            std::slice::from_ref(&spec)
+        );
+        assert_eq!(
+            received_ids.lock().unwrap().as_slice(),
+            &["recorded-action-id".to_owned()]
+        );
+
+        adapter.fail_next_install_native_menu_with(fm_platform::PlatformError::Unsupported {
+            capability: PlatformCapabilities::NATIVE_MENUS,
+        });
+        let error = service
+            .install_native_menu(&spec, on_action)
+            .expect_err("an adapter failure must be reported, not swallowed");
+        assert_eq!(
+            error.code(),
+            fm_transport_dto::ApplicationErrorCode::PlatformOperationFailed
         );
     }
 

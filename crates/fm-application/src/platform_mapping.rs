@@ -73,6 +73,15 @@ pub(crate) fn map_file_icon_error(error: fm_platform::PlatformError) -> Applicat
     }
 }
 
+/// Maps a native-menu install failure to a user-readable application error
+/// (task 0133). Unlike [`map_file_icon_error`], `Unsupported` has no silent
+/// fallback interpretation here - the frontend only calls `setNativeMenu`
+/// after checking `runtimeCapabilities().nativeMenus`, so seeing it anyway
+/// is a genuine, surfaceable failure rather than an expected gap.
+pub(crate) fn map_native_menu_error(error: fm_platform::PlatformError) -> ApplicationError {
+    ApplicationError::PlatformOperationFailed(error.to_string())
+}
+
 /// Detects the host operating system from the compiled target (spec §21).
 pub(crate) fn detect_platform() -> PlatformKindDto {
     match std::env::consts::OS {

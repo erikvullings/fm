@@ -163,8 +163,8 @@ export const SettingsEditor: FactoryComponent<SettingsEditorAttrs> = () => {
             className: 'col s6',
             label: 'Size format',
             options: [
-              { id: 'binary', label: 'Binary (KiB, MiB, ...)' },
-              { id: 'decimal', label: 'Decimal (KB, MB, ...)' },
+              { id: 'binary', label: 'Binary (1024-based: K, M, G...)' },
+              { id: 'decimal', label: 'Decimal (1000-based: K, M, G...)' },
               { id: 'bytes', label: 'Bytes' },
             ],
             checkedId: activeDraft.sizeFormat,

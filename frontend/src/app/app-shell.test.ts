@@ -147,9 +147,11 @@ describe('AppShell', () => {
 
     await vi.waitFor(() => expect(activePane?.textContent).toContain('report.pdf'));
     expect(activePane?.querySelector('.fm-cursor-row')?.textContent).toContain('Projects');
-    // The first entry of a freshly entered directory must be selected too, not
-    // just highlighted, so single-selection actions (e.g. F3) work immediately.
-    expect(activePane?.querySelector('.fm-selected-row')?.textContent).toContain('Projects');
+    // Landing on a freshly entered directory positions the keyboard cursor only - it must not
+    // also select the entry (selecting is a deliberate user action, not a side effect of simply
+    // arriving somewhere). Single-selection actions like F3 already act on the cursor entry
+    // "regardless of the wider selection" (see the core.view case in global-keydown-handler.ts).
+    expect(activePane?.querySelector('.fm-selected-row')).toBeNull();
     activePane?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
     m.redraw.sync();
     expect(activePane?.querySelector('.fm-cursor-row')?.textContent).toContain('report.pdf');
@@ -294,6 +296,78 @@ describe('AppShell', () => {
     expect(activePane.querySelector('.fm-cursor-row')?.textContent).toContain('generated-0009999');
   }, 15_000);
 
+  it('type-to-select still background-loads the rest of the directory even when the prefix already matches a loaded entry', async () => {
+    // Regression test for the reported bug: typing a prefix that already matches some entries
+    // among the first page (so a selection happens immediately) must still keep searching the
+    // rest of the directory in the background, instead of only ever considering the loaded page.
+    const client = new MockFileManagerClient({ pageSize: 100 });
+    const listDirectorySpy = vi.spyOn(client, 'listDirectory');
+    m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
+    await vi.waitFor(() => expect(root.textContent).toContain('Documents'));
+    const activePane = root.querySelector<HTMLElement>('[data-active="true"] > .fm-pane');
+    if (activePane === null) throw new Error('no active pane');
+
+    activePane
+      .querySelector<HTMLElement>('.fm-breadcrumb-segments')
+      ?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+    m.redraw.sync();
+    const pathInput = activePane.querySelector<HTMLInputElement>('.fm-path-input');
+    if (pathInput === null) throw new Error('path input missing');
+    pathInput.value = '/large/1000';
+    pathInput.dispatchEvent(new InputEvent('input', { bubbles: true }));
+    pathInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    await vi.waitFor(() => expect(activePane.textContent).toContain('generated-0000000'));
+    // Only the first of 10 pages (1000 entries / 100 per page) has been fetched so far.
+    const callsAfterInitialLoad = listDirectorySpy.mock.calls.length;
+
+    // "0" matches "generated-0000000" immediately, among the first (already loaded) page.
+    activePane.dispatchEvent(new KeyboardEvent('keydown', { key: '0', bubbles: true }));
+    m.redraw.sync();
+    expect(activePane.querySelector('.fm-cursor-row')?.textContent).toContain('generated-0000000');
+
+    // Every remaining page must still be fetched in the background, so entries further in
+    // (matching this same prefix, or a later one) are eventually reachable too.
+    await vi.waitFor(() =>
+      expect(listDirectorySpy.mock.calls.length).toBeGreaterThan(callsAfterInitialLoad),
+    );
+  });
+
+  it('type-to-select finds an entry only present on an unloaded page by background-loading the rest of the directory', async () => {
+    // Regression test: type-to-select used to only search entries loaded so far. Typing a prefix
+    // that matches nothing among the first page must background-load every remaining page and
+    // retry, exactly like End does for the true last entry.
+    const client = new MockFileManagerClient({ pageSize: 100 });
+    m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
+    await vi.waitFor(() => expect(root.textContent).toContain('Documents'));
+    const activePane = root.querySelector<HTMLElement>('[data-active="true"] > .fm-pane');
+    if (activePane === null) throw new Error('no active pane');
+
+    activePane
+      .querySelector<HTMLElement>('.fm-breadcrumb-segments')
+      ?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+    m.redraw.sync();
+    const pathInput = activePane.querySelector<HTMLInputElement>('.fm-path-input');
+    if (pathInput === null) throw new Error('path input missing');
+    pathInput.value = '/large/1000';
+    pathInput.dispatchEvent(new InputEvent('input', { bubbles: true }));
+    pathInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    await vi.waitFor(() => expect(activePane.textContent).toContain('generated-0000000'));
+    // Only the first page (100 of 1000) should be loaded so far.
+    expect(activePane.textContent).not.toContain('generated-0000999');
+
+    for (const typed of '0000999') {
+      activePane.dispatchEvent(new KeyboardEvent('keydown', { key: typed, bubbles: true }));
+    }
+    m.redraw.sync();
+
+    await vi.waitFor(() => expect(activePane.textContent).toContain('generated-0000999'));
+    await vi.waitFor(() =>
+      expect(activePane.querySelector('.fm-cursor-row')?.textContent).toContain(
+        'generated-0000999',
+      ),
+    );
+  });
+
   it('keeps cursor and selection independent while using keyboard selection', async () => {
     mountShell('mock');
 
@@ -362,10 +436,10 @@ describe('AppShell', () => {
     await vi.waitFor(() => expect(activePane?.textContent).not.toContain('report.pdf'));
     expect(activePane?.textContent).toContain('Documents');
     expect(activePane?.querySelector('.fm-directory-row')?.textContent).not.toContain('..');
-    // Navigating back up must select (not just highlight) the child directory
-    // just exited, matching how entering a fresh directory selects its first entry.
+    // Navigating back up must position the keyboard cursor on the child directory just exited,
+    // but not also select it - landing somewhere is not a selection action.
     expect(activePane?.querySelector('.fm-cursor-row')?.textContent).toContain('Documents');
-    expect(activePane?.querySelector('.fm-selected-row')?.textContent).toContain('Documents');
+    expect(activePane?.querySelector('.fm-selected-row')).toBeNull();
   });
 
   it('composes the complete main-window workspace regions', async () => {
@@ -2026,7 +2100,7 @@ describe('AppShell', () => {
     );
   });
 
-  it('shows the search term in the breadcrumb/tab title and focuses/selects the first result so ArrowDown moves the cursor', async () => {
+  it('shows the search term in the breadcrumb/tab title and focuses/cursors the first result so ArrowDown moves the cursor', async () => {
     const client = new MockFileManagerClient();
     m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
     await vi.waitFor(() => expect(root.textContent).toContain('Documents'));
@@ -2061,9 +2135,9 @@ describe('AppShell', () => {
     await vi.waitFor(() => expect(document.activeElement).toBe(activePane));
     const firstCursorRow = activePane?.querySelector('.fm-cursor-row')?.textContent;
     expect(firstCursorRow).not.toBeUndefined();
-    // The first result is selected too, not just cursored (matches the same guarantee as
-    // freshly entering a real directory - see the "selects a row... with Enter" test above).
-    expect(activePane?.querySelector('.fm-selected-row')?.textContent).toBe(firstCursorRow);
+    // The first result is cursored, not selected - landing on results is not a selection action
+    // (matches freshly entering a real directory - see the "selects a row... with Enter" test).
+    expect(activePane?.querySelector('.fm-selected-row')).toBeNull();
 
     document.activeElement?.dispatchEvent(
       new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }),

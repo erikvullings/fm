@@ -95,6 +95,10 @@ export class TauriFileManagerClient implements FileManagerClient {
     await getCurrentWindow().close();
   }
 
+  async openWorkspaceWindow(workspaceId: WorkspaceId): Promise<void> {
+    await invoke<void>('open_workspace_window', { workspaceId });
+  }
+
   subscribeNativeFileDrops(listener: (drop: NativeFileDrop) => void): Promise<Unsubscribe> {
     return getCurrentWindow().onDragDropEvent(async ({ payload }) => {
       if (payload.type !== 'drop') return;
@@ -138,6 +142,16 @@ export class TauriFileManagerClient implements FileManagerClient {
 
   listWorkspaces(_signal?: AbortSignal): Promise<WorkspaceSummary[]> {
     return invoke<WorkspaceSummary[]>('list_workspaces');
+  }
+
+  async startWorkspace(
+    workspaceId?: WorkspaceId,
+    _signal?: AbortSignal,
+  ): Promise<WorkspaceProjection> {
+    return workspaceProjectionFromDto(
+      await invoke<WorkspaceDto>('start_workspace', { workspaceId }),
+      { redirectSessionOnlyTabs: true },
+    );
   }
 
   async createWorkspace(

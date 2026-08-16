@@ -111,6 +111,7 @@ import {
   createWorkspace as requestWorkspaceCreation,
   deleteWorkspace as requestWorkspaceDeletion,
   openWorkspace as requestWorkspaceOpen,
+  startWorkspace as requestWorkspaceStart,
   listWorkspaces as requestWorkspaces,
 } from '../generated/file-manager-api';
 import type { ActionDescriptorDto } from '../generated/models/actionDescriptorDto';
@@ -232,6 +233,20 @@ export class HttpFileManagerClient implements FileManagerClient {
   async listWorkspaces(signal?: AbortSignal): Promise<WorkspaceSummary[]> {
     const response = await requestWorkspaces(signal === undefined ? undefined : { signal });
     return response.data;
+  }
+
+  async startWorkspace(
+    workspaceId?: WorkspaceId,
+    signal?: AbortSignal,
+  ): Promise<WorkspaceProjection> {
+    const response = await requestWorkspaceStart(
+      workspaceId === undefined ? undefined : { workspaceId },
+      signal === undefined ? undefined : { signal },
+    );
+    if (response.status !== 200) {
+      throw new Error(`Unexpected startWorkspace response status: ${response.status}`);
+    }
+    return workspaceProjectionFromDto(response.data, { redirectSessionOnlyTabs: true });
   }
 
   async createWorkspace(

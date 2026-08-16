@@ -1,5 +1,8 @@
 import m, { type FactoryComponent } from 'mithril';
+import { IconButton } from 'mithril-materialized';
 
+import { externalLinkIcon, pencilIcon, trashIcon } from '../../components/tabler-icons';
+import { tooltip } from '../../components/tooltip';
 import type { WorkspaceId, WorkspaceSummary } from '../../models';
 import { DeleteWorkspaceDialog } from './delete-workspace-dialog';
 
@@ -11,6 +14,9 @@ export interface WorkspaceSwitcherAttrs {
   readonly onCreate: () => void;
   readonly onRename: (workspaceId: WorkspaceId, name: string) => void;
   readonly onDelete: (workspaceId: WorkspaceId) => void;
+  /** Opens the workspace in its own OS window (task 0143 sub-task (b)); omitted entirely on hosts
+   * with no window concept (browser/HTTP), so the button below only renders on desktop. */
+  readonly onOpenInNewWindow?: (workspaceId: WorkspaceId) => void;
 }
 
 /**
@@ -99,29 +105,52 @@ export const WorkspaceSwitcher: FactoryComponent<WorkspaceSwitcherAttrs> = () =>
                           },
                           summary.name,
                         ),
-                    renaming
+                    renaming || attrs.onOpenInNewWindow === undefined
                       ? undefined
-                      : m(
-                          'button.fm-workspace-rename-button',
-                          {
-                            type: 'button',
-                            'aria-label': `Rename ${summary.name}`,
-                            onclick: () => beginRename(summary),
-                          },
-                          'Rename',
+                      : tooltip(
+                          `Open ${summary.name} in a new window`,
+                          m(
+                            IconButton,
+                            {
+                              type: 'button',
+                              className: 'fm-workspace-open-window-button',
+                              'aria-label': `Open ${summary.name} in a new window`,
+                              onclick: () => attrs.onOpenInNewWindow?.(summary.id),
+                            },
+                            externalLinkIcon({ size: 16 }),
+                          ),
                         ),
                     renaming
                       ? undefined
-                      : m(
-                          'button.fm-workspace-delete-button',
-                          {
-                            type: 'button',
-                            'aria-label': `Delete ${summary.name}`,
-                            onclick: () => {
-                              pendingDeleteId = summary.id;
+                      : tooltip(
+                          `Rename ${summary.name}`,
+                          m(
+                            IconButton,
+                            {
+                              type: 'button',
+                              className: 'fm-workspace-rename-button',
+                              'aria-label': `Rename ${summary.name}`,
+                              onclick: () => beginRename(summary),
                             },
-                          },
-                          'Delete',
+                            pencilIcon({ size: 16 }),
+                          ),
+                        ),
+                    renaming
+                      ? undefined
+                      : tooltip(
+                          `Delete ${summary.name}`,
+                          m(
+                            IconButton,
+                            {
+                              type: 'button',
+                              className: 'fm-workspace-delete-button',
+                              'aria-label': `Delete ${summary.name}`,
+                              onclick: () => {
+                                pendingDeleteId = summary.id;
+                              },
+                            },
+                            trashIcon({ size: 16 }),
+                          ),
                         ),
                   ],
                 );

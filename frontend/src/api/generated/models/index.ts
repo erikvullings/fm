@@ -244,6 +244,7 @@ export * from './startSearchRequestDto.ts';
 export * from './startSearchRequestDto';
 export * from './startSearchResponseDto.ts';
 export * from './startSearchResponseDto';
+export * from './startWorkspaceParams.ts';
 export * from './symlinkPolicyDto.ts';
 export * from './symlinkPolicyDto';
 export * from './syncActionDto.ts';

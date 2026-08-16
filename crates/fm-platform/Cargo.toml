@@ -8,6 +8,7 @@ license.workspace = true
 
 [dependencies]
 bitflags.workspace = true
+fm-domain.workspace = true
 thiserror.workspace = true
 
 [lints]

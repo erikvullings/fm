@@ -40,7 +40,7 @@ crates/
   fm-domain/            canonical domain types (entries, locations, …)
   fm-operations/        operation engine: jobs, scheduler, conflict handling
   fm-platform/          platform-adapter trait and capability flags
-  fm-platform-macos/    macOS implementation (icons, trash, terminal, …)
+  fm-platform-macos/    macOS implementation (icons, trash, terminal, native menu bar, …)
   fm-platform-windows/  Windows implementation (Explorer reveal, Recycle Bin, drives, terminal)
   fm-plugin-api/        plugin manifest, permissions, contribution types
   fm-plugin-runtime/    restricted Lua sandbox and plugin lifecycle

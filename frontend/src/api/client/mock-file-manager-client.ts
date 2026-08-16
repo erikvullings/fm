@@ -104,6 +104,7 @@ export type MockClientMethod =
   | 'updateSettings'
   | 'getWorkspace'
   | 'listWorkspaces'
+  | 'startWorkspace'
   | 'createWorkspace'
   | 'renameWorkspace'
   | 'deleteWorkspace'
@@ -643,6 +644,19 @@ export class MockFileManagerClient implements FileManagerClient {
         `mock-workspace-${this.workspaceSequence}`,
         request.name ?? 'Default',
       );
+      this.workspaces.set(workspace.id, workspace);
+      return structuredClone(workspace);
+    });
+  }
+
+  startWorkspace(workspaceId?: WorkspaceId, signal?: AbortSignal): Promise<WorkspaceProjection> {
+    return this.perform('startWorkspace', signal, () => {
+      const existing = workspaceId === undefined ? undefined : this.workspaces.get(workspaceId);
+      if (existing !== undefined) return structuredClone(existing);
+      const [first] = this.workspaces.values();
+      if (first !== undefined) return structuredClone(first);
+      this.workspaceSequence += 1;
+      const workspace = createMockWorkspace(`mock-workspace-${this.workspaceSequence}`, 'Default');
       this.workspaces.set(workspace.id, workspace);
       return structuredClone(workspace);
     });

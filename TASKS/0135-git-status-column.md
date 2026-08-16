@@ -18,6 +18,7 @@ showcases the column API for third-party authors, matching the "sample plugin" p
 0056.
 
 ## Acceptance Criteria
+
 - For any directory inside a git working tree (local provider only — remote/archive providers are
   out of scope), each entry's row gains a status indicator: modified, staged, untracked, ignored,
   or clean/unmodified, matching `git status --porcelain` semantics.
@@ -31,6 +32,9 @@ showcases the column API for third-party authors, matching the "sample plugin" p
   change, and a no-op fast path for non-git directories.
 
 ## Implementation Notes
+
+- This feature should always ship. Should be displayed as a single letter column, before the
+  Modified column. Should only be displayed in .git folders.
 - Prefer `git2` (libgit2 bindings) over shelling out to the `git` CLI for reliability and to avoid
   parsing porcelain output.
 - Decide column-vs-plugin placement early: a first-party column is simpler to ship and keep in sync
@@ -40,4 +44,5 @@ showcases the column API for third-party authors, matching the "sample plugin" p
   to the plugin route.
 
 ## Agent Notes
+
 - (none yet)

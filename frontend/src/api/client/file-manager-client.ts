@@ -98,6 +98,14 @@ export interface FileManagerClient {
 
   listWorkspaces(signal?: AbortSignal): Promise<WorkspaceSummary[]>;
 
+  /** Runs the workspace startup lifecycle (spec §5.3.7): opens `workspaceId` if given, otherwise
+   * the last-active workspace, otherwise creates a default. */
+  startWorkspace(workspaceId?: WorkspaceId, signal?: AbortSignal): Promise<WorkspaceProjection>;
+
+  /** Opens (or focuses, if already open) a dedicated OS window for `workspaceId` (task 0143
+   * sub-task (b)). Desktop-only, like {@link quit}: the browser/HTTP host has no window concept. */
+  openWorkspaceWindow?(workspaceId: WorkspaceId): Promise<void>;
+
   createWorkspace(
     request: CreateWorkspaceRequest,
     signal?: AbortSignal,

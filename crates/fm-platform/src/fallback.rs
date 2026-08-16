@@ -106,7 +106,10 @@ mod tests {
             })
         ));
         assert!(matches!(
-            adapter.install_native_menu(),
+            adapter.install_native_menu(
+                &fm_domain::NativeMenuSpec::default(),
+                std::sync::Arc::new(|_id| {})
+            ),
             Err(PlatformError::Unsupported {
                 capability: PlatformCapabilities::NATIVE_MENUS
             })

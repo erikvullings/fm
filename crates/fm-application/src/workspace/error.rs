@@ -78,4 +78,13 @@ pub enum WorkspaceError {
     /// `RenameWorkspace` name (task 0080).
     #[error("invalid command: {0}")]
     InvalidCommand(String),
+    /// An explicitly requested workspace name (via `create` or
+    /// `RenameWorkspace`) collides, case-insensitively and trimmed, with an
+    /// existing workspace's name - workspaces must stay distinguishable in
+    /// the switcher and the native Window menu.
+    #[error("a workspace named {name:?} already exists")]
+    DuplicateName {
+        /// The name that collided.
+        name: String,
+    },
 }

@@ -18,7 +18,10 @@ import type {
   WorkspaceProjection,
 } from '../../models';
 import type { GridIconSize } from '../directory-table/directory-grid';
-import type { DirectoryColumnDescriptor } from '../directory-table/directory-table';
+import type {
+  ColumnWidthEntry,
+  DirectoryColumnDescriptor,
+} from '../directory-table/directory-table';
 import type { NativeIconLoader } from '../directory-table/native-icon-loader';
 import type { ThumbnailLoader } from '../directory-table/thumbnail-loader';
 import type { EntryFormatSettings } from '../entry-formatting/entry-formatting';
@@ -93,6 +96,8 @@ export interface WorkspacePaneContent {
   readonly viewMode?: 'table' | 'grid';
   readonly iconSize?: GridIconSize;
   readonly onViewModeChange?: (viewMode: 'table' | 'grid', iconSize: GridIconSize) => void;
+  readonly columnWidths?: readonly ColumnWidthEntry[] | undefined;
+  readonly onColumnWidthChange?: (columnId: string, width: number) => void;
   readonly onFilterQueryChange: (query: string) => void;
   readonly onFilterCommit: () => void;
   readonly onFilterClose: () => void;
@@ -506,6 +511,8 @@ export const WorkspaceLayoutView: FactoryComponent<WorkspaceLayoutViewAttrs> = (
           viewMode: content.viewMode,
           iconSize: content.iconSize,
           onViewModeChange: content.onViewModeChange,
+          columnWidths: content.columnWidths,
+          onColumnWidthChange: content.onColumnWidthChange,
         } satisfies TableConfigAttrs,
         directorySummary: {
           hasMore: content.hasMore,

@@ -32,8 +32,10 @@ import type { FileViewerController, FileViewerState } from '../preview/file-view
 import type { SelectionPlatform } from '../selection/keybindings';
 import { getSelectedEntriesOrCursor, type SelectionState } from '../selection/selection';
 
-/** Fixed sort applied by the Ctrl+F3..Ctrl+F7 shortcuts (Total Commander parity, task 0128). */
-const SORT_SHORTCUT_DESCRIPTORS: Readonly<Record<string, readonly SortDescriptor[]>> = {
+/** Fixed sort applied by the Ctrl+F3..Ctrl+F7 shortcuts (Total Commander parity, task 0128) and
+ * by the native macOS View menu's sort items (task 0133 follow-up) - exported so both dispatch
+ * through this single mapping rather than maintaining two copies of it. */
+export const SORT_SHORTCUT_DESCRIPTORS: Readonly<Record<string, readonly SortDescriptor[]>> = {
   'core.sortByName': [{ columnId: 'core.name', direction: 'ascending' }],
   'core.sortByExtension': [{ columnId: 'core.extension', direction: 'ascending' }],
   'core.sortByDate': [{ columnId: 'core.modified', direction: 'ascending' }],

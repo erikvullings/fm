@@ -1367,6 +1367,58 @@ describe('Pane navigation input', () => {
     vi.useRealTimers();
   });
 
+  it('dispatches typeaheadPending so an unmatched prefix can trigger a background full-directory load', () => {
+    const onSelectionAction = vi.fn();
+    mount(
+      attrs({
+        entries: [{ ...(entries[0] as EntrySummary), id: 'document', name: 'document.txt' }],
+        hasMore: true,
+        onSelectionAction,
+      }),
+    );
+    const pane = root.querySelector<HTMLElement>('.fm-pane');
+
+    pane?.dispatchEvent(new KeyboardEvent('keydown', { key: 'z', bubbles: true }));
+    m.redraw.sync();
+
+    expect(onSelectionAction).toHaveBeenCalledWith({ type: 'typeaheadPending', prefix: 'z' });
+  });
+
+  it('also dispatches typeaheadPending alongside an immediate match when more entries remain unloaded', () => {
+    const onSelectionAction = vi.fn();
+    mount(
+      attrs({
+        entries: [{ ...(entries[0] as EntrySummary), id: 'document', name: 'document.txt' }],
+        hasMore: true,
+        onSelectionAction,
+      }),
+    );
+    const pane = root.querySelector<HTMLElement>('.fm-pane');
+
+    pane?.dispatchEvent(new KeyboardEvent('keydown', { key: 'd', bubbles: true }));
+    m.redraw.sync();
+
+    expect(onSelectionAction).toHaveBeenCalledWith({ type: 'selectOnly', entryId: 'document' });
+    expect(onSelectionAction).toHaveBeenCalledWith({ type: 'typeaheadPending', prefix: 'd' });
+  });
+
+  it('does not dispatch typeaheadPending once the directory is fully loaded', () => {
+    const onSelectionAction = vi.fn();
+    mount(
+      attrs({
+        entries: [{ ...(entries[0] as EntrySummary), id: 'document', name: 'document.txt' }],
+        hasMore: false,
+        onSelectionAction,
+      }),
+    );
+    const pane = root.querySelector<HTMLElement>('.fm-pane');
+
+    pane?.dispatchEvent(new KeyboardEvent('keydown', { key: 'z', bubbles: true }));
+    m.redraw.sync();
+
+    expect(onSelectionAction).not.toHaveBeenCalledWith({ type: 'typeaheadPending', prefix: 'z' });
+  });
+
   it('uses Backspace to edit typeahead before navigating to the parent', () => {
     const onParent = vi.fn();
     mount(

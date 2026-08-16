@@ -73,6 +73,7 @@ fn api_router() -> OpenApiRouter<AppState> {
         .routes(utoipa_axum::routes!(routes::comparison::generate_sync_plan))
         .routes(utoipa_axum::routes!(routes::comparison::apply_sync_plan))
         .routes(utoipa_axum::routes!(routes::workspace::list_workspaces))
+        .routes(utoipa_axum::routes!(routes::workspace::start_workspace))
         .routes(utoipa_axum::routes!(routes::operation::list_operations))
         .routes(utoipa_axum::routes!(routes::operation::start_operation))
         .routes(utoipa_axum::routes!(routes::operation::get_operation))
