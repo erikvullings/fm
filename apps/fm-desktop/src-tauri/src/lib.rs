@@ -55,6 +55,16 @@ pub fn run() {
                 let _ = window.set_focus();
             }
         }))
+        // Persists and restores each window's frame (position, size, maximized state) keyed by
+        // its label, using only public Tauri/monitor APIs (task 0143 sub-task (c)). Since every
+        // per-workspace window (`open_workspace_window`, spec task 0143 sub-task (b)) gets a
+        // unique `workspace-<uuid>` label, this transparently gives every workspace its own
+        // remembered frame with no extra wiring here - `on_window_ready` fires for windows built
+        // later via `WebviewWindowBuilder` just as much as the config-declared `"main"` one.
+        // Deliberately does not restore which macOS Space/virtual-desktop a window was on: no
+        // public API exposes that (see TASKS/0143's Context for why private `CGSSpace*` APIs are
+        // out of scope here).
+        .plugin(tauri_plugin_window_state::Builder::default().build())
         .manage(AppState {
             service: Arc::new(
                 FileManagerService::with_platform_adapter_and_credential_store(

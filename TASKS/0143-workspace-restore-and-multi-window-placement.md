@@ -1,6 +1,6 @@
 # 0143 Workspace last-active restore and per-window desktop placement
 
-Status: in_progress
+Status: done
 Priority: medium
 Owner: unassigned
 Agent: unassigned
@@ -166,3 +166,81 @@ Spaces-assignment itself as a known macOS limitation.
       still fully open — no code written. This is the natural next slice: now that
       `open_workspace_window` exists as the one place windows get created, it's the right place to
       also apply a persisted frame before `.build()`.
+- 2026-08-16 (later same day): Found and fixed the *real* column-resize bug the user reported
+  ("I still cannot drag and resize the columns, neither in the browser nor in tauri"), and
+  finished sub-task (c), closing out this task.
+  - **The column-resize bug**: the previous session's "verification" was misleading itself —
+    `getComputedStyle` reads taken immediately after dispatching synthetic events in a
+    backgrounded/automated browser tab don't reflect a pending Mithril redraw (which is
+    `requestAnimationFrame`-gated and was being throttled), so a stale-looking result was actually
+    just an unpainted frame, not a real bug, and was misread as "it works." Direct, patient
+    DOM-level testing (dispatching real `PointerEvent`s on the actual handle element, then forcing
+    a real paint via a screenshot capture before reading `getComputedStyle`) surfaced the *real*
+    defect: `directory-table.ts`'s mid-drag reconciliation compared the incoming
+    `attrs.columnWidths` against the last-seen value **by reference**
+    (`sourceColumnWidths !== attrs.columnWidths`), copying the exact pattern
+    `workspace-layout.ts` uses for `attrs.workspace.layout`. That pattern only works there because
+    `attrs.workspace.layout` *is* referentially stable (unchanged unless the backend actually
+    updates it). `attrs.columnWidths` is not: `pane-content-builder.ts` rebuilds it with
+    `tab?.view.columns.map(...)` — a brand-new array and brand-new entry objects — on every single
+    render. So the reconciliation's "did the source change?" check was true on almost every
+    render, including the ones the resize drag's own `move` handler triggers via `m.redraw()`,
+    which stomped the live drag override back to the stale persisted width immediately after every
+    `pointermove`. The final width still landed correctly on release (that path dispatches the
+    drag's own closure variable, untouched by this bug) — which is exactly why it looked like
+    "nothing happens" rather than "sometimes wrong": there was no live feedback at all, so a user
+    had no way to tell a drag was registering, and the fix for it (only clicking near
+    the very edge, precisely, then releasing) wasn't discoverable.
+  - Fix: `frontend/src/features/directory-table/directory-table.ts` now compares
+    `sourceColumnWidths`/`attrs.columnWidths` by value (`columnWidthsEqual`, a small shallow
+    `columnId`+`width` comparison) instead of by reference. Added a regression test in
+    `directory-table.test.ts` that mounts with a `columnWidths` prop rebuilt fresh on every render
+    (mirroring the real call site), drags a handle, forces a redraw mid-drag the way an unrelated
+    app-wide redraw would, and asserts the *live* grid-template width — not just the
+    eventually-persisted one, which is what let this slip through both the original implementation
+    and the first (inadequate) verification pass.
+  - Verified properly this time: `tsc --noEmit`, `biome check` (clean), `vitest run` — full suite,
+    1117 tests (was 1116; the one new test), all passing. Also re-verified live in the browser with
+    a methodical protocol (fresh `PointerEvent`s dispatched directly on the handle element, a
+    `computer` screenshot action forced in between to guarantee a real paint instead of trusting an
+    unflushed rAF, then a full page reload to confirm persistence) — a column genuinely resizes
+    live during the drag now, and the released width survives reload.
+  - Answered the user's Tauri-dev question inline (not written to this file, since it's not
+    project-durable): `open_workspace_window` is a normal Tauri command, not gated by dev vs. prod
+    build — it works identically under `cargo tauri dev`. Its *only* current trigger is the "Open
+    in New Window" button added to the Workspace Switcher in the previous note; there is no native
+    menu entry or keyboard shortcut for it yet (see "not done" above).
+  - **Sub-task (c) implementation**: added `tauri-plugin-window-state` (root `Cargo.toml` workspace
+    dep, `apps/fm-desktop/src-tauri/Cargo.toml` crate dep, resolved to 2.4.1), registered via
+    `.plugin(tauri_plugin_window_state::Builder::default().build())` in `run()`
+    (`apps/fm-desktop/src-tauri/src/lib.rs`), right after the single-instance plugin. This was a
+    much smaller lift than the Implementation Notes originally anticipated ("persist window frame
+    ... using public Tauri/NSScreen APIs" as bespoke code): the plugin already does exactly that,
+    generically, for *every* window Tauri creates — it hooks `on_window_ready` (fires for windows
+    built later via `WebviewWindowBuilder`, not just the config-declared `"main"` one) and
+    saves/restores position, size and maximized state to a local JSON file, keyed by window label.
+    Since every per-workspace window already has a unique `workspace-<uuid>` label (from sub-task
+    (b)'s `open_workspace_window`), this transparently gives each workspace's window its own
+    remembered frame with zero additional wiring — no per-workspace frame storage needed in the
+    domain model or `open_workspace_window` itself. It also checks `available_monitors()` before
+    restoring a position, so a workspace whose monitor got disconnected doesn't restore off-screen.
+    Confirmed (by reading the plugin's source at
+    `~/.cargo/registry/src/.../tauri-plugin-window-state-2.4.1/src/lib.rs`) that it uses only
+    public Tauri window/monitor APIs — no private `CGSSpace*` calls — consistent with this task's
+    explicit constraint against chasing Space-restore that way.
+  - Verified: `cargo build -p fm-desktop` (clean), `cargo test -p fm-desktop --lib` (16 passed,
+    including the mock-runtime smoke test — confirms the plugin doesn't break headless/test
+    startup), `cargo clippy -p fm-desktop --all-targets -- -D warnings` (clean), `cargo fmt --all --
+    --check` (clean). Not manually verified in a real window (same limitation as before: no tool
+    here can drive the native app) — worth the user confirming a workspace window reopens on the
+    same monitor after a full quit/relaunch.
+  - **Still not done, deliberately left out of this task's scope** (didn't block calling this task
+    done, since they're independent follow-ups, not part of the original acceptance criteria):
+    argv-based second-launch workspace targeting, a native menu entry for opening new windows, and
+    dedicated tests for `open_workspace_window`/the single-instance callback/the switcher button.
+    File a new task if any of these turn out to matter in practice.
+  - All of this task's acceptance criteria are now met: `WorkspaceService::start` is wired up and
+    reachable (sub-task a), a real multi-window model exists with single-instance handoff
+    (sub-task b), per-workspace window frames persist and restore via public APIs (sub-task c), and
+    macOS Space placement is explicitly and deliberately out of scope with the reasoning recorded
+    above. Marking this task done.
