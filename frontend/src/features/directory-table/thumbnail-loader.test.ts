@@ -103,4 +103,16 @@ describe('ThumbnailLoader', () => {
 
     expect(getThumbnail).toHaveBeenCalledTimes(2);
   });
+
+  it('treats mp4/m4v/mov video and pdf as thumbnailable', () => {
+    const getThumbnail = vi.fn<FileManagerClient['getThumbnail']>().mockResolvedValue(undefined);
+    const loader = new ThumbnailLoader({ getThumbnail }, vi.fn());
+
+    loader.thumbnailDataUri(entry('clip.mp4', 'mp4'), 'medium');
+    loader.thumbnailDataUri(entry('clip.m4v', 'm4v'), 'medium');
+    loader.thumbnailDataUri(entry('clip.mov', 'mov'), 'medium');
+    loader.thumbnailDataUri(entry('document.pdf', 'pdf'), 'medium');
+
+    expect(getThumbnail).toHaveBeenCalledTimes(4);
+  });
 });

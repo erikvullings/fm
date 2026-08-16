@@ -1,6 +1,6 @@
 # 0134 Thumbnails for images/video and a grid/icon view mode
 
-Status: in-progress (MVP shipped: image/CBZ/CBR thumbnails, table icon-column overlay, and a basic grid view with three icon sizes; video/PDF thumbnails, photo-day grouping, grid sort/filter/type-select, and F3 fullscreen preview are follow-up work — see Agent Notes)
+Status: in-progress (image/CBZ/CBR/video/PDF thumbnails, table icon-column overlay, and a basic grid view with three icon sizes are shipped; photo-day grouping, grid sort/filter/type-select, and F3 fullscreen preview remain follow-up work — see Agent Notes)
 Priority: high
 Owner: unassigned
 Agent: unassigned
@@ -174,3 +174,67 @@ the icon in the existing icon column for image/video rows without a new view mod
   exactly those files/crates, not quoted from a whole-suite total.
   `pnpm run api:export && pnpm run api:generate` was run; the OpenAPI document and generated
   TypeScript client are up to date with the new endpoint and DTO fields.
+
+- 2026-08-16 claude: Follow-up pass adding video and PDF thumbnails, **superseding the "video/PDF
+  not implemented" gap noted in the entry above**. User explicitly asked for cross-platform Rust
+  libraries rather than shelling out to `ffmpeg` (echoing the same concern that ruled out
+  `pdfium`/`mupdf` for PDF), and to keep the binary-size/dependency footprint small.
+
+  **Video (`crates/fm-metadata/src/video.rs`)**: `mp4` (pure-Rust ISO-BMFF demuxer) + `openh264`
+  (Cisco's BSD-2-Clause H.264 decoder/encoder, compiled from source via `cc` at build time — no
+  runtime external tool, same approach the workspace already uses for `rars`/`sevenz-rust2`/`mlua`
+  vendored dependencies). Scope: only the first keyframe of the first H.264 track in an MP4/M4V/MOV
+  container is decoded. NASM is used opportunistically for SIMD if present on the build machine and
+  silently falls back to a plain C build otherwise (confirmed via `openh264-sys2`'s `build.rs`) —
+  no hard external build tool requirement either. VP9/HEVC/AV1 codecs and non-ISO-BMFF containers
+  (MKV/WebM/AVI) report `ThumbnailError::UnsupportedFormat`. AVCC (length-prefixed) sample NALs are
+  converted to the Annex-B format `openh264` expects by prepending the track's SPS/PPS to every
+  decoded sample — a deliberate simplification of `openh264`'s own `examples/mp4/
+  mp4_bitstream_converter.rs` (that example tracks SPS/PPS-seen state across an entire stream to
+  avoid redundancy; since this only ever decodes one keyframe, unconditional prepending is simpler
+  and equally correct). Tested end-to-end: the test fixture is a *real* MP4 built by encoding one
+  frame with the real `openh264` encoder and muxing it with the real `mp4` crate writer, not a
+  hand-rolled or pre-baked binary fixture.
+
+  **PDF (`crates/fm-metadata/src/pdf.rs`) — deliberately partial, documented in the module's own
+  doc comment**: no small pure-Rust PDF page renderer exists anywhere in the ecosystem; PDFium and
+  MuPDF are the only production-quality options and both need a ~15-20MB non-Rust native library,
+  which is the same category of dependency the user asked to avoid for video. Presented this
+  tradeoff to the user via `AskUserQuestion` before implementing; they chose partial support over
+  deferring PDF entirely. What ships: `lopdf` (pure Rust, `default-features = false` — no
+  chrono/jiff/rayon/time pulled in, just the parser) extracts the *largest embedded raster image*
+  on page 1 via its built-in `get_page_images()`, handling `DCTDecode` (the stream bytes already
+  are a complete JPEG — decoded directly) and `FlateDecode`-compressed raw 8-bit `DeviceRGB`/
+  `DeviceGray` samples (zlib-inflated via `flate2`, already a workspace dependency, then
+  reconstructed into an `image::RgbImage`/`GrayImage`). This covers the common case of a
+  scanned/photographed page. It is **not a PDF renderer**: an ordinary text/vector document (a
+  Word-exported PDF, a spreadsheet, a slide deck) has no embedded page-sized image and reports
+  `UnsupportedFormat`, falling back to the generic icon — this is expected, not a bug. JPEG2000
+  (`JPXDecode`), fax (`CCITTFaxDecode`), JBIG2, indexed/palette colour spaces, and non-8-bit sample
+  depths are also reported unsupported rather than guessed at. Tested end-to-end against real PDFs
+  built with `lopdf`'s own writer (one with a DCTDecode JPEG image, one with a FlateDecode raw RGB
+  image, one with a JPXDecode image to confirm it's correctly rejected, one with no image at all).
+
+  **Wiring**: `crates/fm-application/src/thumbnails.rs`'s extension dispatch now routes
+  `mp4`/`m4v`/`mov` to `generate_video_thumbnail` and `pdf` to `generate_pdf_thumbnail`, sharing the
+  same cache/concurrency-limiter/error-mapping infrastructure as images and CBZ/CBR (no changes
+  needed there — `ThumbnailError` → `ApplicationError::NotFound` → HTTP 404 → frontend icon
+  fallback already generalizes to every format). Frontend `THUMBNAILABLE_EXTENSIONS`
+  (`thumbnail-loader.ts`) and the mock client's equivalent set were extended to match.
+
+  **Verified**: `cargo build/test/clippy --workspace [--all-targets]` and `cargo fmt --all --check`
+  all clean from the repo root (zero warnings, all crates). New tests for this follow-up,
+  verified by running exactly these targets: 4 in `fm-metadata/src/video.rs` (keyframe decode,
+  non-video rejection, size-budget rejection, extension recognition — the decode test round-trips
+  through a real encoded+muxed fixture), 7 in `fm-metadata/src/pdf.rs` (DCTDecode, FlateDecode,
+  no-image-on-page, JPXDecode rejection, non-PDF rejection, size-budget rejection, extension
+  recognition), 2 new in `fm-application/src/thumbnails.rs` (service-layer dispatch end-to-end for
+  both formats, not just the `fm-metadata` decoders in isolation), 1 new in
+  `thumbnail-loader.test.ts` (frontend extension recognition). Full `pnpm exec vitest run`: all
+  1122 tests passing (no flakes this run). New workspace dependencies: `mp4`, `openh264` (default
+  features only — `source`, not `libloading`), `lopdf` (`default-features = false`), `flate2`
+  (already present, no new dependency).
+
+  **Still deferred** (unchanged from the entry above): photo-day grouping, grid sort/filter/
+  type-to-select, F3 fullscreen preview, inline rename UI in the grid, and delta-driven cache
+  invalidation (still unnecessary given the content-addressed cache key).

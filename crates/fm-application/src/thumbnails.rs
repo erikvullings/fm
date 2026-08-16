@@ -1,16 +1,18 @@
-//! Thumbnail generation for images and CBZ/CBR comic-archive first pages
+//! Thumbnail generation for images, CBZ/CBR comic-archive first pages,
+//! H.264/MP4 video first frames, and PDF first-page embedded images
 //! (task 0134).
 //!
 //! Provider-agnostic: decodes already-read bytes with `fm-metadata`'s
-//! pure-Rust image pipeline rather than an OS-native API, so it works for
-//! any [`FileSystemProvider`] that supports [`ProviderCapabilities::READ`]
-//! (local today; archive entries reuse the same path; in principle a future
-//! remote provider too), not just local files. CBZ/CBR are not decoded
-//! directly here - a `.cbz`/`.cbr` entry's first page is fetched by
-//! resolving the existing `archive://` provider (already used for browsing
-//! ZIP/7z/RAR archives, task 0104/fm-archive) and reading its first image
-//! entry, exactly as [`fm_domain::Location`]'s own archive-URI convention
-//! already lets the frontend browse into these files
+//! pure-Rust pipelines rather than an OS-native API or shelling out to
+//! `ffmpeg`/a PDF renderer, so it works for any [`FileSystemProvider`] that
+//! supports [`ProviderCapabilities::READ`] (local today; archive entries
+//! reuse the same path; in principle a future remote provider too), not
+//! just local files. CBZ/CBR are not decoded directly here - a `.cbz`/`.cbr`
+//! entry's first page is fetched by resolving the existing `archive://`
+//! provider (already used for browsing ZIP/7z/RAR archives, task
+//! 0104/fm-archive) and reading its first image entry, exactly as
+//! [`fm_domain::Location`]'s own archive-URI convention already lets the
+//! frontend browse into these files
 //! (`frontend/src/features/navigation/archive-location.ts`).
 
 use std::path::Path;
@@ -18,7 +20,8 @@ use std::path::Path;
 use fm_domain::{EntryId, EntryKind, Location};
 use fm_metadata::{
     GeneratedThumbnail, MAX_SOURCE_BYTES, ThumbnailCache, ThumbnailError, ThumbnailSize,
-    generate_image_thumbnail, is_supported_image_extension,
+    generate_image_thumbnail, generate_pdf_thumbnail, generate_video_thumbnail,
+    is_supported_image_extension, is_supported_pdf_extension, is_supported_video_extension,
 };
 use fm_vfs::{EntryRef, ListOptions, ProviderCapabilities, ProviderRegistry};
 use tokio::io::AsyncReadExt;
@@ -63,7 +66,7 @@ impl ThumbnailService {
             .await
             .map_err(|_| ApplicationError::Internal)?;
 
-        let source_bytes = read_source_bytes(providers, location).await?;
+        let (source_bytes, kind) = read_source_bytes(providers, location).await?;
 
         let key = ThumbnailCache::cache_key(&source_bytes, size);
         if let Some(cached) = self.cache.get(&key) {
@@ -73,11 +76,14 @@ impl ThumbnailService {
             });
         }
 
-        let generated =
-            tokio::task::spawn_blocking(move || generate_image_thumbnail(&source_bytes, size))
-                .await
-                .map_err(|_| ApplicationError::Internal)?
-                .map_err(map_thumbnail_error)?;
+        let generated = tokio::task::spawn_blocking(move || match kind {
+            SourceKind::Image => generate_image_thumbnail(&source_bytes, size),
+            SourceKind::Video => generate_video_thumbnail(&source_bytes, size),
+            SourceKind::Pdf => generate_pdf_thumbnail(&source_bytes, size),
+        })
+        .await
+        .map_err(|_| ApplicationError::Internal)?
+        .map_err(map_thumbnail_error)?;
 
         // Best-effort: a cache-write failure (e.g. a full disk) must not
         // fail the request, since the caller already has the bytes it asked
@@ -88,12 +94,22 @@ impl ThumbnailService {
     }
 }
 
+/// Which `fm-metadata` generator [`read_source_bytes`] resolved for a
+/// location, so the caller knows which decoder to run on a background
+/// thread once the bytes (and any cache lookup) are in hand.
+enum SourceKind {
+    Image,
+    Video,
+    Pdf,
+}
+
 /// Reads the raw source bytes to thumbnail: direct bytes for a supported
-/// image extension, or the first page of a `.cbz`/`.cbr` comic archive.
+/// image, video or PDF extension, or the first page of a `.cbz`/`.cbr`
+/// comic archive (itself an image once extracted).
 async fn read_source_bytes(
     providers: &ProviderRegistry,
     location: &Location,
-) -> Result<Vec<u8>, ApplicationError> {
+) -> Result<(Vec<u8>, SourceKind), ApplicationError> {
     let name = location
         .name()
         .map_err(|_| map_thumbnail_error(ThumbnailError::UnsupportedFormat))?;
@@ -101,9 +117,22 @@ async fn read_source_bytes(
         .ok_or_else(|| map_thumbnail_error(ThumbnailError::UnsupportedFormat))?;
 
     if is_supported_image_extension(&extension) {
-        read_whole_file(providers, location).await
+        Ok((
+            read_whole_file(providers, location).await?,
+            SourceKind::Image,
+        ))
     } else if extension.eq_ignore_ascii_case("cbz") || extension.eq_ignore_ascii_case("cbr") {
-        read_first_comic_page(providers, location).await
+        Ok((
+            read_first_comic_page(providers, location).await?,
+            SourceKind::Image,
+        ))
+    } else if is_supported_video_extension(&extension) {
+        Ok((
+            read_whole_file(providers, location).await?,
+            SourceKind::Video,
+        ))
+    } else if is_supported_pdf_extension(&extension) {
+        Ok((read_whole_file(providers, location).await?, SourceKind::Pdf))
     } else {
         Err(map_thumbnail_error(ThumbnailError::UnsupportedFormat))
     }
@@ -406,5 +435,174 @@ mod tests {
             .unwrap_err();
 
         assert_eq!(error, ApplicationError::NotFound);
+    }
+
+    /// Strips a NAL unit's Annex-B start code (openh264's own `nal_unit()`
+    /// includes it as part of the slice) - same helper `fm-metadata`'s own
+    /// video fixture builder uses.
+    fn strip_start_code(nal: &[u8]) -> &[u8] {
+        if let Some(stripped) = nal.strip_prefix(&[0, 0, 0, 1]) {
+            stripped
+        } else if let Some(stripped) = nal.strip_prefix(&[0, 0, 1]) {
+            stripped
+        } else {
+            nal
+        }
+    }
+
+    /// Encodes and muxes a minimal-but-real single-keyframe MP4, exercising
+    /// the extension-dispatch path (not just `fm-metadata`'s decoder
+    /// directly) end to end.
+    fn mp4_bytes(width: u32, height: u32) -> Vec<u8> {
+        use openh264::encoder::Encoder;
+        use openh264::formats::YUVBuffer;
+
+        let mut encoder = Encoder::new().expect("create encoder");
+        let yuv = YUVBuffer::new(width as usize, height as usize);
+        let bitstream = encoder.encode(&yuv).expect("encode frame");
+
+        let mut sps = Vec::new();
+        let mut pps = Vec::new();
+        let mut slice_nals: Vec<Vec<u8>> = Vec::new();
+        for layer_index in 0..bitstream.num_layers() {
+            let layer = bitstream.layer(layer_index).expect("layer must exist");
+            for nal_index in 0..layer.nal_count() {
+                let nal = strip_start_code(layer.nal_unit(nal_index).expect("nal must exist"));
+                match nal[0] & 0x1F {
+                    7 => sps = nal.to_vec(),
+                    8 => pps = nal.to_vec(),
+                    _ => slice_nals.push(nal.to_vec()),
+                }
+            }
+        }
+
+        let avc_config = mp4::AvcConfig {
+            width: width as u16,
+            height: height as u16,
+            seq_param_set: sps,
+            pic_param_set: pps,
+        };
+        let mut sample_bytes = Vec::new();
+        for nal in &slice_nals {
+            sample_bytes.extend_from_slice(&(nal.len() as u32).to_be_bytes());
+            sample_bytes.extend_from_slice(nal);
+        }
+
+        let mut out = Cursor::new(Vec::new());
+        let config = mp4::Mp4Config {
+            major_brand: str::parse("isom").expect("valid brand"),
+            minor_version: 0,
+            compatible_brands: vec![str::parse("isom").expect("valid brand")],
+            timescale: 1000,
+        };
+        let mut writer = mp4::Mp4Writer::write_start(&mut out, &config).expect("write start");
+        writer
+            .add_track(&mp4::TrackConfig::from(avc_config))
+            .expect("add track");
+        writer
+            .write_sample(
+                1,
+                &mp4::Mp4Sample {
+                    start_time: 0,
+                    duration: 1000,
+                    rendering_offset: 0,
+                    is_sync: true,
+                    bytes: sample_bytes.into(),
+                },
+            )
+            .expect("write sample");
+        writer.write_end().expect("write end");
+        out.into_inner()
+    }
+
+    #[tokio::test]
+    async fn generates_a_thumbnail_for_an_mp4_video_file() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let target = dir.path().join("clip.mp4");
+        std::fs::write(&target, mp4_bytes(64, 64)).expect("write fixture");
+
+        let service = ThumbnailService::new(dir.path().join("cache"));
+        let thumbnail = service
+            .thumbnail(&providers(), &location_for(&target), ThumbnailSize::Small)
+            .await
+            .expect("thumbnail must succeed");
+
+        assert_eq!(thumbnail.content_type, "image/jpeg");
+        image::load_from_memory(&thumbnail.bytes).expect("decode result");
+    }
+
+    /// Builds a minimal single-page PDF with one DCTDecode (JPEG) embedded
+    /// image, using `lopdf`'s own writer - same technique `fm-metadata`'s
+    /// own PDF fixture builder uses.
+    fn pdf_bytes(width: u32, height: u32) -> Vec<u8> {
+        use lopdf::{Dictionary, Document, Object, Stream, dictionary};
+
+        let jpeg = png_bytes(width, height);
+        let jpeg = {
+            let decoded = image::load_from_memory(&jpeg).expect("decode fixture png");
+            let mut out = Vec::new();
+            decoded
+                .write_to(&mut Cursor::new(&mut out), image::ImageFormat::Jpeg)
+                .expect("encode fixture jpeg");
+            out
+        };
+
+        let mut doc = Document::with_version("1.5");
+        let pages_id = doc.new_object_id();
+        let image_dict: Dictionary = dictionary! {
+            "Type" => "XObject",
+            "Subtype" => "Image",
+            "Width" => i64::from(width),
+            "Height" => i64::from(height),
+            "ColorSpace" => "DeviceRGB",
+            "BitsPerComponent" => 8,
+            "Filter" => "DCTDecode",
+        };
+        let image_id = doc.add_object(Object::Stream(Stream::new(image_dict, jpeg)));
+        let resources_id = doc.add_object(dictionary! {
+            "XObject" => dictionary! { "Im1" => image_id },
+        });
+        let content_id = doc.add_object(Stream::new(dictionary! {}, Vec::new()));
+        let page_id = doc.add_object(dictionary! {
+            "Type" => "Page",
+            "Parent" => pages_id,
+            "Contents" => content_id,
+            "Resources" => resources_id,
+            "MediaBox" => vec![0.into(), 0.into(), 200.into(), 200.into()],
+        });
+        doc.objects.insert(
+            pages_id,
+            Object::Dictionary(dictionary! {
+                "Type" => "Pages",
+                "Kids" => vec![page_id.into()],
+                "Count" => 1,
+            }),
+        );
+        let catalog_id = doc.add_object(dictionary! {
+            "Type" => "Catalog",
+            "Pages" => pages_id,
+        });
+        doc.trailer.set("Root", catalog_id);
+
+        let mut buffer = Vec::new();
+        doc.save_to(&mut buffer).expect("save fixture pdf");
+        buffer
+    }
+
+    #[tokio::test]
+    async fn generates_a_thumbnail_for_a_pdf_with_an_embedded_image() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let target = dir.path().join("scan.pdf");
+        std::fs::write(&target, pdf_bytes(120, 60)).expect("write fixture");
+
+        let service = ThumbnailService::new(dir.path().join("cache"));
+        let thumbnail = service
+            .thumbnail(&providers(), &location_for(&target), ThumbnailSize::Medium)
+            .await
+            .expect("thumbnail must succeed");
+
+        assert_eq!(thumbnail.content_type, "image/jpeg");
+        let decoded = image::load_from_memory(&thumbnail.bytes).expect("decode result");
+        assert_eq!(decoded.width(), decoded.height() * 2);
     }
 }

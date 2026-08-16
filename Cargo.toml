@@ -66,16 +66,19 @@ image = { version = "0.25.10", default-features = false, features = [
   "gif",
   "webp",
 ] }
+lopdf = { version = "0.44.0", default-features = false }
 mlua = { version = "0.12.0", features = [
   "lua54",
   "vendored",
   "send",
   "serialize",
 ] }
+mp4 = "0.14.0"
 notify = "8.2.0"
 objc2 = "0.6.4"
 objc2-app-kit = "0.3.2"
 objc2-foundation = "0.3.2"
+openh264 = "0.9.8"
 rand = "0.10"
 regex = "1.11.3"
 reqwest = { version = "0.13.4", default-features = false, features = [

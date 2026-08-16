@@ -82,7 +82,19 @@ const actions = actionFixtures as ActionDescriptor[];
 const plugins = pluginFixtures as PluginDescriptor[];
 
 /** Extensions {@link MockFileManagerClient.getThumbnail} fakes a preview for (task 0134). */
-const THUMBNAILABLE_MOCK_EXTENSIONS = new Set(['jpg', 'jpeg', 'png', 'gif', 'webp', 'cbz', 'cbr']);
+const THUMBNAILABLE_MOCK_EXTENSIONS = new Set([
+  'jpg',
+  'jpeg',
+  'png',
+  'gif',
+  'webp',
+  'cbz',
+  'cbr',
+  'mp4',
+  'm4v',
+  'mov',
+  'pdf',
+]);
 
 export type MockClientMethod =
   | 'getRuntimeCapabilities'

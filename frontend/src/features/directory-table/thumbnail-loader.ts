@@ -9,9 +9,25 @@ export type ThumbnailSize = 'small' | 'medium' | 'large';
 type ThumbnailClient = Pick<FileManagerClient, 'getThumbnail'>;
 
 /** Extensions the backend can generate a preview for (task 0134): plain images
- * directly, CBZ/CBR comic archives via their first page. Kept in sync with
- * `fm_metadata::SUPPORTED_IMAGE_EXTENSIONS` plus the cbz/cbr special case. */
-const THUMBNAILABLE_EXTENSIONS = new Set(['jpg', 'jpeg', 'png', 'gif', 'webp', 'cbz', 'cbr']);
+ * directly, CBZ/CBR comic archives via their first page, MP4/MOV/M4V video via
+ * its first H.264 keyframe, and PDF via a first-page embedded image (not a
+ * real page render - see `fm_metadata::pdf`'s module docs for that tradeoff).
+ * Kept in sync with `fm_metadata::SUPPORTED_IMAGE_EXTENSIONS`/
+ * `SUPPORTED_VIDEO_EXTENSIONS`/`SUPPORTED_PDF_EXTENSIONS` plus the cbz/cbr
+ * special case. */
+const THUMBNAILABLE_EXTENSIONS = new Set([
+  'jpg',
+  'jpeg',
+  'png',
+  'gif',
+  'webp',
+  'cbz',
+  'cbr',
+  'mp4',
+  'm4v',
+  'mov',
+  'pdf',
+]);
 
 function isThumbnailable(entry: EntrySummary): boolean {
   if (entry.kind !== 'file') return false;
