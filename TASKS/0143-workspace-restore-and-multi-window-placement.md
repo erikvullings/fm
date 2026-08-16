@@ -326,3 +326,16 @@ Spaces-assignment itself as a known macOS limitation.
     every time, or focus an existing one?" rather than picking the more defensible-sounding
     interpretation and building a whole verification story around it. Still not confirmed in the
     real app (same standing limitation) - ask the user to retest the same matrix once more.
+- 2026-08-16 (sixth pass): user confirmed the fifth pass's fix works, then asked to wire "Open in
+  New Window" into the native menu bar too - closing the "no native menu entry" item noted as
+  deliberately out of scope back in the second-pass note. Added a "New Window" item (Cmd+Shift+N)
+  at the top of the File menu, above New Tab/Close Tab (`native-menu-spec.ts`'s `fileMenu`), calling
+  the same `openWorkspaceWindow` the switcher's button already uses, for the *current* workspace.
+  Frontend-local id `ui.newWorkspaceWindow` (not a backend action, same pattern as `ui.openSettings`
+  and the Window menu's per-tab ids), dispatched via a new `openNewWorkspaceWindow` callback on
+  `NativeMenuDispatchContext`. Gated by a new `NativeMenuInputs.canOpenNewWindow` flag (mirrors
+  `attrsClient.openWorkspaceWindow`'s availability) so the item is absent, not disabled, on the
+  browser/HTTP host. Commit `abd6cc5`. Added tests for both the spec-building (item present/absent)
+  and dispatch (id routes to the callback) sides. Verified: `tsc`, `biome check`, `vitest run` (1119
+  passed, up from 1116; one pre-existing unrelated flaky build-integration test timeout, confirmed
+  flaky in isolation earlier in this task, not a regression).
