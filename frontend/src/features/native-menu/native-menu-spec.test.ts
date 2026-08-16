@@ -60,6 +60,7 @@ describe('buildNativeMenuSpec', () => {
       'File',
       'Edit',
       'View',
+      'Tools',
       'Go',
       'Window',
       'Help',
@@ -186,6 +187,34 @@ describe('buildNativeMenuSpec', () => {
       'core.sortBySize',
       'core.sortUnsorted',
     ]);
+  });
+
+  it('populates the Tools menu from the copy/terminal/reveal action ids', () => {
+    const actions = [
+      action('core.copyName', 'Copy Filename'),
+      action('core.copyPath', 'Copy Full Path'),
+      action('core.copyRelativePath', 'Copy Relative Path'),
+      action('core.openTerminal', 'Open Terminal Here'),
+      action('core.revealInSystemFileManager', 'Reveal in Finder'),
+      action('core.copy', 'Copy'),
+    ];
+    const toolsMenu = buildNativeMenuSpec(inputs({ actions })).menus.find(
+      (menu) => menu.title === 'Tools',
+    );
+    expect(toolsMenu?.items.map((item) => (item.kind === 'action' ? item.id : item.kind))).toEqual([
+      'core.copyName',
+      'core.copyPath',
+      'core.copyRelativePath',
+      'core.openTerminal',
+      'core.revealInSystemFileManager',
+    ]);
+  });
+
+  it('skips Tools menu ids that are not currently registered instead of crashing', () => {
+    const toolsMenu = buildNativeMenuSpec(inputs({ actions: [] })).menus.find(
+      (menu) => menu.title === 'Tools',
+    );
+    expect(toolsMenu?.items).toEqual([]);
   });
 
   it('builds the Go menu from favourite actions, not the plain registered actions', () => {

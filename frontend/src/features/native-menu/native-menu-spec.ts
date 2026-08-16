@@ -154,6 +154,22 @@ function viewMenu(actions: readonly ActionDescriptor[]): NativeMenu {
   };
 }
 
+/** Miscellaneous per-selection/location utilities - the same ids the "tools" category groups in
+ * the command palette and context menu (`action.rs`'s `core_action(..., "tools", ...)` /
+ * `"clipboard"` categories), surfaced as their own top-level menu for discoverability. */
+function toolsMenu(actions: readonly ActionDescriptor[]): NativeMenu {
+  return {
+    title: 'Tools',
+    items: actionItems(actions, [
+      'core.copyName',
+      'core.copyPath',
+      'core.copyRelativePath',
+      'core.openTerminal',
+      'core.revealInSystemFileManager',
+    ]),
+  };
+}
+
 /** Excludes `core.favourites` itself: invoking it opens the command palette pre-filtered to
  * favourites (its intended behaviour from the palette/keyboard), which makes no sense as a native
  * menu item - the Go menu already lists each saved favourite as its own `core.favourite.<index>`
@@ -220,6 +236,7 @@ export function buildNativeMenuSpec(inputs: NativeMenuInputs): NativeMenuSpec {
       fileMenu(inputs.actions, inputs.canOpenNewWindow),
       editMenu(inputs.actions),
       viewMenu(inputs.actions),
+      toolsMenu(inputs.actions),
       goMenu(inputs.favouriteActions),
       windowMenu(
         inputs.tabs,
