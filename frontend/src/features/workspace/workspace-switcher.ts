@@ -1,5 +1,8 @@
 import m, { type FactoryComponent } from 'mithril';
+import { IconButton } from 'mithril-materialized';
 
+import { externalLinkIcon, pencilIcon, trashIcon } from '../../components/tabler-icons';
+import { tooltip } from '../../components/tooltip';
 import type { WorkspaceId, WorkspaceSummary } from '../../models';
 import { DeleteWorkspaceDialog } from './delete-workspace-dialog';
 
@@ -104,38 +107,50 @@ export const WorkspaceSwitcher: FactoryComponent<WorkspaceSwitcherAttrs> = () =>
                         ),
                     renaming || attrs.onOpenInNewWindow === undefined
                       ? undefined
-                      : m(
-                          'button.fm-workspace-open-window-button',
-                          {
-                            type: 'button',
-                            'aria-label': `Open ${summary.name} in a new window`,
-                            onclick: () => attrs.onOpenInNewWindow?.(summary.id),
-                          },
-                          'Open in New Window',
-                        ),
-                    renaming
-                      ? undefined
-                      : m(
-                          'button.fm-workspace-rename-button',
-                          {
-                            type: 'button',
-                            'aria-label': `Rename ${summary.name}`,
-                            onclick: () => beginRename(summary),
-                          },
-                          'Rename',
-                        ),
-                    renaming
-                      ? undefined
-                      : m(
-                          'button.fm-workspace-delete-button',
-                          {
-                            type: 'button',
-                            'aria-label': `Delete ${summary.name}`,
-                            onclick: () => {
-                              pendingDeleteId = summary.id;
+                      : tooltip(
+                          `Open ${summary.name} in a new window`,
+                          m(
+                            IconButton,
+                            {
+                              type: 'button',
+                              className: 'fm-workspace-open-window-button',
+                              'aria-label': `Open ${summary.name} in a new window`,
+                              onclick: () => attrs.onOpenInNewWindow?.(summary.id),
                             },
-                          },
-                          'Delete',
+                            externalLinkIcon({ size: 16 }),
+                          ),
+                        ),
+                    renaming
+                      ? undefined
+                      : tooltip(
+                          `Rename ${summary.name}`,
+                          m(
+                            IconButton,
+                            {
+                              type: 'button',
+                              className: 'fm-workspace-rename-button',
+                              'aria-label': `Rename ${summary.name}`,
+                              onclick: () => beginRename(summary),
+                            },
+                            pencilIcon({ size: 16 }),
+                          ),
+                        ),
+                    renaming
+                      ? undefined
+                      : tooltip(
+                          `Delete ${summary.name}`,
+                          m(
+                            IconButton,
+                            {
+                              type: 'button',
+                              className: 'fm-workspace-delete-button',
+                              'aria-label': `Delete ${summary.name}`,
+                              onclick: () => {
+                                pendingDeleteId = summary.id;
+                              },
+                            },
+                            trashIcon({ size: 16 }),
+                          ),
                         ),
                   ],
                 );

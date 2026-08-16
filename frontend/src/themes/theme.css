@@ -557,8 +557,9 @@ main.fm-workspace {
   z-index: 20;
   top: calc(100% + 1px);
   left: 0.5rem;
-  width: min(20rem, calc(100vw - 2rem));
+  width: min(24rem, calc(100vw - 2rem));
   border: 1px solid var(--fm-border);
+  border-radius: var(--fm-radius);
   padding: 0.75rem;
   background: var(--fm-surface-elevated);
   box-shadow: var(--fm-shadow);
@@ -614,6 +615,12 @@ main.fm-workspace {
 
 .fm-workspace-switcher-row[data-active="true"] {
   border-color: var(--fm-accent);
+}
+
+/* Icon-only actions (rename/delete/open-in-new-window) never shrink, so the name - the one thing
+ * whose length actually varies - is what gives way to `text-overflow: ellipsis` first. */
+.fm-workspace-switcher-row .btn-flat {
+  flex: 0 0 auto;
 }
 
 .fm-workspace-switcher-name {

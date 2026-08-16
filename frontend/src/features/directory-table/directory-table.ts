@@ -367,6 +367,12 @@ function headerView(
                   const button = (event.currentTarget as HTMLElement).closest('button');
                   const currentWidth =
                     widths?.get(column.id) ?? button?.getBoundingClientRect().width ?? 160;
+                  // Without capture, a fast/excessive drag that carries the pointer outside the
+                  // window loses the `pointermove`/`pointerup` pair entirely - the next drag's own
+                  // cleanup then discards the abandoned session with no commit, which looks like
+                  // the resize "reverted". Capturing keeps both events targeted at this element
+                  // for the rest of the gesture regardless of where the pointer physically is.
+                  (event.currentTarget as Element).setPointerCapture?.(event.pointerId);
                   onResizeStart(event, column.id, currentWidth);
                 },
               }),

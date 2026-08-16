@@ -444,7 +444,7 @@ describe('DirectoryTable rows', () => {
     });
 
     const row = root.querySelector('.fm-directory-row');
-    expect(row?.querySelector('.fm-directory-size')?.textContent).toBe('1 KiB');
+    expect(row?.querySelector('.fm-directory-size')?.textContent).toBe('1 K');
   });
 
   it('leaves parent and link metadata columns empty', () => {

@@ -229,6 +229,13 @@ img.fm-native-entry-icon {
   font-variant-numeric: tabular-nums;
 }
 
+/* Keeps the app's own font rather than switching to monospace: `tabular-nums` fixes each digit
+ * to the same width within that font, so day/hour/minute line up across rows even though the
+ * formatted string's digit count varies (e.g. "Aug 6" vs "Aug 16"). */
+.fm-directory-modified {
+  font-variant-numeric: tabular-nums;
+}
+
 .fm-hidden-entry {
   font-style: italic;
   opacity: 0.72;
