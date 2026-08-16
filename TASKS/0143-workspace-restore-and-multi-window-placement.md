@@ -304,3 +304,25 @@ Spaces-assignment itself as a known macOS limitation.
     confirmed by `ls ~/Downloads` failing from this session's own shell tool too, and by
     `crates/fm-vfs-local/src/lib.rs` mapping the error straight from `io::ErrorKind::PermissionDenied`.
     User needs to re-grant it themselves in System Settings; not actionable from here.
+- 2026-08-16 (fifth pass): the fourth pass's fix was aimed at the wrong target. User's follow-up:
+  *"open new workspace only focusses the previous one - it does not create another window, as was
+  the intent."* The `.show()`/`.unminimize()`/`.set_focus()` change from the fourth pass was real
+  and harmless, but the actual bug was the *design* one pass earlier than that: `open_workspace_window`
+  deduplicated by a stable `workspace-<id>` label, so a second "Open in New Window" for a workspace
+  that already had a window always found-and-focused it rather than opening another one - which was
+  never the intent. Fixed by making `workspace_window_label` return a fresh `workspace-<id>_<nonce>`
+  label on every call (so labels never collide and the dedup/focus branch is gone entirely), and
+  registering `tauri-plugin-window-state` with `.map_label(commands::canonical_workspace_window_label)`
+  so windows for the same workspace still share one remembered frame despite no longer sharing a
+  label (`canonical_workspace_window_label` strips the `_<nonce>` suffix back to `workspace-<id>`
+  before the plugin persists/restores by that key). Commit `8c2ae78`.
+  - Added two unit tests (`commands.rs`) for the label/canonicalization contract specifically, since
+    the fourth pass's blind spot was exactly this: nothing exercised what "open twice" should
+    actually do, so a plausible-looking symptom (silent focus failure) was fixed with high confidence
+    while missing that the underlying behavior (dedup at all) was never wanted. Verified:
+    `cargo build/test/clippy/fmt -p fm-desktop` all clean (18 tests, was 16).
+  - **Lesson**: when a user reports "X does nothing," don't assume the *mechanism* (focus/visibility)
+    is the bug without first confirming the *intended* behavior — ask "should this open a new window
+    every time, or focus an existing one?" rather than picking the more defensible-sounding
+    interpretation and building a whole verification story around it. Still not confirmed in the
+    real app (same standing limitation) - ask the user to retest the same matrix once more.
