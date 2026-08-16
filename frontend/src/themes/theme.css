@@ -400,7 +400,7 @@ main.fm-workspace {
 }
 
 .fm-navigation-controls button,
-.fm-workspace-toolbar > button,
+.fm-workspace-toolbar button,
 .fm-settings-button,
 .fm-settings-editor button,
 .fm-diagnostics-button,
@@ -417,18 +417,19 @@ main.fm-workspace {
   font: inherit;
 }
 
+.fm-navigation-controls button:disabled,
+.fm-workspace-toolbar button:disabled {
+  opacity: 0.35;
+}
+
 .fm-navigation-controls button:hover:not(:disabled),
-.fm-workspace-toolbar > button:hover:not(:disabled),
+.fm-workspace-toolbar button:hover:not(:disabled),
 .fm-settings-button:hover,
 .fm-settings-editor button:hover:not(:disabled),
 .fm-diagnostics-button:hover,
 .fm-diagnostics-editor button:hover:not(:disabled) {
   background: var(--fm-hover);
   color: var(--fm-text);
-}
-
-.fm-navigation-controls button:disabled {
-  opacity: 0.35;
 }
 
 .fm-settings-editor {
