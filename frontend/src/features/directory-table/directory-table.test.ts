@@ -219,6 +219,58 @@ describe('DirectoryTable rows', () => {
     ]);
   });
 
+  it('shows live width feedback while dragging a column resize handle, and persists the final width on release', () => {
+    const onColumnWidthChange = vi.fn();
+    // Mirrors `pane-content-builder.ts`, which rebuilds `columnWidths` as a brand-new array (and
+    // brand-new entry objects) on every render, never a stable reference. A reconciliation check
+    // that compared this attrs value by reference (rather than by value) mistook every mid-drag
+    // redraw for a fresh authoritative update and stomped the live drag override back to the
+    // stale persisted width, so a drag produced no visible feedback even though the final
+    // dispatched width was still correct.
+    const columnWidths = () => [
+      { columnId: 'core.name', width: 200 },
+      { columnId: 'core.extension', width: 80 },
+    ];
+    m.mount(root, {
+      view: () =>
+        m(DirectoryTable, {
+          state: { type: 'loaded' },
+          source: entryArraySource([entry()]),
+          viewportHeight: 120,
+          columnWidths: columnWidths(),
+          onColumnWidthChange,
+        }),
+    });
+
+    const handle = root.querySelector<HTMLElement>(
+      '[data-column-id="core.name"] .fm-directory-resize-handle',
+    );
+    const button = handle?.closest('button');
+    vi.spyOn(button as HTMLElement, 'getBoundingClientRect').mockReturnValue({
+      x: 0,
+      y: 0,
+      top: 0,
+      right: 200,
+      bottom: 20,
+      left: 0,
+      width: 200,
+      height: 20,
+      toJSON: () => ({}),
+    });
+
+    handle?.dispatchEvent(new MouseEvent('pointerdown', { clientX: 200, bubbles: true }));
+    window.dispatchEvent(new MouseEvent('pointermove', { clientX: 250 }));
+    // A redraw from anything else in the app mid-drag rebuilds `columnWidths` fresh (same values,
+    // new array/object references) - simulated here directly, matching the real render path.
+    m.redraw.sync();
+
+    const header = root.querySelector<HTMLElement>('.fm-directory-header');
+    expect(header?.style.gridTemplateColumns).toContain('250px');
+
+    window.dispatchEvent(new MouseEvent('pointerup', { clientX: 250 }));
+    expect(onColumnWidthChange).toHaveBeenCalledExactlyOnceWith('core.name', 250);
+  });
+
   it('highlights only the first in-word occurrence in every matching name', () => {
     mount({
       state: { type: 'loaded' },

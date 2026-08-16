@@ -434,6 +434,26 @@ export const DirectoryTable: FactoryComponent<DirectoryTableAttrs> = () => {
     return new Map((entries ?? []).map((entry) => [entry.columnId, entry.width]));
   }
 
+  /** `attrs.columnWidths` is rebuilt with a fresh array (and fresh entry objects) on every render
+   * by `pane-content-builder.ts`, even when nothing actually changed - so comparing it against
+   * `sourceColumnWidths` by reference (as `workspace-layout.ts` does for `attrs.workspace.layout`,
+   * which *is* referentially stable) was true on almost every render, including ones triggered by
+   * this component's own `m.redraw()` mid-drag. That stomped `displayedColumnWidths` back to the
+   * stale persisted value on the very next render after every `move` handler ran, so a drag never
+   * showed any visual feedback (the final width still landed correctly on release, since that path
+   * reads the drag's own closure variable rather than `displayedColumnWidths`). Comparing by value
+   * instead makes the reconciliation only fire when the persisted width has actually changed. */
+  function columnWidthsEqual(
+    a: readonly ColumnWidthEntry[] | undefined,
+    b: readonly ColumnWidthEntry[] | undefined,
+  ): boolean {
+    if (a === b) return true;
+    if (a === undefined || b === undefined || a.length !== b.length) return false;
+    return a.every(
+      (entry, index) => entry.columnId === b[index]?.columnId && entry.width === b[index]?.width,
+    );
+  }
+
   function beginColumnResize(
     event: PointerEvent,
     attrs: DirectoryTableAttrs,
@@ -516,7 +536,7 @@ export const DirectoryTable: FactoryComponent<DirectoryTableAttrs> = () => {
     },
     view: ({ attrs }) => {
       syncCursor(attrs);
-      if (sourceColumnWidths !== attrs.columnWidths) {
+      if (!columnWidthsEqual(sourceColumnWidths, attrs.columnWidths)) {
         sourceColumnWidths = attrs.columnWidths;
         displayedColumnWidths = sourceColumnWidths;
       }
