@@ -7,12 +7,16 @@ import type {
   BackendEvent,
   CalculateFolderSizeRequest,
   CalculateFolderSizeResult,
+  ChecksumAlgorithm,
+  ChecksumFile,
+  ChecksumPage,
   ComparisonPage,
   Connection,
   ConnectionId,
   CreateConnectionRequest,
   CreateWorkspaceRequest,
   DirectorySnapshot,
+  DuplicatePage,
   EditableFile,
   EditableFileSave,
   EntryMetadata,
@@ -38,8 +42,12 @@ import type {
   SearchInFileResult,
   SetPaneActivityRequest,
   Settings,
+  StartChecksumRequest,
+  StartChecksumResult,
   StartComparisonRequest,
   StartComparisonResult,
+  StartDuplicateScanRequest,
+  StartDuplicateScanResult,
   StartOperationRequest,
   StartSearchRequest,
   StartSearchResult,
@@ -47,6 +55,7 @@ import type {
   SystemLocation,
   Unsubscribe,
   UpdateConnectionRequest,
+  VerificationReport,
   WorkspaceCommand,
   WorkspaceId,
   WorkspaceProjection,
@@ -202,6 +211,47 @@ export interface FileManagerClient {
     request: ApplySyncPlanRequest,
     signal?: AbortSignal,
   ): Promise<ApplySyncPlanResult>;
+
+  /** Starts a cancellable checksum job over a selection (spec §18, task 0077). */
+  startChecksums(request: StartChecksumRequest, signal?: AbortSignal): Promise<StartChecksumResult>;
+
+  /** Pages through a checksum job's streamed results. */
+  getChecksums(
+    jobId: string,
+    options?: { offset?: number; limit?: number },
+    signal?: AbortSignal,
+  ): Promise<ChecksumPage>;
+
+  cancelChecksums(jobId: string, signal?: AbortSignal): Promise<void>;
+
+  /** Renders a job's results as coreutils-compatible checksum-file text. */
+  renderChecksumFile(
+    jobId: string,
+    algorithm: ChecksumAlgorithm,
+    signal?: AbortSignal,
+  ): Promise<ChecksumFile>;
+
+  /** Verifies a job's digests against an existing checksum file's text. */
+  verifyChecksumFile(
+    jobId: string,
+    content: string,
+    signal?: AbortSignal,
+  ): Promise<VerificationReport>;
+
+  /** Starts a cancellable duplicate scan across one or more roots. */
+  startDuplicateScan(
+    request: StartDuplicateScanRequest,
+    signal?: AbortSignal,
+  ): Promise<StartDuplicateScanResult>;
+
+  /** Pages through a duplicate scan's grouped results. */
+  getDuplicateScan(
+    scanId: string,
+    options?: { offset?: number; limit?: number },
+    signal?: AbortSignal,
+  ): Promise<DuplicatePage>;
+
+  cancelDuplicateScan(scanId: string, signal?: AbortSignal): Promise<void>;
 
   listActions(signal?: AbortSignal): Promise<ActionDescriptor[]>;
 

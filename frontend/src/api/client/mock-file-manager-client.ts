@@ -10,6 +10,10 @@ import type {
   BackendEvent,
   CalculateFolderSizeRequest,
   CalculateFolderSizeResult,
+  ChecksumAlgorithm,
+  ChecksumEntry,
+  ChecksumFile,
+  ChecksumPage,
   ComparisonCriteria,
   ComparisonEntry,
   ComparisonEntrySide,
@@ -20,6 +24,8 @@ import type {
   CreateConnectionRequest,
   CreateWorkspaceRequest,
   DirectorySnapshot,
+  DuplicateGroup,
+  DuplicatePage,
   EditableFile,
   EditableFileSave,
   EntryMetadata,
@@ -47,8 +53,12 @@ import type {
   SearchInFileResult,
   SetPaneActivityRequest,
   Settings,
+  StartChecksumRequest,
+  StartChecksumResult,
   StartComparisonRequest,
   StartComparisonResult,
+  StartDuplicateScanRequest,
+  StartDuplicateScanResult,
   StartOperationRequest,
   StartSearchRequest,
   StartSearchResult,
@@ -56,6 +66,8 @@ import type {
   SystemLocation,
   Unsubscribe,
   UpdateConnectionRequest,
+  VerificationReport,
+  VerificationResult,
   WorkspaceCommand,
   WorkspaceId,
   WorkspaceProjection,
@@ -120,6 +132,14 @@ export type MockClientMethod =
   | 'startComparison'
   | 'getComparison'
   | 'cancelComparison'
+  | 'startChecksums'
+  | 'getChecksums'
+  | 'cancelChecksums'
+  | 'renderChecksumFile'
+  | 'verifyChecksumFile'
+  | 'startDuplicateScan'
+  | 'getDuplicateScan'
+  | 'cancelDuplicateScan'
   | 'generateSyncPlan'
   | 'applySyncPlan'
   | 'listConnections'
@@ -297,6 +317,73 @@ function comparisonEntrySideFor(entry: EntrySummary): ComparisonEntrySide {
     kind: entry.kind,
     ...(entry.size === undefined ? {} : { size: entry.size }),
   };
+}
+
+/** The last `/`-separated segment of a URI, percent-decoded. */
+function lastSegment(uri: string): string {
+  const trimmed = uri.endsWith('/') ? uri.slice(0, -1) : uri;
+  const index = trimmed.lastIndexOf('/');
+  return decodeURIComponent(index === -1 ? trimmed : trimmed.slice(index + 1));
+}
+
+/**
+ * A deterministic, plausible-looking digest for the mock runtime.
+ *
+ * Deliberately *not* a real hash: the mock never reads file bytes, and a
+ * digest that merely looks right is enough to exercise the UI. It is stable
+ * for a given (uri, algorithm) pair so repeated runs and the verify flow
+ * agree with themselves.
+ */
+function mockDigest(uri: string, algorithm: ChecksumAlgorithm): string {
+  const width = algorithm === 'crc32' ? 8 : algorithm === 'md5' ? 32 : 64;
+  let hash = 0x811c9dc5;
+  const seed = `${algorithm}:${uri}`;
+  for (let index = 0; index < seed.length; index += 1) {
+    hash ^= seed.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  let digest = '';
+  let state = hash;
+  while (digest.length < width) {
+    state = (Math.imul(state, 0x01000193) ^ digest.length) >>> 0;
+    digest += state.toString(16).padStart(8, '0');
+  }
+  return digest.slice(0, width);
+}
+
+/**
+ * Builds a plausible duplicate-scan result: one group of two byte-identical
+ * files with distinct inodes, plus one hardlink cluster, so the review UI can
+ * exercise both categories without a real filesystem.
+ */
+function buildMockDuplicateGroups(roots: readonly Location[]): DuplicateGroup[] {
+  const root = roots[0];
+  if (root === undefined) return [];
+  const base = root.uri.endsWith('/') ? root.uri.slice(0, -1) : root.uri;
+  const at = (name: string): Location => ({ providerId: root.providerId, uri: `${base}/${name}` });
+  return [
+    {
+      fullHash: mockDigest(`${base}/duplicate-content`, 'sha256'),
+      size: 20_480,
+      hardlinkClusters: [],
+      distinctLocations: [at('report-copy.pdf'), at('archive/report.pdf')],
+      reclaimableBytes: 20_480,
+    },
+    {
+      fullHash: mockDigest(`${base}/hardlinked-content`, 'sha256'),
+      size: 4_096,
+      hardlinkClusters: [
+        {
+          device: 16_777_233,
+          inode: 4_242_424,
+          locations: [at('notes.md'), at('archive/notes-link.md')],
+        },
+      ],
+      distinctLocations: [],
+      // A hardlink cluster is one file: deleting a path frees nothing.
+      reclaimableBytes: 0,
+    },
+  ];
 }
 
 /**
@@ -516,6 +603,20 @@ export class MockFileManagerClient implements FileManagerClient {
       right: Location;
       criteria: ComparisonCriteria;
     }
+  >();
+  private checksumSequence = 0;
+  private readonly checksumJobs = new Map<
+    string,
+    {
+      cancelled: boolean;
+      entries: readonly ChecksumEntry[];
+      algorithms: readonly ChecksumAlgorithm[];
+    }
+  >();
+  private duplicateScanSequence = 0;
+  private readonly duplicateScans = new Map<
+    string,
+    { cancelled: boolean; groups: readonly DuplicateGroup[]; roots: readonly Location[] }
   >();
   private readonly fileContents = new Map<string, Uint8Array>();
   // Generated directories are recreated per request, but their aggregate totals are a pure
@@ -1207,6 +1308,208 @@ export class MockFileManagerClient implements FileManagerClient {
     });
   }
 
+  startChecksums(
+    request: StartChecksumRequest,
+    signal?: AbortSignal,
+  ): Promise<StartChecksumResult> {
+    return this.perform('startChecksums', signal, () => {
+      this.checksumSequence += 1;
+      const jobId = `mock-checksum-${this.seed}-${this.checksumSequence}`;
+      const entries: ChecksumEntry[] = request.entries.map((location) => {
+        const content = this.fileContentFor(location.uri);
+        const checksums: Record<string, string> = {};
+        for (const algorithm of request.algorithms) {
+          checksums[algorithm] = mockDigest(location.uri, algorithm);
+        }
+        return {
+          location,
+          relativePath: lastSegment(location.uri),
+          size: content.byteLength,
+          checksums,
+        };
+      });
+      this.checksumJobs.set(jobId, {
+        cancelled: false,
+        entries,
+        algorithms: request.algorithms,
+      });
+      // Deferred with a macrotask for the same reason as `startComparison`:
+      // the caller must have recorded `jobId` before the batch arrives.
+      setTimeout(() => {
+        if (this.checksumJobs.get(jobId)?.cancelled ?? true) return;
+        this.eventSequence += 1;
+        this.emit({
+          eventId: this.eventSequence,
+          timestamp: '2026-01-01T00:00:00.000Z',
+          workspaceId: request.workspaceId,
+          payload: {
+            type: 'checksum.resultsBatch',
+            jobId,
+            entries,
+            isComplete: true,
+            isCancelled: false,
+          },
+        });
+      }, 0);
+      return { jobId };
+    });
+  }
+
+  getChecksums(
+    jobId: string,
+    options?: { offset?: number; limit?: number },
+    signal?: AbortSignal,
+  ): Promise<ChecksumPage> {
+    return this.perform('getChecksums', signal, () => {
+      const job = this.requireChecksumJob(jobId);
+      const offset = options?.offset ?? 0;
+      const limit = options?.limit ?? 200;
+      return {
+        jobId,
+        algorithms: job.algorithms,
+        offset,
+        limit,
+        total: job.entries.length,
+        totalEntries: job.entries.length,
+        entries: job.entries.slice(offset, offset + limit),
+        isComplete: true,
+        isCancelled: job.cancelled,
+        hasMore: offset + limit < job.entries.length,
+      };
+    });
+  }
+
+  cancelChecksums(jobId: string, signal?: AbortSignal): Promise<void> {
+    return this.perform('cancelChecksums', signal, () => {
+      this.requireChecksumJob(jobId).cancelled = true;
+    });
+  }
+
+  renderChecksumFile(
+    jobId: string,
+    algorithm: ChecksumAlgorithm,
+    signal?: AbortSignal,
+  ): Promise<ChecksumFile> {
+    return this.perform('renderChecksumFile', signal, () => {
+      const job = this.requireChecksumJob(jobId);
+      const lines = job.entries
+        .filter((entry) => entry.checksums[algorithm] !== undefined)
+        .map((entry) => `${entry.checksums[algorithm]}  ${entry.relativePath}`);
+      return {
+        suggestedName: `checksums.${algorithm}`,
+        content: `# ${algorithm}\n${lines.join('\n')}\n`,
+      };
+    });
+  }
+
+  verifyChecksumFile(
+    jobId: string,
+    content: string,
+    signal?: AbortSignal,
+  ): Promise<VerificationReport> {
+    return this.perform('verifyChecksumFile', signal, () => {
+      const job = this.requireChecksumJob(jobId);
+      const results: VerificationResult[] = [];
+      let matched = 0;
+      let mismatched = 0;
+      let missing = 0;
+      for (const line of content.split('\n')) {
+        const trimmed = line.trim();
+        if (trimmed === '' || trimmed.startsWith('#')) continue;
+        const [digest, ...rest] = trimmed.split(/ {2}| \*/);
+        const path = rest.join('  ');
+        if (digest === undefined || path === '') continue;
+        const entry = job.entries.find((candidate) => candidate.relativePath === path);
+        const actual = entry === undefined ? undefined : Object.values(entry.checksums)[0];
+        if (actual === undefined) {
+          missing += 1;
+          results.push({ path, status: 'missing' });
+        } else if (actual.toLowerCase() === digest.toLowerCase()) {
+          matched += 1;
+          results.push({ path, status: 'match' });
+        } else {
+          mismatched += 1;
+          results.push({ path, status: 'mismatch', expected: digest, actual });
+        }
+      }
+      return { jobId, results, matched, mismatched, missing };
+    });
+  }
+
+  startDuplicateScan(
+    request: StartDuplicateScanRequest,
+    signal?: AbortSignal,
+  ): Promise<StartDuplicateScanResult> {
+    return this.perform('startDuplicateScan', signal, () => {
+      this.duplicateScanSequence += 1;
+      const scanId = `mock-duplicate-scan-${this.seed}-${this.duplicateScanSequence}`;
+      const groups = buildMockDuplicateGroups(request.roots);
+      this.duplicateScans.set(scanId, { cancelled: false, groups, roots: request.roots });
+      setTimeout(() => {
+        if (this.duplicateScans.get(scanId)?.cancelled ?? true) return;
+        this.eventSequence += 1;
+        this.emit({
+          eventId: this.eventSequence,
+          timestamp: '2026-01-01T00:00:00.000Z',
+          workspaceId: request.workspaceId,
+          payload: {
+            type: 'duplicates.resultsReady',
+            scanId,
+            groups,
+            isCancelled: false,
+            warningsCount: 0,
+          },
+        });
+      }, 0);
+      return { scanId };
+    });
+  }
+
+  getDuplicateScan(
+    scanId: string,
+    options?: { offset?: number; limit?: number },
+    signal?: AbortSignal,
+  ): Promise<DuplicatePage> {
+    return this.perform('getDuplicateScan', signal, () => {
+      const scan = this.requireDuplicateScan(scanId);
+      const offset = options?.offset ?? 0;
+      const limit = options?.limit ?? 200;
+      const fullyHashed = scan.groups.reduce(
+        (total, group) => total + group.distinctLocations.length + group.hardlinkClusters.length,
+        0,
+      );
+      return {
+        scanId,
+        roots: scan.roots,
+        offset,
+        limit,
+        total: scan.groups.length,
+        groups: scan.groups.slice(offset, offset + limit),
+        isComplete: true,
+        isCancelled: scan.cancelled,
+        hasMore: offset + limit < scan.groups.length,
+        stats: {
+          candidates: fullyHashed + 2,
+          sizeSurvivors: fullyHashed,
+          partiallyHashed: fullyHashed,
+          fullyHashed,
+          bytesHashed: scan.groups.reduce(
+            (total, group) => total + group.size * group.distinctLocations.length,
+            0,
+          ),
+          failed: 0,
+        },
+        warningsCount: 0,
+      };
+    });
+  }
+
+  cancelDuplicateScan(scanId: string, signal?: AbortSignal): Promise<void> {
+    return this.perform('cancelDuplicateScan', signal, () => {
+      this.requireDuplicateScan(scanId).cancelled = true;
+    });
+  }
+
   generateSyncPlan(
     comparisonId: string,
     request: GenerateSyncPlanRequest,
@@ -1531,6 +1834,33 @@ export class MockFileManagerClient implements FileManagerClient {
       throw new MockClientError('operationNotFound', `No mock operation with id ${operationId}`);
     }
     return operation;
+  }
+
+  private requireChecksumJob(jobId: string): {
+    cancelled: boolean;
+    entries: readonly ChecksumEntry[];
+    algorithms: readonly ChecksumAlgorithm[];
+  } {
+    const job = this.checksumJobs.get(jobId);
+    if (job === undefined) {
+      throw new MockClientError('checksumJobNotFound', `No mock checksum job with id ${jobId}`);
+    }
+    return job;
+  }
+
+  private requireDuplicateScan(scanId: string): {
+    cancelled: boolean;
+    groups: readonly DuplicateGroup[];
+    roots: readonly Location[];
+  } {
+    const scan = this.duplicateScans.get(scanId);
+    if (scan === undefined) {
+      throw new MockClientError(
+        'duplicateScanNotFound',
+        `No mock duplicate scan with id ${scanId}`,
+      );
+    }
+    return scan;
   }
 
   private requireComparison(comparisonId: string): {

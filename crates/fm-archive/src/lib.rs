@@ -296,7 +296,9 @@ impl FileSystemProvider for ArchiveFileSystemProvider {
     fn capabilities(&self) -> ProviderCapabilities {
         // The scheme-level baseline is intentionally read-only. Callers with a location use
         // `capabilities_for`, which adds mutation only for ZIP.
-        ProviderCapabilities::LIST | ProviderCapabilities::READ
+        // `CHECKSUM` rides along with `READ`: a checksum is just a streamed
+        // read of the decompressed entry (task 0077, spec §6).
+        ProviderCapabilities::LIST | ProviderCapabilities::READ | ProviderCapabilities::CHECKSUM
     }
 
     fn capabilities_for(&self, location: &Location) -> Result<ProviderCapabilities, VfsError> {

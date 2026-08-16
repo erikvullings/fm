@@ -7,12 +7,16 @@ import type {
   BackendEvent,
   CalculateFolderSizeRequest,
   CalculateFolderSizeResult,
+  ChecksumAlgorithm,
+  ChecksumFile,
+  ChecksumPage,
   ComparisonPage,
   Connection,
   ConnectionId,
   CreateConnectionRequest,
   CreateWorkspaceRequest,
   DirectorySnapshot,
+  DuplicatePage,
   EditableFile,
   EditableFileSave,
   EntryMetadata,
@@ -39,8 +43,12 @@ import type {
   SearchInFileResult,
   SetPaneActivityRequest,
   Settings,
+  StartChecksumRequest,
+  StartChecksumResult,
   StartComparisonRequest,
   StartComparisonResult,
+  StartDuplicateScanRequest,
+  StartDuplicateScanResult,
   StartOperationRequest,
   StartSearchRequest,
   StartSearchResult,
@@ -48,11 +56,17 @@ import type {
   SystemLocation,
   Unsubscribe,
   UpdateConnectionRequest,
+  VerificationReport,
   WorkspaceCommand,
   WorkspaceId,
   WorkspaceProjection,
   WorkspaceSummary,
 } from '../../models';
+import {
+  checksumPageFromDto,
+  duplicatePageFromDto,
+  verificationReportFromDto,
+} from '../../models/checksum';
 import { syncPlanItemToDto } from '../../models/comparison';
 import { entryMetadataFromDto } from '../../models/entry';
 import { comparisonPageFromDto, syncPlanFromDto } from '../../models/requests';
@@ -63,6 +77,11 @@ import {
   invokeAction as requestActionInvocation,
   listActions as requestActions,
   cacheArchivePassword as requestArchivePasswordCache,
+  cancelChecksums as requestChecksumCancel,
+  renderChecksumFile as requestChecksumFileRender,
+  verifyChecksumFile as requestChecksumFileVerify,
+  getChecksums as requestChecksumGet,
+  startChecksums as requestChecksumStart,
   cancelComparison as requestComparisonCancel,
   getComparison as requestComparisonGet,
   startComparison as requestComparisonStart,
@@ -76,6 +95,9 @@ import {
   testConnection as requestConnectionTest,
   updateConnection as requestConnectionUpdate,
   listDirectory as requestDirectory,
+  cancelDuplicateScan as requestDuplicateScanCancel,
+  getDuplicateScan as requestDuplicateScanGet,
+  startDuplicateScan as requestDuplicateScanStart,
   getEntryMetadata as requestEntryMetadata,
   getFileIcon as requestFileIcon,
   calculateFolderSize as requestFolderSizeCalculation,
@@ -562,6 +584,133 @@ export class HttpFileManagerClient implements FileManagerClient {
     );
     if (response.status !== 204)
       throw new Error(`Unexpected cancelComparison response status: ${response.status}`);
+  }
+
+  async startChecksums(
+    request: StartChecksumRequest,
+    signal?: AbortSignal,
+  ): Promise<StartChecksumResult> {
+    const response = await requestChecksumStart(
+      {
+        workspaceId: request.workspaceId,
+        entries: request.entries,
+        algorithms: request.algorithms,
+      },
+      signal === undefined ? undefined : { signal },
+    );
+    if (response.status !== 201) {
+      throw new Error(`Unexpected startChecksums response status: ${response.status}`);
+    }
+    return { jobId: response.data.jobId };
+  }
+
+  async getChecksums(
+    jobId: string,
+    options?: { offset?: number; limit?: number },
+    signal?: AbortSignal,
+  ): Promise<ChecksumPage> {
+    const response = await requestChecksumGet(
+      jobId,
+      {
+        ...(options?.offset === undefined ? {} : { offset: options.offset }),
+        ...(options?.limit === undefined ? {} : { limit: options.limit }),
+      },
+      signal === undefined ? undefined : { signal },
+    );
+    if (response.status !== 200) {
+      throw new Error(`Unexpected getChecksums response status: ${response.status}`);
+    }
+    return checksumPageFromDto(response.data);
+  }
+
+  async cancelChecksums(jobId: string, signal?: AbortSignal): Promise<void> {
+    const response = await requestChecksumCancel(
+      jobId,
+      signal === undefined ? undefined : { signal },
+    );
+    if (response.status !== 204)
+      throw new Error(`Unexpected cancelChecksums response status: ${response.status}`);
+  }
+
+  async renderChecksumFile(
+    jobId: string,
+    algorithm: ChecksumAlgorithm,
+    signal?: AbortSignal,
+  ): Promise<ChecksumFile> {
+    const response = await requestChecksumFileRender(
+      jobId,
+      { algorithm },
+      signal === undefined ? undefined : { signal },
+    );
+    if (response.status !== 200) {
+      throw new Error(`Unexpected renderChecksumFile response status: ${response.status}`);
+    }
+    return { suggestedName: response.data.suggestedName, content: response.data.content };
+  }
+
+  async verifyChecksumFile(
+    jobId: string,
+    content: string,
+    signal?: AbortSignal,
+  ): Promise<VerificationReport> {
+    const response = await requestChecksumFileVerify(
+      jobId,
+      { content },
+      signal === undefined ? undefined : { signal },
+    );
+    if (response.status !== 200) {
+      throw new Error(`Unexpected verifyChecksumFile response status: ${response.status}`);
+    }
+    return verificationReportFromDto(response.data);
+  }
+
+  async startDuplicateScan(
+    request: StartDuplicateScanRequest,
+    signal?: AbortSignal,
+  ): Promise<StartDuplicateScanResult> {
+    const response = await requestDuplicateScanStart(
+      {
+        workspaceId: request.workspaceId,
+        roots: request.roots,
+        ...(request.showHidden === undefined ? {} : { showHidden: request.showHidden }),
+        ...(request.includeEmptyFiles === undefined
+          ? {}
+          : { includeEmptyFiles: request.includeEmptyFiles }),
+      },
+      signal === undefined ? undefined : { signal },
+    );
+    if (response.status !== 201) {
+      throw new Error(`Unexpected startDuplicateScan response status: ${response.status}`);
+    }
+    return { scanId: response.data.scanId };
+  }
+
+  async getDuplicateScan(
+    scanId: string,
+    options?: { offset?: number; limit?: number },
+    signal?: AbortSignal,
+  ): Promise<DuplicatePage> {
+    const response = await requestDuplicateScanGet(
+      scanId,
+      {
+        ...(options?.offset === undefined ? {} : { offset: options.offset }),
+        ...(options?.limit === undefined ? {} : { limit: options.limit }),
+      },
+      signal === undefined ? undefined : { signal },
+    );
+    if (response.status !== 200) {
+      throw new Error(`Unexpected getDuplicateScan response status: ${response.status}`);
+    }
+    return duplicatePageFromDto(response.data);
+  }
+
+  async cancelDuplicateScan(scanId: string, signal?: AbortSignal): Promise<void> {
+    const response = await requestDuplicateScanCancel(
+      scanId,
+      signal === undefined ? undefined : { signal },
+    );
+    if (response.status !== 204)
+      throw new Error(`Unexpected cancelDuplicateScan response status: ${response.status}`);
   }
 
   async generateSyncPlan(

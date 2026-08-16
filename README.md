@@ -58,6 +58,7 @@ crates/
   fm-ssh/               SSH session and host-key verification
   fm-metadata/          file metadata helpers
   fm-archive/           archive VFS provider (zip, tar, …)
+  fm-checksum/          streaming checksums, checksum files, duplicate detection
   fm-comparison/        directory comparison and sync-plan generation
   fm-test-support/      shared test fixtures and helpers
 frontend/

@@ -8,11 +8,11 @@ license.workspace = true
 
 [dependencies]
 chrono.workspace = true
+fm-checksum.workspace = true
 fm-domain.workspace = true
 fm-events.workspace = true
 fm-vfs = { path = "../fm-vfs" }
 serde.workspace = true
-sha2.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = ["io-util", "rt"] }
 tokio-util.workspace = true

@@ -14,6 +14,12 @@ import type {
   WorkspaceProjection,
   WorkspaceSummary,
 } from '../../models';
+import {
+  type ChecksumState,
+  type DuplicateState,
+  withChecksumBatch,
+  withDuplicateResults,
+} from '../checksums/checksum-state';
 import { type ComparisonState, withComparisonBatch } from '../comparison/comparison-state';
 import { upsertConnection, withoutConnection } from '../connections/connections-model';
 import {
@@ -104,6 +110,12 @@ export interface BackendEventContext {
    * isn't `identical` (Total-Commander-style "Compare directories"). Called once a comparison
    * finishes streaming. */
   markComparisonDifferences(state: ComparisonState): void;
+
+  // Checksums and duplicate detection (task 0077)
+  getChecksumState(): ChecksumState;
+  setChecksumState(next: ChecksumState): void;
+  getDuplicateState(): DuplicateState;
+  setDuplicateState(next: DuplicateState): void;
 
   // Search
   getFindFilesSearchId(): string | undefined;
@@ -298,6 +310,34 @@ export function createBackendEventHandler(ctx: BackendEventContext): (event: Bac
       // (comparisonId mismatch) leaves `next` as the untouched current state, whose own
       // completion flag reflects reality even though this particular payload was discarded.
       if (next.isComplete) ctx.markComparisonDifferences(next);
+      ctx.redraw();
+      return;
+    }
+
+    if (payload.type === 'checksum.resultsBatch') {
+      ctx.setChecksumState(
+        withChecksumBatch(
+          ctx.getChecksumState(),
+          payload.jobId,
+          payload.entries,
+          payload.isComplete,
+          payload.isCancelled,
+        ),
+      );
+      ctx.redraw();
+      return;
+    }
+
+    if (payload.type === 'duplicates.resultsReady') {
+      ctx.setDuplicateState(
+        withDuplicateResults(
+          ctx.getDuplicateState(),
+          payload.scanId,
+          payload.groups,
+          payload.isCancelled,
+          payload.warningsCount,
+        ),
+      );
       ctx.redraw();
       return;
     }

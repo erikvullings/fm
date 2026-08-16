@@ -2,6 +2,7 @@
 //! (spec §3 rule 2).
 
 pub(crate) mod action;
+pub(crate) mod checksum;
 pub(crate) mod comparison;
 pub(crate) mod connection;
 pub(crate) mod diagnostics;

@@ -39,6 +39,16 @@ const ACTIONS: readonly ActionDescriptor[] = [
     defaultShortcuts: [{ key: 'F2', shift: true }],
   },
   {
+    id: 'core.calculateChecksum',
+    title: 'Calculate checksums',
+    defaultShortcuts: [{ key: 'F9', shift: true }],
+  },
+  {
+    id: 'core.findDuplicates',
+    title: 'Find duplicate files',
+    defaultShortcuts: [{ key: 'F9', ctrl: true }],
+  },
+  {
     id: 'core.swapPaneTabs',
     title: 'Swap pane tabs',
     defaultShortcuts: [{ key: 'u', ctrl: true, shift: true }],
@@ -193,6 +203,8 @@ function makeContext(overrides: Partial<GlobalKeydownContext> = {}): GlobalKeydo
     openMultiRenameForActivePane: vi.fn(),
     quitApplication: vi.fn(),
     startComparison: vi.fn(),
+    calculateChecksums: vi.fn(),
+    findDuplicates: vi.fn(),
   };
   return { ...base, ...overrides };
 }
@@ -409,6 +421,20 @@ describe('createGlobalKeydownHandler - task 0128 shortcuts', () => {
     const context = makeContext({ startComparison });
     createGlobalKeydownHandler(context)(keydown('F2', { shiftKey: true }));
     expect(startComparison).toHaveBeenCalled();
+  });
+
+  it('dispatches the checksum command to the checksum controller (task 0077)', () => {
+    const calculateChecksums = vi.fn();
+    const context = makeContext({ calculateChecksums });
+    createGlobalKeydownHandler(context)(keydown('F9', { shiftKey: true }));
+    expect(calculateChecksums).toHaveBeenCalled();
+  });
+
+  it('dispatches the find-duplicates command to the checksum controller (task 0077)', () => {
+    const findDuplicates = vi.fn();
+    const context = makeContext({ findDuplicates });
+    createGlobalKeydownHandler(context)(keydown('F9', { ctrlKey: true }));
+    expect(findDuplicates).toHaveBeenCalled();
   });
 
   it('F1 opens the shortcuts help overlay', () => {

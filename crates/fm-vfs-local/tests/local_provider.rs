@@ -565,6 +565,7 @@ async fn metadata_is_separate_and_capabilities_are_truthful() {
             | ProviderCapabilities::SET_PERMISSIONS
             | ProviderCapabilities::RANDOM_ACCESS
             | ProviderCapabilities::SERVER_SIDE_COPY
+            | ProviderCapabilities::CHECKSUM
     );
     let metadata = provider
         .metadata(&entry, CancellationToken::new())

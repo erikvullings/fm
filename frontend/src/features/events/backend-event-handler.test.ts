@@ -8,6 +8,14 @@ import type {
   WorkspaceProjection,
 } from '../../models';
 import {
+  type ChecksumState,
+  type DuplicateState,
+  initialChecksumState,
+  initialDuplicateState,
+  withChecksumJobStarted,
+  withDuplicateScanStarted,
+} from '../checksums/checksum-state';
+import {
   type ComparisonState,
   initialComparisonState,
   withComparisonStarted,
@@ -38,12 +46,22 @@ function makeEvent(payload: BackendEvent['payload'], workspaceId?: string): Back
 function makeContext(overrides: Partial<BackendEventContext> = {}): BackendEventContext {
   const searchBatchReloadInFlight = new Set<PaneId>();
   let comparisonState = initialComparisonState();
+  let checksumState = initialChecksumState();
+  let duplicateState = initialDuplicateState();
   return {
     getComparisonState: vi.fn(() => comparisonState),
     setComparisonState: vi.fn((next: ComparisonState) => {
       comparisonState = next;
     }),
     markComparisonDifferences: vi.fn(),
+    getChecksumState: vi.fn(() => checksumState),
+    setChecksumState: vi.fn((next: ChecksumState) => {
+      checksumState = next;
+    }),
+    getDuplicateState: vi.fn(() => duplicateState),
+    setDuplicateState: vi.fn((next: DuplicateState) => {
+      duplicateState = next;
+    }),
     getWorkspaceId: vi.fn(() => WS_ID),
     getWorkspaceRevision: vi.fn(() => 5),
     replaceWorkspace: vi.fn(),
@@ -365,6 +383,72 @@ describe('createBackendEventHandler', () => {
       // The batch itself was discarded (stale id) and the untouched current state isn't
       // complete, so nothing should be marked selected.
       expect(ctx.markComparisonDifferences).not.toHaveBeenCalled();
+    });
+
+    it('applies a checksum results batch to the tracked job (task 0077)', () => {
+      const ctx = makeContext();
+      ctx.setChecksumState(withChecksumJobStarted('job-1', ['sha256'], 1));
+      createBackendEventHandler(ctx)(
+        makeEvent(
+          {
+            type: 'checksum.resultsBatch',
+            jobId: 'job-1',
+            entries: [
+              {
+                location: { providerId: 'local', uri: 'file:///a.txt' },
+                relativePath: 'a.txt',
+                size: 3,
+                checksums: { sha256: 'aa' },
+              },
+            ],
+            isComplete: true,
+            isCancelled: false,
+          },
+          WS_ID,
+        ),
+      );
+      expect(ctx.getChecksumState().entries).toHaveLength(1);
+      expect(ctx.getChecksumState().isComplete).toBe(true);
+    });
+
+    it('ignores a checksum batch for an untracked job (task 0077)', () => {
+      const ctx = makeContext();
+      createBackendEventHandler(ctx)(
+        makeEvent(
+          {
+            type: 'checksum.resultsBatch',
+            jobId: 'stale',
+            entries: [],
+            isComplete: true,
+            isCancelled: false,
+          },
+          WS_ID,
+        ),
+      );
+      expect(ctx.getChecksumState().jobId).toBeUndefined();
+      expect(ctx.getChecksumState().isComplete).toBe(false);
+    });
+
+    it('applies duplicate results and preserves the cancelled flag (task 0077)', () => {
+      const ctx = makeContext();
+      ctx.setDuplicateState(
+        withDuplicateScanStarted('scan-1', [{ providerId: 'local', uri: 'file:///root' }]),
+      );
+      createBackendEventHandler(ctx)(
+        makeEvent(
+          {
+            type: 'duplicates.resultsReady',
+            scanId: 'scan-1',
+            groups: [],
+            isCancelled: true,
+            warningsCount: 2,
+          },
+          WS_ID,
+        ),
+      );
+      expect(ctx.getDuplicateState().isComplete).toBe(true);
+      expect(ctx.getDuplicateState().isCancelled).toBe(true);
+      expect(ctx.getDuplicateState().warningsCount).toBe(2);
     });
 
     it('marks differing entries selected once the tracked comparison completes', () => {

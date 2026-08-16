@@ -12,6 +12,8 @@
 
 mod bus;
 
+use std::collections::BTreeMap;
+
 use chrono::{DateTime, Utc};
 use fm_domain::{
     DirectorySnapshot, EntryId, EntryKind, EntrySummary, LoadingState, Location, OperationId,
@@ -188,6 +190,53 @@ pub struct ComparisonEntryPayload {
     pub right: Option<ComparisonEntrySidePayload>,
     /// The computed outcome for this path.
     pub status: ComparisonStatusPayload,
+}
+
+/// One entry's computed checksums, carried by a checksum results batch
+/// (task 0077).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChecksumEntryPayload {
+    /// Location of the hashed entry.
+    pub location: LocationPayload,
+    /// Path relative to the request's common root, for display.
+    pub relative_path: String,
+    /// Bytes hashed.
+    pub size: u64,
+    /// Digests keyed by lower-case algorithm name (`sha256`, `blake3`, …).
+    pub checksums: BTreeMap<String, String>,
+    /// Why this entry could not be hashed, when it could not be.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+/// Two or more paths that are the same file through a hardlink (task 0077).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HardlinkClusterPayload {
+    /// Device number the cluster's paths share.
+    pub device: u64,
+    /// Inode number the cluster's paths share.
+    pub inode: u64,
+    /// The paths pointing at that one file.
+    pub locations: Vec<LocationPayload>,
+}
+
+/// A set of byte-identical files (task 0077).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DuplicateGroupPayload {
+    /// Full-content digest shared by every member.
+    pub full_hash: String,
+    /// Byte size shared by every member.
+    pub size: u64,
+    /// Paths that are the same file through a hardlink. Reported separately
+    /// because deleting one reclaims nothing.
+    pub hardlink_clusters: Vec<HardlinkClusterPayload>,
+    /// Byte-identical files with distinct identities — the true duplicates.
+    pub distinct_locations: Vec<LocationPayload>,
+    /// Bytes reclaimable by keeping one copy of the content.
+    pub reclaimable_bytes: u64,
 }
 
 /// Directory loading state.
@@ -452,6 +501,10 @@ pub enum OperationKindPayload {
     Search,
     /// Compare two directory trees (task 0075).
     Compare,
+    /// Calculate checksums for a selection (task 0077).
+    Checksum,
+    /// Scan one or more roots for duplicate files (task 0077).
+    FindDuplicates,
 }
 
 /// Operation lifecycle states from specification §17.
@@ -910,6 +963,39 @@ pub enum BackendEventPayload {
         /// Cumulative count of unreadable directories skipped so far.
         warnings_count: u32,
     },
+    /// Newly computed checksums for a running checksum job (task 0077).
+    ///
+    /// Scoped by `job_id` rather than `pane_id`, matching
+    /// `comparison.resultsBatch` above.
+    #[serde(rename = "checksum.resultsBatch")]
+    ChecksumResultsBatch {
+        /// The checksum job this batch belongs to.
+        job_id: Uuid,
+        /// Entries hashed since the previous batch.
+        entries: Vec<ChecksumEntryPayload>,
+        /// Whether the backend has stopped producing further batches.
+        is_complete: bool,
+        /// Whether the job stopped because it was cancelled.
+        is_cancelled: bool,
+    },
+    /// The final grouped result of a duplicate scan (task 0077).
+    ///
+    /// Unlike the streaming batches above this arrives once, at the end: a
+    /// duplicate group is only knowable after its whole size/prefix/full-hash
+    /// funnel has run, so there is nothing meaningful to stream before then.
+    #[serde(rename = "duplicates.resultsReady")]
+    DuplicateResultsReady {
+        /// The scan these groups belong to.
+        scan_id: Uuid,
+        /// Groups found, empty when the scan was cancelled.
+        groups: Vec<DuplicateGroupPayload>,
+        /// Whether the scan stopped because it was cancelled. A cancelled
+        /// scan never reports groups, so this distinguishes "none found"
+        /// from "did not finish looking".
+        is_cancelled: bool,
+        /// Files that had to be skipped.
+        warnings_count: u32,
+    },
     /// A new connection profile was created (task 0103).
     #[serde(rename = "connection.created")]
     ConnectionCreated {
@@ -968,6 +1054,8 @@ impl BackendEventPayload {
             Self::NotificationCreated { .. } => "notification.created",
             Self::SearchResultsBatch { .. } => "search.resultsBatch",
             Self::ComparisonResultsBatch { .. } => "comparison.resultsBatch",
+            Self::ChecksumResultsBatch { .. } => "checksum.resultsBatch",
+            Self::DuplicateResultsReady { .. } => "duplicates.resultsReady",
             Self::ConnectionCreated { .. } => "connection.created",
             Self::ConnectionUpdated { .. } => "connection.updated",
             Self::ConnectionStatusChanged { .. } => "connection.statusChanged",

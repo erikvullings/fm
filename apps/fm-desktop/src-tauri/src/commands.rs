@@ -9,16 +9,19 @@ use fm_domain::OperationId;
 use fm_transport_dto::{
     AcceptSshHostKeyRequestDto, ActionDescriptorDto, ActionResultDto, ApplicationErrorDto,
     ApplySyncPlanRequestDto, ApplySyncPlanResponseDto, ArchiveCredentialRequestDto,
-    CalculateFolderSizeRequestDto, CalculateFolderSizeResponseDto, ComparisonPageDto,
-    ConnectionDto, CreateConnectionRequestDto, CreateWorkspaceRequestDto, DirectorySnapshotDto,
-    EntryMetadataDto, EntryMetadataRequest, GenerateSyncPlanRequestDto, HostKeyProbeDto,
-    InvokeActionRequestDto, ListDirectoryRequest, LocationDto, NavigateRequest, OperationDto,
-    PluginDescriptorDto, PluginLogEntryDto, ReadFileRangeRequestDto, ReadFileRangeResponseDto,
-    ResolveOperationConflictRequestDto, RuntimeCapabilitiesDto, SearchInFileRequestDto,
-    SearchInFileResponseDto, SetPaneActivityRequest, SettingsDto, StartComparisonRequestDto,
-    StartComparisonResponseDto, StartOperationRequestDto, StartSearchRequestDto,
-    StartSearchResponseDto, SyncPlanDto, UpdateConnectionRequestDto, WorkspaceCommandDto,
-    WorkspaceDto, WorkspaceSummaryDto,
+    CalculateFolderSizeRequestDto, CalculateFolderSizeResponseDto, ChecksumFileDto,
+    ChecksumPageDto, ComparisonPageDto, ConnectionDto, CreateConnectionRequestDto,
+    CreateWorkspaceRequestDto, DirectorySnapshotDto, DuplicatePageDto, EntryMetadataDto,
+    EntryMetadataRequest, GenerateSyncPlanRequestDto, HostKeyProbeDto, InvokeActionRequestDto,
+    ListDirectoryRequest, LocationDto, NavigateRequest, OperationDto, PluginDescriptorDto,
+    PluginLogEntryDto, ReadFileRangeRequestDto, ReadFileRangeResponseDto,
+    RenderChecksumFileRequestDto, ResolveOperationConflictRequestDto, RuntimeCapabilitiesDto,
+    SearchInFileRequestDto, SearchInFileResponseDto, SetPaneActivityRequest, SettingsDto,
+    StartChecksumRequestDto, StartChecksumResponseDto, StartComparisonRequestDto,
+    StartComparisonResponseDto, StartDuplicateScanRequestDto, StartDuplicateScanResponseDto,
+    StartOperationRequestDto, StartSearchRequestDto, StartSearchResponseDto, SyncPlanDto,
+    UpdateConnectionRequestDto, VerificationReportDto, VerifyChecksumFileRequestDto,
+    WorkspaceCommandDto, WorkspaceDto, WorkspaceSummaryDto,
 };
 
 use crate::{
@@ -787,6 +790,118 @@ pub(crate) fn apply_sync_plan(
     state
         .service
         .apply_sync_plan(comparison_id, request)
+        .map_err(|error| error.into_dto(Uuid::new_v4()))
+}
+
+/// Starts a cancellable checksum job through the same service method as
+/// REST (task 0077).
+///
+/// Must be `async` for the same reason as [`start_comparison`]:
+/// `ChecksumEngine::start_checksums` calls `tokio::spawn` internally.
+#[tauri::command]
+pub(crate) async fn start_checksums(
+    state: State<'_, AppState>,
+    request: StartChecksumRequestDto,
+) -> Result<StartChecksumResponseDto, ApplicationErrorDto> {
+    state
+        .service
+        .start_checksums(request)
+        .map_err(|error| error.into_dto(Uuid::new_v4()))
+}
+
+/// Returns a bounded page of a checksum job's results, identical in shape to
+/// `GET /api/v1/checksums/{jobId}`.
+#[tauri::command]
+pub(crate) fn get_checksums(
+    state: State<'_, AppState>,
+    job_id: Uuid,
+    offset: Option<u64>,
+    limit: Option<u16>,
+) -> Result<ChecksumPageDto, ApplicationErrorDto> {
+    state
+        .service
+        .get_checksum_page(job_id, offset.unwrap_or(0), limit.unwrap_or(200))
+        .map_err(|error| error.into_dto(Uuid::new_v4()))
+}
+
+/// Cancels a running checksum job through the shared service.
+#[tauri::command]
+pub(crate) fn cancel_checksums(
+    state: State<'_, AppState>,
+    job_id: Uuid,
+) -> Result<(), ApplicationErrorDto> {
+    state
+        .service
+        .cancel_checksums(job_id)
+        .map_err(|error| error.into_dto(Uuid::new_v4()))
+}
+
+/// Renders a job's results as checksum-file text, identical in shape to
+/// `POST /api/v1/checksums/{jobId}/checksum-file`.
+#[tauri::command]
+pub(crate) fn render_checksum_file(
+    state: State<'_, AppState>,
+    job_id: Uuid,
+    request: RenderChecksumFileRequestDto,
+) -> Result<ChecksumFileDto, ApplicationErrorDto> {
+    state
+        .service
+        .render_checksum_file(job_id, request)
+        .map_err(|error| error.into_dto(Uuid::new_v4()))
+}
+
+/// Verifies a job's digests against an existing checksum file, identical in
+/// shape to `POST /api/v1/checksums/{jobId}/verify`.
+#[tauri::command]
+pub(crate) fn verify_checksum_file(
+    state: State<'_, AppState>,
+    job_id: Uuid,
+    request: VerifyChecksumFileRequestDto,
+) -> Result<VerificationReportDto, ApplicationErrorDto> {
+    state
+        .service
+        .verify_checksum_file(job_id, request)
+        .map_err(|error| error.into_dto(Uuid::new_v4()))
+}
+
+/// Starts a cancellable duplicate scan through the shared service.
+///
+/// Must be `async` for the same reason as [`start_comparison`].
+#[tauri::command]
+pub(crate) async fn start_duplicate_scan(
+    state: State<'_, AppState>,
+    request: StartDuplicateScanRequestDto,
+) -> Result<StartDuplicateScanResponseDto, ApplicationErrorDto> {
+    state
+        .service
+        .start_duplicate_scan(request)
+        .map_err(|error| error.into_dto(Uuid::new_v4()))
+}
+
+/// Returns a bounded page of a duplicate scan's grouped results, identical
+/// in shape to `GET /api/v1/duplicate-scans/{scanId}`.
+#[tauri::command]
+pub(crate) fn get_duplicate_scan(
+    state: State<'_, AppState>,
+    scan_id: Uuid,
+    offset: Option<u64>,
+    limit: Option<u16>,
+) -> Result<DuplicatePageDto, ApplicationErrorDto> {
+    state
+        .service
+        .get_duplicate_page(scan_id, offset.unwrap_or(0), limit.unwrap_or(200))
+        .map_err(|error| error.into_dto(Uuid::new_v4()))
+}
+
+/// Cancels a running duplicate scan through the shared service.
+#[tauri::command]
+pub(crate) fn cancel_duplicate_scan(
+    state: State<'_, AppState>,
+    scan_id: Uuid,
+) -> Result<(), ApplicationErrorDto> {
+    state
+        .service
+        .cancel_duplicate_scan(scan_id)
         .map_err(|error| error.into_dto(Uuid::new_v4()))
 }
 

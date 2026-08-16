@@ -37,9 +37,14 @@ const CRATE_LAYERS: &[(&str, u8)] = &[
     ("fm-ssh", 1),
     ("fm-transport-dto", 1),
     ("fm-vfs", 1),
-    // Layer 2 - implementations of those contracts.
+    // Layer 2 - implementations of those contracts, including the primitive
+    // engines a higher engine may be composed from.
     ("fm-archive", 2),
-    ("fm-comparison", 2),
+    // `fm-checksum` cannot sit beside `fm-vfs`: it consumes the `fm-vfs`
+    // provider contract to stream bytes, so it must be strictly above it. It
+    // is in turn strictly below `fm-comparison`, which builds its
+    // content-hash comparison mode on top of it (task 0077).
+    ("fm-checksum", 2),
     ("fm-connections", 2),
     ("fm-credentials-macos", 2),
     ("fm-credentials-windows", 2),
@@ -53,14 +58,16 @@ const CRATE_LAYERS: &[(&str, u8)] = &[
     ("fm-vfs-local", 2),
     ("fm-vfs-ftp", 2),
     ("fm-vfs-sftp", 2),
-    // Layer 3 - application services, plus the test-support crate which may
+    // Layer 3 - composite engines built from the layer-2 primitives.
+    ("fm-comparison", 3),
+    // Layer 4 - application services, plus the test-support crate which may
     // build fixtures out of anything below it.
-    ("fm-application", 3),
-    ("fm-test-support", 3),
-    // Layer 4 - hosts.
-    ("fm-cli", 4),
-    ("fm-desktop", 4),
-    ("fm-server", 4),
+    ("fm-application", 4),
+    ("fm-test-support", 4),
+    // Layer 5 - hosts.
+    ("fm-cli", 5),
+    ("fm-desktop", 5),
+    ("fm-server", 5),
 ];
 
 /// Third-party crates that only a host application in `apps/` may depend on.
@@ -408,12 +415,12 @@ mod tests {
 
         let violations = check(&graph);
 
-        // `fm-vfs` (1) -> `fm-application` (3)
+        // `fm-vfs` (1) -> `fm-application` (4)
         assert!(violations.contains(&Violation::LayerInversion {
             from: "fm-vfs".to_owned(),
             from_layer: 1,
             to: "fm-application".to_owned(),
-            to_layer: 3,
+            to_layer: 4,
         }));
         // `fm-events` (1) -> `fm-vfs` (1), a same-layer edge.
         assert!(violations.contains(&Violation::LayerInversion {

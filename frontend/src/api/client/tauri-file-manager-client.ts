@@ -10,12 +10,16 @@ import type {
   BackendEvent,
   CalculateFolderSizeRequest,
   CalculateFolderSizeResult,
+  ChecksumAlgorithm,
+  ChecksumFile,
+  ChecksumPage,
   ComparisonPage,
   Connection,
   ConnectionId,
   CreateConnectionRequest,
   CreateWorkspaceRequest,
   DirectorySnapshot,
+  DuplicatePage,
   EditableFile,
   EditableFileSave,
   EntryMetadata,
@@ -41,8 +45,12 @@ import type {
   SearchInFileResult,
   SetPaneActivityRequest,
   Settings,
+  StartChecksumRequest,
+  StartChecksumResult,
   StartComparisonRequest,
   StartComparisonResult,
+  StartDuplicateScanRequest,
+  StartDuplicateScanResult,
   StartOperationRequest,
   StartSearchRequest,
   StartSearchResult,
@@ -50,6 +58,7 @@ import type {
   SystemLocation,
   Unsubscribe,
   UpdateConnectionRequest,
+  VerificationReport,
   WorkspaceCommand,
   WorkspaceId,
   WorkspaceProjection,
@@ -300,6 +309,68 @@ export class TauriFileManagerClient implements FileManagerClient {
 
   async cancelComparison(comparisonId: string, _signal?: AbortSignal): Promise<void> {
     await invoke('cancel_comparison', { comparisonId });
+  }
+
+  startChecksums(
+    request: StartChecksumRequest,
+    _signal?: AbortSignal,
+  ): Promise<StartChecksumResult> {
+    return invoke<StartChecksumResult>('start_checksums', { request });
+  }
+
+  getChecksums(
+    jobId: string,
+    options?: { offset?: number; limit?: number },
+    _signal?: AbortSignal,
+  ): Promise<ChecksumPage> {
+    return invoke<ChecksumPage>('get_checksums', {
+      jobId,
+      offset: options?.offset,
+      limit: options?.limit,
+    });
+  }
+
+  async cancelChecksums(jobId: string, _signal?: AbortSignal): Promise<void> {
+    await invoke('cancel_checksums', { jobId });
+  }
+
+  renderChecksumFile(
+    jobId: string,
+    algorithm: ChecksumAlgorithm,
+    _signal?: AbortSignal,
+  ): Promise<ChecksumFile> {
+    return invoke<ChecksumFile>('render_checksum_file', { jobId, request: { algorithm } });
+  }
+
+  verifyChecksumFile(
+    jobId: string,
+    content: string,
+    _signal?: AbortSignal,
+  ): Promise<VerificationReport> {
+    return invoke<VerificationReport>('verify_checksum_file', { jobId, request: { content } });
+  }
+
+  startDuplicateScan(
+    request: StartDuplicateScanRequest,
+    _signal?: AbortSignal,
+  ): Promise<StartDuplicateScanResult> {
+    return invoke<StartDuplicateScanResult>('start_duplicate_scan', { request });
+  }
+
+  getDuplicateScan(
+    scanId: string,
+    options?: { offset?: number; limit?: number },
+    _signal?: AbortSignal,
+  ): Promise<DuplicatePage> {
+    return invoke<DuplicatePage>('get_duplicate_scan', {
+      scanId,
+      offset: options?.offset,
+      limit: options?.limit,
+    });
+  }
+
+  async cancelDuplicateScan(scanId: string, _signal?: AbortSignal): Promise<void> {
+    await invoke('cancel_duplicate_scan', { scanId });
   }
 
   generateSyncPlan(

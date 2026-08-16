@@ -20,6 +20,21 @@ import {
   type ActionCommandControllerContext,
   createActionCommandController,
 } from '../features/actions/action-command-controller';
+import {
+  type ChecksumController,
+  type ChecksumControllerContext,
+  createChecksumController,
+} from '../features/checksums/checksum-controller';
+import { ChecksumResultsView } from '../features/checksums/checksum-results-view';
+import {
+  type ChecksumState,
+  type DuplicateState,
+  initialChecksumState,
+  initialDuplicateState,
+  totalReclaimableBytes,
+  wouldDeleteEveryCopy,
+} from '../features/checksums/checksum-state';
+import { DuplicateReviewView } from '../features/checksums/duplicate-review-view';
 import { emptyClipboard } from '../features/clipboard/clipboard';
 import { CommandPalette } from '../features/command-palette/command-palette';
 import {
@@ -336,6 +351,9 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
    * both panes once a comparison completes, Total-Commander-style, rather than surfacing a
    * separate review dialog. */
   let comparisonState: ComparisonState = initialComparisonState();
+  /** Live checksum-job and duplicate-scan state (spec §18, task 0077). */
+  let checksumState: ChecksumState = initialChecksumState();
+  let duplicateState: DuplicateState = initialDuplicateState();
   /** Registered by `WorkspaceLayoutView` (task 0089): moves DOM focus into a pane so keyboard
    * cursor navigation works immediately, e.g. right after a filename search closes its dialog. */
   let focusPane: ((paneId: PaneId) => void) | undefined;
@@ -1056,6 +1074,14 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     setComparisonState: (next) => {
       comparisonState = next;
     },
+    getChecksumState: () => checksumState,
+    setChecksumState: (next) => {
+      checksumState = next;
+    },
+    getDuplicateState: () => duplicateState,
+    setDuplicateState: (next) => {
+      duplicateState = next;
+    },
     markComparisonDifferences: (state) => {
       for (const paneId of [state.leftPaneId, state.rightPaneId]) {
         if (paneId === undefined) continue;
@@ -1104,6 +1130,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
   let globalKeydownHandler: (event: KeyboardEvent) => void;
   let findFilesController: FindFilesController;
   let comparisonController: ComparisonController;
+  let checksumController: ChecksumController;
   let actionCommandController: ActionCommandController;
 
   const workspaceControllerContext: WorkspaceControllerContext = {
@@ -1438,6 +1465,8 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       void attrsClient.quit?.();
     },
     startComparison: () => comparisonController.startComparison('sizeAndTimestamp'),
+    calculateChecksums: () => checksumController.calculateChecksums(['sha256']),
+    findDuplicates: () => checksumController.findDuplicates(),
     openSettingsDialog,
   };
 
@@ -1480,6 +1509,38 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     },
     getWorkspace: () => workspace,
     getClient: () => attrsClient,
+    redraw: () => m.redraw(),
+  };
+
+  const checksumControllerContext: ChecksumControllerContext = {
+    getChecksumState: () => checksumState,
+    setChecksumState: (next) => {
+      checksumState = next;
+    },
+    getDuplicateState: () => duplicateState,
+    setDuplicateState: (next) => {
+      duplicateState = next;
+    },
+    getWorkspace: () => workspace,
+    getClient: () => attrsClient,
+    getSelectedEntries: () => {
+      const active = activeDirectory();
+      if (active === undefined) return [];
+      const key = activeTabKey(active.paneId);
+      return getSelectedEntriesOrCursor(selections.get(key), directories.get(key)?.entries ?? []);
+    },
+    getActiveLocation: () => activeDirectory()?.location,
+    // Reuses the same operation call `core.delete` makes, so duplicate
+    // deletion inherits its confirmation, conflict handling and audit trail
+    // instead of introducing a second delete path (spec §35, task 0077).
+    requestDelete: (locations) => {
+      if (locations.length === 0) return;
+      void opsController.delete(
+        [...locations],
+        currentSettings?.confirmPermanentDelete === false,
+        false,
+      );
+    },
     redraw: () => m.redraw(),
   };
 
@@ -1725,6 +1786,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       globalKeydownHandler = createGlobalKeydownHandler(globalKeydownHandlerContext);
       findFilesController = createFindFilesController(findFilesControllerContext);
       comparisonController = createComparisonController(comparisonControllerContext);
+      checksumController = createChecksumController(checksumControllerContext);
       actionCommandController = createActionCommandController(actionCommandControllerContext);
       paneContentBuilder = createPaneContentBuilder(paneContentBuilderContext);
       keybindingRuntime = attrs.runtime === 'http' ? 'browser' : 'desktop';
@@ -2232,6 +2294,51 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
                   },
                   searchQueryForLocationUri: (uri) => findFilesQueriesByLocationUri.get(uri),
                 }),
+            // Checksum and duplicate panels sit below the panes, visible only
+            // while their job/scan is tracked (task 0077).
+            checksumState.jobId !== undefined &&
+              m(ChecksumResultsView, {
+                algorithms: checksumState.algorithms,
+                entries: checksumState.entries,
+                totalEntries: checksumState.totalEntries,
+                isComplete: checksumState.isComplete,
+                isCancelled: checksumState.isCancelled,
+                ...(checksumState.verification === undefined
+                  ? {}
+                  : { verification: checksumState.verification }),
+                ...(checksumState.error === undefined ? {} : { error: checksumState.error }),
+                onCopy: (algorithm) => {
+                  void checksumController.copyChecksums(algorithm).then((content) => {
+                    if (content !== undefined) void navigator.clipboard?.writeText(content);
+                  });
+                },
+                onSave: (algorithm) => {
+                  void checksumController.renderChecksumFile(algorithm).then((file) => {
+                    if (file === undefined) return;
+                    // Writing the file goes through the editor's own save path,
+                    // which the user confirms; nothing is written silently.
+                    void navigator.clipboard?.writeText(file.content);
+                  });
+                },
+                onVerify: (content) => checksumController.verifyAgainst(content),
+                onCancel: () => checksumController.cancelChecksums(),
+                onClose: () => checksumController.closeChecksums(),
+              }),
+            duplicateState.scanId !== undefined &&
+              m(DuplicateReviewView, {
+                groups: duplicateState.groups,
+                isComplete: duplicateState.isComplete,
+                isCancelled: duplicateState.isCancelled,
+                warningsCount: duplicateState.warningsCount,
+                selectedUris: duplicateState.selectedUris,
+                totalReclaimableBytes: totalReclaimableBytes(duplicateState),
+                ...(duplicateState.error === undefined ? {} : { error: duplicateState.error }),
+                isLastCopy: (uri) => wouldDeleteEveryCopy(duplicateState, uri),
+                onToggle: (uri) => checksumController.toggleDuplicateSelection(uri),
+                onDeleteSelected: () => checksumController.deleteSelectedDuplicates(),
+                onCancel: () => checksumController.cancelDuplicateScan(),
+                onClose: () => checksumController.closeDuplicates(),
+              }),
           ]),
           runtimeKind === 'tauri'
             ? m(TerminalDrawer, {

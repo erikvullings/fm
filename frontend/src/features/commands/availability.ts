@@ -7,6 +7,14 @@ export interface CommandAvailabilityContext {
   readonly locationWritable: boolean;
   readonly clipboardHasEntries: boolean;
   readonly openTerminalSupported: boolean;
+  /**
+   * Whether the current location's provider advertises the `CHECKSUM`
+   * capability (spec §6, task 0077). Defaults to `true` so existing callers
+   * that predate checksums keep their behaviour.
+   */
+  readonly checksumSupported?: boolean;
+  /** Whether the active pane has a directory to scan for duplicates. */
+  readonly hasActiveLocation?: boolean;
 }
 
 export interface AvailableAction {
@@ -83,6 +91,23 @@ export function evaluateActionAvailability(
   }
   if (action.id === 'core.openTerminal' && !context.openTerminalSupported) {
     return unavailable(action, 'Terminal is not supported by this host');
+  }
+  // Checksums and duplicate detection both stream file contents through the
+  // provider, so both need `CHECKSUM` (spec §6, task 0077).
+  if (
+    (action.id === 'core.calculateChecksum' || action.id === 'core.findDuplicates') &&
+    context.checksumSupported === false
+  ) {
+    return unavailable(action, 'This location does not support checksums');
+  }
+  if (
+    action.id === 'core.calculateChecksum' &&
+    !context.selectedEntries.some((entry) => entry.kind === 'file')
+  ) {
+    return unavailable(action, 'Select one or more files');
+  }
+  if (action.id === 'core.findDuplicates' && context.hasActiveLocation === false) {
+    return unavailable(action, 'Open a directory first');
   }
   if (
     (action.id === 'core.createDirectory' || action.id === 'core.paste') &&

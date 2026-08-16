@@ -142,6 +142,10 @@ export interface GlobalKeydownContext {
   /** Starts (or re-runs) a directory comparison of the first two panes (Shift+F2, task 0075).
    * Self-guards on fewer than two open panes, same as the toolbar's Compare button. */
   startComparison(): void;
+  /** Starts a checksum job over the current selection (task 0077). */
+  calculateChecksums(): void;
+  /** Starts a duplicate scan rooted at the active pane's directory (task 0077). */
+  findDuplicates(): void;
   /** Opens the Settings dialog (Cmd+,/Ctrl+,) - a no-op if already open. */
   openSettingsDialog(): void;
 }
@@ -723,6 +727,16 @@ export function createGlobalKeydownHandler(
     if (dispatchedAction === 'core.compareDirectories') {
       event.preventDefault();
       context.startComparison();
+      return;
+    }
+    if (dispatchedAction === 'core.calculateChecksum') {
+      event.preventDefault();
+      context.calculateChecksums();
+      return;
+    }
+    if (dispatchedAction === 'core.findDuplicates') {
+      event.preventDefault();
+      context.findDuplicates();
       return;
     }
     if (dispatchedAction === 'core.swapPanes') {

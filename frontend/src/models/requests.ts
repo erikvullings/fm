@@ -8,6 +8,7 @@ import type { SearchInFileResponseDto } from '../api/generated/models/searchInFi
 import type { SortDescriptorDto } from '../api/generated/models/sortDescriptorDto';
 import type { SyncPlanDto } from '../api/generated/models/syncPlanDto';
 import type { ActionInvocationContext } from './action';
+import type { ChecksumAlgorithm } from './checksum';
 import {
   type ComparisonCriteria,
   type ComparisonEntry,
@@ -256,6 +257,38 @@ export function comparisonPageFromDto(dto: ComparisonPageDto): ComparisonPage {
     isComplete: dto.isComplete,
     warningsCount: dto.warningsCount,
   };
+}
+
+/**
+ * Starts a cancellable checksum job over a selection
+ * (`POST /api/v1/checksums`, task 0077), mirroring
+ * `fm_transport_dto::StartChecksumRequestDto`.
+ */
+export interface StartChecksumRequest {
+  workspaceId: string;
+  entries: Location[];
+  algorithms: ChecksumAlgorithm[];
+}
+
+/** Identifies a started checksum job. */
+export interface StartChecksumResult {
+  jobId: string;
+}
+
+/**
+ * Starts a cancellable duplicate scan across one or more roots
+ * (`POST /api/v1/duplicate-scans`, task 0077).
+ */
+export interface StartDuplicateScanRequest {
+  workspaceId: string;
+  roots: Location[];
+  showHidden?: boolean;
+  includeEmptyFiles?: boolean;
+}
+
+/** Identifies a started duplicate scan. */
+export interface StartDuplicateScanResult {
+  scanId: string;
 }
 
 /**

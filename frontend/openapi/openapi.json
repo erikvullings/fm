@@ -409,6 +409,150 @@
         ],
         "type": "object"
       },
+      "ChecksumAlgorithmDto": {
+        "description": "A checksum algorithm the backend can compute.",
+        "enum": [
+          "sha256",
+          "blake3",
+          "crc32",
+          "md5"
+        ],
+        "type": "string"
+      },
+      "ChecksumEntryDto": {
+        "description": "One entry's computed checksums.",
+        "properties": {
+          "checksums": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Digests keyed by lower-case algorithm name (`sha256`, `blake3`, …).",
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "error": {
+            "description": "Why this entry could not be hashed, when it could not be.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "location": {
+            "$ref": "#/components/schemas/LocationDto",
+            "description": "Location of the hashed entry."
+          },
+          "relativePath": {
+            "description": "Path relative to the selection's common root.",
+            "type": "string"
+          },
+          "size": {
+            "description": "Bytes hashed.",
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "location",
+          "relativePath",
+          "size",
+          "checksums"
+        ],
+        "type": "object"
+      },
+      "ChecksumFileDto": {
+        "description": "The rendered checksum-file text, for the caller to copy or save.\n\nThe backend deliberately returns text rather than writing a file itself:\nsaving goes through the normal write path the caller already owns, so\nthere is no second, unaudited way to create a file (spec §35).",
+        "properties": {
+          "content": {
+            "description": "The complete file contents.",
+            "type": "string"
+          },
+          "suggestedName": {
+            "description": "Suggested filename, e.g. `checksums.sha256`.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "suggestedName",
+          "content"
+        ],
+        "type": "object"
+      },
+      "ChecksumPageDto": {
+        "description": "A bounded page of a checksum job's results\n(`GET /api/v1/checksums/{jobId}`).",
+        "properties": {
+          "algorithms": {
+            "description": "Algorithms the job was started with.",
+            "items": {
+              "$ref": "#/components/schemas/ChecksumAlgorithmDto"
+            },
+            "type": "array"
+          },
+          "entries": {
+            "description": "Entries in this page.",
+            "items": {
+              "$ref": "#/components/schemas/ChecksumEntryDto"
+            },
+            "type": "array"
+          },
+          "hasMore": {
+            "description": "Whether another page exists, or more entries may still arrive.",
+            "type": "boolean"
+          },
+          "isCancelled": {
+            "description": "Whether the job stopped because it was cancelled. Distinguishes a\nshort result set that is final from one that simply did not finish.",
+            "type": "boolean"
+          },
+          "isComplete": {
+            "description": "Whether the backend has stopped producing further entries.",
+            "type": "boolean"
+          },
+          "jobId": {
+            "description": "The job this page belongs to.",
+            "format": "uuid",
+            "type": "string"
+          },
+          "limit": {
+            "description": "Requested page size after server-side clamping.",
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "offset": {
+            "description": "Requested zero-based offset.",
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "total": {
+            "description": "Entries computed so far.",
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "totalEntries": {
+            "description": "Entries the job was asked to hash.",
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "jobId",
+          "algorithms",
+          "offset",
+          "limit",
+          "total",
+          "totalEntries",
+          "entries",
+          "isComplete",
+          "isCancelled",
+          "hasMore"
+        ],
+        "type": "object"
+      },
       "ColumnConfigurationDto": {
         "description": "Persisted width and visibility for a single directory-table column.",
         "properties": {
@@ -1394,6 +1538,177 @@
         },
         "type": "object"
       },
+      "DuplicateGroupDto": {
+        "description": "A set of byte-identical files.",
+        "properties": {
+          "distinctLocations": {
+            "description": "Byte-identical files with distinct identities — the true duplicates.",
+            "items": {
+              "$ref": "#/components/schemas/LocationDto"
+            },
+            "type": "array"
+          },
+          "fullHash": {
+            "description": "Full-content digest shared by every member.",
+            "type": "string"
+          },
+          "hardlinkClusters": {
+            "description": "Paths that are the same file through a hardlink. Presented separately\nbecause deleting one of them reclaims nothing.",
+            "items": {
+              "$ref": "#/components/schemas/HardlinkClusterDto"
+            },
+            "type": "array"
+          },
+          "reclaimableBytes": {
+            "description": "Bytes reclaimable by keeping one copy of the content.",
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "size": {
+            "description": "Byte size shared by every member.",
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "fullHash",
+          "size",
+          "hardlinkClusters",
+          "distinctLocations",
+          "reclaimableBytes"
+        ],
+        "type": "object"
+      },
+      "DuplicatePageDto": {
+        "description": "A bounded page of a duplicate scan's grouped results\n(`GET /api/v1/duplicate-scans/{scanId}`).",
+        "properties": {
+          "groups": {
+            "description": "Groups in this page.",
+            "items": {
+              "$ref": "#/components/schemas/DuplicateGroupDto"
+            },
+            "type": "array"
+          },
+          "hasMore": {
+            "description": "Whether another page exists.",
+            "type": "boolean"
+          },
+          "isCancelled": {
+            "description": "Whether the scan stopped because it was cancelled. A cancelled scan\nreports no groups, so this distinguishes \"none found\" from \"did not\nfinish looking\".",
+            "type": "boolean"
+          },
+          "isComplete": {
+            "description": "Whether the scan has finished.",
+            "type": "boolean"
+          },
+          "limit": {
+            "description": "Requested page size after server-side clamping.",
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "offset": {
+            "description": "Requested zero-based offset.",
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "roots": {
+            "description": "Roots the scan covered.",
+            "items": {
+              "$ref": "#/components/schemas/LocationDto"
+            },
+            "type": "array"
+          },
+          "scanId": {
+            "description": "The scan this page belongs to.",
+            "format": "uuid",
+            "type": "string"
+          },
+          "stats": {
+            "$ref": "#/components/schemas/DuplicateStatsDto",
+            "description": "How much work each stage performed."
+          },
+          "total": {
+            "description": "Total groups found.",
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "warningsCount": {
+            "description": "Number of files that had to be skipped.",
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "scanId",
+          "roots",
+          "offset",
+          "limit",
+          "total",
+          "groups",
+          "isComplete",
+          "isCancelled",
+          "hasMore",
+          "stats",
+          "warningsCount"
+        ],
+        "type": "object"
+      },
+      "DuplicateStatsDto": {
+        "description": "Counters describing how much work each detection stage performed.",
+        "properties": {
+          "bytesHashed": {
+            "description": "Bytes fed through a hasher.",
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "candidates": {
+            "description": "Files considered.",
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "failed": {
+            "description": "Files skipped because they could not be read.",
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "fullyHashed": {
+            "description": "Files streamed in full.",
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "partiallyHashed": {
+            "description": "Files whose prefix was hashed.",
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "sizeSurvivors": {
+            "description": "Files whose size occurred more than once.",
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "candidates",
+          "sizeSurvivors",
+          "partiallyHashed",
+          "fullyHashed",
+          "bytesHashed",
+          "failed"
+        ],
+        "type": "object"
+      },
       "EntryKindDto": {
         "description": "The kind of a directory entry.",
         "enum": [
@@ -1714,6 +2029,36 @@
         },
         "required": [
           "mode"
+        ],
+        "type": "object"
+      },
+      "HardlinkClusterDto": {
+        "description": "Two or more paths that are the same file through a hardlink.",
+        "properties": {
+          "device": {
+            "description": "Device number the cluster's paths share.",
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "inode": {
+            "description": "Inode number the cluster's paths share.",
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "locations": {
+            "description": "The paths pointing at that one file.",
+            "items": {
+              "$ref": "#/components/schemas/LocationDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "device",
+          "inode",
+          "locations"
         ],
         "type": "object"
       },
@@ -3102,6 +3447,19 @@
         ],
         "type": "object"
       },
+      "RenderChecksumFileRequestDto": {
+        "description": "Renders a finished job's results as a coreutils-compatible checksum file\n(`POST /api/v1/checksums/{jobId}/checksum-file`).",
+        "properties": {
+          "algorithm": {
+            "$ref": "#/components/schemas/ChecksumAlgorithmDto",
+            "description": "Which of the job's algorithms to write. A checksum file carries one\nalgorithm, matching `sha256sum`/`md5sum`."
+          }
+        },
+        "required": [
+          "algorithm"
+        ],
+        "type": "object"
+      },
       "ResolveOperationConflictRequestDto": {
         "description": "Reserved conflict-resolution request for the dialog introduced by task 0045.",
         "properties": {
@@ -3698,6 +4056,63 @@
         ],
         "type": "object"
       },
+      "StartChecksumRequestDto": {
+        "description": "Starts a cancellable checksum job over a selection\n(`POST /api/v1/checksums`).",
+        "example": {
+          "algorithms": [
+            "sha256",
+            "blake3"
+          ],
+          "entries": [
+            {
+              "providerId": "local",
+              "uri": "file:///Users/erik/report.pdf"
+            }
+          ],
+          "workspaceId": "7136d9bc-90f1-4c67-8527-9d30683167ec"
+        },
+        "properties": {
+          "algorithms": {
+            "description": "Algorithms to compute, all in a single pass over each file.",
+            "items": {
+              "$ref": "#/components/schemas/ChecksumAlgorithmDto"
+            },
+            "type": "array"
+          },
+          "entries": {
+            "description": "Entries to hash. Directories are rejected: the caller expands a\nselection before starting the job.",
+            "items": {
+              "$ref": "#/components/schemas/LocationDto"
+            },
+            "type": "array"
+          },
+          "workspaceId": {
+            "description": "Workspace that owns the job and receives its result-batch events.",
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "workspaceId",
+          "entries",
+          "algorithms"
+        ],
+        "type": "object"
+      },
+      "StartChecksumResponseDto": {
+        "description": "Identifies a started checksum job.",
+        "properties": {
+          "jobId": {
+            "description": "The started job's identifier, used to page, cancel, save and verify.",
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "jobId"
+        ],
+        "type": "object"
+      },
       "StartComparisonRequestDto": {
         "description": "Starts a new recursive, cancellable directory comparison\n(`POST /api/v1/comparisons`).",
         "example": {
@@ -3755,6 +4170,61 @@
         },
         "required": [
           "comparisonId"
+        ],
+        "type": "object"
+      },
+      "StartDuplicateScanRequestDto": {
+        "description": "Starts a cancellable duplicate scan across one or more roots\n(`POST /api/v1/duplicate-scans`).",
+        "example": {
+          "includeEmptyFiles": false,
+          "roots": [
+            {
+              "providerId": "local",
+              "uri": "file:///Users/erik/Pictures"
+            }
+          ],
+          "showHidden": false,
+          "workspaceId": "7136d9bc-90f1-4c67-8527-9d30683167ec"
+        },
+        "properties": {
+          "includeEmptyFiles": {
+            "description": "Include zero-byte files, which are all trivially identical.\nDefaults to `false`.",
+            "type": "boolean"
+          },
+          "roots": {
+            "description": "Roots to scan recursively.",
+            "items": {
+              "$ref": "#/components/schemas/LocationDto"
+            },
+            "type": "array"
+          },
+          "showHidden": {
+            "description": "Include hidden entries. Defaults to `false`.",
+            "type": "boolean"
+          },
+          "workspaceId": {
+            "description": "Workspace that owns the scan and receives its result event.",
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "workspaceId",
+          "roots"
+        ],
+        "type": "object"
+      },
+      "StartDuplicateScanResponseDto": {
+        "description": "Identifies a started duplicate scan.",
+        "properties": {
+          "scanId": {
+            "description": "The started scan's identifier, used to page and cancel.",
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "scanId"
         ],
         "type": "object"
       },
@@ -4178,6 +4648,103 @@
           "name",
           "kind",
           "configuration"
+        ],
+        "type": "object"
+      },
+      "VerificationReportDto": {
+        "description": "The full verification report.",
+        "properties": {
+          "jobId": {
+            "description": "The job whose digests were compared.",
+            "format": "uuid",
+            "type": "string"
+          },
+          "matched": {
+            "description": "Number of entries that matched.",
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "mismatched": {
+            "description": "Number of entries whose digest differed.",
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "missing": {
+            "description": "Number of entries listed in the file but absent from the job.",
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "results": {
+            "description": "Per-entry outcomes, in checksum-file order.",
+            "items": {
+              "$ref": "#/components/schemas/VerificationResultDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "jobId",
+          "results",
+          "matched",
+          "mismatched",
+          "missing"
+        ],
+        "type": "object"
+      },
+      "VerificationResultDto": {
+        "description": "One verified path and its outcome.",
+        "properties": {
+          "actual": {
+            "description": "Digest computed from the entry, when the status is a mismatch.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "expected": {
+            "description": "Digest recorded in the checksum file, when the status is a mismatch.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "path": {
+            "description": "Path exactly as recorded in the checksum file.",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/VerificationStatusDto",
+            "description": "What verifying that path produced."
+          }
+        },
+        "required": [
+          "path",
+          "status"
+        ],
+        "type": "object"
+      },
+      "VerificationStatusDto": {
+        "description": "Outcome of verifying one checksum-file entry.",
+        "enum": [
+          "match",
+          "mismatch",
+          "missing"
+        ],
+        "type": "string"
+      },
+      "VerifyChecksumFileRequestDto": {
+        "description": "Verifies a job's computed digests against an existing checksum file\n(`POST /api/v1/checksums/{jobId}/verify`).",
+        "properties": {
+          "content": {
+            "description": "The checksum file's complete text, as read by the caller.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "content"
         ],
         "type": "object"
       },
@@ -4857,6 +5424,240 @@
           }
         },
         "summary": "Caches an archive password for this backend session only."
+      }
+    },
+    "/api/v1/checksums": {
+      "post": {
+        "operationId": "startChecksums",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StartChecksumRequestDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StartChecksumResponseDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationErrorDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/v1/checksums/{jobId}": {
+      "get": {
+        "operationId": "getChecksums",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "jobId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Zero-based offset into the result set.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "format": "int64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Page size, clamped to 1 through 500.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "minimum": 0,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChecksumPageDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationErrorDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/v1/checksums/{jobId}/cancel": {
+      "post": {
+        "operationId": "cancelChecksums",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "jobId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationErrorDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/v1/checksums/{jobId}/checksum-file": {
+      "post": {
+        "operationId": "renderChecksumFile",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "jobId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RenderChecksumFileRequestDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChecksumFileDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationErrorDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/v1/checksums/{jobId}/verify": {
+      "post": {
+        "operationId": "verifyChecksumFile",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "jobId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VerifyChecksumFileRequestDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VerificationReportDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationErrorDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationErrorDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        }
       }
     },
     "/api/v1/comparisons": {
@@ -5733,6 +6534,134 @@
           }
         },
         "summary": "Recursively sums a directory's total size (task 0071's Total Commander-style folder-size key)."
+      }
+    },
+    "/api/v1/duplicate-scans": {
+      "post": {
+        "operationId": "startDuplicateScan",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StartDuplicateScanRequestDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StartDuplicateScanResponseDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationErrorDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/v1/duplicate-scans/{scanId}": {
+      "get": {
+        "operationId": "getDuplicateScan",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "scanId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Zero-based offset into the result set.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "format": "int64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Page size, clamped to 1 through 500.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "minimum": 0,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DuplicatePageDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationErrorDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/v1/duplicate-scans/{scanId}/cancel": {
+      "post": {
+        "operationId": "cancelDuplicateScan",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "scanId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationErrorDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        }
       }
     },
     "/api/v1/entries/metadata": {

@@ -12,6 +12,8 @@ import type {
   ArchiveCredentialRequestDto,
   CalculateFolderSizeRequestDto,
   CalculateFolderSizeResponseDto,
+  ChecksumFileDto,
+  ChecksumPageDto,
   ComparisonPageDto,
   ConnectionDto,
   CreateConnectionRequestDto,
@@ -19,10 +21,13 @@ import type {
   DeleteWorkspaceParams,
   DiagnosticsDto,
   DirectorySnapshotDto,
+  DuplicatePageDto,
   EntryMetadataDto,
   EntryMetadataRequest,
   GenerateSyncPlanRequestDto,
+  GetChecksumsParams,
   GetComparisonParams,
+  GetDuplicateScanParams,
   GetFileIconParams,
   GetPluginIconThemeAssetParams,
   HealthDto,
@@ -39,6 +44,7 @@ import type {
   PluginLogEntryDto,
   ReadFileRangeRequestDto,
   ReadFileRangeResponseDto,
+  RenderChecksumFileRequestDto,
   ResolveOperationConflictRequestDto,
   RuntimeCapabilitiesDto,
   SaveEditableFileRequestDto,
@@ -47,14 +53,20 @@ import type {
   SearchInFileResponseDto,
   SetPaneActivityRequest,
   SettingsDto,
+  StartChecksumRequestDto,
+  StartChecksumResponseDto,
   StartComparisonRequestDto,
   StartComparisonResponseDto,
+  StartDuplicateScanRequestDto,
+  StartDuplicateScanResponseDto,
   StartOperationRequestDto,
   StartSearchRequestDto,
   StartSearchResponseDto,
   SyncPlanDto,
   SystemLocationDto,
   UpdateConnectionRequestDto,
+  VerificationReportDto,
+  VerifyChecksumFileRequestDto,
   WorkspaceCommandDto,
   WorkspaceDto,
   WorkspaceSummaryDto
@@ -184,6 +196,222 @@ export const cacheArchivePassword = async (archiveCredentialRequestDto: ArchiveC
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
     body: JSON.stringify(archiveCredentialRequestDto)
+  }
+);}
+
+
+
+export type startChecksumsResponse201 = {
+  data: StartChecksumResponseDto
+  status: 201
+}
+
+export type startChecksumsResponse400 = {
+  data: ApplicationErrorDto
+  status: 400
+}
+
+export type startChecksumsResponseSuccess = (startChecksumsResponse201) & {
+  headers: Headers;
+};
+export type startChecksumsResponseError = (startChecksumsResponse400) & {
+  headers: Headers;
+};
+
+export type startChecksumsResponse = (startChecksumsResponseSuccess | startChecksumsResponseError)
+
+export const getStartChecksumsUrl = () => {
+
+
+
+
+  return `/api/v1/checksums`
+}
+
+export const startChecksums = async (startChecksumRequestDto: StartChecksumRequestDto, options?: Parameters<typeof fetchMutator>[1]): Promise<startChecksumsResponse> => {
+
+  return fetchMutator<startChecksumsResponse>(getStartChecksumsUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(startChecksumRequestDto)
+  }
+);}
+
+
+
+export type getChecksumsResponse200 = {
+  data: ChecksumPageDto
+  status: 200
+}
+
+export type getChecksumsResponse404 = {
+  data: ApplicationErrorDto
+  status: 404
+}
+
+export type getChecksumsResponseSuccess = (getChecksumsResponse200) & {
+  headers: Headers;
+};
+export type getChecksumsResponseError = (getChecksumsResponse404) & {
+  headers: Headers;
+};
+
+export type getChecksumsResponse = (getChecksumsResponseSuccess | getChecksumsResponseError)
+
+export const getGetChecksumsUrl = (jobId: string,
+    params?: GetChecksumsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/checksums/${jobId}?${stringifiedParams}` : `/api/v1/checksums/${jobId}`
+}
+
+export const getChecksums = async (jobId: string,
+    params?: GetChecksumsParams, options?: Parameters<typeof fetchMutator>[1]): Promise<getChecksumsResponse> => {
+
+  return fetchMutator<getChecksumsResponse>(getGetChecksumsUrl(jobId,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+export type cancelChecksumsResponse204 = {
+  data: void
+  status: 204
+}
+
+export type cancelChecksumsResponse404 = {
+  data: ApplicationErrorDto
+  status: 404
+}
+
+export type cancelChecksumsResponseSuccess = (cancelChecksumsResponse204) & {
+  headers: Headers;
+};
+export type cancelChecksumsResponseError = (cancelChecksumsResponse404) & {
+  headers: Headers;
+};
+
+export type cancelChecksumsResponse = (cancelChecksumsResponseSuccess | cancelChecksumsResponseError)
+
+export const getCancelChecksumsUrl = (jobId: string,) => {
+
+
+
+
+  return `/api/v1/checksums/${jobId}/cancel`
+}
+
+export const cancelChecksums = async (jobId: string, options?: Parameters<typeof fetchMutator>[1]): Promise<cancelChecksumsResponse> => {
+
+  return fetchMutator<cancelChecksumsResponse>(getCancelChecksumsUrl(jobId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+export type renderChecksumFileResponse200 = {
+  data: ChecksumFileDto
+  status: 200
+}
+
+export type renderChecksumFileResponse404 = {
+  data: ApplicationErrorDto
+  status: 404
+}
+
+export type renderChecksumFileResponseSuccess = (renderChecksumFileResponse200) & {
+  headers: Headers;
+};
+export type renderChecksumFileResponseError = (renderChecksumFileResponse404) & {
+  headers: Headers;
+};
+
+export type renderChecksumFileResponse = (renderChecksumFileResponseSuccess | renderChecksumFileResponseError)
+
+export const getRenderChecksumFileUrl = (jobId: string,) => {
+
+
+
+
+  return `/api/v1/checksums/${jobId}/checksum-file`
+}
+
+export const renderChecksumFile = async (jobId: string,
+    renderChecksumFileRequestDto: RenderChecksumFileRequestDto, options?: Parameters<typeof fetchMutator>[1]): Promise<renderChecksumFileResponse> => {
+
+  return fetchMutator<renderChecksumFileResponse>(getRenderChecksumFileUrl(jobId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(renderChecksumFileRequestDto)
+  }
+);}
+
+
+
+export type verifyChecksumFileResponse200 = {
+  data: VerificationReportDto
+  status: 200
+}
+
+export type verifyChecksumFileResponse400 = {
+  data: ApplicationErrorDto
+  status: 400
+}
+
+export type verifyChecksumFileResponse404 = {
+  data: ApplicationErrorDto
+  status: 404
+}
+
+export type verifyChecksumFileResponseSuccess = (verifyChecksumFileResponse200) & {
+  headers: Headers;
+};
+export type verifyChecksumFileResponseError = (verifyChecksumFileResponse400 | verifyChecksumFileResponse404) & {
+  headers: Headers;
+};
+
+export type verifyChecksumFileResponse = (verifyChecksumFileResponseSuccess | verifyChecksumFileResponseError)
+
+export const getVerifyChecksumFileUrl = (jobId: string,) => {
+
+
+
+
+  return `/api/v1/checksums/${jobId}/verify`
+}
+
+export const verifyChecksumFile = async (jobId: string,
+    verifyChecksumFileRequestDto: VerifyChecksumFileRequestDto, options?: Parameters<typeof fetchMutator>[1]): Promise<verifyChecksumFileResponse> => {
+
+  return fetchMutator<verifyChecksumFileResponse>(getVerifyChecksumFileUrl(jobId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(verifyChecksumFileRequestDto)
   }
 );}
 
@@ -1096,6 +1324,135 @@ export const calculateFolderSize = async (calculateFolderSizeRequestDto: Calcula
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
     body: JSON.stringify(calculateFolderSizeRequestDto)
+  }
+);}
+
+
+
+export type startDuplicateScanResponse201 = {
+  data: StartDuplicateScanResponseDto
+  status: 201
+}
+
+export type startDuplicateScanResponse400 = {
+  data: ApplicationErrorDto
+  status: 400
+}
+
+export type startDuplicateScanResponseSuccess = (startDuplicateScanResponse201) & {
+  headers: Headers;
+};
+export type startDuplicateScanResponseError = (startDuplicateScanResponse400) & {
+  headers: Headers;
+};
+
+export type startDuplicateScanResponse = (startDuplicateScanResponseSuccess | startDuplicateScanResponseError)
+
+export const getStartDuplicateScanUrl = () => {
+
+
+
+
+  return `/api/v1/duplicate-scans`
+}
+
+export const startDuplicateScan = async (startDuplicateScanRequestDto: StartDuplicateScanRequestDto, options?: Parameters<typeof fetchMutator>[1]): Promise<startDuplicateScanResponse> => {
+
+  return fetchMutator<startDuplicateScanResponse>(getStartDuplicateScanUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(startDuplicateScanRequestDto)
+  }
+);}
+
+
+
+export type getDuplicateScanResponse200 = {
+  data: DuplicatePageDto
+  status: 200
+}
+
+export type getDuplicateScanResponse404 = {
+  data: ApplicationErrorDto
+  status: 404
+}
+
+export type getDuplicateScanResponseSuccess = (getDuplicateScanResponse200) & {
+  headers: Headers;
+};
+export type getDuplicateScanResponseError = (getDuplicateScanResponse404) & {
+  headers: Headers;
+};
+
+export type getDuplicateScanResponse = (getDuplicateScanResponseSuccess | getDuplicateScanResponseError)
+
+export const getGetDuplicateScanUrl = (scanId: string,
+    params?: GetDuplicateScanParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/duplicate-scans/${scanId}?${stringifiedParams}` : `/api/v1/duplicate-scans/${scanId}`
+}
+
+export const getDuplicateScan = async (scanId: string,
+    params?: GetDuplicateScanParams, options?: Parameters<typeof fetchMutator>[1]): Promise<getDuplicateScanResponse> => {
+
+  return fetchMutator<getDuplicateScanResponse>(getGetDuplicateScanUrl(scanId,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+export type cancelDuplicateScanResponse204 = {
+  data: void
+  status: 204
+}
+
+export type cancelDuplicateScanResponse404 = {
+  data: ApplicationErrorDto
+  status: 404
+}
+
+export type cancelDuplicateScanResponseSuccess = (cancelDuplicateScanResponse204) & {
+  headers: Headers;
+};
+export type cancelDuplicateScanResponseError = (cancelDuplicateScanResponse404) & {
+  headers: Headers;
+};
+
+export type cancelDuplicateScanResponse = (cancelDuplicateScanResponseSuccess | cancelDuplicateScanResponseError)
+
+export const getCancelDuplicateScanUrl = (scanId: string,) => {
+
+
+
+
+  return `/api/v1/duplicate-scans/${scanId}/cancel`
+}
+
+export const cancelDuplicateScan = async (scanId: string, options?: Parameters<typeof fetchMutator>[1]): Promise<cancelDuplicateScanResponse> => {
+
+  return fetchMutator<cancelDuplicateScanResponse>(getCancelDuplicateScanUrl(scanId),
+  {
+    ...options,
+    method: 'POST'
+
+
   }
 );}
 

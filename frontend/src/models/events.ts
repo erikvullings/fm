@@ -1,3 +1,4 @@
+import type { ChecksumEntry, DuplicateGroup } from './checksum';
 import type { ComparisonEntry } from './comparison';
 import type { ConnectionStatus } from './connection';
 import type { EntrySummary } from './entry';
@@ -100,6 +101,20 @@ export type BackendEventPayload =
       comparisonId: string;
       entries: ComparisonEntry[];
       isComplete: boolean;
+      warningsCount: number;
+    }
+  | {
+      type: 'checksum.resultsBatch';
+      jobId: string;
+      entries: ChecksumEntry[];
+      isComplete: boolean;
+      isCancelled: boolean;
+    }
+  | {
+      type: 'duplicates.resultsReady';
+      scanId: string;
+      groups: DuplicateGroup[];
+      isCancelled: boolean;
       warningsCount: number;
     }
   | { type: 'connection.created'; connectionId: ConnectionId }

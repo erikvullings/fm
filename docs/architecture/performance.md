@@ -104,6 +104,40 @@ copy_planning/balanced_width_10          24.7 ms    (±0.6%)
 
 Regression threshold: 1.5x baseline for shallow, 1.2x for deep/balanced
 
+### fm-checksum: Streaming hash throughput
+**File**: `crates/fm-checksum/benches/hash_throughput.rs`
+
+Hashes a 64 MiB on-disk file through the same bounded-buffer streaming path
+the application uses (`HASH_CHUNK_BYTES` = 64 KiB), so the numbers include
+file I/O and many buffer refills rather than a single-shot hash of an
+in-memory slice (task 0077).
+
+**Machine**: Apple M4 Max, 128 GB RAM, built-in SSD
+**OS**: macOS 26.6.1
+**Dataset**: single 64 MiB file, repeating 64 KiB non-compressible pattern
+**Date**: 2026-08-16
+
+```
+hash_throughput/sha256                       28.7 ms    2.18 GiB/s
+hash_throughput/blake3                       32.0 ms    1.95 GiB/s
+hash_throughput/crc32                         9.6 ms    6.50 GiB/s
+hash_throughput/md5                          82.8 ms     773 MiB/s
+hash_throughput/sha256+blake3 (single pass)  58.7 ms    1.07 GiB/s
+```
+
+Notes:
+- SHA-256 outruns BLAKE3 here because Apple silicon implements the SHA-2
+  extensions in hardware, while this BLAKE3 build uses its portable NEON path.
+  On x86_64 without SHA-NI the ordering typically reverses, which is why both
+  are offered rather than one being hardcoded as "the fast one".
+- MD5 is the slowest and is offered only for compatibility with legacy
+  manifests, never as a default.
+- The multi-algorithm case costs roughly the sum of its parts, confirming the
+  single pass is CPU-bound in the hashers rather than in file I/O.
+
+Regression threshold: 1.5x baseline (hashing is CPU-bound and sensitive to
+machine class, so this is deliberately loose).
+
 ## Frontend rendering measurements
 
 Benchmarks use vitest with the mock client to avoid backend dependencies.
@@ -207,6 +241,7 @@ cargo bench
 cargo bench -p fm-domain
 cargo bench -p fm-vfs-local
 cargo bench -p fm-operations
+cargo bench -p fm-checksum
 
 # Save baseline for comparison
 cargo bench --bench location_parsing -- --save-baseline main

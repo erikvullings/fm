@@ -633,6 +633,27 @@ fn core_actions(capabilities: PlatformCapabilities) -> Vec<ActionDescriptor> {
             ActionContextRequirements::none(),
         ),
         core_action(
+            "core.calculateChecksum",
+            "Calculate Checksums for Selection",
+            "tools",
+            // No default shortcut: checksum calculation is a deliberate,
+            // occasional action reached from the command palette (spec §18
+            // `core.calculateChecksum`, task 0077). Availability additionally
+            // depends on the provider advertising `CHECKSUM`, which only the
+            // client knows for the current pane, so it is gated there.
+            Vec::new(),
+            ActionContextRequirements::selection(),
+        ),
+        core_action(
+            "core.findDuplicates",
+            "Find Duplicate Files",
+            "tools",
+            // Operates on the pane's current root rather than a selection, so
+            // it carries no selection requirement (task 0077).
+            Vec::new(),
+            ActionContextRequirements::none(),
+        ),
+        core_action(
             "core.closeAllTabs",
             "Close All Tabs",
             "navigation",

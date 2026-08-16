@@ -66,7 +66,10 @@ impl FileSystemProvider for LocalFileSystemProvider {
             | ProviderCapabilities::SERVER_SIDE_COPY
             | ProviderCapabilities::SET_TIMESTAMPS
             | ProviderCapabilities::SET_PERMISSIONS
-            | ProviderCapabilities::RANDOM_ACCESS;
+            | ProviderCapabilities::RANDOM_ACCESS
+            // Checksums are computed by streaming `open_read`, so any
+            // provider that can read can checksum (task 0077, spec §6).
+            | ProviderCapabilities::CHECKSUM;
         capabilities | ProviderCapabilities::MOVE | ProviderCapabilities::DELETE
     }
 

@@ -25,8 +25,6 @@ use fm_events::{
     OperationProgressPayload, OperationStatePayload,
 };
 use fm_vfs::{EntryRef, ListOptions, ProviderCapabilities, ProviderRegistry};
-use sha2::{Digest, Sha256};
-use tokio::io::AsyncReadExt;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
@@ -41,9 +39,6 @@ const BATCH_SIZE: usize = 500;
 /// Maximum time a partial batch is held before being flushed anyway, so a
 /// slow comparison still streams progress promptly.
 const BATCH_INTERVAL: Duration = Duration::from_millis(100);
-/// Bytes read per chunk while streaming a content hash, so a large file is
-/// never loaded into memory at once.
-const HASH_CHUNK_BYTES: usize = 64 * 1024;
 
 /// Errors starting or controlling a comparison.
 #[derive(Debug, thiserror::Error)]
@@ -388,37 +383,34 @@ fn side_from(entry: &EntrySummary, content_hash: Option<String>) -> ComparisonEn
 
 /// Streams a file's content through SHA-256 without loading it into memory.
 ///
-/// A minimal, self-contained hash used only for the content-hash comparison
-/// criteria until task 0077 lands a shared checksum implementation (see the
-/// implementation note on task 0075).
+/// Task 0077 replaced this function's hand-rolled hashing loop with the
+/// shared `fm_checksum` implementation, as the implementation note on task
+/// 0075 anticipated: one chunked, cancellable streaming hasher now backs both
+/// the content-hash comparison mode and the checksum/duplicate features, so
+/// the two can never disagree about a digest.
+///
+/// A `None` result means "no digest available" — the entry could not be
+/// opened, failed mid-read, or the comparison was cancelled. Classification
+/// treats all three the same way, so they are deliberately not distinguished.
 async fn hash_entry(
     providers: &ProviderRegistry,
     entry: &EntrySummary,
     cancellation: &CancellationToken,
 ) -> Option<String> {
-    let provider = providers.resolve(&entry.location).ok()?;
     let entry_ref = EntryRef {
         id: entry.id,
         location: entry.location.clone(),
     };
-    let mut reader = provider
-        .open_read(&entry_ref, cancellation.clone())
-        .await
-        .ok()?;
-    let mut hasher = Sha256::new();
-    let mut buffer = vec![0_u8; HASH_CHUNK_BYTES];
-    loop {
-        if cancellation.is_cancelled() {
-            return None;
-        }
-        let read = reader.read(&mut buffer).await.ok()?;
-        if read == 0 {
-            break;
-        }
-        hasher.update(&buffer[..read]);
-    }
-    let digest = hasher.finalize();
-    Some(digest.iter().map(|byte| format!("{byte:02x}")).collect())
+    fm_checksum::hash_entry(
+        providers,
+        &entry_ref,
+        &[fm_checksum::ChecksumAlgorithm::Sha256],
+        cancellation,
+    )
+    .await
+    .ok()?
+    .get(fm_checksum::ChecksumAlgorithm::Sha256)
+    .map(str::to_owned)
 }
 
 fn flush(

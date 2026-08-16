@@ -71,6 +71,16 @@ fn api_router() -> OpenApiRouter<AppState> {
         .routes(utoipa_axum::routes!(routes::comparison::cancel_comparison))
         .routes(utoipa_axum::routes!(routes::comparison::generate_sync_plan))
         .routes(utoipa_axum::routes!(routes::comparison::apply_sync_plan))
+        .routes(utoipa_axum::routes!(routes::checksum::start_checksums))
+        .routes(utoipa_axum::routes!(routes::checksum::get_checksums))
+        .routes(utoipa_axum::routes!(routes::checksum::cancel_checksums))
+        .routes(utoipa_axum::routes!(routes::checksum::render_checksum_file))
+        .routes(utoipa_axum::routes!(routes::checksum::verify_checksum_file))
+        .routes(utoipa_axum::routes!(routes::checksum::start_duplicate_scan))
+        .routes(utoipa_axum::routes!(routes::checksum::get_duplicate_scan))
+        .routes(utoipa_axum::routes!(
+            routes::checksum::cancel_duplicate_scan
+        ))
         .routes(utoipa_axum::routes!(routes::workspace::list_workspaces))
         .routes(utoipa_axum::routes!(routes::operation::list_operations))
         .routes(utoipa_axum::routes!(routes::operation::start_operation))

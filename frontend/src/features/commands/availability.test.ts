@@ -221,4 +221,74 @@ describe('command availability', () => {
       { action: actions[1], available: false, reason: 'Selected item is read-only' },
     ]);
   });
+
+  describe('checksum and duplicate commands (task 0077)', () => {
+    it('offers checksum calculation for a file selection', () => {
+      const descriptor = action('core.calculateChecksum', { requiresSelection: true });
+      expect(
+        evaluateActionAvailability(
+          descriptor,
+          context({ selectedEntries: [entry('file')], checksumSupported: true }),
+        ).available,
+      ).toBe(true);
+    });
+
+    it('gates checksum calculation on the provider CHECKSUM capability', () => {
+      const descriptor = action('core.calculateChecksum', { requiresSelection: true });
+      expect(
+        evaluateActionAvailability(
+          descriptor,
+          context({ selectedEntries: [entry('file')], checksumSupported: false }),
+        ),
+      ).toEqual({
+        action: descriptor,
+        available: false,
+        reason: 'This location does not support checksums',
+      });
+    });
+
+    it('rejects a directory-only selection for checksums', () => {
+      const descriptor = action('core.calculateChecksum', { requiresSelection: true });
+      expect(
+        evaluateActionAvailability(
+          descriptor,
+          context({ selectedEntries: [entry('directory')], checksumSupported: true }),
+        ),
+      ).toEqual({
+        action: descriptor,
+        available: false,
+        reason: 'Select one or more files',
+      });
+    });
+
+    it('gates duplicate detection on the CHECKSUM capability and an open directory', () => {
+      const descriptor = action('core.findDuplicates');
+      expect(
+        evaluateActionAvailability(descriptor, context({ checksumSupported: false })).available,
+      ).toBe(false);
+      expect(
+        evaluateActionAvailability(
+          descriptor,
+          context({ checksumSupported: true, hasActiveLocation: false }),
+        ),
+      ).toEqual({
+        action: descriptor,
+        available: false,
+        reason: 'Open a directory first',
+      });
+      expect(
+        evaluateActionAvailability(
+          descriptor,
+          context({ checksumSupported: true, hasActiveLocation: true }),
+        ).available,
+      ).toBe(true);
+    });
+
+    it('needs no selection to find duplicates', () => {
+      const descriptor = action('core.findDuplicates');
+      expect(
+        evaluateActionAvailability(descriptor, context({ selectedEntries: [] })).available,
+      ).toBe(true);
+    });
+  });
 });

@@ -176,6 +176,10 @@ impl FileSystemProvider for SftpFileSystemProvider {
             | ProviderCapabilities::RENAME
             | ProviderCapabilities::MOVE
             | ProviderCapabilities::DELETE
+            // Checksums stream through `open_read`, so `READ` is the only
+            // thing they need (task 0077, spec §6). Note this means the file
+            // is transferred to be hashed: there is no server-side digest.
+            | ProviderCapabilities::CHECKSUM
     }
 
     fn change_tracking(&self) -> ChangeTracking {

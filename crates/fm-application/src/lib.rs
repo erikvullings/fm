@@ -6,6 +6,7 @@
 //! this crate, which is what guarantees the two behave identically.
 
 mod action;
+mod checksum_mapping;
 mod comparison_mapping;
 mod connection_dto;
 mod connection_facade;

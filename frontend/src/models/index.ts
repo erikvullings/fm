@@ -1,4 +1,5 @@
 export * from './action';
+export * from './checksum';
 export * from './clipboard';
 export * from './comparison';
 export * from './connection';

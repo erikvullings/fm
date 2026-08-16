@@ -85,3 +85,15 @@ synchronization are part of polished version 1). Total Commander parity feature.
   detection's staged size/partial-hash/full-hash strategy (0077) has not landed, so content-hash
   mode's per-file SHA-256 is a placeholder implementation flagged for unification once 0077 lands,
   as its own implementation note requires.
+- 2026-08-16 Claude: Unified the content-hash implementation with task 0077, closing the placeholder
+  flagged in the note above. `fm_comparison::engine::hash_entry` no longer carries its own SHA-256
+  loop, `HASH_CHUNK_BYTES` constant or `sha2`/`AsyncReadExt` imports; it now delegates to
+  `fm_checksum::hash_entry`, so the content-hash comparison mode and the checksum/duplicate features
+  share one chunked, cancellable streaming hasher and cannot disagree about a digest. `fm-comparison`
+  gained a `fm-checksum` dependency and dropped `sha2`. Because `fm-test-support`'s `CRATE_LAYERS`
+  forbids same-layer edges, `fm-comparison` moved from layer 2 to a new layer 3 ("composite engines
+  built from the layer-2 primitives"), with `fm-application`/`fm-test-support` shifting 3→4 and the
+  hosts 4→5; `fm-checksum` stays at layer 2 beside `fm-search`/`fm-archive`. All 42 `fm-comparison`
+  tests still pass unchanged, including
+  `content_hash_criteria_distinguishes_identical_content_from_a_differing_timestamp`, which is the
+  behavioural proof the swap is transparent.

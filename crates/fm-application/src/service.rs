@@ -6,6 +6,10 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use fm_archive::ArchiveFileSystemProvider;
+use fm_checksum::{
+    ChecksumEngine, ChecksumJobOptions, ChecksumResultsStore, ChecksumTarget, DuplicateOptions,
+    DuplicateResultsStore, DuplicateScanOptions,
+};
 use fm_comparison::{
     ComparisonEngine, ComparisonResultsStore, SyncAction, generate_sync_plan as compute_sync_plan,
 };
@@ -25,14 +29,17 @@ use fm_search::{SearchEngine, SearchFileSystemProvider, SearchResultsStore};
 use fm_settings::{Settings, SettingsStore};
 use fm_transport_dto::{
     ActionDescriptorDto, ActionResultDto, ApplySyncPlanRequestDto, ApplySyncPlanResponseDto,
-    ComparisonPageDto, ConflictResolutionDto, ConnectionDto, CreateConnectionRequestDto,
-    DirectorySnapshotDto, EntryMetadataRequest, GenerateSyncPlanRequestDto, InvokeActionRequestDto,
-    ListDirectoryRequest, NavigateRequest, OperationConflictPolicyDto, OperationDto,
-    PluginDescriptorDto, PluginLogEntryDto, ReadFileRangeRequestDto, ReadFileRangeResponseDto,
+    ChecksumFileDto, ChecksumPageDto, ComparisonPageDto, ConflictResolutionDto, ConnectionDto,
+    CreateConnectionRequestDto, DirectorySnapshotDto, DuplicatePageDto, EntryMetadataRequest,
+    GenerateSyncPlanRequestDto, InvokeActionRequestDto, ListDirectoryRequest, NavigateRequest,
+    OperationConflictPolicyDto, OperationDto, PluginDescriptorDto, PluginLogEntryDto,
+    ReadFileRangeRequestDto, ReadFileRangeResponseDto, RenderChecksumFileRequestDto,
     ResolveOperationConflictRequestDto, RuntimeCapabilitiesDto, RuntimeKindDto,
     SearchInFileRequestDto, SearchInFileResponseDto, SetPaneActivityRequest, SettingsDto,
-    StartComparisonRequestDto, StartComparisonResponseDto, StartOperationRequestDto,
-    StartSearchRequestDto, StartSearchResponseDto, SyncPlanDto, UpdateConnectionRequestDto,
+    StartChecksumRequestDto, StartChecksumResponseDto, StartComparisonRequestDto,
+    StartComparisonResponseDto, StartDuplicateScanRequestDto, StartDuplicateScanResponseDto,
+    StartOperationRequestDto, StartSearchRequestDto, StartSearchResponseDto, SyncPlanDto,
+    UpdateConnectionRequestDto, VerificationReportDto, VerifyChecksumFileRequestDto,
     WorkspaceCommandDto, WorkspaceDto, WorkspaceSummaryDto,
 };
 use fm_vfs::{EntryRef, ProviderRegistry};
@@ -41,6 +48,10 @@ use uuid::Uuid;
 
 use crate::DirectoryService;
 use crate::action::ActionRegistry;
+use crate::checksum_mapping::{
+    checksum_algorithm, checksum_algorithm_dto, checksum_entry_dto, duplicate_group_dto,
+    duplicate_stats_dto, verification_result_dto,
+};
 use crate::comparison_mapping::{
     comparison_criteria, comparison_criteria_dto, comparison_entry_dto, sync_action, sync_mode,
     sync_plan_item_dto,
@@ -98,6 +109,9 @@ pub struct FileManagerService {
     search: SearchEngine,
     comparison: ComparisonEngine,
     comparison_store: Arc<ComparisonResultsStore>,
+    checksum: ChecksumEngine,
+    checksum_store: Arc<ChecksumResultsStore>,
+    duplicate_store: Arc<DuplicateResultsStore>,
 }
 
 impl FileManagerService {
@@ -274,6 +288,14 @@ impl FileManagerService {
             events.clone(),
             providers.clone(),
         );
+        let checksum_store = Arc::new(ChecksumResultsStore::new());
+        let duplicate_store = Arc::new(DuplicateResultsStore::new());
+        let checksum = ChecksumEngine::new(
+            Arc::clone(&checksum_store),
+            Arc::clone(&duplicate_store),
+            events.clone(),
+            providers.clone(),
+        );
         let audit_log_path = settings_directory.join("audit.jsonl");
         let settings_mutex = Arc::new(Mutex::new(loaded.settings));
         let force_cross_volume_moves = Arc::new(AtomicBool::new(false));
@@ -337,6 +359,9 @@ impl FileManagerService {
             search,
             comparison,
             comparison_store,
+            checksum,
+            checksum_store,
+            duplicate_store,
         }
     }
 
@@ -448,11 +473,12 @@ impl FileManagerService {
 
     /// Requests cancellation of an operation.
     ///
-    /// Searches and comparisons are not registered with the mutation
-    /// [`Scheduler`], so an unknown id is retried against the search engine,
-    /// then the comparison engine (both share their `operation_id` with
-    /// their own id, see [`Self::start_search`] and
-    /// [`Self::start_comparison`]) before giving up.
+    /// Searches, comparisons, checksum jobs and duplicate scans are not
+    /// registered with the mutation [`Scheduler`], so an unknown id is
+    /// retried against each read-only engine in turn (all share their
+    /// `operation_id` with their own id, see [`Self::start_search`],
+    /// [`Self::start_comparison`], [`Self::start_checksums`] and
+    /// [`Self::start_duplicate_scan`]) before giving up.
     pub fn cancel_operation(&self, id: OperationId) -> Result<(), ApplicationError> {
         match self.operations.cancel(id) {
             Ok(()) => Ok(()),
@@ -460,6 +486,16 @@ impl FileManagerService {
                 .search
                 .cancel(id.into_inner())
                 .or_else(|_| self.comparison.cancel(id.into_inner()).map_err(|_| ()))
+                .or_else(|()| {
+                    self.checksum
+                        .cancel_checksums(id.into_inner())
+                        .map_err(|_| ())
+                })
+                .or_else(|()| {
+                    self.checksum
+                        .cancel_duplicate_scan(id.into_inner())
+                        .map_err(|_| ())
+                })
                 .map_err(|()| ApplicationError::NotFound),
             Err(error) => Err(map_scheduler_error(error)),
         }
@@ -1065,6 +1101,328 @@ impl FileManagerService {
             operation_ids.push(operation.id);
         }
         Ok(ApplySyncPlanResponseDto { operation_ids })
+    }
+
+    /// Starts a cancellable checksum job over a selection, streaming results
+    /// to `request.workspace_id` over the event bus (spec §18
+    /// `core.calculateChecksum`, task 0077).
+    ///
+    /// Rejected up front when any entry's provider does not advertise
+    /// [`fm_vfs::ProviderCapabilities::CHECKSUM`] (spec §6).
+    pub fn start_checksums(
+        &self,
+        request: StartChecksumRequestDto,
+    ) -> Result<StartChecksumResponseDto, ApplicationError> {
+        // The job id doubles as the operation id (mirrors `start_comparison`),
+        // so the generic `/operations/{id}/cancel` route and the operation
+        // centre can address a running job without a separate id space.
+        let job_id = Uuid::new_v4();
+        let operation_id = OperationId::from(job_id);
+        let audience = EventAudience::Workspace(request.workspace_id.into());
+
+        let targets: Vec<ChecksumTarget> = request
+            .entries
+            .into_iter()
+            .map(|dto| {
+                let location: Location = dto.into();
+                // The last path segment is the relative path a checksum file
+                // records. A flat selection is the overwhelmingly common
+                // case, and it keeps a saved file valid next to its entries.
+                let relative_path = location.name().unwrap_or_else(|_| location.uri.clone());
+                ChecksumTarget {
+                    entry: EntryRef {
+                        id: EntryId::new(),
+                        location,
+                    },
+                    relative_path,
+                    size: 0,
+                }
+            })
+            .collect();
+        let algorithms: Vec<_> = request
+            .algorithms
+            .into_iter()
+            .map(checksum_algorithm)
+            .collect();
+
+        let sources: Vec<EntryRefPayload> = targets
+            .iter()
+            .map(|target| EntryRefPayload {
+                id: target.entry.id,
+                location: target.entry.location.clone().into(),
+            })
+            .collect();
+        let total_items = u64::try_from(targets.len()).unwrap_or(u64::MAX);
+
+        self.events.publish(
+            audience.clone(),
+            BackendEventPayload::OperationCreated {
+                operation: OperationPayload {
+                    id: operation_id,
+                    kind: OperationKindPayload::Checksum,
+                    state: OperationStatePayload::Running,
+                    sources,
+                    destination: None,
+                    progress: OperationProgressDetails {
+                        completed_items: 0,
+                        total_items: Some(total_items),
+                        completed_bytes: 0,
+                        total_bytes: None,
+                        current_entry: None,
+                        bytes_per_second: None,
+                    },
+                    conflict_policy: ConflictPolicyPayload::Ask,
+                    created_at: chrono::Utc::now(),
+                    started_at: None,
+                    completed_at: None,
+                },
+            },
+        );
+
+        self.checksum
+            .start_checksums(
+                job_id,
+                targets,
+                ChecksumJobOptions {
+                    algorithms,
+                    operation_id: Some(operation_id),
+                },
+                audience,
+            )
+            .map_err(|error| ApplicationError::InvalidRequest(error.to_string()))?;
+        Ok(StartChecksumResponseDto { job_id })
+    }
+
+    /// Cancels a running checksum job.
+    pub fn cancel_checksums(&self, job_id: Uuid) -> Result<(), ApplicationError> {
+        self.checksum
+            .cancel_checksums(job_id)
+            .map_err(|_| ApplicationError::NotFound)
+    }
+
+    /// Returns a bounded page of a checksum job's results.
+    pub fn get_checksum_page(
+        &self,
+        job_id: Uuid,
+        offset: u64,
+        limit: u16,
+    ) -> Result<ChecksumPageDto, ApplicationError> {
+        let limit = limit.clamp(1, 500);
+        let page = self
+            .checksum_store
+            .page(
+                job_id,
+                usize::try_from(offset).unwrap_or(usize::MAX),
+                usize::from(limit),
+            )
+            .ok_or(ApplicationError::NotFound)?;
+        Ok(ChecksumPageDto {
+            job_id,
+            algorithms: page
+                .algorithms
+                .iter()
+                .map(|algorithm| checksum_algorithm_dto(*algorithm))
+                .collect(),
+            offset,
+            limit,
+            total: u64::try_from(page.total).unwrap_or(u64::MAX),
+            total_entries: u64::try_from(page.total_entries).unwrap_or(u64::MAX),
+            entries: page.entries.iter().map(checksum_entry_dto).collect(),
+            is_complete: page.is_complete,
+            is_cancelled: page.is_cancelled,
+            has_more: page.has_more,
+        })
+    }
+
+    /// Renders a job's results as coreutils-compatible checksum-file text.
+    ///
+    /// Returns the text rather than writing a file: saving goes through the
+    /// caller's normal write path, so this never becomes a second,
+    /// unaudited way to create a file (spec §35).
+    pub fn render_checksum_file(
+        &self,
+        job_id: Uuid,
+        request: RenderChecksumFileRequestDto,
+    ) -> Result<ChecksumFileDto, ApplicationError> {
+        let algorithm = checksum_algorithm(request.algorithm);
+        let entries = self
+            .checksum_store
+            .all_entries(job_id)
+            .ok_or(ApplicationError::NotFound)?;
+        let lines: Vec<(String, String)> = entries
+            .iter()
+            .filter_map(|entry| {
+                entry
+                    .checksums
+                    .get(algorithm)
+                    .map(|digest| (entry.relative_path.clone(), digest.to_owned()))
+            })
+            .collect();
+        let mut buffer = Vec::new();
+        fm_checksum::write_checksum_file(&lines, algorithm, &mut buffer)
+            .map_err(|error| ApplicationError::InvalidRequest(error.to_string()))?;
+        let content = String::from_utf8(buffer)
+            .map_err(|error| ApplicationError::InvalidRequest(error.to_string()))?;
+        Ok(ChecksumFileDto {
+            suggested_name: format!("checksums.{algorithm}"),
+            content,
+        })
+    }
+
+    /// Verifies a job's computed digests against an existing checksum file,
+    /// reporting per-entry match, mismatch or missing.
+    pub fn verify_checksum_file(
+        &self,
+        job_id: Uuid,
+        request: VerifyChecksumFileRequestDto,
+    ) -> Result<VerificationReportDto, ApplicationError> {
+        let entries = self
+            .checksum_store
+            .all_entries(job_id)
+            .ok_or(ApplicationError::NotFound)?;
+        let recorded = fm_checksum::read_checksum_file(std::io::Cursor::new(request.content))
+            .map_err(|error| ApplicationError::InvalidRequest(error.to_string()))?;
+
+        // A checksum file carries one algorithm and no in-band marker, so the
+        // digest width decides which of the job's digests to compare against.
+        // 64 hex characters are ambiguous between SHA-256 and BLAKE3; SHA-256
+        // is assumed there because that is what `sha256sum` writes.
+        let algorithm = recorded
+            .first()
+            .and_then(|entry| entry.algorithm)
+            .unwrap_or(fm_checksum::ChecksumAlgorithm::Sha256);
+        let computed: Vec<(String, String)> = entries
+            .iter()
+            .filter_map(|entry| {
+                entry
+                    .checksums
+                    .get(algorithm)
+                    .map(|digest| (entry.relative_path.clone(), digest.to_owned()))
+            })
+            .collect();
+        let results = fm_checksum::verify(
+            computed
+                .iter()
+                .map(|(path, digest)| (path.as_str(), digest.as_str())),
+            &recorded,
+        );
+
+        let mut matched = 0_u64;
+        let mut mismatched = 0_u64;
+        let mut missing = 0_u64;
+        for result in &results {
+            match result.status {
+                fm_checksum::VerificationStatus::Match => matched += 1,
+                fm_checksum::VerificationStatus::Mismatch { .. } => mismatched += 1,
+                fm_checksum::VerificationStatus::Missing => missing += 1,
+            }
+        }
+        Ok(VerificationReportDto {
+            job_id,
+            results: results.iter().map(verification_result_dto).collect(),
+            matched,
+            mismatched,
+            missing,
+        })
+    }
+
+    /// Starts a cancellable duplicate scan across one or more roots, using
+    /// the staged size -> partial-hash -> full-hash strategy (task 0077).
+    pub fn start_duplicate_scan(
+        &self,
+        request: StartDuplicateScanRequestDto,
+    ) -> Result<StartDuplicateScanResponseDto, ApplicationError> {
+        let scan_id = Uuid::new_v4();
+        let operation_id = OperationId::from(scan_id);
+        let audience = EventAudience::Workspace(request.workspace_id.into());
+        let roots: Vec<Location> = request.roots.into_iter().map(Into::into).collect();
+
+        let sources: Vec<EntryRefPayload> = roots
+            .iter()
+            .map(|root| EntryRefPayload {
+                id: EntryId::new(),
+                location: root.clone().into(),
+            })
+            .collect();
+        self.events.publish(
+            audience.clone(),
+            BackendEventPayload::OperationCreated {
+                operation: OperationPayload {
+                    id: operation_id,
+                    kind: OperationKindPayload::FindDuplicates,
+                    state: OperationStatePayload::Running,
+                    sources,
+                    destination: None,
+                    progress: OperationProgressDetails {
+                        completed_items: 0,
+                        total_items: None,
+                        completed_bytes: 0,
+                        total_bytes: None,
+                        current_entry: None,
+                        bytes_per_second: None,
+                    },
+                    conflict_policy: ConflictPolicyPayload::Ask,
+                    created_at: chrono::Utc::now(),
+                    started_at: None,
+                    completed_at: None,
+                },
+            },
+        );
+
+        self.checksum
+            .start_duplicate_scan(
+                scan_id,
+                roots,
+                DuplicateScanOptions {
+                    detection: DuplicateOptions {
+                        include_empty_files: request.include_empty_files,
+                        ..DuplicateOptions::default()
+                    },
+                    show_hidden: request.show_hidden,
+                    operation_id: Some(operation_id),
+                },
+                audience,
+            )
+            .map_err(|error| ApplicationError::InvalidRequest(error.to_string()))?;
+        Ok(StartDuplicateScanResponseDto { scan_id })
+    }
+
+    /// Cancels a running duplicate scan.
+    pub fn cancel_duplicate_scan(&self, scan_id: Uuid) -> Result<(), ApplicationError> {
+        self.checksum
+            .cancel_duplicate_scan(scan_id)
+            .map_err(|_| ApplicationError::NotFound)
+    }
+
+    /// Returns a bounded page of a duplicate scan's grouped results.
+    pub fn get_duplicate_page(
+        &self,
+        scan_id: Uuid,
+        offset: u64,
+        limit: u16,
+    ) -> Result<DuplicatePageDto, ApplicationError> {
+        let limit = limit.clamp(1, 500);
+        let page = self
+            .duplicate_store
+            .page(
+                scan_id,
+                usize::try_from(offset).unwrap_or(usize::MAX),
+                usize::from(limit),
+            )
+            .ok_or(ApplicationError::NotFound)?;
+        Ok(DuplicatePageDto {
+            scan_id,
+            roots: page.roots.into_iter().map(Into::into).collect(),
+            offset,
+            limit,
+            total: u64::try_from(page.total).unwrap_or(u64::MAX),
+            groups: page.groups.iter().map(duplicate_group_dto).collect(),
+            is_complete: page.is_complete,
+            is_cancelled: page.is_cancelled,
+            has_more: page.has_more,
+            stats: duplicate_stats_dto(page.stats),
+            warnings_count: u32::try_from(page.warnings.len()).unwrap_or(u32::MAX),
+        })
     }
 
     /// Reports which capabilities are available for the current runtime and

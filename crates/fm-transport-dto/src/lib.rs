@@ -6,6 +6,7 @@
 //! byte-for-byte compatible.
 
 pub mod action;
+pub mod checksum;
 pub mod comparison;
 pub mod connection;
 pub mod diagnostics;
@@ -29,6 +30,13 @@ pub mod workspace_command;
 pub use action::{
     ActionContextRequirementsDto, ActionDescriptorDto, ActionInvocationContextDto, ActionResultDto,
     ActionSourceDto, InvokeActionRequestDto, KeyChordDto,
+};
+pub use checksum::{
+    ChecksumAlgorithmDto, ChecksumEntryDto, ChecksumFileDto, ChecksumPageDto, DuplicateGroupDto,
+    DuplicatePageDto, DuplicateStatsDto, HardlinkClusterDto, RenderChecksumFileRequestDto,
+    StartChecksumRequestDto, StartChecksumResponseDto, StartDuplicateScanRequestDto,
+    StartDuplicateScanResponseDto, VerificationReportDto, VerificationResultDto,
+    VerificationStatusDto, VerifyChecksumFileRequestDto,
 };
 pub use comparison::{
     ApplySyncPlanRequestDto, ApplySyncPlanResponseDto, ComparisonCriteriaDto, ComparisonEntryDto,
