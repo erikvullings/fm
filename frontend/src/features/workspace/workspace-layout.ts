@@ -61,6 +61,8 @@ export interface WorkspacePaneContent {
   readonly filterQuery: string;
   readonly formatSettings?: EntryFormatSettings;
   readonly pluginColumns?: readonly DirectoryColumnDescriptor[];
+  /** Shows the Git-status column; hidden unless enabled and the directory is inside a git repo. */
+  readonly showGitStatusColumn?: boolean;
   readonly nativeIconLoader?: NativeIconLoader;
   readonly thumbnailLoader?: ThumbnailLoader;
   readonly finderTagsLoader?: FinderTagsLoader;
@@ -516,6 +518,7 @@ export const WorkspaceLayoutView: FactoryComponent<WorkspaceLayoutViewAttrs> = (
           sort: content.sort,
           formatSettings: content.formatSettings,
           pluginColumns: content.pluginColumns,
+          showGitStatusColumn: content.showGitStatusColumn,
           nativeIconLoader: content.nativeIconLoader,
           thumbnailLoader: content.thumbnailLoader,
           finderTagsLoader: content.finderTagsLoader,

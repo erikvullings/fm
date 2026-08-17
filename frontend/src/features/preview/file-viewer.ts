@@ -143,29 +143,27 @@ function renderMetadataPanel(metadata: FileViewerMetadata | 'loading' | undefine
     }
   } else {
     fields.push(
-      metadataField(
-        'Size',
-        metadata.sizeBytes === undefined
-          ? '--'
-          : formatEntrySize(
-              { kind: 'file', size: metadata.sizeBytes },
-              DEFAULT_ENTRY_FORMAT_SETTINGS,
-            ),
-      ),
+      m('.fm-file-viewer-metadata-row', [
+        metadataField(
+          'Size',
+          metadata.sizeBytes === undefined
+            ? '--'
+            : formatEntrySize(
+                { kind: 'file', size: metadata.sizeBytes },
+                DEFAULT_ENTRY_FORMAT_SETTINGS,
+              ),
+        ),
+        metadataField(
+          metadata.windowedCount ? 'Lines (loaded window)' : 'Lines',
+          String(metadata.lineCount),
+        ),
+        metadataField(
+          metadata.windowedCount ? 'Characters (loaded window)' : 'Characters',
+          String(metadata.characterCount),
+        ),
+        metadataField('Language', metadata.language),
+      ]),
     );
-    fields.push(
-      metadataField(
-        metadata.windowedCount ? 'Lines (loaded window)' : 'Lines',
-        String(metadata.lineCount),
-      ),
-    );
-    fields.push(
-      metadataField(
-        metadata.windowedCount ? 'Characters (loaded window)' : 'Characters',
-        String(metadata.characterCount),
-      ),
-    );
-    fields.push(metadataField('Language', metadata.language));
   }
   return m('.fm-file-viewer-metadata', m('dl', fields));
 }

@@ -102,6 +102,9 @@ export interface DirectoryTableAttrs {
   /** Persisted per-column widths; a column with no entry falls back to its default track. */
   readonly columnWidths?: readonly ColumnWidthEntry[];
   readonly onColumnWidthChange?: (columnId: string, width: number) => void;
+  /** Shows the Git-status column; only meaningful for directories inside a git repository, and
+   * defaults to hidden even then (some users have no git projects). */
+  readonly showGitStatusColumn?: boolean;
 }
 
 function readRowHeight(element: HTMLElement): number {
@@ -145,6 +148,8 @@ export interface DirectoryColumnDescriptor {
   readonly id: string;
   readonly label: string;
   readonly cellClass: string;
+  /** Overrides the shared `MIN_COLUMN_WIDTH` clamp for narrow columns (e.g. a one-letter badge). */
+  readonly minWidth?: number;
   render(
     entry: EntrySummary,
     nameMatchPrefix?: string,
@@ -302,6 +307,7 @@ const INITIAL_COLUMNS: readonly DirectoryColumnDescriptor[] = [
     id: 'core.gitStatus',
     label: 'Git',
     cellClass: 'fm-directory-git-status',
+    minWidth: 32,
     render: (entry) => {
       if (isParentEntry(entry.id) || entry.gitStatus === undefined) return '';
       const letter = GIT_STATUS_LETTERS[entry.gitStatus];
@@ -547,15 +553,17 @@ export const DirectoryTable: FactoryComponent<DirectoryTableAttrs> = () => {
   function beginColumnResize(
     event: PointerEvent,
     attrs: DirectoryTableAttrs,
+    columns: readonly DirectoryColumnDescriptor[],
     columnId: string,
     startWidth: number,
   ): void {
     event.preventDefault();
     stopColumnResize?.();
     const startX = event.clientX;
+    const minWidth = columns.find((column) => column.id === columnId)?.minWidth ?? MIN_COLUMN_WIDTH;
     let latestWidth = startWidth;
     const move = (moveEvent: PointerEvent): void => {
-      latestWidth = Math.max(MIN_COLUMN_WIDTH, startWidth + (moveEvent.clientX - startX));
+      latestWidth = Math.max(minWidth, startWidth + (moveEvent.clientX - startX));
       const next = columnWidthMap(displayedColumnWidths ?? attrs.columnWidths);
       next.set(columnId, latestWidth);
       displayedColumnWidths = [...next].map(([id, width]) => ({ columnId: id, width }));
@@ -648,7 +656,9 @@ export const DirectoryTable: FactoryComponent<DirectoryTableAttrs> = () => {
               overscan: attrs.overscan ?? DEFAULT_OVERSCAN,
             });
       const rows: m.Children[] = [];
-      const columns = [...INITIAL_COLUMNS, ...(attrs.pluginColumns ?? [])];
+      const columns = [...INITIAL_COLUMNS, ...(attrs.pluginColumns ?? [])].filter(
+        (column) => column.id !== 'core.gitStatus' || attrs.showGitStatusColumn === true,
+      );
       const now = Date.now();
       let sawUnloadedEntry = false;
       if (source !== undefined && window !== undefined && state === undefined) {
@@ -793,7 +803,7 @@ export const DirectoryTable: FactoryComponent<DirectoryTableAttrs> = () => {
         { style: { height: attrs.viewportHeight === undefined ? '100%' : `${viewportHeight}px` } },
         [
           headerView(attrs, columns, columnWidths, (event, columnId, startWidth) =>
-            beginColumnResize(event, attrs, columnId, startWidth),
+            beginColumnResize(event, attrs, columns, columnId, startWidth),
           ),
           m(
             '.fm-directory-viewport',

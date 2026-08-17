@@ -247,7 +247,7 @@ describe('DirectoryTable rows', () => {
       pluginColumns: [SAMPLE_FILE_AGE_COLUMN],
     });
 
-    expect(root.querySelector('[role="grid"]')?.getAttribute('aria-colcount')).toBe('6');
+    expect(root.querySelector('[role="grid"]')?.getAttribute('aria-colcount')).toBe('5');
     expect(root.querySelector('[data-column-id="sample.fileAge"]')?.textContent).toContain('Age');
     expect(root.querySelectorAll('.fm-directory-file-age').item(1)?.textContent).toBe('1h');
   });
@@ -255,6 +255,7 @@ describe('DirectoryTable rows', () => {
   it('renders a single-letter git status badge before the Modified column, blank outside a working tree', () => {
     mount({
       state: { type: 'loaded' },
+      showGitStatusColumn: true,
       source: entryArraySource([
         entry({ id: 'entry-1', name: 'modified.txt', gitStatus: 'modified' }),
         entry({ id: 'entry-2', name: 'staged.txt', gitStatus: 'staged' }),
@@ -490,6 +491,7 @@ describe('DirectoryTable rows', () => {
   it('renders semantic columns and a hidden icon and a symlink icon indicator', () => {
     mount({
       state: { type: 'loaded' },
+      showGitStatusColumn: true,
       source: entryArraySource([
         entry({ hidden: true }),
         entry({

@@ -146,6 +146,8 @@ export interface TableConfigAttrs {
   readonly sort: readonly SortDescriptor[];
   readonly formatSettings?: EntryFormatSettings | undefined;
   readonly pluginColumns?: readonly DirectoryColumnDescriptor[] | undefined;
+  /** Shows the Git-status column; hidden unless enabled and the directory is inside a git repo. */
+  readonly showGitStatusColumn?: boolean | undefined;
   readonly nativeIconLoader?: NativeIconLoader | undefined;
   readonly thumbnailLoader?: ThumbnailLoader | undefined;
   readonly finderTagsLoader?: FinderTagsLoader | undefined;
@@ -307,6 +309,12 @@ function listingSummary(entries: readonly EntrySummary[]): string {
 
 function locationKey(location: Location): string {
   return `${location.providerId}:${location.uri}`;
+}
+
+/** The bare filesystem root ("/") clutters the volumes list without being a useful navigation
+ * target - unlike a named boot volume (e.g. "Macintosh HD") that happens to also mount at "/". */
+function isRootVolume(volume: Volume): boolean {
+  return volume.name === '/';
 }
 
 function canAddCurrentFavourite(favourites: FavouritesAttrs): boolean {
@@ -924,23 +932,26 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
                       ],
                     )
                   : undefined,
-                (attrs.favourites.volumes?.length ?? 0) > 0 &&
+                (attrs.favourites.volumes ?? []).filter((volume) => !isRootVolume(volume)).length >
+                  0 &&
                   m('.fm-favourites-recents.fm-volumes-locations', [
                     m('strong', 'Volumes'),
-                    ...(attrs.favourites.volumes ?? []).map((volume) =>
-                      m(
-                        'button',
-                        {
-                          type: 'button',
-                          role: 'menuitem',
-                          title: volume.location.uri,
-                          onclick: () => void navigateFavourite(volume.location, attrs),
-                        },
-                        attrs.favourites.unavailableLocations?.has(locationKey(volume.location))
-                          ? `${volume.name} (unavailable)`
-                          : volume.name,
+                    ...(attrs.favourites.volumes ?? [])
+                      .filter((volume) => !isRootVolume(volume))
+                      .map((volume) =>
+                        m(
+                          'button',
+                          {
+                            type: 'button',
+                            role: 'menuitem',
+                            title: volume.location.uri,
+                            onclick: () => void navigateFavourite(volume.location, attrs),
+                          },
+                          attrs.favourites.unavailableLocations?.has(locationKey(volume.location))
+                            ? `${volume.name} (unavailable)`
+                            : volume.name,
+                        ),
                       ),
-                    ),
                   ]),
                 attrs.favourites.volumesError === undefined
                   ? undefined
@@ -1428,6 +1439,7 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
                   ...(attrs.tableConfig.onColumnWidthChange === undefined
                     ? {}
                     : { onColumnWidthChange: attrs.tableConfig.onColumnWidthChange }),
+                  showGitStatusColumn: attrs.tableConfig.showGitStatusColumn === true,
                   showFullPath: isSearchLocation,
                   ...(renameCtrl.entry === undefined
                     ? {}

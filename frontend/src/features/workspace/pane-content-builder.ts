@@ -340,6 +340,14 @@ export function createPaneContentBuilder(
           ? [SAMPLE_FILE_AGE_COLUMN]
           : []),
       ],
+      // Only worth showing once the setting is explicitly on (or a persisted per-tab column
+      // toggle turns it on) *and* this directory actually reports git status - most users have no
+      // git projects, so it stays out of the way by default.
+      showGitStatusColumn:
+        (tab?.view.columns.find((column) => column.columnId === 'core.gitStatus')?.visible ??
+          currentSettings?.defaultColumns.includes('core.gitStatus') ??
+          false) &&
+        directory.entries.some((entry) => entry.gitStatus !== undefined),
       platform: context.getPlatform(),
       keybindingRuntime: context.getKeybindingRuntime(),
       actions: context.getRegisteredActions(),

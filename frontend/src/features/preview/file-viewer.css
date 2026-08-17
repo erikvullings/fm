@@ -9,27 +9,22 @@
   background: var(--fm-surface);
 }
 
-.fm-file-viewer-info-panel {
+.fm-file-viewer-metadata {
   position: absolute;
-  left: 0;
+  top: var(--fm-header-height);
   right: 0;
   bottom: 0;
   z-index: 5;
-  max-height: 45%;
+  width: 20rem;
+  max-width: 80%;
   overflow: auto;
   padding: 0.75rem 1rem;
-  border-top: 1px solid var(--fm-border);
+  border-left: 1px solid var(--fm-border);
   background: var(--fm-surface-elevated);
   color: var(--fm-text);
   font-size: 0.92em;
   user-select: text;
   -webkit-user-select: text;
-}
-
-.fm-file-viewer-metadata + .fm-file-viewer-git-history {
-  margin-top: 0.75rem;
-  padding-top: 0.75rem;
-  border-top: 1px solid var(--fm-border);
 }
 
 .fm-file-viewer-metadata dl {
@@ -38,6 +33,35 @@
 
 .fm-file-viewer-metadata-field {
   margin: 0 0 0.75rem;
+}
+
+/** Groups the plain-text fields (Size/Lines/Characters/Language) into a single compact row
+ * instead of one block per field - they're all short label/value pairs. */
+.fm-file-viewer-metadata-row {
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: 0.9rem;
+  row-gap: 0.35rem;
+  margin: 0 0 0.75rem;
+}
+
+.fm-file-viewer-metadata-row .fm-file-viewer-metadata-field {
+  display: flex;
+  align-items: baseline;
+  gap: 0.3rem;
+  margin: 0;
+}
+
+.fm-file-viewer-metadata-row .fm-file-viewer-metadata-field dt {
+  margin: 0;
+}
+
+.fm-file-viewer-metadata-row .fm-file-viewer-metadata-field dt::after {
+  content: ":";
+}
+
+.fm-file-viewer-metadata-row .fm-file-viewer-metadata-field dd {
+  margin: 0;
 }
 
 .fm-file-viewer-metadata-field dt {
@@ -68,39 +92,6 @@
   background: transparent;
   color: var(--fm-text-muted);
   cursor: pointer;
-}
-
-.fm-file-viewer-git-history-heading {
-  margin: 0 0 0.5rem;
-  font-size: 0.85em;
-  font-weight: 600;
-  color: var(--fm-text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.02em;
-}
-
-.fm-file-viewer-git-history-list {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  display: flex;
-  flex-direction: column;
-  gap: 0.6rem;
-}
-
-.fm-file-viewer-git-history-entry {
-  display: flex;
-  flex-direction: column;
-  gap: 0.1rem;
-}
-
-.fm-file-viewer-git-history-summary {
-  word-break: break-word;
-}
-
-.fm-file-viewer-git-history-meta {
-  font-size: 0.85em;
-  color: var(--fm-text-muted);
 }
 
 .fm-file-viewer-header {
