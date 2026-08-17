@@ -262,6 +262,7 @@ export * from './themeDto';
 export * from './updateConnectionRequestDto.ts';
 export * from './updateConnectionRequestDto';
 export * from './volumeCapacityDto.ts';
+export * from './volumeDto.ts';
 export * from './webDavConnectionConfigurationDto.ts';
 export * from './webDavConnectionConfigurationDto';
 export * from './workspaceCommandDto.ts';

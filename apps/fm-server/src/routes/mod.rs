@@ -17,6 +17,7 @@ pub(crate) mod search;
 pub(crate) mod settings;
 pub(crate) mod system_location;
 pub(crate) mod thumbnails;
+pub(crate) mod volume;
 pub(crate) mod workspace;
 
 use utoipa::OpenApi;

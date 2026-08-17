@@ -56,8 +56,9 @@ use crate::operation_requests::{
     operation_kind,
 };
 use crate::platform_mapping::{
-    PlatformActionKind, discover_system_locations, map_file_icon_error, map_native_menu_error,
-    map_platform_error, platform_action_kind, runtime_capabilities_dto, volume_capacity,
+    PlatformActionKind, discover_system_locations, discover_volumes, map_file_icon_error,
+    map_native_menu_error, map_platform_error, platform_action_kind, runtime_capabilities_dto,
+    volume_capacity,
 };
 use crate::plugin_manager::PluginManager;
 use crate::remote_terminal::RemoteTerminalService;
@@ -108,6 +109,12 @@ impl FileManagerService {
         &self,
     ) -> Result<Vec<fm_transport_dto::SystemLocationDto>, ApplicationError> {
         discover_system_locations(Arc::clone(&self.platform)).await
+    }
+
+    /// Discovers currently mounted local/removable/disk-image volumes (task
+    /// 0144) and maps their native paths to the existing local provider.
+    pub async fn volumes(&self) -> Result<Vec<fm_transport_dto::VolumeDto>, ApplicationError> {
+        discover_volumes(Arc::clone(&self.platform)).await
     }
 
     /// Builds a service for the given host runtime, persisting workspaces
@@ -2245,6 +2252,68 @@ mod tests {
         let capacity = volume_capacity(&service.platform, &location).await;
 
         assert!(capacity.is_none());
+    }
+
+    /// A platform adapter test double reporting a fixed set of mounted
+    /// volumes (task 0144), so `volumes` tests can distinguish "the service
+    /// actually calls into the adapter and forwards its result" from a
+    /// coincidentally-passing empty default.
+    #[derive(Debug, Clone, Copy)]
+    struct MountedVolumesPlatformAdapter {
+        capabilities: PlatformCapabilities,
+    }
+
+    impl fm_platform::PlatformAdapter for MountedVolumesPlatformAdapter {
+        fn capabilities(&self) -> PlatformCapabilities {
+            self.capabilities
+        }
+
+        fn mounted_volumes(
+            &self,
+        ) -> Result<Vec<fm_platform::MountedVolume>, fm_platform::PlatformError> {
+            Ok(vec![fm_platform::MountedVolume {
+                name: "Macintosh HD".to_owned(),
+                mount_point: PathBuf::from("/"),
+            }])
+        }
+    }
+
+    #[tokio::test]
+    async fn volumes_are_surfaced_when_the_platform_adapter_supports_it() {
+        let dir = tempfile::tempdir().expect("must create a temp dir");
+        let service = FileManagerService::with_platform_adapter(
+            RuntimeKindDto::BrowserServer,
+            dir.path(),
+            dir.path().join("settings"),
+            EventBus::default(),
+            Arc::new(MountedVolumesPlatformAdapter {
+                capabilities: PlatformCapabilities::MOUNTED_VOLUMES,
+            }),
+        );
+
+        let volumes = service.volumes().await.expect("volumes discovered");
+
+        assert_eq!(volumes.len(), 1);
+        assert_eq!(volumes[0].name, "Macintosh HD");
+        assert_eq!(volumes[0].location.provider_id, "local");
+    }
+
+    #[tokio::test]
+    async fn volumes_are_empty_when_the_adapter_lacks_the_capability() {
+        let dir = tempfile::tempdir().expect("must create a temp dir");
+        let service = FileManagerService::with_platform_adapter(
+            RuntimeKindDto::BrowserServer,
+            dir.path(),
+            dir.path().join("settings"),
+            EventBus::default(),
+            Arc::new(MountedVolumesPlatformAdapter {
+                capabilities: PlatformCapabilities::empty(),
+            }),
+        );
+
+        let volumes = service.volumes().await.expect("volumes discovered");
+
+        assert!(volumes.is_empty());
     }
 
     /// A platform adapter test double that records every call it receives

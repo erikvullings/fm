@@ -1,8 +1,20 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import type { ActionDescriptor, PaneId, SortDescriptor, WorkspaceId } from '../../models';
+import type {
+  ActionDescriptor,
+  Connection,
+  Location,
+  PaneId,
+  SortDescriptor,
+  SystemLocation,
+  Volume,
+  WorkspaceId,
+} from '../../models';
 import {
   dispatchNativeMenuAction,
+  GO_MENU_CONNECTION_ID_PREFIX,
+  GO_MENU_SYSTEM_LOCATION_ID_PREFIX,
+  GO_MENU_VOLUME_ID_PREFIX,
   type NativeMenuDispatchContext,
   NEW_WORKSPACE_WINDOW_MENU_ID,
   OPEN_SETTINGS_MENU_ID,
@@ -31,10 +43,19 @@ interface ContextMocks {
   readonly invokeAction: ReturnType<typeof vi.fn<(action: ActionDescriptor) => void>>;
   readonly openNewWorkspaceWindow: ReturnType<typeof vi.fn<() => void>>;
   readonly openWorkspaceWindowById: ReturnType<typeof vi.fn<(workspaceId: WorkspaceId) => void>>;
+  readonly getVolumes: ReturnType<typeof vi.fn<() => readonly Volume[]>>;
+  readonly getConnections: ReturnType<typeof vi.fn<() => readonly Connection[]>>;
+  readonly getSystemLocations: ReturnType<typeof vi.fn<() => readonly SystemLocation[]>>;
+  readonly navigateToLocation: ReturnType<typeof vi.fn<(location: Location) => void>>;
 }
 
 function contextMocks(
   paneId?: PaneId,
+  overrides: Partial<{
+    volumes: readonly Volume[];
+    connections: readonly Connection[];
+    systemLocations: readonly SystemLocation[];
+  }> = {},
 ): ContextMocks & { readonly context: NativeMenuDispatchContext } {
   const findAction = vi.fn<(id: string) => ActionDescriptor | undefined>(() => undefined);
   const openSettingsDialog = vi.fn<() => void>();
@@ -44,6 +65,12 @@ function contextMocks(
   const invokeAction = vi.fn<(action: ActionDescriptor) => void>();
   const openNewWorkspaceWindow = vi.fn<() => void>();
   const openWorkspaceWindowById = vi.fn<(workspaceId: WorkspaceId) => void>();
+  const getVolumes = vi.fn<() => readonly Volume[]>(() => overrides.volumes ?? []);
+  const getConnections = vi.fn<() => readonly Connection[]>(() => overrides.connections ?? []);
+  const getSystemLocations = vi.fn<() => readonly SystemLocation[]>(
+    () => overrides.systemLocations ?? [],
+  );
+  const navigateToLocation = vi.fn<(location: Location) => void>();
   return {
     findAction,
     openSettingsDialog,
@@ -53,6 +80,10 @@ function contextMocks(
     invokeAction,
     openNewWorkspaceWindow,
     openWorkspaceWindowById,
+    getVolumes,
+    getConnections,
+    getSystemLocations,
+    navigateToLocation,
     context: {
       findAction,
       openSettingsDialog,
@@ -60,6 +91,10 @@ function contextMocks(
       activePaneId,
       setSort,
       invokeAction,
+      getVolumes,
+      getConnections,
+      getSystemLocations,
+      navigateToLocation,
       openNewWorkspaceWindow,
       openWorkspaceWindowById,
     },
@@ -134,5 +169,83 @@ describe('dispatchNativeMenuAction', () => {
     const mocks = contextMocks(undefined);
     dispatchNativeMenuAction(mocks.context, 'core.sortByName');
     expect(mocks.setSort).not.toHaveBeenCalled();
+  });
+
+  it('navigates to the volume at the id-encoded index for a Go-menu Volumes item', () => {
+    const volume: Volume = {
+      name: 'Macintosh HD',
+      location: { providerId: 'local', uri: 'file:///' },
+    };
+    const mocks = contextMocks(undefined, { volumes: [volume] });
+    dispatchNativeMenuAction(mocks.context, `${GO_MENU_VOLUME_ID_PREFIX}0`);
+    expect(mocks.navigateToLocation).toHaveBeenCalledExactlyOnceWith(volume.location);
+  });
+
+  it('silently no-ops a Volumes item id whose index is out of range', () => {
+    const mocks = contextMocks(undefined, { volumes: [] });
+    expect(() =>
+      dispatchNativeMenuAction(mocks.context, `${GO_MENU_VOLUME_ID_PREFIX}0`),
+    ).not.toThrow();
+    expect(mocks.navigateToLocation).not.toHaveBeenCalled();
+  });
+
+  it('navigates to a browsable connection for a Go-menu Servers item', () => {
+    const connection: Connection = {
+      id: 'connection-1',
+      name: 'Home Server',
+      kind: 'ssh',
+      configuration: {
+        kind: 'ssh',
+        host: 'example.test',
+        port: 22,
+        username: 'erik',
+        startPath: null,
+        authentication: 'password',
+        hostKeyPolicy: 'promptOnFirstUse',
+        keepaliveSeconds: null,
+      },
+      hasCredential: true,
+      status: 'connected',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    };
+    const mocks = contextMocks(undefined, { connections: [connection] });
+    dispatchNativeMenuAction(mocks.context, `${GO_MENU_CONNECTION_ID_PREFIX}connection-1`);
+    expect(mocks.navigateToLocation).toHaveBeenCalledExactlyOnceWith({
+      providerId: 'sftp',
+      uri: 'sftp://connection-1/home/erik',
+    });
+  });
+
+  it('does not navigate for an unbrowsable connection kind (task 0144)', () => {
+    const connection: Connection = {
+      id: 'connection-1',
+      name: 'S3 bucket',
+      kind: 's3',
+      configuration: {
+        kind: 's3',
+        bucket: 'example-bucket',
+        region: 'us-east-1',
+        endpoint: null,
+      },
+      hasCredential: true,
+      status: 'disconnected',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    };
+    const mocks = contextMocks(undefined, { connections: [connection] });
+    dispatchNativeMenuAction(mocks.context, `${GO_MENU_CONNECTION_ID_PREFIX}connection-1`);
+    expect(mocks.navigateToLocation).not.toHaveBeenCalled();
+  });
+
+  it('navigates to the system location at the id-encoded index for a Go-menu Cloud/Network item', () => {
+    const systemLocation: SystemLocation = {
+      name: 'Team Files',
+      kind: 'network',
+      location: { providerId: 'local', uri: 'file:///Volumes/Team%20Files' },
+    };
+    const mocks = contextMocks(undefined, { systemLocations: [systemLocation] });
+    dispatchNativeMenuAction(mocks.context, `${GO_MENU_SYSTEM_LOCATION_ID_PREFIX}0`);
+    expect(mocks.navigateToLocation).toHaveBeenCalledExactlyOnceWith(systemLocation.location);
   });
 });

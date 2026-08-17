@@ -24,6 +24,7 @@ import type {
   SortDescriptor,
   SystemLocation,
   TabId,
+  Volume,
   VolumeCapacity,
 } from '../../models';
 import {
@@ -67,6 +68,9 @@ export interface FavouritesAttrs {
   readonly location?: Location | undefined;
   readonly favouriteLocations?: readonly FavouriteLocation[] | undefined;
   readonly recentLocations?: readonly Location[] | undefined;
+  readonly volumes?: readonly Volume[] | undefined;
+  readonly volumesError?: string | undefined;
+  readonly onRetryVolumes?: (() => void | Promise<void>) | undefined;
   readonly systemLocations?: readonly SystemLocation[] | undefined;
   readonly systemLocationsError?: string | undefined;
   readonly onRetrySystemLocations?: (() => void | Promise<void>) | undefined;
@@ -886,6 +890,37 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
                       ],
                     )
                   : undefined,
+                (attrs.favourites.volumes?.length ?? 0) > 0 &&
+                  m('.fm-favourites-recents.fm-volumes-locations', [
+                    m('strong', 'Volumes'),
+                    ...(attrs.favourites.volumes ?? []).map((volume) =>
+                      m(
+                        'button',
+                        {
+                          type: 'button',
+                          role: 'menuitem',
+                          title: volume.location.uri,
+                          onclick: () => void navigateFavourite(volume.location, attrs),
+                        },
+                        attrs.favourites.unavailableLocations?.has(locationKey(volume.location))
+                          ? `${volume.name} (unavailable)`
+                          : volume.name,
+                      ),
+                    ),
+                  ]),
+                attrs.favourites.volumesError === undefined
+                  ? undefined
+                  : m('.fm-path-error.fm-volumes-locations-error', { role: 'status' }, [
+                      'Volumes unavailable. ',
+                      m(
+                        'button',
+                        {
+                          type: 'button',
+                          onclick: () => void attrs.favourites.onRetryVolumes?.(),
+                        },
+                        'Retry',
+                      ),
+                    ]),
                 (attrs.favourites.connections?.length ?? 0) > 0 &&
                   m('.fm-favourites-recents.fm-servers-locations', [
                     m('strong', { key: '__servers_label__' }, 'Servers'),
