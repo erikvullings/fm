@@ -1853,6 +1853,7 @@ describe('AppShell', () => {
     vi.spyOn(client, 'getSettings').mockResolvedValue({
       schemaVersion: 2,
       theme: 'auto',
+      language: 'en',
       fontSize: 13,
       rowHeight: 20,
       dateFormat: 'medium',
@@ -2936,7 +2937,7 @@ describe('workspace management (task 0084)', () => {
           .querySelector('.fm-workspace-switcher-button')
           ?.closest('.fm-tooltip')
           ?.getAttribute('data-tooltip'),
-      ).toBe('Switch workspace — current: Bravo'),
+      ).toBe('Workspace switcher, current workspace: Bravo'),
     );
     await vi.waitFor(() => expect(row(root, second.id)?.getAttribute('data-active')).toBe('true'));
   });
@@ -2973,7 +2974,7 @@ describe('workspace management (task 0084)', () => {
           .querySelector('.fm-workspace-switcher-button')
           ?.closest('.fm-tooltip')
           ?.getAttribute('data-tooltip'),
-      ).toBe('Switch workspace — current: Default'),
+      ).toBe('Workspace switcher, current workspace: Default'),
     );
   });
 
@@ -3003,7 +3004,7 @@ describe('workspace management (task 0084)', () => {
           .querySelector('.fm-workspace-switcher-button')
           ?.closest('.fm-tooltip')
           ?.getAttribute('data-tooltip'),
-      ).toBe('Switch workspace — current: Renamed workspace'),
+      ).toBe('Workspace switcher, current workspace: Renamed workspace'),
     );
   });
 
@@ -3055,7 +3056,7 @@ describe('workspace management (task 0084)', () => {
           .querySelector('.fm-workspace-switcher-button')
           ?.closest('.fm-tooltip')
           ?.getAttribute('data-tooltip'),
-      ).toBe('Switch workspace — current: Bravo'),
+      ).toBe('Workspace switcher, current workspace: Bravo'),
     );
     expect(root.textContent).toContain('copy · running');
     expect(cancelOperation).not.toHaveBeenCalled();

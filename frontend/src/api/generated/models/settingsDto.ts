@@ -6,6 +6,7 @@ import type { ConflictPolicyDto } from './conflictPolicyDto.ts';
 import type { DateFormatDto } from './dateFormatDto.ts';
 import type { DefaultPaneLayoutDto } from './defaultPaneLayoutDto.ts';
 import type { FavouriteLocationDto } from './favouriteLocationDto.ts';
+import type { LanguageDto } from './languageDto.ts';
 import type { SettingsDtoKeybindings } from './settingsDtoKeybindings.ts';
 import type { SettingsDtoPluginSettings } from './settingsDtoPluginSettings.ts';
 import type { SettingsDtoRecentLocationsByWorkspace } from './settingsDtoRecentLocationsByWorkspace.ts';
@@ -46,6 +47,8 @@ export interface SettingsDto {
   iconTheme: string;
   /** Action-to-shortcut mappings. */
   keybindings: SettingsDtoKeybindings;
+  /** UI language. */
+  language: LanguageDto;
   /**
      * Maximum concurrent operations.
      * @minimum 0
