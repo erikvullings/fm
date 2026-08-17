@@ -1,19 +1,20 @@
 import type { FinderTagColor } from '../../models';
 
-/** Finder's seven built-in label colors, in the order Finder's own Tags menu lists them,
- * mapped to a representative swatch color for badges/pickers (task 0136). Approximate - not
- * pixel-matched to a specific macOS version, since these are UI accents, not OS chrome. */
+/** Finder's seven built-in label colors, in the order Finder's own Tags menu lists them, mapped
+ * to the matching CSS custom property (defined once in `themes/theme.css`, task 0136) for
+ * badges/pickers - never a hard-coded hex value here (enforced by
+ * `themes/component-colours.test.ts`). */
 export const FINDER_TAG_COLOR_SWATCHES: ReadonlyMap<
   Exclude<FinderTagColor, 'none'>,
   string
 > = new Map([
-  ['red', '#fc3b32'],
-  ['orange', '#ff9d0a'],
-  ['yellow', '#ffcc00'],
-  ['green', '#67cc57'],
-  ['blue', '#5596f6'],
-  ['purple', '#b767cc'],
-  ['gray', '#a1a1a1'],
+  ['red', 'var(--fm-finder-tag-red)'],
+  ['orange', 'var(--fm-finder-tag-orange)'],
+  ['yellow', 'var(--fm-finder-tag-yellow)'],
+  ['green', 'var(--fm-finder-tag-green)'],
+  ['blue', 'var(--fm-finder-tag-blue)'],
+  ['purple', 'var(--fm-finder-tag-purple)'],
+  ['gray', 'var(--fm-finder-tag-gray)'],
 ]);
 
 /** Every assignable color, "none" first - matches the order a color picker should offer them. */

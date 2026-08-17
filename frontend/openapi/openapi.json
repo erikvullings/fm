@@ -1737,6 +1737,54 @@
         ],
         "type": "object"
       },
+      "FinderTagColorDto": {
+        "description": "One of Finder's seven label colors, or no color. Mirrors\n`fm_platform::FinderTagColor` one-to-one; kept as a separate wire type\n(specification §3 rule 5: DTOs are never reused as internal domain\nmodels).",
+        "enum": [
+          "none",
+          "gray",
+          "green",
+          "purple",
+          "blue",
+          "yellow",
+          "red",
+          "orange"
+        ],
+        "type": "string"
+      },
+      "FinderTagDto": {
+        "description": "A single Finder tag: a name, and an optional label color.",
+        "properties": {
+          "color": {
+            "$ref": "#/components/schemas/FinderTagColorDto",
+            "description": "The tag's label color."
+          },
+          "name": {
+            "description": "The tag's display name, e.g. `\"Work\"`.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "color"
+        ],
+        "type": "object"
+      },
+      "FinderTagsDto": {
+        "description": "An entry's complete set of Finder tags - used for both reading the\ncurrent set and replacing it (mirrors [`crate::SettingsDto`]'s get/put\nsymmetry). Replacing matches Finder's own all-at-once tag editor\nsemantics: an empty `tags` removes every tag.",
+        "properties": {
+          "tags": {
+            "description": "The entry's tags, in Finder's own display order.",
+            "items": {
+              "$ref": "#/components/schemas/FinderTagDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "tags"
+        ],
+        "type": "object"
+      },
       "FtpConnectionConfigurationDto": {
         "description": "Minimal FTP/FTPS configuration.",
         "properties": {
@@ -3294,6 +3342,8 @@
         "description": "Capabilities the current runtime and platform support, so the frontend can\nrespond to capabilities rather than detecting operating systems directly\n(spec §21).",
         "example": {
           "clipboard": true,
+          "extendedAttributes": false,
+          "finderTags": false,
           "nativeDragOut": false,
           "nativeFileIcons": false,
           "nativeMenus": false,
@@ -3309,6 +3359,14 @@
         "properties": {
           "clipboard": {
             "description": "Whether OS clipboard integration is available.",
+            "type": "boolean"
+          },
+          "extendedAttributes": {
+            "description": "Whether generic extended attributes (currently: the Spotlight\n\"Finder comment\") can be read/written (task 0136).",
+            "type": "boolean"
+          },
+          "finderTags": {
+            "description": "Whether Finder tags can be read/written (task 0136).",
             "type": "boolean"
           },
           "nativeDragOut": {
@@ -3368,7 +3426,9 @@
           "openTerminal",
           "clipboard",
           "plugins",
-          "serverAdministration"
+          "serverAdministration",
+          "extendedAttributes",
+          "finderTags"
         ],
         "type": "object"
       },
@@ -3807,6 +3867,19 @@
           "vertical"
         ],
         "type": "string"
+      },
+      "SpotlightCommentDto": {
+        "description": "An entry's Spotlight comment (Get Info's \"Comments:\" field) - used for\nboth reading the current comment and replacing it. `None` means no\ncomment is set; setting `None` clears an existing comment.",
+        "properties": {
+          "comment": {
+            "description": "The comment text, or `None` if unset.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
       },
       "SshAuthenticationMethodDto": {
         "description": "How an SSH connection authenticates (mirrors\n`fm_connections::SshAuthenticationMethod`).",
@@ -6240,6 +6313,130 @@
         "summary": "Searches a single file's content for a substring or regex."
       }
     },
+    "/api/v1/finder-tags": {
+      "get": {
+        "operationId": "getFinderTags",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "uri",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FinderTagsDto"
+                }
+              }
+            },
+            "description": "The entry's Finder tags"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationErrorDto"
+                }
+              }
+            },
+            "description": "The location URI was invalid"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationErrorDto"
+                }
+              }
+            },
+            "description": "The entry does not exist or tags are unsupported"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationErrorDto"
+                }
+              }
+            },
+            "description": "The platform Finder-tag lookup failed"
+          }
+        },
+        "summary": "Returns an entry's Finder tags, or an empty list if unsupported/unset."
+      },
+      "put": {
+        "operationId": "setFinderTags",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "uri",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FinderTagsDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FinderTagsDto"
+                }
+              }
+            },
+            "description": "The persisted Finder tags"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationErrorDto"
+                }
+              }
+            },
+            "description": "The location URI was invalid"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationErrorDto"
+                }
+              }
+            },
+            "description": "The entry does not exist"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationErrorDto"
+                }
+              }
+            },
+            "description": "The platform Finder-tag write failed"
+          }
+        },
+        "summary": "Replaces an entry's complete set of Finder tags, returning the persisted set back."
+      }
+    },
     "/api/v1/health": {
       "get": {
         "operationId": "getHealth",
@@ -6963,6 +7160,130 @@
           }
         },
         "summary": "Atomically replaces the complete application-wide settings document."
+      }
+    },
+    "/api/v1/spotlight-comment": {
+      "get": {
+        "operationId": "getSpotlightComment",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "uri",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SpotlightCommentDto"
+                }
+              }
+            },
+            "description": "The entry's Spotlight comment"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationErrorDto"
+                }
+              }
+            },
+            "description": "The location URI was invalid"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationErrorDto"
+                }
+              }
+            },
+            "description": "The entry does not exist or comments are unsupported"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationErrorDto"
+                }
+              }
+            },
+            "description": "The platform comment lookup failed"
+          }
+        },
+        "summary": "Returns an entry's Spotlight comment, or `null` if unsupported/unset."
+      },
+      "put": {
+        "operationId": "setSpotlightComment",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "uri",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SpotlightCommentDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SpotlightCommentDto"
+                }
+              }
+            },
+            "description": "The persisted Spotlight comment"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationErrorDto"
+                }
+              }
+            },
+            "description": "The location URI was invalid"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationErrorDto"
+                }
+              }
+            },
+            "description": "The entry does not exist"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationErrorDto"
+                }
+              }
+            },
+            "description": "The platform comment write failed"
+          }
+        },
+        "summary": "Sets or clears (`comment: null`) an entry's Spotlight comment, returning the persisted value back."
       }
     },
     "/api/v1/system-locations": {

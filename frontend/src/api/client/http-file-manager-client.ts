@@ -19,6 +19,7 @@ import type {
   EntryMetadataRequest,
   Location as FileLocation,
   FileRangeChunk,
+  FinderTags,
   GenerateSyncPlanRequest,
   GitFileHistoryRequest,
   GitFileHistoryResult,
@@ -41,6 +42,7 @@ import type {
   SearchInFileResult,
   SetPaneActivityRequest,
   Settings,
+  SpotlightComment,
   StartComparisonRequest,
   StartComparisonResult,
   StartOperationRequest,
@@ -81,6 +83,8 @@ import {
   listDirectory as requestDirectory,
   getEntryMetadata as requestEntryMetadata,
   getFileIcon as requestFileIcon,
+  getFinderTags as requestFinderTags,
+  setFinderTags as requestFinderTagsUpdate,
   calculateFolderSize as requestFolderSizeCalculation,
   getFileGitHistory as requestGitFileHistory,
   loadEditableFile as requestLoadEditableFile,
@@ -104,6 +108,8 @@ import {
   startSearch as requestSearchStart,
   getSettings as requestSettings,
   updateSettings as requestSettingsUpdate,
+  getSpotlightComment as requestSpotlightComment,
+  setSpotlightComment as requestSpotlightCommentUpdate,
   acceptSshHostKey as requestSshHostKeyAcceptance,
   probeSshHostKey as requestSshHostKeyProbe,
   applySyncPlan as requestSyncPlanApply,
@@ -224,6 +230,67 @@ export class HttpFileManagerClient implements FileManagerClient {
     } catch {
       return undefined;
     }
+  }
+
+  async getFinderTags(locationUri: string, signal?: AbortSignal): Promise<FinderTags | undefined> {
+    try {
+      const response = await requestFinderTags(
+        { uri: locationUri },
+        signal === undefined ? undefined : { signal },
+      );
+      if (response.status !== 200) return undefined;
+      return response.data;
+    } catch {
+      return undefined;
+    }
+  }
+
+  async setFinderTags(
+    locationUri: string,
+    tags: FinderTags,
+    signal?: AbortSignal,
+  ): Promise<FinderTags> {
+    const response = await requestFinderTagsUpdate(
+      tags,
+      { uri: locationUri },
+      signal === undefined ? undefined : { signal },
+    );
+    if (response.status !== 200) {
+      throw new Error(`Unexpected setFinderTags response status: ${response.status}`);
+    }
+    return response.data;
+  }
+
+  async getSpotlightComment(
+    locationUri: string,
+    signal?: AbortSignal,
+  ): Promise<SpotlightComment | undefined> {
+    try {
+      const response = await requestSpotlightComment(
+        { uri: locationUri },
+        signal === undefined ? undefined : { signal },
+      );
+      if (response.status !== 200) return undefined;
+      return response.data;
+    } catch {
+      return undefined;
+    }
+  }
+
+  async setSpotlightComment(
+    locationUri: string,
+    comment: SpotlightComment,
+    signal?: AbortSignal,
+  ): Promise<SpotlightComment> {
+    const response = await requestSpotlightCommentUpdate(
+      comment,
+      { uri: locationUri },
+      signal === undefined ? undefined : { signal },
+    );
+    if (response.status !== 200) {
+      throw new Error(`Unexpected setSpotlightComment response status: ${response.status}`);
+    }
+    return response.data;
   }
 
   async getSettings(signal?: AbortSignal): Promise<Settings> {

@@ -27,6 +27,17 @@
   --fm-radius: 4px;
   --fm-shadow: 0 8px 24px rgb(23 32 51 / 16%);
 
+  /* Finder tag label colors (task 0136) - deliberately identical across light/dark/system: these
+   * are recognizable brand-ish swatches matching Finder's own seven colors, not adaptive UI chrome,
+   * so they don't need a themed variant. */
+  --fm-finder-tag-red: #fc3b32;
+  --fm-finder-tag-orange: #ff9d0a;
+  --fm-finder-tag-yellow: #ffcc00;
+  --fm-finder-tag-green: #67cc57;
+  --fm-finder-tag-blue: #5596f6;
+  --fm-finder-tag-purple: #b767cc;
+  --fm-finder-tag-gray: #a1a1a1;
+
   --mm-primary-color: var(--fm-accent);
   --mm-primary-color-light: var(--fm-selection);
   --mm-primary-color-dark: var(--fm-accent);
