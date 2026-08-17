@@ -26,14 +26,14 @@ use fm_settings::{Settings, SettingsStore};
 use fm_transport_dto::{
     ActionDescriptorDto, ActionResultDto, ApplySyncPlanRequestDto, ApplySyncPlanResponseDto,
     ComparisonPageDto, ConflictResolutionDto, ConnectionDto, CreateConnectionRequestDto,
-    DirectorySnapshotDto, EntryMetadataRequest, GenerateSyncPlanRequestDto, InvokeActionRequestDto,
-    ListDirectoryRequest, NavigateRequest, OperationConflictPolicyDto, OperationDto,
-    PluginDescriptorDto, PluginLogEntryDto, ReadFileRangeRequestDto, ReadFileRangeResponseDto,
-    ResolveOperationConflictRequestDto, RuntimeCapabilitiesDto, RuntimeKindDto,
-    SearchInFileRequestDto, SearchInFileResponseDto, SetPaneActivityRequest, SettingsDto,
-    StartComparisonRequestDto, StartComparisonResponseDto, StartOperationRequestDto,
-    StartSearchRequestDto, StartSearchResponseDto, SyncPlanDto, UpdateConnectionRequestDto,
-    WorkspaceCommandDto, WorkspaceDto, WorkspaceSummaryDto,
+    DirectorySnapshotDto, EntryMetadataRequest, FinderTagsDto, GenerateSyncPlanRequestDto,
+    InvokeActionRequestDto, ListDirectoryRequest, NavigateRequest, OperationConflictPolicyDto,
+    OperationDto, PluginDescriptorDto, PluginLogEntryDto, ReadFileRangeRequestDto,
+    ReadFileRangeResponseDto, ResolveOperationConflictRequestDto, RuntimeCapabilitiesDto,
+    RuntimeKindDto, SearchInFileRequestDto, SearchInFileResponseDto, SetPaneActivityRequest,
+    SettingsDto, SpotlightCommentDto, StartComparisonRequestDto, StartComparisonResponseDto,
+    StartOperationRequestDto, StartSearchRequestDto, StartSearchResponseDto, SyncPlanDto,
+    UpdateConnectionRequestDto, WorkspaceCommandDto, WorkspaceDto, WorkspaceSummaryDto,
 };
 use fm_vfs::{EntryRef, ProviderRegistry};
 use fm_vfs_local::LocalFileSystemProvider;
@@ -56,8 +56,10 @@ use crate::operation_requests::{
     operation_kind,
 };
 use crate::platform_mapping::{
-    PlatformActionKind, discover_system_locations, map_file_icon_error, map_native_menu_error,
-    map_platform_error, platform_action_kind, runtime_capabilities_dto, volume_capacity,
+    PlatformActionKind, discover_system_locations, finder_tag_from_dto, finder_tag_to_dto,
+    map_extended_attribute_read_error, map_extended_attribute_write_error, map_file_icon_error,
+    map_native_menu_error, map_platform_error, platform_action_kind, runtime_capabilities_dto,
+    volume_capacity,
 };
 use crate::plugin_manager::PluginManager;
 use crate::remote_terminal::RemoteTerminalService;
@@ -1102,10 +1104,76 @@ impl FileManagerService {
     /// The adapter owns extension-level caching; this service deliberately
     /// adds no second cache layer (task 0091).
     pub fn file_icon(&self, uri: &str) -> Result<Vec<u8>, ApplicationError> {
-        let path = Location::parse(uri)
-            .and_then(|location| location.to_native_path())
-            .map_err(|error| ApplicationError::InvalidRequest(format!("invalid `uri`: {error}")))?;
+        let path = Self::native_path_for(uri)?;
         self.platform.file_icon(&path).map_err(map_file_icon_error)
+    }
+
+    /// Reads an entry's Finder tags (task 0136). Missing capability support
+    /// or a vanished entry are both reported as [`ApplicationError::NotFound`]
+    /// (see [`map_extended_attribute_read_error`]) so a lazy per-entry
+    /// frontend loader can treat them as "no tags" rather than a failure.
+    pub fn finder_tags(&self, uri: &str) -> Result<FinderTagsDto, ApplicationError> {
+        let path = Self::native_path_for(uri)?;
+        let tags = self
+            .platform
+            .finder_tags(&path)
+            .map_err(map_extended_attribute_read_error)?;
+        Ok(FinderTagsDto {
+            tags: tags.into_iter().map(finder_tag_to_dto).collect(),
+        })
+    }
+
+    /// Replaces an entry's complete set of Finder tags (task 0136),
+    /// returning the persisted set back (mirrors [`Self::update_settings`]'s
+    /// get/put symmetry).
+    pub fn set_finder_tags(
+        &self,
+        uri: &str,
+        request: FinderTagsDto,
+    ) -> Result<FinderTagsDto, ApplicationError> {
+        let path = Self::native_path_for(uri)?;
+        let tags: Vec<_> = request.tags.into_iter().map(finder_tag_from_dto).collect();
+        self.platform
+            .set_finder_tags(&path, &tags)
+            .map_err(map_extended_attribute_write_error)?;
+        Ok(FinderTagsDto {
+            tags: tags.into_iter().map(finder_tag_to_dto).collect(),
+        })
+    }
+
+    /// Reads an entry's Spotlight comment (task 0136). Same graceful
+    /// missing-capability/missing-entry handling as [`Self::finder_tags`].
+    pub fn spotlight_comment(&self, uri: &str) -> Result<SpotlightCommentDto, ApplicationError> {
+        let path = Self::native_path_for(uri)?;
+        let comment = self
+            .platform
+            .spotlight_comment(&path)
+            .map_err(map_extended_attribute_read_error)?;
+        Ok(SpotlightCommentDto { comment })
+    }
+
+    /// Sets or clears an entry's Spotlight comment (task 0136), returning
+    /// the persisted value back.
+    pub fn set_spotlight_comment(
+        &self,
+        uri: &str,
+        request: SpotlightCommentDto,
+    ) -> Result<SpotlightCommentDto, ApplicationError> {
+        let path = Self::native_path_for(uri)?;
+        self.platform
+            .set_spotlight_comment(&path, request.comment.as_deref())
+            .map_err(map_extended_attribute_write_error)?;
+        Ok(request)
+    }
+
+    /// Parses a wire location URI into a native filesystem path - shared by
+    /// [`Self::file_icon`] and the Finder-tag/Spotlight-comment methods
+    /// above it, every one of which takes a `uri` and forwards a native
+    /// [`Path`](std::path::Path) straight to the platform adapter.
+    fn native_path_for(uri: &str) -> Result<PathBuf, ApplicationError> {
+        Location::parse(uri)
+            .and_then(|location| location.to_native_path())
+            .map_err(|error| ApplicationError::InvalidRequest(format!("invalid `uri`: {error}")))
     }
 
     /// Installs the native menu bar from `spec` (task 0133), a thin

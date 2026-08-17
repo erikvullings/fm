@@ -1075,6 +1075,142 @@ input[type="text"].fm-command-palette-input {
   font-size: 0.8rem;
 }
 
+/* Spotlight comment editor (task 0136) - same input-styling approach as
+ * `.fm-create-directory-field` above, applied to a textarea instead. */
+.fm-spotlight-comment-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: 0.85rem;
+}
+
+.fm-app-shell .fm-spotlight-comment-field textarea {
+  box-sizing: border-box;
+  width: 100%;
+  margin: 0;
+  padding: 0.35rem;
+  border: 1px solid var(--fm-border);
+  border-radius: 2px;
+  background: var(--fm-surface);
+  color: var(--fm-text);
+  font: inherit;
+  resize: vertical;
+}
+
+.fm-app-shell .fm-spotlight-comment-field textarea:focus {
+  outline: none;
+  border-color: var(--fm-accent);
+}
+
+/* Finder tags editor (task 0136). */
+.fm-finder-tags-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  font-size: 0.85rem;
+}
+
+.fm-finder-tags-empty {
+  margin: 0;
+  color: var(--fm-text-muted);
+}
+
+.fm-finder-tags-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.fm-finder-tags-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.15rem 0.4rem;
+  border: 1px solid var(--fm-border);
+  border-radius: 999px;
+  background: var(--fm-surface);
+}
+
+.fm-finder-tag-color-dot {
+  display: inline-block;
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.fm-finder-tags-chip-remove {
+  border: none;
+  background: transparent;
+  color: var(--fm-text-muted);
+  cursor: pointer;
+  line-height: 1;
+  padding: 0;
+}
+
+.fm-finder-tags-add-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.fm-app-shell .fm-finder-tags-add-row input {
+  box-sizing: border-box;
+  flex: 1 1 auto;
+  min-width: 8rem;
+  height: var(--fm-row-height);
+  margin: 0;
+  padding: 0 0.35rem;
+  border: 1px solid var(--fm-border);
+  border-radius: 2px;
+  background: var(--fm-surface);
+  color: var(--fm-text);
+  font: inherit;
+}
+
+.fm-app-shell .fm-finder-tags-add-row input:focus {
+  outline: none;
+  border-color: var(--fm-accent);
+}
+
+.fm-finder-tag-color-picker {
+  display: inline-flex;
+  gap: 0.2rem;
+}
+
+.fm-finder-tag-color-swatch {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 1px solid var(--fm-border);
+  background: transparent;
+  cursor: pointer;
+  padding: 0;
+}
+
+.fm-finder-tag-color-swatch--selected {
+  box-shadow: 0 0 0 2px var(--fm-accent);
+}
+
+.fm-finder-tags-add-button {
+  height: var(--fm-row-height);
+  padding: 0 0.6rem;
+  border: 1px solid var(--fm-border);
+  border-radius: 2px;
+  background: var(--fm-surface);
+  color: var(--fm-text);
+  cursor: pointer;
+}
+
+.fm-finder-tags-add-button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 /* biome-ignore-start lint/complexity/noImportantStyles: overrides ModalPanel's inline styles */
 .modal.fm-find-files-modal {
   max-width: min(42rem, calc(100vw - 2rem)) !important;

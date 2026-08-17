@@ -485,6 +485,16 @@ The local provider lists directories in bounded, cancellable pages and fetches d
 separately. Listings identify dotfiles, Windows hidden attributes, symbolic links and reparse
 points without following links; Finder alias detection remains a later macOS enhancement.
 
+On macOS, entries can be tagged (colored Finder tags, read lazily per row and shown as small
+dots next to the name) and given a Spotlight comment (Get Info's "Comments:" field), both stored
+as the same extended attributes Finder itself reads and writes
+(`com.apple.metadata:_kMDItemUserTags`/`kMDItemFinderComment`), so tags and comments round-trip
+with Finder in either direction. Editing either is reachable from the selection context menu
+("Edit Tags…"/"Edit Comment…") via a standalone minimal dialog for now; a future properties/Get
+Info dialog may host the same editors instead. Windows and Linux report both capabilities as
+unavailable rather than approximating them with a different underlying convention (e.g. NTFS
+alternate data streams).
+
 The application layer owns authoritative per-pane directory snapshots, including monotonic
 revisions and cancellation of superseded requests. Thin Axum and Tauri adapters expose the same
 list, refresh, navigation and metadata operations; listing options include server-side hidden-file

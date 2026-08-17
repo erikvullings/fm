@@ -22,6 +22,7 @@ import type {
   ColumnWidthEntry,
   DirectoryColumnDescriptor,
 } from '../directory-table/directory-table';
+import type { FinderTagsLoader } from '../directory-table/finder-tags-loader';
 import type { NativeIconLoader } from '../directory-table/native-icon-loader';
 import type { ThumbnailLoader } from '../directory-table/thumbnail-loader';
 import type { EntryFormatSettings } from '../entry-formatting/entry-formatting';
@@ -61,6 +62,7 @@ export interface WorkspacePaneContent {
   readonly pluginColumns?: readonly DirectoryColumnDescriptor[];
   readonly nativeIconLoader?: NativeIconLoader;
   readonly thumbnailLoader?: ThumbnailLoader;
+  readonly finderTagsLoader?: FinderTagsLoader;
   readonly cursorIndex?: number;
   readonly platform: SelectionPlatform;
   readonly keybindingRuntime?: KeybindingRuntime;
@@ -508,6 +510,7 @@ export const WorkspaceLayoutView: FactoryComponent<WorkspaceLayoutViewAttrs> = (
           pluginColumns: content.pluginColumns,
           nativeIconLoader: content.nativeIconLoader,
           thumbnailLoader: content.thumbnailLoader,
+          finderTagsLoader: content.finderTagsLoader,
           viewMode: content.viewMode,
           iconSize: content.iconSize,
           onViewModeChange: content.onViewModeChange,

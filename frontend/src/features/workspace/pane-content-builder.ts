@@ -27,6 +27,7 @@ import {
 import { isCutLocation } from '../clipboard/clipboard';
 import { loadConnections } from '../connections/connections-model';
 import { SAMPLE_FILE_AGE_COLUMN } from '../directory-table/directory-table';
+import type { FinderTagsLoader } from '../directory-table/finder-tags-loader';
 import type { NativeIconLoader } from '../directory-table/native-icon-loader';
 import type { ThumbnailLoader } from '../directory-table/thumbnail-loader';
 import { operationForDrop, resolveDropTarget, validateDropTarget } from '../drag-drop/drag-drop';
@@ -74,6 +75,7 @@ export interface PaneContentContext {
   getUnavailableLocations(): ReadonlySet<string>;
   getNativeIconLoader(): NativeIconLoader | undefined;
   getThumbnailLoader(): ThumbnailLoader | undefined;
+  getFinderTagsLoader(): FinderTagsLoader | undefined;
   getPlugins(): readonly PluginDescriptor[];
   getPlatform(): SelectionPlatform;
   getKeybindingRuntime(): KeybindingRuntime;
@@ -274,6 +276,7 @@ export function createPaneContentBuilder(
     const systemLocationsError = context.getSystemLocationsError();
     const nativeIconLoader = context.getNativeIconLoader();
     const thumbnailLoader = context.getThumbnailLoader();
+    const finderTagsLoader = context.getFinderTagsLoader();
     const viewerTitles = new Map(
       (pane?.tabOrder ?? []).flatMap((tabId) => {
         const title = context.getViewerByTab().get(context.tabKey(paneId, tabId))?.state.entry.name;
@@ -318,6 +321,7 @@ export function createPaneContentBuilder(
       formatSettings: entryFormatSettings,
       ...(nativeIconLoader === undefined ? {} : { nativeIconLoader }),
       ...(thumbnailLoader === undefined ? {} : { thumbnailLoader }),
+      ...(finderTagsLoader === undefined ? {} : { finderTagsLoader }),
       pluginColumns: [
         ...(context
           .getPlugins()

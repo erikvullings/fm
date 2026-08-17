@@ -81,6 +81,8 @@ beforeEach(() => {
 function fixtureCapabilities() {
   return {
     clipboard: true,
+    extendedAttributes: false,
+    finderTags: false,
     nativeDragOut: false,
     nativeFileIcons: false,
     nativeMenus: false,

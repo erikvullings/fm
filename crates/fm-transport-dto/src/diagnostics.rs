@@ -120,6 +120,8 @@ mod tests {
                 clipboard: true,
                 plugins: true,
                 server_administration: false,
+                extended_attributes: true,
+                finder_tags: true,
             },
             connection_state: ConnectionStateDto {
                 connected: true,

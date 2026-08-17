@@ -18,6 +18,7 @@ import type {
   EntryMetadata,
   EntryMetadataRequest,
   FileRangeChunk,
+  FinderTags,
   GenerateSyncPlanRequest,
   HostKeyProbe,
   InvokeActionRequest,
@@ -38,6 +39,7 @@ import type {
   SearchInFileResult,
   SetPaneActivityRequest,
   Settings,
+  SpotlightComment,
   StartComparisonRequest,
   StartComparisonResult,
   StartOperationRequest,
@@ -153,6 +155,30 @@ export interface FileManagerClient {
     size: 'small' | 'medium' | 'large',
     signal?: AbortSignal,
   ): Promise<Uint8Array | undefined>;
+
+  /** Lazily fetches an entry's Finder tags; unsupported/failure is an empty-tags fallback
+   * (task 0136), mirroring {@link getThumbnail}'s per-entry lazy/cache/fallback contract. */
+  getFinderTags(locationUri: string, signal?: AbortSignal): Promise<FinderTags | undefined>;
+
+  /** Replaces an entry's complete set of Finder tags, matching Finder's own all-at-once tag
+   * editor semantics (task 0136). Throws on failure - unlike the lazy read above, a write is a
+   * deliberate user action and must surface its own error rather than fail silently. */
+  setFinderTags(locationUri: string, tags: FinderTags, signal?: AbortSignal): Promise<FinderTags>;
+
+  /** Reads an entry's Spotlight comment (Get Info's "Comments:" field); unsupported/failure is
+   * an absent-comment fallback (task 0136). */
+  getSpotlightComment(
+    locationUri: string,
+    signal?: AbortSignal,
+  ): Promise<SpotlightComment | undefined>;
+
+  /** Sets or clears an entry's Spotlight comment (task 0136). Throws on failure, like
+   * {@link setFinderTags}. */
+  setSpotlightComment(
+    locationUri: string,
+    comment: SpotlightComment,
+    signal?: AbortSignal,
+  ): Promise<SpotlightComment>;
 
   /** Reads one bounded byte range from a file, for the in-app large file viewer (task 0088). */
   readFileRange(request: ReadFileRangeRequest, signal?: AbortSignal): Promise<FileRangeChunk>;

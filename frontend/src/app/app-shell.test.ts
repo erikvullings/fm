@@ -2292,6 +2292,8 @@ describe('AppShell', () => {
     const client = new MockFileManagerClient();
     vi.spyOn(client, 'getRuntimeCapabilities').mockResolvedValue({
       clipboard: false,
+      extendedAttributes: false,
+      finderTags: false,
       nativeDragOut: false,
       nativeFileIcons: false,
       nativeMenus: false,
@@ -2688,6 +2690,8 @@ describe('tabs per pane (task 0069)', () => {
     const client = new MockFileManagerClient();
     vi.spyOn(client, 'getRuntimeCapabilities').mockResolvedValue({
       clipboard: false,
+      extendedAttributes: false,
+      finderTags: false,
       nativeDragOut: false,
       nativeFileIcons: false,
       nativeMenus: false,

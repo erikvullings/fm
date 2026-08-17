@@ -39,6 +39,8 @@ const SELECTION_ACTION_IDS = new Set([
   'core.pack',
   'core.moveToArchive',
   'core.extract',
+  'core.editFinderTags',
+  'core.editSpotlightComment',
 ]);
 
 const CONTEXT_MENU_SELECTION_ORDER = new Map([

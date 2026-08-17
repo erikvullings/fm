@@ -25,6 +25,8 @@ describe('Diagnostics', () => {
           clipboard: true,
           plugins: true,
           serverAdministration: false,
+          extendedAttributes: true,
+          finderTags: true,
         },
         connectionState: {
           connected: true,
@@ -124,6 +126,8 @@ describe('Diagnostics', () => {
           clipboard: true,
           plugins: false,
           serverAdministration: false,
+          extendedAttributes: false,
+          finderTags: false,
         },
         connectionState: {
           connected: true,

@@ -10,6 +10,8 @@ import {
 import { isParentEntry } from '../panes/parent-entry';
 import { fileAgeColumn } from '../plugin-columns/file-age-column';
 import { entryIcon } from './entry-icons';
+import { finderTagColorSwatch } from './finder-tag-colors';
+import type { FinderTagsLoader } from './finder-tags-loader';
 import type { NativeIconLoader } from './native-icon-loader';
 import type { ThumbnailLoader } from './thumbnail-loader';
 import { calculateVisibleWindow, scrollOffsetForIndex } from './windowing';
@@ -71,6 +73,8 @@ export interface DirectoryTableAttrs {
   readonly nativeIconLoader?: NativeIconLoader;
   /** Overlays a downscaled preview onto the icon column for supported files (task 0134). */
   readonly thumbnailLoader?: ThumbnailLoader;
+  /** Overlays Finder-tag color dots next to the name for supported hosts (task 0136). */
+  readonly finderTagsLoader?: FinderTagsLoader;
   /** Enabled declarative plugin columns, already validated by the host. */
   readonly pluginColumns?: readonly DirectoryColumnDescriptor[];
   readonly onCursorChange?: (index: number, modifiers?: CursorClickModifiers) => void;
@@ -141,6 +145,7 @@ export interface DirectoryColumnDescriptor {
     nativeIconLoader?: NativeIconLoader,
     showFullPath?: boolean,
     thumbnailLoader?: ThumbnailLoader,
+    finderTagsLoader?: FinderTagsLoader,
   ): m.Children;
 }
 
@@ -184,8 +189,12 @@ const INITIAL_COLUMNS: readonly DirectoryColumnDescriptor[] = [
       nativeIconLoader,
       showFullPath,
       thumbnailLoader,
+      finderTagsLoader,
     ) => {
       const name = displayName(entry, showFullPath);
+      const finderTagColors = (finderTagsLoader?.finderTags(entry)?.tags ?? [])
+        .map((tag) => finderTagColorSwatch(tag.color))
+        .filter((color) => color !== undefined);
       const matchIndex =
         nameMatchPrefix === undefined
           ? -1
@@ -240,6 +249,15 @@ const INITIAL_COLUMNS: readonly DirectoryColumnDescriptor[] = [
               eyeOffIcon({ size: 14 }),
             )
           : undefined,
+        finderTagColors.length === 0
+          ? undefined
+          : m(
+              'span.fm-entry-finder-tags',
+              { title: 'Tagged', 'aria-label': 'Tagged' },
+              finderTagColors.map((color, index) =>
+                m('span.fm-entry-finder-tag-dot', { key: index, style: { background: color } }),
+              ),
+            ),
       ];
     },
   },
@@ -689,6 +707,7 @@ export const DirectoryTable: FactoryComponent<DirectoryTableAttrs> = () => {
                         attrs.nativeIconLoader,
                         attrs.showFullPath,
                         attrs.thumbnailLoader,
+                        attrs.finderTagsLoader,
                       ),
                 ),
               ),

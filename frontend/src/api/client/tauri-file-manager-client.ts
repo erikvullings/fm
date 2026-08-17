@@ -21,6 +21,7 @@ import type {
   EntryMetadata,
   EntryMetadataRequest,
   FileRangeChunk,
+  FinderTags,
   GenerateSyncPlanRequest,
   HostKeyProbe,
   InvokeActionRequest,
@@ -41,6 +42,7 @@ import type {
   SearchInFileResult,
   SetPaneActivityRequest,
   Settings,
+  SpotlightComment,
   StartComparisonRequest,
   StartComparisonResult,
   StartOperationRequest,
@@ -130,6 +132,40 @@ export class TauriFileManagerClient implements FileManagerClient {
     } catch {
       return undefined;
     }
+  }
+
+  async getFinderTags(locationUri: string, _signal?: AbortSignal): Promise<FinderTags | undefined> {
+    try {
+      return await invoke<FinderTags>('get_finder_tags', { uri: locationUri });
+    } catch {
+      return undefined;
+    }
+  }
+
+  setFinderTags(locationUri: string, tags: FinderTags, _signal?: AbortSignal): Promise<FinderTags> {
+    return invoke<FinderTags>('set_finder_tags', { uri: locationUri, request: tags });
+  }
+
+  async getSpotlightComment(
+    locationUri: string,
+    _signal?: AbortSignal,
+  ): Promise<SpotlightComment | undefined> {
+    try {
+      return await invoke<SpotlightComment>('get_spotlight_comment', { uri: locationUri });
+    } catch {
+      return undefined;
+    }
+  }
+
+  setSpotlightComment(
+    locationUri: string,
+    comment: SpotlightComment,
+    _signal?: AbortSignal,
+  ): Promise<SpotlightComment> {
+    return invoke<SpotlightComment>('set_spotlight_comment', {
+      uri: locationUri,
+      request: comment,
+    });
   }
 
   getSettings(_signal?: AbortSignal): Promise<Settings> {

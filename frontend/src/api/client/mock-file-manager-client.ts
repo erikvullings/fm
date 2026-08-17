@@ -26,6 +26,7 @@ import type {
   EntryMetadataRequest,
   EntrySummary,
   FileRangeChunk,
+  FinderTags,
   GenerateSyncPlanRequest,
   HostKeyProbe,
   InvokeActionRequest,
@@ -47,6 +48,7 @@ import type {
   SearchInFileResult,
   SetPaneActivityRequest,
   Settings,
+  SpotlightComment,
   StartComparisonRequest,
   StartComparisonResult,
   StartOperationRequest,
@@ -116,6 +118,10 @@ export type MockClientMethod =
   | 'setPaneActivity'
   | 'getFileIcon'
   | 'getThumbnail'
+  | 'getFinderTags'
+  | 'setFinderTags'
+  | 'getSpotlightComment'
+  | 'setSpotlightComment'
   | 'cacheArchivePassword'
   | 'readFileRange'
   | 'searchInFile'
@@ -483,6 +489,8 @@ export class MockFileManagerClient implements FileManagerClient {
   private readonly latencyMs: number;
   private readonly failures: Partial<Record<MockClientMethod, Error>>;
   private readonly nativeIconExtensions: ReadonlySet<string>;
+  private readonly finderTagsByUri = new Map<string, FinderTags>();
+  private readonly spotlightCommentsByUri = new Map<string, SpotlightComment>();
   private readonly listeners = new Set<(event: BackendEvent) => void>();
   private readonly scriptedEvents: BackendEvent[] = [];
   private readonly operations = new Map<OperationId, Operation>();
@@ -557,6 +565,8 @@ export class MockFileManagerClient implements FileManagerClient {
   getRuntimeCapabilities(signal?: AbortSignal): Promise<RuntimeCapabilities> {
     return this.perform('getRuntimeCapabilities', signal, () => ({
       clipboard: false,
+      extendedAttributes: true,
+      finderTags: true,
       nativeDragOut: false,
       nativeFileIcons: this.nativeIconExtensions.size > 0,
       nativeMenus: false,
@@ -613,6 +623,45 @@ export class MockFileManagerClient implements FileManagerClient {
       if (!THUMBNAILABLE_MOCK_EXTENSIONS.has(extension)) return undefined;
       // JPEG magic bytes - just needs to look like an image, not decode as one.
       return new Uint8Array([0xff, 0xd8, 0xff, 0xe0]);
+    });
+  }
+
+  getFinderTags(locationUri: string, signal?: AbortSignal): Promise<FinderTags | undefined> {
+    return this.perform(
+      'getFinderTags',
+      signal,
+      () => this.finderTagsByUri.get(locationUri) ?? { tags: [] },
+    );
+  }
+
+  setFinderTags(locationUri: string, tags: FinderTags, signal?: AbortSignal): Promise<FinderTags> {
+    return this.perform('setFinderTags', signal, () => {
+      const persisted = structuredClone(tags);
+      this.finderTagsByUri.set(locationUri, persisted);
+      return structuredClone(persisted);
+    });
+  }
+
+  getSpotlightComment(
+    locationUri: string,
+    signal?: AbortSignal,
+  ): Promise<SpotlightComment | undefined> {
+    return this.perform(
+      'getSpotlightComment',
+      signal,
+      () => this.spotlightCommentsByUri.get(locationUri) ?? { comment: null },
+    );
+  }
+
+  setSpotlightComment(
+    locationUri: string,
+    comment: SpotlightComment,
+    signal?: AbortSignal,
+  ): Promise<SpotlightComment> {
+    return this.perform('setSpotlightComment', signal, () => {
+      const persisted = structuredClone(comment);
+      this.spotlightCommentsByUri.set(locationUri, persisted);
+      return structuredClone(persisted);
     });
   }
 

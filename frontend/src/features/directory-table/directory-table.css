@@ -261,6 +261,25 @@ img.fm-native-entry-icon {
   opacity: 0.72;
 }
 
+/* Finder tag color dots (task 0136) - a decorative overlay, not the sole way to know an entry
+   is tagged (spec §29): the "Edit Tags…" dialog always lists tag names as text. */
+.fm-entry-finder-tags {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 0.2rem;
+  margin-inline-start: auto;
+  padding-inline-start: 0.5rem;
+}
+
+.fm-entry-finder-tag-dot {
+  display: inline-block;
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
 /* Directory-comparison status (task 0075). Text-labelled, not colour-only (spec §29): the label
    itself ("newer", "size ≠", ...) carries the meaning, with a border/background as a secondary,
    non-essential cue. */

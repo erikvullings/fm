@@ -22,6 +22,9 @@ import {
   withoutConnection,
 } from '../connections/connections-model';
 import type { DialogUIController } from '../dialogs/dialog-ui-controller';
+import type { FinderTagsLoader } from '../directory-table/finder-tags-loader';
+import { FinderTagsDialog } from '../entry-metadata/finder-tags-dialog';
+import { SpotlightCommentDialog } from '../entry-metadata/spotlight-comment-dialog';
 import { ArchivePasswordDialog } from '../navigation/archive-password-dialog';
 import { ArchiveCreateDialog, type ArchiveFormat } from '../operations/archive-create-dialog';
 import { ConflictDialog } from '../operations/conflict-dialog';
@@ -58,6 +61,7 @@ export interface AppDialogsContext {
   getCloseTabConfirmation(): { readonly paneId: PaneId; readonly tabId: TabId } | undefined;
   setCloseTabConfirmation(conf?: { readonly paneId: PaneId; readonly tabId: TabId }): void;
   getDialogs(): DialogUIController;
+  getFinderTagsLoader(): FinderTagsLoader | undefined;
   getFindFilesController(): FindFilesController;
   getTabController(): TabController;
   getOpsController(): OperationsController;
@@ -311,6 +315,39 @@ export function renderAppDialogs(
         }
       },
       onCancel: () => ctx.setCloseTabConfirmation(undefined),
+    }),
+    m(FinderTagsDialog, {
+      open: ds.finderTagsDialog !== undefined,
+      entryName: ds.finderTagsDialog?.entry.name ?? '',
+      initialTags: ds.finderTagsDialog?.tags ?? [],
+      onCancel: () => dialogs.cancelFinderTagsDialog(),
+      onConfirm: (tags) => {
+        const request = ds.finderTagsDialog;
+        dialogs.cancelFinderTagsDialog();
+        if (request === undefined) return;
+        void client
+          .setFinderTags(request.entry.location.uri, { tags: [...tags] })
+          .then((persisted) => {
+            ctx.getFinderTagsLoader()?.setCached(request.entry.location.uri, persisted);
+          })
+          .catch(() => undefined);
+      },
+    }),
+    m(SpotlightCommentDialog, {
+      open: ds.spotlightCommentDialog !== undefined,
+      entryName: ds.spotlightCommentDialog?.entry.name ?? '',
+      initialComment: ds.spotlightCommentDialog?.comment ?? '',
+      onCancel: () => dialogs.cancelSpotlightCommentDialog(),
+      onConfirm: (comment) => {
+        const request = ds.spotlightCommentDialog;
+        dialogs.cancelSpotlightCommentDialog();
+        if (request === undefined) return;
+        void client
+          .setSpotlightComment(request.entry.location.uri, {
+            comment: comment.trim().length === 0 ? null : comment,
+          })
+          .catch(() => undefined);
+      },
     }),
   ];
 }

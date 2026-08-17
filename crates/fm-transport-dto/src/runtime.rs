@@ -46,7 +46,9 @@ pub enum PlatformKindDto {
     "openTerminal": false,
     "clipboard": true,
     "plugins": false,
-    "serverAdministration": false
+    "serverAdministration": false,
+    "extendedAttributes": false,
+    "finderTags": false
 }))]
 pub struct RuntimeCapabilitiesDto {
     /// Which host is serving the application.
@@ -73,6 +75,11 @@ pub struct RuntimeCapabilitiesDto {
     pub plugins: bool,
     /// Whether server administration endpoints are available.
     pub server_administration: bool,
+    /// Whether generic extended attributes (currently: the Spotlight
+    /// "Finder comment") can be read/written (task 0136).
+    pub extended_attributes: bool,
+    /// Whether Finder tags can be read/written (task 0136).
+    pub finder_tags: bool,
 }
 
 #[cfg(test)]
@@ -93,6 +100,8 @@ mod tests {
             clipboard: true,
             plugins: false,
             server_administration: false,
+            extended_attributes: false,
+            finder_tags: false,
         }
     }
 
@@ -117,6 +126,8 @@ mod tests {
             "\"revealInSystemFileManager\"",
             "\"openTerminal\"",
             "\"serverAdministration\"",
+            "\"extendedAttributes\"",
+            "\"finderTags\"",
         ] {
             assert!(json.contains(field), "expected {json} to contain {field}");
         }
