@@ -49,6 +49,80 @@ pub struct SystemLocation {
     pub read_only: Option<bool>,
 }
 
+/// One of Finder's seven label colors, or no color (task 0136).
+///
+/// A tagged file's `com.apple.metadata:_kMDItemUserTags` xattr is a binary
+/// property list array of strings; a colored tag is encoded as
+/// `"<name>\n<digit>"`, where `<digit>` is this color's index. These indices
+/// are undocumented by Apple but long-stable and shared by every known
+/// open-source reader/writer (e.g. the `tag` CLI, <https://github.com/jdberry/tag>,
+/// and what `mdls`/`xattr -p` decode).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum FinderTagColor {
+    /// No label color.
+    #[default]
+    None,
+    /// Finder's built-in "Gray" label color.
+    Gray,
+    /// Finder's built-in "Green" label color.
+    Green,
+    /// Finder's built-in "Purple" label color.
+    Purple,
+    /// Finder's built-in "Blue" label color.
+    Blue,
+    /// Finder's built-in "Yellow" label color.
+    Yellow,
+    /// Finder's built-in "Red" label color.
+    Red,
+    /// Finder's built-in "Orange" label color.
+    Orange,
+}
+
+impl FinderTagColor {
+    /// The color's index within the `\n<digit>` suffix.
+    #[must_use]
+    pub fn to_index(self) -> u8 {
+        match self {
+            Self::None => 0,
+            Self::Gray => 1,
+            Self::Green => 2,
+            Self::Purple => 3,
+            Self::Blue => 4,
+            Self::Yellow => 5,
+            Self::Red => 6,
+            Self::Orange => 7,
+        }
+    }
+
+    /// Recovers a color from its `\n<digit>` suffix index. An index outside
+    /// `0..=7` (never produced by Finder itself) is treated as no color
+    /// rather than rejected, so a foreign or corrupted xattr degrades to an
+    /// uncolored tag instead of failing to load every tag on the entry.
+    #[must_use]
+    pub fn from_index(index: u8) -> Self {
+        match index {
+            1 => Self::Gray,
+            2 => Self::Green,
+            3 => Self::Purple,
+            4 => Self::Blue,
+            5 => Self::Yellow,
+            6 => Self::Red,
+            7 => Self::Orange,
+            _ => Self::None,
+        }
+    }
+}
+
+/// A single Finder tag (task 0136): a name, and an optional label color.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FinderTag {
+    /// The tag's display name, e.g. `"Work"` or one of Finder's seven
+    /// built-in color names (`"Red"`, `"Orange"`, ...).
+    pub name: String,
+    /// The tag's label color, if any.
+    pub color: FinderTagColor,
+}
+
 /// Platform-facing discovery abstraction for OS-managed locations.
 pub trait SystemLocationProvider: Send + Sync {
     /// Discovers currently reachable locations. Missing providers are omitted.
@@ -80,8 +154,42 @@ pub fn cloud_provider_hint(name: &str) -> Option<&'static str> {
 
 #[cfg(test)]
 mod tests {
-    use super::{SystemLocation, SystemLocationKind, cloud_provider_hint};
+    use super::{FinderTagColor, SystemLocation, SystemLocationKind, cloud_provider_hint};
     use std::path::PathBuf;
+
+    #[test]
+    fn finder_tag_color_round_trips_through_its_index_for_every_variant() {
+        for color in [
+            FinderTagColor::None,
+            FinderTagColor::Gray,
+            FinderTagColor::Green,
+            FinderTagColor::Purple,
+            FinderTagColor::Blue,
+            FinderTagColor::Yellow,
+            FinderTagColor::Red,
+            FinderTagColor::Orange,
+        ] {
+            assert_eq!(FinderTagColor::from_index(color.to_index()), color);
+        }
+    }
+
+    #[test]
+    fn finder_tag_color_indices_match_the_stable_tag_cli_convention() {
+        assert_eq!(FinderTagColor::None.to_index(), 0);
+        assert_eq!(FinderTagColor::Gray.to_index(), 1);
+        assert_eq!(FinderTagColor::Green.to_index(), 2);
+        assert_eq!(FinderTagColor::Purple.to_index(), 3);
+        assert_eq!(FinderTagColor::Blue.to_index(), 4);
+        assert_eq!(FinderTagColor::Yellow.to_index(), 5);
+        assert_eq!(FinderTagColor::Red.to_index(), 6);
+        assert_eq!(FinderTagColor::Orange.to_index(), 7);
+    }
+
+    #[test]
+    fn an_out_of_range_color_index_degrades_to_no_color_instead_of_panicking() {
+        assert_eq!(FinderTagColor::from_index(8), FinderTagColor::None);
+        assert_eq!(FinderTagColor::from_index(255), FinderTagColor::None);
+    }
 
     #[test]
     fn classifies_common_cloud_folder_names_case_insensitively() {

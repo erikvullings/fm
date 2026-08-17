@@ -11,10 +11,10 @@
 use std::sync::Arc;
 
 use fm_domain::{ActionId, Location};
-use fm_platform::{PlatformAdapter, PlatformCapabilities};
+use fm_platform::{FinderTag, FinderTagColor, PlatformAdapter, PlatformCapabilities};
 use fm_transport_dto::{
-    PlatformKindDto, RuntimeCapabilitiesDto, RuntimeKindDto, SystemLocationDto,
-    SystemLocationKindDto, VolumeCapacityDto, VolumeDto,
+    FinderTagColorDto, FinderTagDto, PlatformKindDto, RuntimeCapabilitiesDto, RuntimeKindDto,
+    SystemLocationDto, SystemLocationKindDto, VolumeCapacityDto, VolumeDto,
 };
 
 use crate::error::ApplicationError;
@@ -70,6 +70,78 @@ pub(crate) fn map_file_icon_error(error: fm_platform::PlatformError) -> Applicat
     match error {
         fm_platform::PlatformError::Unsupported { .. } => ApplicationError::NotFound,
         other => ApplicationError::PlatformOperationFailed(other.to_string()),
+    }
+}
+
+/// Missing Finder-tag/extended-attribute *read* support is an expected
+/// fallback condition, exactly like [`map_file_icon_error`]: the frontend's
+/// lazy per-entry loader treats a 404 as "no tags/no comment" and falls back
+/// silently, not as a failure. A vanished entry ([`fm_platform::PlatformError::NotFound`])
+/// gets the same harmless treatment - it may simply have been removed while
+/// a listing was still on screen.
+pub(crate) fn map_extended_attribute_read_error(
+    error: fm_platform::PlatformError,
+) -> ApplicationError {
+    match error {
+        fm_platform::PlatformError::Unsupported { .. }
+        | fm_platform::PlatformError::NotFound { .. } => ApplicationError::NotFound,
+        other => ApplicationError::PlatformOperationFailed(other.to_string()),
+    }
+}
+
+/// A Finder-tag/extended-attribute *write* is only ever offered once the
+/// frontend has already checked the capability, exactly like
+/// [`map_native_menu_error`] - `Unsupported` here is a genuine, surfaceable
+/// failure rather than a silent fallback. A vanished entry still gets its
+/// own clean [`ApplicationError::NotFound`] rather than a vague 502.
+pub(crate) fn map_extended_attribute_write_error(
+    error: fm_platform::PlatformError,
+) -> ApplicationError {
+    match error {
+        fm_platform::PlatformError::NotFound { .. } => ApplicationError::NotFound,
+        other => ApplicationError::PlatformOperationFailed(other.to_string()),
+    }
+}
+
+/// Converts a platform-adapter Finder tag to its wire DTO.
+pub(crate) fn finder_tag_to_dto(tag: FinderTag) -> FinderTagDto {
+    FinderTagDto {
+        name: tag.name,
+        color: finder_tag_color_to_dto(tag.color),
+    }
+}
+
+/// Converts a wire Finder tag DTO to its platform-adapter type.
+pub(crate) fn finder_tag_from_dto(dto: FinderTagDto) -> FinderTag {
+    FinderTag {
+        name: dto.name,
+        color: finder_tag_color_from_dto(dto.color),
+    }
+}
+
+fn finder_tag_color_to_dto(color: FinderTagColor) -> FinderTagColorDto {
+    match color {
+        FinderTagColor::None => FinderTagColorDto::None,
+        FinderTagColor::Gray => FinderTagColorDto::Gray,
+        FinderTagColor::Green => FinderTagColorDto::Green,
+        FinderTagColor::Purple => FinderTagColorDto::Purple,
+        FinderTagColor::Blue => FinderTagColorDto::Blue,
+        FinderTagColor::Yellow => FinderTagColorDto::Yellow,
+        FinderTagColor::Red => FinderTagColorDto::Red,
+        FinderTagColor::Orange => FinderTagColorDto::Orange,
+    }
+}
+
+fn finder_tag_color_from_dto(color: FinderTagColorDto) -> FinderTagColor {
+    match color {
+        FinderTagColorDto::None => FinderTagColor::None,
+        FinderTagColorDto::Gray => FinderTagColor::Gray,
+        FinderTagColorDto::Green => FinderTagColor::Green,
+        FinderTagColorDto::Purple => FinderTagColor::Purple,
+        FinderTagColorDto::Blue => FinderTagColor::Blue,
+        FinderTagColorDto::Yellow => FinderTagColor::Yellow,
+        FinderTagColorDto::Red => FinderTagColor::Red,
+        FinderTagColorDto::Orange => FinderTagColor::Orange,
     }
 }
 
@@ -184,6 +256,8 @@ pub(crate) fn runtime_capabilities_dto(
         clipboard: true,
         plugins: true,
         server_administration: false,
+        extended_attributes: capabilities.contains(PlatformCapabilities::EXTENDED_ATTRIBUTES),
+        finder_tags: capabilities.contains(PlatformCapabilities::FINDER_TAGS),
     }
 }
 
@@ -210,4 +284,85 @@ pub(crate) async fn volume_capacity(
         total_bytes: capacity.total_bytes,
         available_bytes: capacity.available_bytes,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn finder_tag_round_trips_through_its_dto_for_every_color() {
+        for color in [
+            FinderTagColor::None,
+            FinderTagColor::Gray,
+            FinderTagColor::Green,
+            FinderTagColor::Purple,
+            FinderTagColor::Blue,
+            FinderTagColor::Yellow,
+            FinderTagColor::Red,
+            FinderTagColor::Orange,
+        ] {
+            let tag = FinderTag {
+                name: "Work".to_owned(),
+                color,
+            };
+            let round_tripped = finder_tag_from_dto(finder_tag_to_dto(tag.clone()));
+            assert_eq!(round_tripped, tag);
+        }
+    }
+
+    #[test]
+    fn extended_attribute_read_error_treats_unsupported_and_not_found_as_not_found() {
+        assert_eq!(
+            map_extended_attribute_read_error(fm_platform::PlatformError::Unsupported {
+                capability: PlatformCapabilities::FINDER_TAGS,
+            }),
+            ApplicationError::NotFound
+        );
+        assert_eq!(
+            map_extended_attribute_read_error(fm_platform::PlatformError::NotFound {
+                path: "/tmp/gone".to_owned(),
+            }),
+            ApplicationError::NotFound
+        );
+        assert_eq!(
+            map_extended_attribute_read_error(fm_platform::PlatformError::Io {
+                message: "boom".to_owned(),
+            }),
+            ApplicationError::PlatformOperationFailed("platform operation failed: boom".to_owned())
+        );
+    }
+
+    #[test]
+    fn extended_attribute_write_error_surfaces_unsupported_but_cleans_up_not_found() {
+        assert!(matches!(
+            map_extended_attribute_write_error(fm_platform::PlatformError::Unsupported {
+                capability: PlatformCapabilities::FINDER_TAGS,
+            }),
+            ApplicationError::PlatformOperationFailed(_)
+        ));
+        assert_eq!(
+            map_extended_attribute_write_error(fm_platform::PlatformError::NotFound {
+                path: "/tmp/gone".to_owned(),
+            }),
+            ApplicationError::NotFound
+        );
+    }
+
+    #[test]
+    fn runtime_capabilities_dto_derives_extended_attribute_flags_from_the_bitset() {
+        let dto = runtime_capabilities_dto(
+            RuntimeKindDto::BrowserServer,
+            PlatformCapabilities::FINDER_TAGS,
+        );
+        assert!(dto.finder_tags);
+        assert!(!dto.extended_attributes);
+
+        let dto = runtime_capabilities_dto(
+            RuntimeKindDto::BrowserServer,
+            PlatformCapabilities::EXTENDED_ATTRIBUTES,
+        );
+        assert!(dto.extended_attributes);
+        assert!(!dto.finder_tags);
+    }
 }

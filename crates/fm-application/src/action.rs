@@ -213,6 +213,9 @@ fn core_actions(capabilities: PlatformCapabilities) -> Vec<ActionDescriptor> {
     let reveal_available = capabilities.contains(PlatformCapabilities::REVEAL_IN_FILE_MANAGER);
     let open_terminal_available = capabilities.contains(PlatformCapabilities::OPEN_TERMINAL);
     let trash_available = capabilities.contains(PlatformCapabilities::TRASH);
+    let finder_tags_available = capabilities.contains(PlatformCapabilities::FINDER_TAGS);
+    let extended_attributes_available =
+        capabilities.contains(PlatformCapabilities::EXTENDED_ATTRIBUTES);
     let (trash_shortcuts, delete_shortcuts) = if trash_available {
         (
             vec![key("F8"), key("Delete")],
@@ -433,6 +436,20 @@ fn core_actions(capabilities: PlatformCapabilities) -> Vec<ActionDescriptor> {
             "fileOperations",
             vec![key("F7")],
             ActionContextRequirements::none(),
+        ),
+        core_action(
+            "core.editFinderTags",
+            "Edit Tags…",
+            "fileOperations",
+            Vec::new(),
+            capability_gated_single_selection(finder_tags_available),
+        ),
+        core_action(
+            "core.editSpotlightComment",
+            "Edit Comment…",
+            "fileOperations",
+            Vec::new(),
+            capability_gated_single_selection(extended_attributes_available),
         ),
         core_action(
             "core.paste",
@@ -943,6 +960,8 @@ mod tests {
             "core.trash",
             "core.delete",
             "core.createDirectory",
+            "core.editFinderTags",
+            "core.editSpotlightComment",
             "core.palette",
             "core.focusLocation",
             "core.quickFilter",
@@ -1057,6 +1076,8 @@ mod tests {
             "core.openWith",
             "core.revealInSystemFileManager",
             "core.trash",
+            "core.editFinderTags",
+            "core.editSpotlightComment",
         ] {
             let action_id = ActionId::new(id);
             let error = registry
@@ -1114,6 +1135,56 @@ mod tests {
                 &ActionInvocationContext::default(),
             )
             .expect("openTerminal has no selection requirement");
+    }
+
+    #[test]
+    fn edit_finder_tags_and_edit_spotlight_comment_require_their_own_capability_and_a_single_selection()
+     {
+        let registry = ActionRegistry::with_core_actions(
+            PlatformCapabilities::FINDER_TAGS | PlatformCapabilities::EXTENDED_ATTRIBUTES,
+        );
+        let mut single_selection = ActionInvocationContext::default();
+        single_selection
+            .selected_entry_ids
+            .push(fm_domain::EntryId::new());
+
+        for id in ["core.editFinderTags", "core.editSpotlightComment"] {
+            let action_id = ActionId::new(id);
+            registry
+                .require_available(&action_id, &single_selection)
+                .expect("granted capability and exactly one selected entry");
+            registry
+                .require_available(&action_id, &ActionInvocationContext::default())
+                .expect_err("must require a selection");
+
+            let mut two_selected = ActionInvocationContext::default();
+            two_selected
+                .selected_entry_ids
+                .push(fm_domain::EntryId::new());
+            two_selected
+                .selected_entry_ids
+                .push(fm_domain::EntryId::new());
+            registry
+                .require_available(&action_id, &two_selected)
+                .expect_err("must require exactly one selected entry, not a multi-selection");
+        }
+
+        // FINDER_TAGS granted alone must not also unlock the EXTENDED_ATTRIBUTES-gated
+        // comment action, and vice versa - the two capabilities are independent.
+        let finder_tags_only = ActionRegistry::with_core_actions(PlatformCapabilities::FINDER_TAGS);
+        finder_tags_only
+            .require_available(&ActionId::new("core.editFinderTags"), &single_selection)
+            .expect("FINDER_TAGS alone unlocks core.editFinderTags");
+        let error = finder_tags_only
+            .require_available(
+                &ActionId::new("core.editSpotlightComment"),
+                &single_selection,
+            )
+            .expect_err("FINDER_TAGS alone must not unlock core.editSpotlightComment");
+        assert_eq!(
+            error,
+            ApplicationError::ActionUnavailable(ActionId::new("core.editSpotlightComment"))
+        );
     }
 
     #[test]

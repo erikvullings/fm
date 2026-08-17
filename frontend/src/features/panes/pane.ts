@@ -73,6 +73,7 @@ import {
   DirectoryTable,
   entryArraySource,
 } from '../directory-table/directory-table';
+import type { FinderTagsLoader } from '../directory-table/finder-tags-loader';
 import type { NativeIconLoader } from '../directory-table/native-icon-loader';
 import type { ThumbnailLoader } from '../directory-table/thumbnail-loader';
 import type { EntryFormatSettings } from '../entry-formatting/entry-formatting';
@@ -147,6 +148,7 @@ export interface TableConfigAttrs {
   readonly pluginColumns?: readonly DirectoryColumnDescriptor[] | undefined;
   readonly nativeIconLoader?: NativeIconLoader | undefined;
   readonly thumbnailLoader?: ThumbnailLoader | undefined;
+  readonly finderTagsLoader?: FinderTagsLoader | undefined;
   /** Table vs. thumbnail grid (task 0134). Defaults to `'table'`. */
   readonly viewMode?: 'table' | 'grid' | undefined;
   /** Grid tile size; only meaningful while `viewMode` is `'grid'`. Defaults to `'medium'`. */
@@ -1327,6 +1329,9 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
               ...(attrs.tableConfig.thumbnailLoader === undefined
                 ? {}
                 : { thumbnailLoader: attrs.tableConfig.thumbnailLoader }),
+              ...(attrs.tableConfig.finderTagsLoader === undefined
+                ? {}
+                : { finderTagsLoader: attrs.tableConfig.finderTagsLoader }),
               label: `${attrs.tabTitle} directory`,
               onRetry: () => void attrs.onRetry(),
               onEndReached: () => void attrs.onLoadNextPage(),

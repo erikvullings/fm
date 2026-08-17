@@ -5,6 +5,7 @@ export * from './comparison';
 export * from './connection';
 export * from './entry';
 export * from './events';
+export * from './finder-tags';
 export * from './ids';
 export * from './location';
 export * from './native-menu';

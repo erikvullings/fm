@@ -1,6 +1,8 @@
 use std::path::{Path, PathBuf};
 
-use crate::{MountedVolume, PlatformCapabilities, PlatformError, SystemLocation, VolumeCapacity};
+use crate::{
+    FinderTag, MountedVolume, PlatformCapabilities, PlatformError, SystemLocation, VolumeCapacity,
+};
 
 /// Native OS integrations the application calls into: file icons,
 /// thumbnails, revealing entries in the system file manager, trash, opening
@@ -141,6 +143,49 @@ pub trait PlatformAdapter: Send + Sync {
         let _ = path;
         Err(PlatformError::Unsupported {
             capability: PlatformCapabilities::VOLUME_CAPACITY,
+        })
+    }
+
+    /// Reads an entry's Finder tags (task 0136), in the order Finder itself
+    /// stores them. An entry with no tags returns an empty `Vec`, not an
+    /// error.
+    fn finder_tags(&self, path: &Path) -> Result<Vec<FinderTag>, PlatformError> {
+        let _ = path;
+        Err(PlatformError::Unsupported {
+            capability: PlatformCapabilities::FINDER_TAGS,
+        })
+    }
+
+    /// Replaces an entry's complete set of Finder tags (task 0136) - the
+    /// same all-at-once semantics Finder's own tag editor uses, so a caller
+    /// that wants to add or remove a single tag reads the current set with
+    /// [`PlatformAdapter::finder_tags`] first. An empty slice removes every
+    /// tag.
+    fn set_finder_tags(&self, path: &Path, tags: &[FinderTag]) -> Result<(), PlatformError> {
+        let _ = (path, tags);
+        Err(PlatformError::Unsupported {
+            capability: PlatformCapabilities::FINDER_TAGS,
+        })
+    }
+
+    /// Reads an entry's Spotlight comment (task 0136, `kMDItemFinderComment`).
+    /// `None` means no comment is set, not an error.
+    fn spotlight_comment(&self, path: &Path) -> Result<Option<String>, PlatformError> {
+        let _ = path;
+        Err(PlatformError::Unsupported {
+            capability: PlatformCapabilities::EXTENDED_ATTRIBUTES,
+        })
+    }
+
+    /// Sets or clears (`None`) an entry's Spotlight comment (task 0136).
+    fn set_spotlight_comment(
+        &self,
+        path: &Path,
+        comment: Option<&str>,
+    ) -> Result<(), PlatformError> {
+        let _ = (path, comment);
+        Err(PlatformError::Unsupported {
+            capability: PlatformCapabilities::EXTENDED_ATTRIBUTES,
         })
     }
 

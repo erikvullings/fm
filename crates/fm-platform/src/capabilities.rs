@@ -29,6 +29,11 @@ bitflags::bitflags! {
         const NATIVE_DRAG_OUT = 1 << 9;
         /// Report total/available capacity for the volume backing a path.
         const VOLUME_CAPACITY = 1 << 10;
+        /// Read/write generic extended attributes (currently: the Spotlight
+        /// "Finder comment", `kMDItemFinderComment`).
+        const EXTENDED_ATTRIBUTES = 1 << 11;
+        /// Read/write Finder tags (`_kMDItemUserTags`).
+        const FINDER_TAGS = 1 << 12;
     }
 }
 

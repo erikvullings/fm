@@ -870,6 +870,31 @@ mod tests {
     }
 
     #[test]
+    fn finder_tags_and_extended_attributes_are_not_claimed_on_windows() {
+        // Task 0136 acceptance criteria: Windows/Linux report these capabilities false rather
+        // than half-implementing an equivalent (NTFS alternate data streams are a different
+        // enough convention to warrant their own future task, not a shared abstraction here).
+        let capabilities = WindowsPlatformAdapter::new().capabilities();
+        assert!(!capabilities.contains(PlatformCapabilities::FINDER_TAGS));
+        assert!(!capabilities.contains(PlatformCapabilities::EXTENDED_ATTRIBUTES));
+
+        let path = Path::new(r"C:\fm-does-not-exist-0136\nothing.txt");
+        let adapter = WindowsPlatformAdapter::new();
+        assert!(matches!(
+            adapter.finder_tags(path),
+            Err(PlatformError::Unsupported {
+                capability: PlatformCapabilities::FINDER_TAGS
+            })
+        ));
+        assert!(matches!(
+            adapter.spotlight_comment(path),
+            Err(PlatformError::Unsupported {
+                capability: PlatformCapabilities::EXTENDED_ATTRIBUTES
+            })
+        ));
+    }
+
+    #[test]
     fn native_operations_on_a_missing_path_report_not_found() {
         let adapter = WindowsPlatformAdapter::new();
         let missing = Path::new(r"C:\fm-does-not-exist-0060\nothing.txt");

@@ -24,6 +24,7 @@ import type {
   DuplicatePageDto,
   EntryMetadataDto,
   EntryMetadataRequest,
+  FinderTagsDto,
   GenerateSyncPlanRequestDto,
   GetChecksumsParams,
   GetComparisonParams,
@@ -31,7 +32,9 @@ import type {
   GetFileGitHistoryRequestDto,
   GetFileGitHistoryResponseDto,
   GetFileIconParams,
+  GetFinderTagsParams,
   GetPluginIconThemeAssetParams,
+  GetSpotlightCommentParams,
   GetThumbnailParams,
   HealthDto,
   HostKeyProbeDto,
@@ -56,10 +59,13 @@ import type {
   SaveEditableFileResponseDto,
   SearchInFileRequestDto,
   SearchInFileResponseDto,
+  SetFinderTagsParams,
   SetPaneActivityRequest,
+  SetSpotlightCommentParams,
   SettingsDto,
   StartChecksumRequestDto,
   StartChecksumResponseDto,
+  SpotlightCommentDto,
   StartComparisonRequestDto,
   StartComparisonResponseDto,
   StartDuplicateScanRequestDto,
@@ -1841,6 +1847,127 @@ export const searchInFile = async (searchInFileRequestDto: SearchInFileRequestDt
 
 
 
+export type getFinderTagsResponse200 = {
+  data: FinderTagsDto
+  status: 200
+}
+
+export type getFinderTagsResponse400 = {
+  data: ApplicationErrorDto
+  status: 400
+}
+
+export type getFinderTagsResponse404 = {
+  data: ApplicationErrorDto
+  status: 404
+}
+
+export type getFinderTagsResponse502 = {
+  data: ApplicationErrorDto
+  status: 502
+}
+
+export type getFinderTagsResponseSuccess = (getFinderTagsResponse200) & {
+  headers: Headers;
+};
+export type getFinderTagsResponseError = (getFinderTagsResponse400 | getFinderTagsResponse404 | getFinderTagsResponse502) & {
+  headers: Headers;
+};
+
+export type getFinderTagsResponse = (getFinderTagsResponseSuccess | getFinderTagsResponseError)
+
+export const getGetFinderTagsUrl = (params: GetFinderTagsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/finder-tags?${stringifiedParams}` : `/api/v1/finder-tags`
+}
+
+/**
+ * @summary Returns an entry's Finder tags, or an empty list if unsupported/unset.
+ */
+export const getFinderTags = async (params: GetFinderTagsParams, options?: Parameters<typeof fetchMutator>[1]): Promise<getFinderTagsResponse> => {
+
+  return fetchMutator<getFinderTagsResponse>(getGetFinderTagsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+export type setFinderTagsResponse200 = {
+  data: FinderTagsDto
+  status: 200
+}
+
+export type setFinderTagsResponse400 = {
+  data: ApplicationErrorDto
+  status: 400
+}
+
+export type setFinderTagsResponse404 = {
+  data: ApplicationErrorDto
+  status: 404
+}
+
+export type setFinderTagsResponse502 = {
+  data: ApplicationErrorDto
+  status: 502
+}
+
+export type setFinderTagsResponseSuccess = (setFinderTagsResponse200) & {
+  headers: Headers;
+};
+export type setFinderTagsResponseError = (setFinderTagsResponse400 | setFinderTagsResponse404 | setFinderTagsResponse502) & {
+  headers: Headers;
+};
+
+export type setFinderTagsResponse = (setFinderTagsResponseSuccess | setFinderTagsResponseError)
+
+export const getSetFinderTagsUrl = (params: SetFinderTagsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/finder-tags?${stringifiedParams}` : `/api/v1/finder-tags`
+}
+
+/**
+ * @summary Replaces an entry's complete set of Finder tags, returning the persisted set back.
+ */
+export const setFinderTags = async (finderTagsDto: FinderTagsDto,
+    params: SetFinderTagsParams, options?: Parameters<typeof fetchMutator>[1]): Promise<setFinderTagsResponse> => {
+
+  return fetchMutator<setFinderTagsResponse>(getSetFinderTagsUrl(params),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(finderTagsDto)
+  }
+);}
+
+
+
 export type getHealthResponse200 = {
   data: HealthDto
   status: 200
@@ -2696,6 +2823,127 @@ export const updateSettings = async (settingsDto: SettingsDto, options?: Paramet
 
 
 
+export type getSpotlightCommentResponse200 = {
+  data: SpotlightCommentDto
+  status: 200
+}
+
+export type getSpotlightCommentResponse400 = {
+  data: ApplicationErrorDto
+  status: 400
+}
+
+export type getSpotlightCommentResponse404 = {
+  data: ApplicationErrorDto
+  status: 404
+}
+
+export type getSpotlightCommentResponse502 = {
+  data: ApplicationErrorDto
+  status: 502
+}
+
+export type getSpotlightCommentResponseSuccess = (getSpotlightCommentResponse200) & {
+  headers: Headers;
+};
+export type getSpotlightCommentResponseError = (getSpotlightCommentResponse400 | getSpotlightCommentResponse404 | getSpotlightCommentResponse502) & {
+  headers: Headers;
+};
+
+export type getSpotlightCommentResponse = (getSpotlightCommentResponseSuccess | getSpotlightCommentResponseError)
+
+export const getGetSpotlightCommentUrl = (params: GetSpotlightCommentParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/spotlight-comment?${stringifiedParams}` : `/api/v1/spotlight-comment`
+}
+
+/**
+ * @summary Returns an entry's Spotlight comment, or `null` if unsupported/unset.
+ */
+export const getSpotlightComment = async (params: GetSpotlightCommentParams, options?: Parameters<typeof fetchMutator>[1]): Promise<getSpotlightCommentResponse> => {
+
+  return fetchMutator<getSpotlightCommentResponse>(getGetSpotlightCommentUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+export type setSpotlightCommentResponse200 = {
+  data: SpotlightCommentDto
+  status: 200
+}
+
+export type setSpotlightCommentResponse400 = {
+  data: ApplicationErrorDto
+  status: 400
+}
+
+export type setSpotlightCommentResponse404 = {
+  data: ApplicationErrorDto
+  status: 404
+}
+
+export type setSpotlightCommentResponse502 = {
+  data: ApplicationErrorDto
+  status: 502
+}
+
+export type setSpotlightCommentResponseSuccess = (setSpotlightCommentResponse200) & {
+  headers: Headers;
+};
+export type setSpotlightCommentResponseError = (setSpotlightCommentResponse400 | setSpotlightCommentResponse404 | setSpotlightCommentResponse502) & {
+  headers: Headers;
+};
+
+export type setSpotlightCommentResponse = (setSpotlightCommentResponseSuccess | setSpotlightCommentResponseError)
+
+export const getSetSpotlightCommentUrl = (params: SetSpotlightCommentParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/spotlight-comment?${stringifiedParams}` : `/api/v1/spotlight-comment`
+}
+
+/**
+ * @summary Sets or clears (`comment: null`) an entry's Spotlight comment, returning the persisted value back.
+ */
+export const setSpotlightComment = async (spotlightCommentDto: SpotlightCommentDto,
+    params: SetSpotlightCommentParams, options?: Parameters<typeof fetchMutator>[1]): Promise<setSpotlightCommentResponse> => {
+
+  return fetchMutator<setSpotlightCommentResponse>(getSetSpotlightCommentUrl(params),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(spotlightCommentDto)
+  }
+);}
+
+
+
 export type getSystemLocationsResponse200 = {
   data: SystemLocationDto[]
   status: 200
@@ -3156,6 +3404,5 @@ export const openWorkspace = async (workspaceId: string, options?: Parameters<ty
 
   }
 );}
-
 
 

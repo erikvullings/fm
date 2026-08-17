@@ -8,6 +8,7 @@ pub(crate) mod connection;
 pub(crate) mod diagnostics;
 pub(crate) mod directory;
 pub(crate) mod events;
+pub(crate) mod extended_attributes;
 pub(crate) mod files;
 pub(crate) mod health;
 pub(crate) mod icons;

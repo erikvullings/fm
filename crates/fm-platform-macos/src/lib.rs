@@ -7,8 +7,10 @@
 //! Deliberately unimplemented (capability bits stay unset, per specification
 //! §23/§35): thumbnails, macOS alias resolution (no capability flag exists
 //! for this in [`fm_platform::PlatformCapabilities`]; aliases are simply not
-//! resolved), Quick Look previews, Finder tags, and extended attributes.
-//! Native drag-to-Finder is provided by the Tauri window host (task 0062),
+//! resolved), and Quick Look previews. Finder tags and the Spotlight
+//! "Finder comment" extended attribute are implemented (task 0136), via the
+//! `xattr`/`plist` crates rather than AppKit - see [`read_finder_tags`] and
+//! [`read_spotlight_comment`]. Native drag-to-Finder is provided by the Tauri window host (task 0062),
 //! while clipboard file references stay delegated to the fallback adapter.
 //! `open_with_default_application` (task
 //! 0061) shells out to `open <path>`. `open_with_chooser` (task 0061
@@ -40,8 +42,9 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use fm_platform::{
-    FallbackPlatformAdapter, MountedVolume, PlatformAdapter, PlatformCapabilities, PlatformError,
-    SystemLocation, SystemLocationKind, VolumeCapacity, cloud_provider_hint,
+    FallbackPlatformAdapter, FinderTag, FinderTagColor, MountedVolume, PlatformAdapter,
+    PlatformCapabilities, PlatformError, SystemLocation, SystemLocationKind, VolumeCapacity,
+    cloud_provider_hint,
 };
 use objc2::rc::Retained;
 use objc2::runtime::{AnyObject, NSObject};
@@ -496,6 +499,8 @@ impl PlatformAdapter for MacosPlatformAdapter {
             | PlatformCapabilities::NATIVE_DRAG_OUT
             | PlatformCapabilities::OPEN_WITH_DEFAULT_APPLICATION
             | PlatformCapabilities::VOLUME_CAPACITY
+            | PlatformCapabilities::EXTENDED_ATTRIBUTES
+            | PlatformCapabilities::FINDER_TAGS
     }
 
     fn file_icon(&self, path: &Path) -> Result<Vec<u8>, PlatformError> {
@@ -740,6 +745,26 @@ impl PlatformAdapter for MacosPlatformAdapter {
         }
         NSApplication::sharedApplication(main_thread).setMainMenu(Some(&menu_bar));
         Ok(())
+    }
+
+    fn finder_tags(&self, path: &Path) -> Result<Vec<FinderTag>, PlatformError> {
+        read_finder_tags(path)
+    }
+
+    fn set_finder_tags(&self, path: &Path, tags: &[FinderTag]) -> Result<(), PlatformError> {
+        write_finder_tags(path, tags)
+    }
+
+    fn spotlight_comment(&self, path: &Path) -> Result<Option<String>, PlatformError> {
+        read_spotlight_comment(path)
+    }
+
+    fn set_spotlight_comment(
+        &self,
+        path: &Path,
+        comment: Option<&str>,
+    ) -> Result<(), PlatformError> {
+        write_spotlight_comment(path, comment)
     }
 }
 
@@ -1006,6 +1031,178 @@ fn build_role_item(mtm: MainThreadMarker, role: fm_domain::NativeMenuRole) -> Re
     }
 }
 
+/// Extended attribute Finder stores a file's tags under (task 0136): a
+/// binary property list containing an array of strings. Undocumented by
+/// Apple but long-stable; see [`FinderTagColor`]'s doc comment for how a
+/// colored tag is encoded within one array element.
+const FINDER_TAGS_XATTR: &str = "com.apple.metadata:_kMDItemUserTags";
+
+/// Extended attribute Finder stores the Get Info "Comments:" field under
+/// (task 0136, also known as the Spotlight `kMDItemFinderComment`
+/// attribute): a binary property list containing a single string.
+const FINDER_COMMENT_XATTR: &str = "com.apple.metadata:kMDItemFinderComment";
+
+/// Darwin's `ENOATTR` ("Attribute not found") errno - distinct from Linux's
+/// `ENODATA`, and not one of the kinds `std::io::ErrorKind` categorizes on
+/// its own, so [`remove_xattr`] checks the raw OS error directly. Verified
+/// against this SDK's `<sys/errno.h>`; stable across macOS releases.
+const ENOATTR: i32 = 93;
+
+/// Reads and decodes [`FINDER_TAGS_XATTR`] (task 0136). An entry with no
+/// tags (the attribute is absent) returns an empty `Vec`, not an error.
+fn read_finder_tags(path: &Path) -> Result<Vec<FinderTag>, PlatformError> {
+    let Some(bytes) = read_xattr(path, FINDER_TAGS_XATTR)? else {
+        return Ok(Vec::new());
+    };
+    let value = decode_plist(&bytes, "Finder tags")?;
+    let entries = value.into_array().ok_or_else(|| PlatformError::Io {
+        message: "Finder tags xattr was not a plist array".to_owned(),
+    })?;
+    entries
+        .into_iter()
+        .map(|entry| {
+            entry
+                .into_string()
+                .map(|raw| parse_finder_tag(&raw))
+                .ok_or_else(|| PlatformError::Io {
+                    message: "Finder tags xattr contained a non-string entry".to_owned(),
+                })
+        })
+        .collect()
+}
+
+/// Replaces the complete set of Finder tags via [`FINDER_TAGS_XATTR`] (task
+/// 0136), matching Finder's own all-at-once tag editor semantics. An empty
+/// slice removes the attribute entirely, mirroring what Finder itself does
+/// when the last tag is removed through its UI, rather than leaving behind
+/// an empty-array attribute Finder would never write on its own.
+fn write_finder_tags(path: &Path, tags: &[FinderTag]) -> Result<(), PlatformError> {
+    if tags.is_empty() {
+        return remove_xattr(path, FINDER_TAGS_XATTR);
+    }
+    let value = plist::Value::Array(
+        tags.iter()
+            .map(|tag| plist::Value::String(encode_finder_tag(tag)))
+            .collect(),
+    );
+    write_xattr(
+        path,
+        FINDER_TAGS_XATTR,
+        &encode_plist(&value, "Finder tags")?,
+    )
+}
+
+/// Splits a raw `_kMDItemUserTags` array element into a tag name and color,
+/// per [`FinderTagColor`]'s `"<name>\n<digit>"` encoding. Anything that
+/// doesn't match that exact shape (no trailing newline+digit, or a
+/// multi-character/non-digit suffix) is treated as an uncolored tag named
+/// after the whole raw string, rather than rejected - a foreign or
+/// hand-edited xattr should degrade gracefully, not make every tag on the
+/// entry unreadable.
+fn parse_finder_tag(raw: &str) -> FinderTag {
+    if let Some((name, suffix)) = raw.rsplit_once('\n')
+        && let Ok(index) = suffix.parse::<u8>()
+        && suffix.len() == 1
+    {
+        return FinderTag {
+            name: name.to_owned(),
+            color: FinderTagColor::from_index(index),
+        };
+    }
+    FinderTag {
+        name: raw.to_owned(),
+        color: FinderTagColor::None,
+    }
+}
+
+/// Encodes one [`FinderTag`] as a `_kMDItemUserTags` array element: just the
+/// name when uncolored (so an uncolored tag's on-disk representation is
+/// identical to what Finder itself writes), otherwise `"<name>\n<digit>"`.
+fn encode_finder_tag(tag: &FinderTag) -> String {
+    if tag.color == FinderTagColor::None {
+        tag.name.clone()
+    } else {
+        format!("{}\n{}", tag.name, tag.color.to_index())
+    }
+}
+
+/// Reads and decodes [`FINDER_COMMENT_XATTR`] (task 0136). `None` means no
+/// comment is set (the attribute is absent), not an error.
+fn read_spotlight_comment(path: &Path) -> Result<Option<String>, PlatformError> {
+    let Some(bytes) = read_xattr(path, FINDER_COMMENT_XATTR)? else {
+        return Ok(None);
+    };
+    let value = decode_plist(&bytes, "Spotlight comment")?;
+    value
+        .into_string()
+        .map(Some)
+        .ok_or_else(|| PlatformError::Io {
+            message: "Spotlight comment xattr was not a plist string".to_owned(),
+        })
+}
+
+/// Sets (`Some`) or clears (`None`) [`FINDER_COMMENT_XATTR`] (task 0136).
+fn write_spotlight_comment(path: &Path, comment: Option<&str>) -> Result<(), PlatformError> {
+    match comment {
+        None => remove_xattr(path, FINDER_COMMENT_XATTR),
+        Some(comment) => {
+            let value = plist::Value::String(comment.to_owned());
+            write_xattr(
+                path,
+                FINDER_COMMENT_XATTR,
+                &encode_plist(&value, "Spotlight comment")?,
+            )
+        }
+    }
+}
+
+fn decode_plist(bytes: &[u8], what: &str) -> Result<plist::Value, PlatformError> {
+    plist::Value::from_reader(std::io::Cursor::new(bytes)).map_err(|error| PlatformError::Io {
+        message: format!("failed to decode {what}: {error}"),
+    })
+}
+
+fn encode_plist(value: &plist::Value, what: &str) -> Result<Vec<u8>, PlatformError> {
+    let mut bytes = Vec::new();
+    value
+        .to_writer_binary(&mut bytes)
+        .map_err(|error| PlatformError::Io {
+            message: format!("failed to encode {what}: {error}"),
+        })?;
+    Ok(bytes)
+}
+
+fn read_xattr(path: &Path, name: &str) -> Result<Option<Vec<u8>>, PlatformError> {
+    xattr::get(path, name).map_err(|error| map_xattr_io_error(path, &error))
+}
+
+fn write_xattr(path: &Path, name: &str, value: &[u8]) -> Result<(), PlatformError> {
+    xattr::set(path, name, value).map_err(|error| map_xattr_io_error(path, &error))
+}
+
+/// Removing an attribute that was never set (e.g. clearing tags on an
+/// already-untagged file) is a no-op success, not an error - the caller
+/// asked for "no tags/no comment" and that's already true.
+fn remove_xattr(path: &Path, name: &str) -> Result<(), PlatformError> {
+    match xattr::remove(path, name) {
+        Ok(()) => Ok(()),
+        Err(error) if error.raw_os_error() == Some(ENOATTR) => Ok(()),
+        Err(error) => Err(map_xattr_io_error(path, &error)),
+    }
+}
+
+fn map_xattr_io_error(path: &Path, error: &std::io::Error) -> PlatformError {
+    if error.kind() == std::io::ErrorKind::NotFound {
+        PlatformError::NotFound {
+            path: path.display().to_string(),
+        }
+    } else {
+        PlatformError::Io {
+            message: format!("extended attribute operation failed: {error}"),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::Path;
@@ -1128,6 +1325,8 @@ mod tests {
             PlatformCapabilities::NATIVE_MENUS,
             PlatformCapabilities::NATIVE_DRAG_OUT,
             PlatformCapabilities::VOLUME_CAPACITY,
+            PlatformCapabilities::EXTENDED_ATTRIBUTES,
+            PlatformCapabilities::FINDER_TAGS,
         ] {
             assert!(capabilities.contains(expected), "{expected:?}");
         }
@@ -1557,5 +1756,268 @@ mod tests {
                 "recommended path must be an application bundle: {app_path:?}"
             );
         }
+    }
+
+    fn fixture_file(dir: &Path, name: &str) -> PathBuf {
+        let path = dir.join(name);
+        std::fs::write(&path, b"content").expect("create fixture file");
+        path
+    }
+
+    /// Reads the raw bytes of `name` on `path` through the system
+    /// `/usr/bin/xattr` CLI (`-p` prints the attribute's raw value verbatim,
+    /// not hex-encoded) - a code path completely independent of this
+    /// crate's own `xattr`/`plist` decoding, so a passing assertion here is
+    /// real evidence the OS xattr store (what Finder itself reads) actually
+    /// received the attribute, not just that our own reader agrees with our
+    /// own writer.
+    fn system_xattr_bytes(path: &Path, name: &str) -> Vec<u8> {
+        let output = std::process::Command::new("/usr/bin/xattr")
+            .arg("-p")
+            .arg(name)
+            .arg(path)
+            .output()
+            .expect("run system xattr CLI");
+        assert!(
+            output.status.success(),
+            "system xattr -p {name} failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        output.stdout
+    }
+
+    #[test]
+    fn a_new_file_has_no_finder_tags() {
+        let dir = tempdir().expect("temp dir");
+        let file = fixture_file(dir.path(), "untagged.txt");
+
+        assert_eq!(read_finder_tags(&file).expect("read tags"), Vec::new());
+    }
+
+    #[test]
+    fn finder_tags_round_trip_through_the_real_xattr_store() {
+        let dir = tempdir().expect("temp dir");
+        let file = fixture_file(dir.path(), "tagged.txt");
+        let tags = vec![
+            FinderTag {
+                name: "Work".to_owned(),
+                color: FinderTagColor::Blue,
+            },
+            FinderTag {
+                name: "Untagged Colorless".to_owned(),
+                color: FinderTagColor::None,
+            },
+            FinderTag {
+                name: "Red".to_owned(),
+                color: FinderTagColor::Red,
+            },
+        ];
+
+        write_finder_tags(&file, &tags).expect("write tags");
+        let read_back = read_finder_tags(&file).expect("read tags");
+
+        // Order preserved, exactly as Finder's own array-order convention
+        // requires (the tags UI shows them in the order they were assigned).
+        assert_eq!(read_back, tags);
+        // Independent proof the OS xattr store itself received a real,
+        // non-empty binary plist under the exact name Finder reads.
+        let bytes = system_xattr_bytes(&file, FINDER_TAGS_XATTR);
+        assert!(!bytes.is_empty());
+        assert!(
+            bytes.starts_with(b"bplist00"),
+            "expected a bplist00 magic header, got: {bytes:?}"
+        );
+    }
+
+    #[test]
+    fn setting_an_empty_tag_list_removes_the_xattr_entirely() {
+        let dir = tempdir().expect("temp dir");
+        let file = fixture_file(dir.path(), "cleared.txt");
+        write_finder_tags(
+            &file,
+            &[FinderTag {
+                name: "Temporary".to_owned(),
+                color: FinderTagColor::Gray,
+            }],
+        )
+        .expect("write tags");
+
+        write_finder_tags(&file, &[]).expect("clear tags");
+
+        assert_eq!(read_finder_tags(&file).expect("read tags"), Vec::new());
+        assert!(
+            xattr::get(&file, FINDER_TAGS_XATTR)
+                .expect("query xattr")
+                .is_none(),
+            "the attribute itself must be gone, not just present-but-empty"
+        );
+    }
+
+    #[test]
+    fn clearing_tags_on_an_already_untagged_file_is_a_no_op_not_an_error() {
+        let dir = tempdir().expect("temp dir");
+        let file = fixture_file(dir.path(), "never-tagged.txt");
+
+        write_finder_tags(&file, &[]).expect("clearing absent tags must succeed");
+    }
+
+    #[test]
+    fn finder_tags_on_a_missing_path_report_not_found() {
+        let missing = Path::new("/tmp/fm-platform-macos-does-not-exist-0136/nothing.txt");
+
+        assert!(matches!(
+            read_finder_tags(missing),
+            Err(PlatformError::NotFound { .. })
+        ));
+        assert!(matches!(
+            write_finder_tags(
+                missing,
+                &[FinderTag {
+                    name: "X".to_owned(),
+                    color: FinderTagColor::None,
+                }]
+            ),
+            Err(PlatformError::NotFound { .. })
+        ));
+    }
+
+    #[test]
+    fn parse_finder_tag_decodes_a_colored_tag() {
+        assert_eq!(
+            parse_finder_tag("Work\n4"),
+            FinderTag {
+                name: "Work".to_owned(),
+                color: FinderTagColor::Blue,
+            }
+        );
+    }
+
+    #[test]
+    fn parse_finder_tag_decodes_an_uncolored_tag_with_no_suffix() {
+        assert_eq!(
+            parse_finder_tag("Personal"),
+            FinderTag {
+                name: "Personal".to_owned(),
+                color: FinderTagColor::None,
+            }
+        );
+    }
+
+    #[test]
+    fn parse_finder_tag_degrades_a_foreign_suffix_to_an_uncolored_tag_instead_of_failing() {
+        // Neither a real Finder-written tag: a multi-digit suffix, and a
+        // non-numeric one. Both must still yield a usable (if uncolored)
+        // tag rather than propagating a decode error for the whole list.
+        assert_eq!(
+            parse_finder_tag("Weird\n42"),
+            FinderTag {
+                name: "Weird\n42".to_owned(),
+                color: FinderTagColor::None,
+            }
+        );
+        assert_eq!(
+            parse_finder_tag("Weird\nX"),
+            FinderTag {
+                name: "Weird\nX".to_owned(),
+                color: FinderTagColor::None,
+            }
+        );
+    }
+
+    #[test]
+    fn encode_finder_tag_omits_the_color_suffix_for_no_color() {
+        assert_eq!(
+            encode_finder_tag(&FinderTag {
+                name: "Plain".to_owned(),
+                color: FinderTagColor::None,
+            }),
+            "Plain"
+        );
+    }
+
+    #[test]
+    fn a_new_file_has_no_spotlight_comment() {
+        let dir = tempdir().expect("temp dir");
+        let file = fixture_file(dir.path(), "no-comment.txt");
+
+        assert_eq!(read_spotlight_comment(&file).expect("read comment"), None);
+    }
+
+    #[test]
+    fn spotlight_comment_round_trips_through_the_real_xattr_store() {
+        let dir = tempdir().expect("temp dir");
+        let file = fixture_file(dir.path(), "commented.txt");
+
+        write_spotlight_comment(&file, Some("Reviewed 2026-08-17")).expect("write comment");
+
+        assert_eq!(
+            read_spotlight_comment(&file).expect("read comment"),
+            Some("Reviewed 2026-08-17".to_owned())
+        );
+        let bytes = system_xattr_bytes(&file, FINDER_COMMENT_XATTR);
+        assert!(
+            bytes.starts_with(b"bplist00"),
+            "expected a bplist00 magic header, got: {bytes:?}"
+        );
+    }
+
+    #[test]
+    fn setting_a_none_comment_clears_the_xattr_entirely() {
+        let dir = tempdir().expect("temp dir");
+        let file = fixture_file(dir.path(), "clear-comment.txt");
+        write_spotlight_comment(&file, Some("temporary")).expect("write comment");
+
+        write_spotlight_comment(&file, None).expect("clear comment");
+
+        assert_eq!(read_spotlight_comment(&file).expect("read comment"), None);
+        assert!(
+            xattr::get(&file, FINDER_COMMENT_XATTR)
+                .expect("query xattr")
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn clearing_a_comment_on_a_file_with_no_comment_is_a_no_op_not_an_error() {
+        let dir = tempdir().expect("temp dir");
+        let file = fixture_file(dir.path(), "never-commented.txt");
+
+        write_spotlight_comment(&file, None).expect("clearing an absent comment must succeed");
+    }
+
+    #[test]
+    fn spotlight_comment_on_a_missing_path_reports_not_found() {
+        let missing = Path::new("/tmp/fm-platform-macos-does-not-exist-0136/nothing-else.txt");
+
+        assert!(matches!(
+            read_spotlight_comment(missing),
+            Err(PlatformError::NotFound { .. })
+        ));
+        assert!(matches!(
+            write_spotlight_comment(missing, Some("x")),
+            Err(PlatformError::NotFound { .. })
+        ));
+    }
+
+    #[test]
+    fn platform_adapter_finder_tag_and_comment_methods_delegate_to_the_free_functions() {
+        let dir = tempdir().expect("temp dir");
+        let file = fixture_file(dir.path(), "via-adapter.txt");
+        let adapter = MacosPlatformAdapter::new();
+        let tags = vec![FinderTag {
+            name: "Via Adapter".to_owned(),
+            color: FinderTagColor::Green,
+        }];
+
+        adapter.set_finder_tags(&file, &tags).expect("set tags");
+        assert_eq!(adapter.finder_tags(&file).expect("get tags"), tags);
+
+        adapter
+            .set_spotlight_comment(&file, Some("hello"))
+            .expect("set comment");
+        assert_eq!(
+            adapter.spotlight_comment(&file).expect("get comment"),
+            Some("hello".to_owned())
+        );
     }
 }

@@ -255,7 +255,7 @@ Features not yet implemented.
 - [x] 0133 Populate native menu bar content (macOS + Windows) *(macOS done; Windows half deferred, still needs 0131)*
 - [ ] 0134 Thumbnails for images/video and a grid/icon view mode
 - [ ] 0135 Git status column/badges
-- [ ] 0136 Extended attributes, Finder tags and Spotlight comments editor
+- [x] 0136 Extended attributes, Finder tags and Spotlight comments editor
 - [ ] 0137 Services menu (macOS) / "Send to" (Windows) integration
 - [ ] 0138 OS-level "Mount share…" action *(needs 0102; low priority — only if OS-native mounting causes friction)*
 - [ ] 0139 Directory tree dialog / sidebar tree view *(split out of 0129)*
@@ -264,6 +264,7 @@ Features not yet implemented.
 - [ ] 0142 Plugin-contributed preview renderers *(split out of 0071)*
 - [x] 0143 Workspace last-active restore and per-window desktop placement *(wire up unused `WorkspaceService::start`; multi-window support; per-workspace window-frame restore via tauri-plugin-window-state; macOS Space placement explicitly out of scope, no public API)*
 - [ ] 0144 Volumes in Favourites/Go menu, plus Go menu Servers/Cloud/Network sections
+- [ ] 0145 Surface Finder tags/Spotlight comment editing in the Properties dialog *(split out of 0136; 0140 landed mid-task, after 0136's own standalone dialogs were already built)*
 
 ## Architecture deepening — backend
 

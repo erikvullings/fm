@@ -16,6 +16,6 @@ pub use capabilities::PlatformCapabilities;
 pub use error::PlatformError;
 pub use fallback::FallbackPlatformAdapter;
 pub use types::{
-    MountedVolume, SystemLocation, SystemLocationKind, SystemLocationProvider, VolumeCapacity,
-    cloud_provider_hint,
+    FinderTag, FinderTagColor, MountedVolume, SystemLocation, SystemLocationKind,
+    SystemLocationProvider, VolumeCapacity, cloud_provider_hint,
 };

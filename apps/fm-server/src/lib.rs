@@ -67,6 +67,18 @@ fn api_router() -> OpenApiRouter<AppState> {
         .routes(utoipa_axum::routes!(routes::files::cache_archive_password))
         .routes(utoipa_axum::routes!(routes::icons::get_file_icon))
         .routes(utoipa_axum::routes!(routes::thumbnails::get_thumbnail))
+        .routes(utoipa_axum::routes!(
+            routes::extended_attributes::get_finder_tags
+        ))
+        .routes(utoipa_axum::routes!(
+            routes::extended_attributes::set_finder_tags
+        ))
+        .routes(utoipa_axum::routes!(
+            routes::extended_attributes::get_spotlight_comment
+        ))
+        .routes(utoipa_axum::routes!(
+            routes::extended_attributes::set_spotlight_comment
+        ))
         .routes(utoipa_axum::routes!(routes::search::start_search))
         .routes(utoipa_axum::routes!(routes::search::cancel_search))
         .routes(utoipa_axum::routes!(routes::comparison::start_comparison))

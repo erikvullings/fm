@@ -56,6 +56,7 @@ import {
 import { DiagnosticsViewComponent } from '../features/diagnostics/diagnostics-view';
 import { type AppDialogsContext, renderAppDialogs } from '../features/dialogs/app-dialogs';
 import { createDialogUIController } from '../features/dialogs/dialog-ui-controller';
+import type { FinderTagsLoader } from '../features/directory-table/finder-tags-loader';
 import type { NativeIconLoader } from '../features/directory-table/native-icon-loader';
 import type { ThumbnailLoader } from '../features/directory-table/thumbnail-loader';
 import {
@@ -490,6 +491,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
   let openTerminalSupported = false;
   let nativeIconLoader: NativeIconLoader | undefined;
   let thumbnailLoader: ThumbnailLoader | undefined;
+  let finderTagsLoader: FinderTagsLoader | undefined;
   let contextMenu:
     | {
         readonly paneId: PaneId;
@@ -1304,6 +1306,9 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     setThumbnailLoader: (loader) => {
       thumbnailLoader = loader;
     },
+    setFinderTagsLoader: (loader) => {
+      finderTagsLoader = loader;
+    },
     getSystemLocations: () => systemLocations,
     setSystemLocations: (locs) => {
       systemLocations = locs;
@@ -1722,6 +1727,8 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     toast: (options) => toast(options),
     getOpenTerminalSupported: () => openTerminalSupported,
     openCreateDirectory: (location) => dialogs.openCreateDirectory(location),
+    openFinderTagsDialog: (request) => dialogs.openFinderTagsDialog(request),
+    openSpotlightCommentDialog: (request) => dialogs.openSpotlightCommentDialog(request),
     setArchiveCreateRequest: (request) => dialogs.openArchiveCreate(request),
     redraw: () => m.redraw(),
   };
@@ -1743,6 +1750,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     getUnavailableLocations: () => unavailableLocations,
     getNativeIconLoader: () => nativeIconLoader,
     getThumbnailLoader: () => thumbnailLoader,
+    getFinderTagsLoader: () => finderTagsLoader,
     getPlugins: () => plugins,
     getPlatform: () => platform,
     getKeybindingRuntime: () => keybindingRuntime,
@@ -1926,6 +1934,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
         metadataRevision: 0,
       });
     },
+    getFinderTagsLoader: () => finderTagsLoader,
     cancelAutoDismiss,
     rememberDismissedOperation,
     refetchAffectedPanes,

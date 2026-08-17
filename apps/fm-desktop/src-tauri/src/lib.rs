@@ -106,6 +106,10 @@ pub fn run() {
             commands::native_drag_locations,
             commands::get_file_icon,
             commands::get_thumbnail,
+            commands::get_finder_tags,
+            commands::set_finder_tags,
+            commands::get_spotlight_comment,
+            commands::set_spotlight_comment,
             commands::get_settings,
             commands::update_settings,
             commands::list_directory,
@@ -267,6 +271,10 @@ mod tests {
                 commands::native_drag_locations,
                 commands::get_file_icon,
                 commands::get_thumbnail,
+                commands::get_finder_tags,
+                commands::set_finder_tags,
+                commands::get_spotlight_comment,
+                commands::set_spotlight_comment,
                 commands::get_settings,
                 commands::update_settings,
                 commands::list_directory,
@@ -424,6 +432,54 @@ mod tests {
                 body: InvokeBody::Json(
                     serde_json::json!({ "uri": "not a location", "size": "small" }),
                 ),
+                headers: Default::default(),
+                invoke_key: INVOKE_KEY.to_string(),
+            },
+        )
+        .expect_err("invalid location must reject the command");
+
+        assert!(error.to_string().contains("invalidRequest"));
+    }
+
+    #[test]
+    fn finder_tags_command_returns_a_typed_error_for_an_invalid_location() {
+        let app = create_app(mock_builder());
+        let webview = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
+            .build()
+            .expect("failed to build mock webview");
+
+        let error = get_ipc_response(
+            &webview,
+            InvokeRequest {
+                cmd: "get_finder_tags".into(),
+                callback: CallbackFn(0),
+                error: CallbackFn(1),
+                url: local_protocol_url(),
+                body: InvokeBody::Json(serde_json::json!({ "uri": "not a location" })),
+                headers: Default::default(),
+                invoke_key: INVOKE_KEY.to_string(),
+            },
+        )
+        .expect_err("invalid location must reject the command");
+
+        assert!(error.to_string().contains("invalidRequest"));
+    }
+
+    #[test]
+    fn spotlight_comment_command_returns_a_typed_error_for_an_invalid_location() {
+        let app = create_app(mock_builder());
+        let webview = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
+            .build()
+            .expect("failed to build mock webview");
+
+        let error = get_ipc_response(
+            &webview,
+            InvokeRequest {
+                cmd: "get_spotlight_comment".into(),
+                callback: CallbackFn(0),
+                error: CallbackFn(1),
+                url: local_protocol_url(),
+                body: InvokeBody::Json(serde_json::json!({ "uri": "not a location" })),
                 headers: Default::default(),
                 invoke_key: INVOKE_KEY.to_string(),
             },

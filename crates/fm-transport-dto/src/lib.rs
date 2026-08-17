@@ -13,6 +13,7 @@ pub mod diagnostics;
 pub mod entry;
 pub mod error;
 pub mod files;
+pub mod finder_tags;
 pub mod health;
 pub mod location;
 pub mod operation;
@@ -69,6 +70,7 @@ pub use files::{
     ReadFileRangeResponseDto, SaveEditableFileRequestDto, SaveEditableFileResponseDto,
     SearchInFileMatchDto, SearchInFileRequestDto, SearchInFileResponseDto,
 };
+pub use finder_tags::{FinderTagColorDto, FinderTagDto, FinderTagsDto, SpotlightCommentDto};
 pub use health::{HealthDto, HealthStatusDto};
 pub use location::LocationDto;
 pub use operation::{

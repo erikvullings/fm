@@ -70,6 +70,12 @@ export interface ActionCommandControllerContext {
   getOpenTerminalSupported(): boolean;
   openCreateDirectory(location?: import('../../models').Location): void;
   setArchiveCreateRequest(request: ArchiveCreateRequest): void;
+  openFinderTagsDialog(
+    request: import('../dialogs/dialog-ui-controller').FinderTagsDialogRequest,
+  ): void;
+  openSpotlightCommentDialog(
+    request: import('../dialogs/dialog-ui-controller').SpotlightCommentDialogRequest,
+  ): void;
   redraw(): void;
 }
 
@@ -215,6 +221,37 @@ export function createActionCommandController(
       });
   }
 
+  /** Handles `core.editFinderTags`/`core.editSpotlightComment` (task 0136), shared by the context
+   * menu and command palette dispatch paths: both fetch the entry's current tags/comment before
+   * opening the pre-filled editor dialog, then let the dialog's own Save button perform the write
+   * through `setFinderTags`/`setSpotlightComment` - this only opens the dialog. Returns whether it
+   * handled `actionId`, so callers fall through to their own dispatch otherwise. */
+  function openEntryMetadataDialog(actionId: string, entry: EntrySummary | undefined): boolean {
+    if (actionId === 'core.editFinderTags') {
+      if (entry === undefined) return true;
+      void context
+        .getClient()
+        .getFinderTags(entry.location.uri)
+        .then((current) => {
+          context.openFinderTagsDialog({ entry, tags: current?.tags ?? [] });
+          context.redraw();
+        });
+      return true;
+    }
+    if (actionId === 'core.editSpotlightComment') {
+      if (entry === undefined) return true;
+      void context
+        .getClient()
+        .getSpotlightComment(entry.location.uri)
+        .then((current) => {
+          context.openSpotlightCommentDialog({ entry, comment: current?.comment ?? '' });
+          context.redraw();
+        });
+      return true;
+    }
+    return false;
+  }
+
   function invokePaletteAction(
     action: ActionDescriptor,
     parameters?: unknown,
@@ -246,6 +283,7 @@ export function createActionCommandController(
       directory === undefined || contextParam.selectedEntryIds === undefined
         ? []
         : directory.entries.filter((entry) => new Set(contextParam.selectedEntryIds).has(entry.id));
+    if (openEntryMetadataDialog(action.id, selectedEntries[0])) return;
     if (isCopySelectionAction(action.id)) {
       if (directory === undefined || directory.location === undefined) return;
       void copySelectionToClipboard(action.id, selectedEntries, directory.location)
@@ -332,6 +370,7 @@ export function createActionCommandController(
       void context.getOpsController().extract(source.location, destination);
       return;
     }
+    if (openEntryMetadataDialog(action.id, menu.entries[0])) return;
     invokePaletteAction(action, undefined, {
       paneId: menu.paneId,
       selectedEntryIds: menu.entries.map((entry) => entry.id),

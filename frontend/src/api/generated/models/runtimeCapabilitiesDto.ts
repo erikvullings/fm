@@ -13,6 +13,13 @@ import type { RuntimeKindDto } from './runtimeKindDto.ts';
 export interface RuntimeCapabilitiesDto {
   /** Whether OS clipboard integration is available. */
   clipboard: boolean;
+  /**
+     * Whether generic extended attributes (currently: the Spotlight
+     * "Finder comment") can be read/written (task 0136).
+     */
+  extendedAttributes: boolean;
+  /** Whether Finder tags can be read/written (task 0136). */
+  finderTags: boolean;
   /** Whether dragging entries out to the OS is supported. */
   nativeDragOut: boolean;
   /** Whether native file icons can be fetched. */

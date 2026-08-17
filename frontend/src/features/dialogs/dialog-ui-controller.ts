@@ -1,4 +1,4 @@
-import type { EntrySummary, Location } from '../../models';
+import type { EntrySummary, FinderTag, Location } from '../../models';
 
 export interface ArchiveCreateRequest {
   readonly sources: readonly Location[];
@@ -10,6 +10,16 @@ export interface PendingArchiveCredential {
   readonly location: Location;
   readonly invalid: boolean;
   readonly resolve: (supplied: boolean) => void;
+}
+
+export interface FinderTagsDialogRequest {
+  readonly entry: EntrySummary;
+  readonly tags: readonly FinderTag[];
+}
+
+export interface SpotlightCommentDialogRequest {
+  readonly entry: EntrySummary;
+  readonly comment: string;
 }
 
 export interface DialogUIState {
@@ -27,6 +37,8 @@ export interface DialogUIState {
   pendingArchiveCredential: PendingArchiveCredential | undefined;
   archiveCredentialError: string | undefined;
   pendingCreatedLocation: string | undefined;
+  finderTagsDialog: FinderTagsDialogRequest | undefined;
+  spotlightCommentDialog: SpotlightCommentDialogRequest | undefined;
 }
 
 export interface DialogUIController {
@@ -59,6 +71,10 @@ export interface DialogUIController {
   setArchiveCredentialError(error: string | undefined): void;
   clearArchiveCredential(): void;
   setPendingCreatedLocation(uri: string | undefined): void;
+  openFinderTagsDialog(request: FinderTagsDialogRequest): void;
+  cancelFinderTagsDialog(): void;
+  openSpotlightCommentDialog(request: SpotlightCommentDialogRequest): void;
+  cancelSpotlightCommentDialog(): void;
 }
 
 export function createDialogUIController(): DialogUIController {
@@ -77,6 +93,8 @@ export function createDialogUIController(): DialogUIController {
     pendingArchiveCredential: undefined,
     archiveCredentialError: undefined,
     pendingCreatedLocation: undefined,
+    finderTagsDialog: undefined,
+    spotlightCommentDialog: undefined,
   };
 
   return {
@@ -173,6 +191,22 @@ export function createDialogUIController(): DialogUIController {
 
     setPendingCreatedLocation(uri): void {
       state.pendingCreatedLocation = uri;
+    },
+
+    openFinderTagsDialog(request): void {
+      state.finderTagsDialog = request;
+    },
+
+    cancelFinderTagsDialog(): void {
+      state.finderTagsDialog = undefined;
+    },
+
+    openSpotlightCommentDialog(request): void {
+      state.spotlightCommentDialog = request;
+    },
+
+    cancelSpotlightCommentDialog(): void {
+      state.spotlightCommentDialog = undefined;
     },
   };
 }

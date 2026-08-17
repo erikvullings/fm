@@ -106,6 +106,30 @@ mod tests {
             })
         ));
         assert!(matches!(
+            adapter.finder_tags(path),
+            Err(PlatformError::Unsupported {
+                capability: PlatformCapabilities::FINDER_TAGS
+            })
+        ));
+        assert!(matches!(
+            adapter.set_finder_tags(path, &[]),
+            Err(PlatformError::Unsupported {
+                capability: PlatformCapabilities::FINDER_TAGS
+            })
+        ));
+        assert!(matches!(
+            adapter.spotlight_comment(path),
+            Err(PlatformError::Unsupported {
+                capability: PlatformCapabilities::EXTENDED_ATTRIBUTES
+            })
+        ));
+        assert!(matches!(
+            adapter.set_spotlight_comment(path, None),
+            Err(PlatformError::Unsupported {
+                capability: PlatformCapabilities::EXTENDED_ATTRIBUTES
+            })
+        ));
+        assert!(matches!(
             adapter.install_native_menu(
                 &fm_domain::NativeMenuSpec::default(),
                 std::sync::Arc::new(|_id| {})
@@ -135,6 +159,8 @@ mod tests {
             PlatformCapabilities::NATIVE_MENUS,
             PlatformCapabilities::NATIVE_DRAG_OUT,
             PlatformCapabilities::VOLUME_CAPACITY,
+            PlatformCapabilities::EXTENDED_ATTRIBUTES,
+            PlatformCapabilities::FINDER_TAGS,
         ] {
             assert!(!capabilities.contains(capability), "{capability:?}");
         }

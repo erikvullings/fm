@@ -15,17 +15,18 @@ use fm_transport_dto::{
     CalculateFolderSizeRequestDto, CalculateFolderSizeResponseDto, ChecksumFileDto,
     ChecksumPageDto, ComparisonPageDto, ConnectionDto, CreateConnectionRequestDto,
     CreateWorkspaceRequestDto, DirectorySnapshotDto, DuplicatePageDto, EntryMetadataDto,
-    EntryMetadataRequest, GenerateSyncPlanRequestDto, GetFileGitHistoryRequestDto,
+    EntryMetadataRequest, FinderTagsDto, GenerateSyncPlanRequestDto, GetFileGitHistoryRequestDto,
     GetFileGitHistoryResponseDto, HostKeyProbeDto, InvokeActionRequestDto, ListDirectoryRequest,
     LocationDto, NavigateRequest, OperationDto, PluginDescriptorDto, PluginLogEntryDto,
     ReadFileRangeRequestDto, ReadFileRangeResponseDto, RenderChecksumFileRequestDto,
     ResolveOperationConflictRequestDto, RuntimeCapabilitiesDto, SaveChecksumFileRequestDto,
     SaveChecksumFileResponseDto, SearchInFileRequestDto, SearchInFileResponseDto,
-    SetPaneActivityRequest, SettingsDto, StartChecksumRequestDto, StartChecksumResponseDto,
-    StartComparisonRequestDto, StartComparisonResponseDto, StartDuplicateScanRequestDto,
-    StartDuplicateScanResponseDto, StartOperationRequestDto, StartSearchRequestDto,
-    StartSearchResponseDto, SyncPlanDto, UpdateConnectionRequestDto, VerificationReportDto,
-    VerifyChecksumFileRequestDto, WorkspaceCommandDto, WorkspaceDto, WorkspaceSummaryDto,
+    SetPaneActivityRequest, SettingsDto, SpotlightCommentDto, StartChecksumRequestDto,
+    StartChecksumResponseDto, StartComparisonRequestDto, StartComparisonResponseDto,
+    StartDuplicateScanRequestDto, StartDuplicateScanResponseDto, StartOperationRequestDto,
+    StartSearchRequestDto, StartSearchResponseDto, SyncPlanDto, UpdateConnectionRequestDto,
+    VerificationReportDto, VerifyChecksumFileRequestDto, WorkspaceCommandDto, WorkspaceDto,
+    WorkspaceSummaryDto,
 };
 
 use crate::{
@@ -336,6 +337,58 @@ pub(crate) async fn get_thumbnail(
         .service
         .thumbnail(&uri, &size)
         .await
+        .map_err(|error| error.into_dto(Uuid::new_v4()))
+}
+
+/// Returns the same Finder tags as `GET /api/v1/finder-tags` (task 0136).
+#[tauri::command]
+pub(crate) fn get_finder_tags(
+    state: State<'_, AppState>,
+    uri: String,
+) -> Result<FinderTagsDto, ApplicationErrorDto> {
+    state
+        .service
+        .finder_tags(&uri)
+        .map_err(|error| error.into_dto(Uuid::new_v4()))
+}
+
+/// Replaces Finder tags, same as `PUT /api/v1/finder-tags` (task 0136).
+#[tauri::command]
+pub(crate) fn set_finder_tags(
+    state: State<'_, AppState>,
+    uri: String,
+    request: FinderTagsDto,
+) -> Result<FinderTagsDto, ApplicationErrorDto> {
+    state
+        .service
+        .set_finder_tags(&uri, request)
+        .map_err(|error| error.into_dto(Uuid::new_v4()))
+}
+
+/// Returns the same Spotlight comment as `GET /api/v1/spotlight-comment`
+/// (task 0136).
+#[tauri::command]
+pub(crate) fn get_spotlight_comment(
+    state: State<'_, AppState>,
+    uri: String,
+) -> Result<SpotlightCommentDto, ApplicationErrorDto> {
+    state
+        .service
+        .spotlight_comment(&uri)
+        .map_err(|error| error.into_dto(Uuid::new_v4()))
+}
+
+/// Sets or clears the Spotlight comment, same as `PUT /api/v1/spotlight-comment`
+/// (task 0136).
+#[tauri::command]
+pub(crate) fn set_spotlight_comment(
+    state: State<'_, AppState>,
+    uri: String,
+    request: SpotlightCommentDto,
+) -> Result<SpotlightCommentDto, ApplicationErrorDto> {
+    state
+        .service
+        .set_spotlight_comment(&uri, request)
         .map_err(|error| error.into_dto(Uuid::new_v4()))
 }
 
