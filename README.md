@@ -14,6 +14,7 @@ specification and [TASKS/README.md](TASKS/README.md) for the implementation task
 | Node.js | **22 LTS** | Managed by [nvs](https://github.com/jasongin/nvs) or nvm. |
 | pnpm | **11** | `npm install -g pnpm` or `corepack enable`. |
 | cargo-watch | latest | `cargo install cargo-watch` — used in the recommended dev flow. |
+| cargo-nextest | latest | `cargo install cargo-nextest --locked` — used by `pnpm run test:rust` (and CI) to run the Rust test suite; doctests still run separately via `cargo test --doc`, since nextest doesn't execute those. |
 
 **Tauri prerequisites (desktop builds only):**
 
@@ -87,7 +88,7 @@ root (`dev`, `test`, `lint`, `build`, ...) — see the root `package.json` for t
 | `pnpm dev:server` | Start `fm-server` on port 8787 with auth disabled, auto-rebuilding on file change (Terminal 1). |
 | `pnpm dev:tauri` | Launch the **Tauri desktop** app in dev mode (`VITE_RUNTIME=tauri`). |
 | `pnpm test` | Run Rust tests + frontend tests + script tests. |
-| `pnpm test:rust` | `cargo test --workspace` |
+| `pnpm test:rust` | `cargo nextest run --workspace` + `cargo test --doc --workspace` (nextest doesn't run doctests) |
 | `pnpm test:frontend` | Vitest (frontend unit tests) |
 | `pnpm lint` | Rust + Biome linting/formatting checks |
 | `pnpm api:export` | Export `frontend/openapi/openapi.json` from the running server |
@@ -507,15 +508,59 @@ aborted and responses are correlated by request ID before they may replace the v
 `.github/workflows/ci.yml` runs on every push to `main` and every pull request:
 
 - **rust** (matrix: ubuntu-latest, macos-latest, windows-latest): `cargo fmt --all --check`,
-  `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`. Cargo
-  registry/target caching via `Swatinem/rust-cache`.
+  `cargo clippy --workspace --all-targets -- -D warnings`, `cargo nextest run --workspace`,
+  `cargo test --doc --workspace`. Cargo registry/target caching via `Swatinem/rust-cache`, plus
+  compiler-output caching via `mozilla-actions/sccache-action` (`RUSTC_WRAPPER=sccache`,
+  GitHub Actions cache backend).
 - **frontend** (ubuntu-latest): Biome format check, `tsc --noEmit`, Vitest, production build.
   pnpm store caching via `actions/setup-node`'s built-in pnpm cache.
+- **desktop** (macos-latest, windows-latest): packaged Tauri build + smoke test, also sccache-backed.
 - **audit** (ubuntu-latest, advisory-only — never blocks the workflow): `cargo audit` and
   `pnpm audit`, reporting findings without failing the run.
 
 Pull-request builds never perform code signing or notarization; that is reserved for protected
 release workflows (tracked separately).
+
+### Git hooks
+
+`pre-commit` (via husky) formats/lints only the files staged in that commit (`rustfmt`, `clippy`
+on the owning crate, `biome`) — fast, since it never touches the full workspace. `pre-push` runs
+the same lint checks workspace-wide (`pnpm run lint`: `cargo fmt --all --check`, `cargo clippy
+--workspace --all-targets`, `biome check .`) but deliberately does **not** run the test suite —
+CI already runs the full suite on every push, so duplicating it locally only doubled the wait
+without adding safety. Run `pnpm test` yourself before pushing if you want that assurance locally
+too.
+
+### Speeding up local Rust builds across multiple worktrees
+
+If you work out of several `git worktree` checkouts of this repo (as the `.claude/worktrees/`
+convention does), each one builds Rust into its own `target/` directory from scratch by default,
+which is slow. [`sccache`](https://github.com/mozilla/sccache) caches compiler invocations by
+their inputs, so a second worktree building the same dependency versions hits cache instead of
+recompiling — without the lock contention a single shared `CARGO_TARGET_DIR` would cause between
+concurrent builds in different worktrees. To opt in locally:
+
+```bash
+brew install sccache   # or see the sccache README for other platforms
+```
+
+then add to `~/.cargo/config.toml` (user-level, not this repo's checked-in `.cargo/config.toml`,
+so it doesn't force every contributor/CI runner to have `sccache` installed):
+
+```toml
+[build]
+rustc-wrapper = "sccache"
+
+# sccache can't cache incremental-compilation artifacts, so leave incremental builds off -
+# otherwise most compiles fall back to a normal (uncached) build and sccache barely helps.
+# Must be `build.incremental` here, not `[env] CARGO_INCREMENTAL` - the `[env]` table only
+# sets variables for compiled binaries/build scripts, not for Cargo's own behavior.
+incremental = false
+```
+
+Check `sccache --show-stats` after a couple of builds — you should see cache hits climb and the
+`incremental` line under "Non-cacheable reasons" disappear; if `incremental` is still there, the
+setting above isn't taking effect.
 
 ## Desktop releases
 

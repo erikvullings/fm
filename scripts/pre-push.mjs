@@ -1,9 +1,9 @@
 #!/usr/bin/env node
-// Pre-push safety net: runs the same checks CI runs (see .github/workflows/ci.yml),
-// so a broken push fails fast locally instead of burning a CI cycle. Deliberately
-// not run on every commit - pre-commit.mjs stays fast (format + clippy only) so
-// local commit iteration isn't blocked by the full test suite; this hook fires
-// once per push instead, which is a much lower-frequency event.
+// Pre-push fail-fast check: lint only (fmt + clippy + biome), so an obviously broken
+// push is caught before it reaches CI. Deliberately does NOT run the full test suite -
+// .github/workflows/ci.yml already runs it on every push, so running it here too just
+// duplicates that cost and blocks local iteration for no extra safety. If you want to
+// run tests before pushing, run `pnpm test` yourself.
 
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
@@ -29,4 +29,3 @@ function run(command, args) {
 }
 
 run('pnpm', ['run', 'lint']);
-run('pnpm', ['run', 'test']);
