@@ -135,6 +135,7 @@ import {
 } from '../features/workspace/workspace-layout';
 import { sortWorkspaceSummaries } from '../features/workspace/workspace-manager';
 import { WorkspaceSwitcher } from '../features/workspace/workspace-switcher';
+import { t } from '../i18n';
 import { footerFunctionKeyBindings, type KeybindingRuntime } from '../keybindings/dispatcher';
 import type {
   ActionDescriptor,
@@ -2068,9 +2069,9 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
               ])
             : null,
           m('.fm-workspace-toolbar', [
-            m('.fm-navigation-controls', { 'aria-label': 'Active pane navigation' }, [
+            m('.fm-navigation-controls', { 'aria-label': t('shell', 'activePaneNavigation') }, [
               tooltip(
-                'Back',
+                t('shell', 'back'),
                 m(
                   IconButton,
                   {
@@ -2078,14 +2079,14 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
                       workspace?.panesById[workspace.activePaneId]?.tabsById[
                         workspace.panesById[workspace.activePaneId]?.activeTabId ?? ''
                       ]?.canNavigateBack !== true,
-                    'aria-label': 'Back',
+                    'aria-label': t('shell', 'back'),
                     onclick: () => void navigation.back(workspace?.activePaneId ?? ''),
                   },
                   arrowLeftIcon(),
                 ),
               ),
               tooltip(
-                'Forward',
+                t('shell', 'forward'),
                 m(
                   IconButton,
                   {
@@ -2093,19 +2094,19 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
                       workspace?.panesById[workspace.activePaneId]?.tabsById[
                         workspace.panesById[workspace.activePaneId]?.activeTabId ?? ''
                       ]?.canNavigateForward !== true,
-                    'aria-label': 'Forward',
+                    'aria-label': t('shell', 'forward'),
                     onclick: () => void navigation.forward(workspace?.activePaneId ?? ''),
                   },
                   arrowRightIcon(),
                 ),
               ),
               tooltip(
-                'Parent directory',
+                t('shell', 'parentDirectory'),
                 m(
                   IconButton,
                   {
                     disabled: workspace === undefined,
-                    'aria-label': 'Parent directory',
+                    'aria-label': t('shell', 'parentDirectory'),
                     onclick: () => void navigation.parent(workspace?.activePaneId ?? ''),
                   },
                   cornerLeftUpIcon(),
@@ -2113,12 +2114,12 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
               ),
             ]),
             tooltip(
-              'Find files',
+              t('shell', 'findFiles'),
               m(
                 IconButton,
                 {
                   disabled: activeDirectory() === undefined,
-                  'aria-label': 'Find files',
+                  'aria-label': t('shell', 'findFiles'),
                   onclick: () => {
                     findFilesController.openFindFiles();
                   },
@@ -2127,25 +2128,25 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
               ),
             ),
             tooltip(
-              'Select the entries that differ between the two panes (Shift+F2)',
+              t('shell', 'comparePanes'),
               m(
                 IconButton,
                 {
                   disabled: (workspace?.paneOrder.length ?? 0) < 2,
-                  'aria-label': 'Compare panes',
+                  'aria-label': t('shell', 'comparePanes'),
                   onclick: () => comparisonController.startComparison('sizeAndTimestamp'),
                 },
                 compareIcon(),
               ),
             ),
             tooltip(
-              'Command palette',
+              t('shell', 'commandPalette'),
               m(
                 IconButton,
                 {
                   className: 'fm-command-palette-trigger',
                   disabled: registeredActions.length === 0,
-                  'aria-label': 'Command palette',
+                  'aria-label': t('shell', 'commandPalette'),
                   onclick: () => {
                     commandPaletteOpen = true;
                   },
@@ -2154,12 +2155,14 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
               ),
             ),
             tooltip(
-              `Switch workspace — current: ${workspace?.name ?? 'none'}`,
+              t('shell', 'workspaceSwitcherLabel', { name: workspace?.name ?? t('shell', 'none') }),
               m(
                 IconButton,
                 {
                   className: 'fm-workspace-switcher-button',
-                  'aria-label': `Workspace switcher, current workspace: ${workspace?.name ?? 'none'}`,
+                  'aria-label': t('shell', 'workspaceSwitcherLabel', {
+                    name: workspace?.name ?? t('shell', 'none'),
+                  }),
                   onclick: () => {
                     if (workspaceDisclosureElement !== undefined) {
                       workspaceDisclosureElement.open = !workspaceDisclosureElement.open;
@@ -2187,57 +2190,61 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
                     if (disclosure instanceof HTMLDetailsElement) disclosure.open = false;
                   },
                 }),
-                m('.fm-workspace-switcher-panel', { role: 'dialog', 'aria-label': 'Workspaces' }, [
-                  m('.fm-workspace-switcher-heading', [
-                    m('strong', 'Workspaces'),
-                    m(
-                      'button',
-                      {
-                        type: 'button',
-                        'aria-label': 'Close workspaces',
-                        onclick: (event: MouseEvent) => {
-                          const disclosure = (event.currentTarget as HTMLElement).closest(
-                            'details',
-                          );
-                          if (disclosure instanceof HTMLDetailsElement) disclosure.open = false;
-                        },
-                      },
-                      closeIcon(),
-                    ),
-                  ]),
-                  m(WorkspaceSwitcher, {
-                    summaries: sortWorkspaceSummaries(workspaceSummaries),
-                    activeWorkspaceId: workspace?.id,
-                    error: workspaceActionError,
-                    onSwitch: (workspaceId) => {
-                      void switchWorkspace(workspaceId);
-                    },
-                    onCreate: () => workspaceController.createWorkspaceAction(),
-                    onRename: (workspaceId, name) =>
-                      workspaceController.renameWorkspaceAction(workspaceId, name),
-                    onDelete: (workspaceId) =>
-                      workspaceController.deleteWorkspaceAction(workspaceId),
-                    ...(attrsClient.openWorkspaceWindow === undefined
-                      ? {}
-                      : {
-                          onOpenInNewWindow: (workspaceId) => {
-                            void attrsClient.openWorkspaceWindow?.(workspaceId);
-                            if (workspaceDisclosureElement !== undefined) {
-                              workspaceDisclosureElement.open = false;
-                            }
+                m(
+                  '.fm-workspace-switcher-panel',
+                  { role: 'dialog', 'aria-label': t('shell', 'workspaceSwitcher') },
+                  [
+                    m('.fm-workspace-switcher-heading', [
+                      m('strong', t('shell', 'workspaceSwitcher')),
+                      m(
+                        'button',
+                        {
+                          type: 'button',
+                          'aria-label': t('shell', 'closeWorkspaces'),
+                          onclick: (event: MouseEvent) => {
+                            const disclosure = (event.currentTarget as HTMLElement).closest(
+                              'details',
+                            );
+                            if (disclosure instanceof HTMLDetailsElement) disclosure.open = false;
                           },
-                        }),
-                  }),
-                ]),
+                        },
+                        closeIcon(),
+                      ),
+                    ]),
+                    m(WorkspaceSwitcher, {
+                      summaries: sortWorkspaceSummaries(workspaceSummaries),
+                      activeWorkspaceId: workspace?.id,
+                      error: workspaceActionError,
+                      onSwitch: (workspaceId) => {
+                        void switchWorkspace(workspaceId);
+                      },
+                      onCreate: () => workspaceController.createWorkspaceAction(),
+                      onRename: (workspaceId, name) =>
+                        workspaceController.renameWorkspaceAction(workspaceId, name),
+                      onDelete: (workspaceId) =>
+                        workspaceController.deleteWorkspaceAction(workspaceId),
+                      ...(attrsClient.openWorkspaceWindow === undefined
+                        ? {}
+                        : {
+                            onOpenInNewWindow: (workspaceId) => {
+                              void attrsClient.openWorkspaceWindow?.(workspaceId);
+                              if (workspaceDisclosureElement !== undefined) {
+                                workspaceDisclosureElement.open = false;
+                              }
+                            },
+                          }),
+                    }),
+                  ],
+                ),
               ],
             ),
             tooltip(
-              'Show system diagnostics',
+              t('shell', 'diagnostics'),
               m(
                 IconButton,
                 {
                   className: 'fm-diagnostics-button',
-                  'aria-label': 'Diagnostics',
+                  'aria-label': t('shell', 'diagnostics'),
                   onclick: () => {
                     if (diagnosticsDisclosureElement === undefined) return;
                     diagnosticsDisclosureElement.open = !diagnosticsDisclosureElement.open;
@@ -2264,7 +2271,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
                   '.fm-diagnostics-editor',
                   {
                     role: 'dialog',
-                    'aria-label': 'System Diagnostics',
+                    'aria-label': t('shell', 'systemDiagnostics'),
                     onclick: (event: MouseEvent) => {
                       if (event.target === event.currentTarget) {
                         if (diagnosticsDisclosureElement !== undefined)
@@ -2276,12 +2283,12 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
                   [
                     m('.fm-settings-editor-panel', [
                       m('.fm-settings-editor-heading', [
-                        m('strong', 'System Diagnostics'),
+                        m('strong', t('shell', 'systemDiagnostics')),
                         m(
                           'button',
                           {
                             type: 'button',
-                            'aria-label': 'Close diagnostics',
+                            'aria-label': t('shell', 'closeDiagnostics'),
                             onclick: () => {
                               if (diagnosticsDisclosureElement !== undefined)
                                 diagnosticsDisclosureElement.open = false;
@@ -2298,12 +2305,12 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
               ],
             ),
             tooltip(
-              'Open settings',
+              t('shell', 'openSettings'),
               m(
                 IconButton,
                 {
                   className: 'fm-settings-button',
-                  'aria-label': 'Settings',
+                  'aria-label': t('shell', 'settings'),
                   onclick: () => {
                     if (settingsDisclosureElement === undefined) return;
                     settingsDisclosureElement.open = !settingsDisclosureElement.open;
@@ -2333,7 +2340,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
                   '.fm-settings-editor',
                   {
                     role: 'dialog',
-                    'aria-label': 'Settings',
+                    'aria-label': t('shell', 'settings'),
                     onclick: (event: MouseEvent) => {
                       if (event.target === event.currentTarget) {
                         closeSettingsDialog();
@@ -2343,19 +2350,19 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
                   [
                     m('.fm-settings-editor-panel', [
                       m('.fm-settings-editor-heading', [
-                        m('strong', 'Settings'),
+                        m('strong', t('shell', 'settings')),
                         m(
                           'button',
                           {
                             type: 'button',
-                            'aria-label': 'Close settings',
+                            'aria-label': t('shell', 'closeSettings'),
                             onclick: () => closeSettingsDialog(),
                           },
                           closeIcon(),
                         ),
                       ]),
                       currentSettings === undefined
-                        ? m('p', 'Loading settings…')
+                        ? m('p', t('shell', 'loading'))
                         : settingsDialogOpen
                           ? m(SettingsEditor, {
                               settings: currentSettings,
@@ -2402,7 +2409,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
           ]),
           m('main.fm-workspace', [
             workspace === undefined
-              ? m('.fm-workspace-loading', workspaceError ?? 'Loading workspace…')
+              ? m('.fm-workspace-loading', workspaceError ?? t('shell', 'loading'))
               : m(WorkspaceLayoutView, {
                   workspace,
                   paneContent: (paneId) =>

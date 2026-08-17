@@ -3,9 +3,12 @@
 //! Split out of the `FileManagerService` facade (task 0119) — a self-contained pair of pure
 //! conversion functions with no dependency on the rest of the facade.
 
-use fm_settings::{ConflictPolicy, DateFormat, DefaultPaneLayout, Settings, SizeFormat, Theme};
+use fm_settings::{
+    ConflictPolicy, DateFormat, DefaultPaneLayout, Language, Settings, SizeFormat, Theme,
+};
 use fm_transport_dto::{
-    ConflictPolicyDto, DateFormatDto, DefaultPaneLayoutDto, SettingsDto, SizeFormatDto, ThemeDto,
+    ConflictPolicyDto, DateFormatDto, DefaultPaneLayoutDto, LanguageDto, SettingsDto,
+    SizeFormatDto, ThemeDto,
 };
 
 pub(crate) fn settings_to_dto(settings: Settings) -> SettingsDto {
@@ -15,6 +18,10 @@ pub(crate) fn settings_to_dto(settings: Settings) -> SettingsDto {
             Theme::Auto => ThemeDto::Auto,
             Theme::Light => ThemeDto::Light,
             Theme::Dark => ThemeDto::Dark,
+        },
+        language: match settings.language {
+            Language::En => LanguageDto::En,
+            Language::Nl => LanguageDto::Nl,
         },
         font_size: settings.font_size,
         row_height: settings.row_height,
@@ -78,6 +85,10 @@ pub(crate) fn settings_from_dto(settings: SettingsDto) -> Settings {
             ThemeDto::Auto => Theme::Auto,
             ThemeDto::Light => Theme::Light,
             ThemeDto::Dark => Theme::Dark,
+        },
+        language: match settings.language {
+            LanguageDto::En => Language::En,
+            LanguageDto::Nl => Language::Nl,
         },
         font_size: settings.font_size,
         row_height: settings.row_height,

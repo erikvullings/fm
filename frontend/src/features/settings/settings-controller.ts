@@ -2,6 +2,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { type Theme, ThemeManager } from 'mithril-materialized';
 import type { FileManagerClient } from '../../api/client/file-manager-client';
+import { setLocale } from '../../i18n';
 import type {
   PaneId,
   PluginDescriptor,
@@ -73,6 +74,7 @@ export function createSettingsController(context: SettingsControllerContext): Se
         sizeFormat: settings.sizeFormat,
         locale: navigator.language,
       });
+      setLocale(settings.language);
       document.documentElement.style.setProperty('--fm-font-size', `${settings.fontSize}px`);
       document.documentElement.style.setProperty('--fm-row-height', `${settings.rowHeight}px`);
       ThemeManager.setTheme(settings.theme);
