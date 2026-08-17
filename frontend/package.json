@@ -34,7 +34,8 @@
     "mithril": "^2.3.8",
     "mithril-materialized": "^3.17.9",
     "pdfjs-dist": "6.2.108",
-    "slimdown-js": "1.4.1"
+    "slimdown-js": "1.4.1",
+    "translate.js": "^1.3.2"
   },
   "devDependencies": {
     "@mithril-inspector/vite": "0.3.2",

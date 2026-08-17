@@ -2056,6 +2056,14 @@
         ],
         "type": "object"
       },
+      "LanguageDto": {
+        "description": "UI language.",
+        "enum": [
+          "en",
+          "nl"
+        ],
+        "type": "string"
+      },
       "ListDirectoryRequest": {
         "description": "Requests the entries of a directory (`POST /api/v1/directories/list`).",
         "example": {
@@ -3669,6 +3677,10 @@
             },
             "type": "object"
           },
+          "language": {
+            "$ref": "#/components/schemas/LanguageDto",
+            "description": "UI language."
+          },
           "operationConcurrency": {
             "description": "Maximum concurrent operations.",
             "format": "int32",
@@ -3727,6 +3739,7 @@
         "required": [
           "schemaVersion",
           "theme",
+          "language",
           "fontSize",
           "rowHeight",
           "dateFormat",

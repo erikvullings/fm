@@ -10,6 +10,7 @@ export interface FavouriteLocation {
 export interface Settings {
   readonly schemaVersion: number;
   readonly theme: 'auto' | 'light' | 'dark';
+  readonly language: 'en' | 'nl';
   readonly fontSize: number;
   readonly rowHeight: number;
   readonly dateFormat: 'short' | 'medium' | 'iso';

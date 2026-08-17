@@ -1,6 +1,7 @@
 import m, { type FactoryComponent } from 'mithril';
 import { NumberInput, Select, Switch, TextInput, ThemeSwitcher } from 'mithril-materialized';
-
+import type { Locale } from '../../i18n';
+import { LOCALES, t } from '../../i18n';
 import {
   detectBindingConflicts,
   getLiveBindings,
@@ -117,9 +118,20 @@ export const SettingsEditor: FactoryComponent<SettingsEditorAttrs> = () => {
       const conflicts = detectBindingConflicts(current.actions, activeDraft.keybindings, context);
       const conflictedActionIds = new Set(conflicts.flatMap((conflict) => conflict.actionIds));
 
-      return m('.fm-settings-editor-body', { 'aria-label': 'Settings editor' }, [
+      return m('.fm-settings-editor-body', { 'aria-label': t('settings', 'settingsEditor') }, [
+        m('.row', m('h4.fm-settings-section-heading.col.s12', t('settings', 'appearance'))),
         m('.row', [
-          m('h4.fm-settings-section-heading.col.s12', 'Appearance'),
+          m(Select<Locale>, {
+            className: 'col s12',
+            label: t('settings', 'language'),
+            options: LOCALES.map((locale) => ({
+              id: locale,
+              label:
+                locale === 'en' ? t('settings', 'languageEnglish') : t('settings', 'languageDutch'),
+            })),
+            checkedId: activeDraft.language,
+            onchange: ([value]) => value !== undefined && update(current, { language: value }),
+          }),
           m(ThemeSwitcher, {
             className: 'col s12',
             theme: activeDraft.theme,
@@ -130,7 +142,7 @@ export const SettingsEditor: FactoryComponent<SettingsEditorAttrs> = () => {
         m('.row', [
           m(NumberInput, {
             className: 'col s6',
-            label: 'Font size (px)',
+            label: t('settings', 'fontSize'),
             value: activeDraft.fontSize,
             min: 8,
             max: 32,
@@ -139,7 +151,7 @@ export const SettingsEditor: FactoryComponent<SettingsEditorAttrs> = () => {
           }),
           m(NumberInput, {
             className: 'col s6',
-            label: 'Row height (px)',
+            label: t('settings', 'rowHeight'),
             value: activeDraft.rowHeight,
             min: 16,
             max: 64,
@@ -150,22 +162,22 @@ export const SettingsEditor: FactoryComponent<SettingsEditorAttrs> = () => {
         m('.row', [
           m(Select<Settings['dateFormat']>, {
             className: 'col s6',
-            label: 'Date format',
+            label: t('settings', 'dateFormat'),
             options: [
-              { id: 'short', label: 'Short' },
-              { id: 'medium', label: 'Medium' },
-              { id: 'iso', label: 'ISO 8601' },
+              { id: 'short', label: t('settings', 'dateFormatShort') },
+              { id: 'medium', label: t('settings', 'dateFormatMedium') },
+              { id: 'iso', label: t('settings', 'dateFormatIso') },
             ],
             checkedId: activeDraft.dateFormat,
             onchange: ([value]) => value !== undefined && update(current, { dateFormat: value }),
           }),
           m(Select<Settings['sizeFormat']>, {
             className: 'col s6',
-            label: 'Size format',
+            label: t('settings', 'sizeFormat'),
             options: [
-              { id: 'binary', label: 'Binary (1024-based: K, M, G...)' },
-              { id: 'decimal', label: 'Decimal (1000-based: K, M, G...)' },
-              { id: 'bytes', label: 'Bytes' },
+              { id: 'binary', label: t('settings', 'sizeFormatBinary') },
+              { id: 'decimal', label: t('settings', 'sizeFormatDecimal') },
+              { id: 'bytes', label: t('settings', 'sizeFormatBytes') },
             ],
             checkedId: activeDraft.sizeFormat,
             onchange: ([value]) => value !== undefined && update(current, { sizeFormat: value }),
@@ -173,9 +185,9 @@ export const SettingsEditor: FactoryComponent<SettingsEditorAttrs> = () => {
         ]),
         m('.row', [
           m(Select<string>, {
-            label: 'Directory icon theme',
+            label: t('settings', 'iconTheme'),
             options: [
-              { id: 'generic', label: 'Generic' },
+              { id: 'generic', label: t('settings', 'iconThemeGeneric') },
               ...current.plugins
                 .filter((plugin) => plugin.iconTheme !== undefined)
                 .map((plugin) => ({
@@ -188,11 +200,11 @@ export const SettingsEditor: FactoryComponent<SettingsEditorAttrs> = () => {
           }),
         ]),
 
-        m('.row', m('h4.fm-settings-section-heading.col.s12', 'File behavior')),
+        m('.row', m('h4.fm-settings-section-heading.col.s12', t('settings', 'fileBehavior'))),
         m('.row', [
           m(Switch, {
             className: 'col s12 m6',
-            label: 'Show hidden files',
+            label: t('settings', 'showHiddenFiles'),
             checked: activeDraft.showHiddenFiles,
             left: 'Hidden',
             right: 'Shown',
@@ -200,7 +212,7 @@ export const SettingsEditor: FactoryComponent<SettingsEditorAttrs> = () => {
           }),
           m(Switch, {
             className: 'col s12 m6',
-            label: 'Confirm permanent delete',
+            label: t('settings', 'confirmPermanentDelete'),
             checked: activeDraft.confirmPermanentDelete,
             left: 'Off',
             right: 'On',
@@ -208,16 +220,16 @@ export const SettingsEditor: FactoryComponent<SettingsEditorAttrs> = () => {
           }),
         ]),
 
-        m('.row', m('h4.fm-settings-section-heading.col.s12', 'Operations')),
+        m('.row', m('h4.fm-settings-section-heading.col.s12', t('settings', 'operations'))),
         m('.row', [
           m(Select<Settings['defaultConflictPolicy']>, {
             className: 'col s6',
-            label: 'Default conflict policy',
+            label: t('settings', 'defaultConflictPolicy'),
             options: [
-              { id: 'ask', label: 'Ask' },
-              { id: 'overwrite', label: 'Overwrite' },
-              { id: 'keepBoth', label: 'Keep both' },
-              { id: 'skip', label: 'Skip' },
+              { id: 'ask', label: t('settings', 'conflictAsk') },
+              { id: 'overwrite', label: t('settings', 'conflictOverwrite') },
+              { id: 'keepBoth', label: t('settings', 'conflictKeepBoth') },
+              { id: 'skip', label: t('settings', 'conflictSkip') },
             ],
             checkedId: activeDraft.defaultConflictPolicy,
             onchange: ([value]) =>
@@ -225,7 +237,7 @@ export const SettingsEditor: FactoryComponent<SettingsEditorAttrs> = () => {
           }),
           m(NumberInput, {
             className: 'col s6',
-            label: 'Operation concurrency',
+            label: t('settings', 'operationConcurrency'),
             value: activeDraft.operationConcurrency,
             min: 1,
             oninput: (value: number) => update(current, { operationConcurrency: value }),
@@ -233,13 +245,16 @@ export const SettingsEditor: FactoryComponent<SettingsEditorAttrs> = () => {
           }),
         ]),
 
-        m('.row', m('h4.fm-settings-section-heading.col.s12', 'New workspace defaults')),
+        m(
+          '.row',
+          m('h4.fm-settings-section-heading.col.s12', t('settings', 'newWorkspaceDefaults')),
+        ),
         m('.row', [
           m(Select<Settings['defaultPaneLayout']>, {
-            label: 'Default pane layout',
+            label: t('settings', 'defaultPaneLayout'),
             options: [
-              { id: 'dual', label: 'Dual pane' },
-              { id: 'single', label: 'Single pane' },
+              { id: 'dual', label: t('settings', 'paneLayoutDual') },
+              { id: 'single', label: t('settings', 'paneLayoutSingle') },
             ],
             checkedId: activeDraft.defaultPaneLayout,
             onchange: ([value]) =>
@@ -248,7 +263,7 @@ export const SettingsEditor: FactoryComponent<SettingsEditorAttrs> = () => {
         ]),
         m('.row', [
           m(TextInput, {
-            label: 'Default columns (comma-separated)',
+            label: t('settings', 'defaultColumns'),
             value: columnsText,
             oninput: (value: string) => {
               columnsText = value;
@@ -261,7 +276,7 @@ export const SettingsEditor: FactoryComponent<SettingsEditorAttrs> = () => {
         ]),
         m('.row', [
           m(TextInput, {
-            label: 'Default start locations (comma-separated)',
+            label: t('settings', 'defaultStartLocations'),
             value: startLocationsText,
             oninput: (value: string) => {
               startLocationsText = value;
@@ -273,12 +288,12 @@ export const SettingsEditor: FactoryComponent<SettingsEditorAttrs> = () => {
           }),
         ]),
 
-        m('.row', m('h4.fm-settings-section-heading.col.s12', 'Terminal')),
+        m('.row', m('h4.fm-settings-section-heading.col.s12', t('settings', 'terminal'))),
         m('.row', [
           m(TextInput, {
-            label: 'Terminal command',
+            label: t('settings', 'terminalCommand'),
             value: activeDraft.terminalCommand ?? '',
-            placeholder: 'System default',
+            placeholder: t('settings', 'systemDefault'),
             oninput: (value: string) =>
               update(current, { terminalCommand: value.trim().length === 0 ? null : value }),
             onchange: (value: string) =>
@@ -286,12 +301,12 @@ export const SettingsEditor: FactoryComponent<SettingsEditorAttrs> = () => {
           }),
         ]),
 
-        m('.row', m('h4.fm-settings-section-heading.col.s12', 'Editor')),
+        m('.row', m('h4.fm-settings-section-heading.col.s12', t('settings', 'editor'))),
         m('.row', [
           m(TextInput, {
-            label: 'Editor command',
+            label: t('settings', 'editorCommand'),
             value: activeDraft.editorCommand ?? '',
-            placeholder: 'System default',
+            placeholder: t('settings', 'systemDefault'),
             oninput: (value: string) =>
               update(current, { editorCommand: value.trim().length === 0 ? null : value }),
             onchange: (value: string) =>
@@ -299,7 +314,7 @@ export const SettingsEditor: FactoryComponent<SettingsEditorAttrs> = () => {
           }),
         ]),
 
-        m('.row', m('h4.fm-settings-section-heading.col.s12', 'Keybindings')),
+        m('.row', m('h4.fm-settings-section-heading.col.s12', t('settings', 'keybindings'))),
         conflicts.length === 0
           ? undefined
           : m(
@@ -308,7 +323,10 @@ export const SettingsEditor: FactoryComponent<SettingsEditorAttrs> = () => {
               conflicts.map((conflict) =>
                 m(
                   'li',
-                  `"${conflict.shortcut}" is bound to more than one action: ${conflict.actionIds.join(', ')}`,
+                  t('settings', 'keybindingConflict', {
+                    shortcut: conflict.shortcut,
+                    actions: conflict.actionIds.join(', '),
+                  }),
                 ),
               ),
             ),
@@ -339,14 +357,17 @@ export const SettingsEditor: FactoryComponent<SettingsEditorAttrs> = () => {
                     }),
                 }),
                 shortcut?.available === false
-                  ? m('span.fm-settings-keybinding-unavailable', 'Unavailable in the browser')
+                  ? m(
+                      'span.fm-settings-keybinding-unavailable',
+                      t('settings', 'unavailableInBrowser'),
+                    )
                   : undefined,
               ],
             );
           }),
         ),
 
-        m('.row', m('h4.fm-settings-section-heading.col.s12', 'Plugins')),
+        m('.row', m('h4.fm-settings-section-heading.col.s12', t('settings', 'plugins'))),
         m(PluginManagement, {
           plugins: current.plugins,
           onToggle: current.onTogglePlugin,
@@ -363,11 +384,11 @@ export const SettingsEditor: FactoryComponent<SettingsEditorAttrs> = () => {
         saveError === undefined
           ? undefined
           : m('.fm-settings-save-error', { role: 'alert' }, saveError),
-        m('.fm-settings-editor-actions', [
+        m('.fm-settings-editor-actions.fm-sticky-footer', [
           m(
             'button.fm-settings-cancel',
             { type: 'button', onclick: () => handleCancel(current) },
-            'Cancel',
+            t('settings', 'cancel'),
           ),
           m(
             'button.fm-settings-save',
@@ -376,7 +397,7 @@ export const SettingsEditor: FactoryComponent<SettingsEditorAttrs> = () => {
               disabled: errors.length > 0 || saving,
               onclick: () => handleSave(current),
             },
-            saving ? 'Saving…' : 'Save',
+            saving ? t('settings', 'saving') : t('settings', 'save'),
           ),
         ]),
       ]);

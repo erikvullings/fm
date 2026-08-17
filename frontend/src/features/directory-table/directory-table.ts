@@ -1,5 +1,7 @@
 import m, { type FactoryComponent, type VnodeDOM } from 'mithril';
 import { eyeOffIcon, linkIcon } from '../../components/tabler-icons';
+
+import { t } from '../../i18n';
 import type {
   EntryId,
   EntrySummary,
@@ -123,7 +125,7 @@ function typeLabel(entry: EntrySummary): string {
   if (entry.kind === 'directory' || entry.kind === 'symlink') {
     return '';
   }
-  return entry.extension ?? entry.mimeType ?? 'File';
+  return entry.extension ?? entry.mimeType ?? t('table', 'file');
 }
 
 function rowId(entryId: EntryId): string {
@@ -196,7 +198,7 @@ const GIT_STATUS_LABELS: Record<GitFileStatus, string> = {
 const INITIAL_COLUMNS: readonly DirectoryColumnDescriptor[] = [
   {
     id: 'core.name',
-    label: 'Name',
+    label: t('table', 'name'),
     cellClass: 'fm-directory-name',
     render: (
       entry,
@@ -251,14 +253,14 @@ const INITIAL_COLUMNS: readonly DirectoryColumnDescriptor[] = [
         entry.kind === 'symlink'
           ? m(
               'span.fm-entry-symlink-indicator',
-              { title: 'Link entry', 'aria-label': 'Link entry' },
+              { title: t('table', 'linkEntry'), 'aria-label': t('table', 'linkEntry') },
               linkIcon({ size: 14 }),
             )
           : undefined,
         entry.hidden
           ? m(
               'span.fm-entry-hidden-indicator',
-              { title: 'Hidden entry', 'aria-label': 'Hidden entry' },
+              { title: t('table', 'hiddenEntry'), 'aria-label': t('table', 'hiddenEntry') },
               eyeOffIcon({ size: 14 }),
             )
           : undefined,
@@ -267,13 +269,13 @@ const INITIAL_COLUMNS: readonly DirectoryColumnDescriptor[] = [
   },
   {
     id: 'core.extension',
-    label: 'Ext',
+    label: t('table', 'ext'),
     cellClass: 'fm-directory-type',
     render: typeLabel,
   },
   {
     id: 'core.size',
-    label: 'Size',
+    label: t('table', 'size'),
     cellClass: 'fm-directory-size',
     render: (entry, _nameMatchPrefix, settings = DEFAULT_ENTRY_FORMAT_SETTINGS) =>
       isParentEntry(entry.id) || entry.kind === 'symlink' ? '' : formatEntrySize(entry, settings),
@@ -296,7 +298,7 @@ const INITIAL_COLUMNS: readonly DirectoryColumnDescriptor[] = [
   },
   {
     id: 'core.modified',
-    label: 'Modified',
+    label: t('table', 'modified'),
     cellClass: 'fm-directory-modified',
     render: (entry, _nameMatchPrefix, settings = DEFAULT_ENTRY_FORMAT_SETTINGS) =>
       isParentEntry(entry.id) ? '' : formatEntryModifiedAt(entry.modifiedAt, settings),
@@ -322,7 +324,7 @@ function stateView(attrs: DirectoryTableAttrs, rowHeight: number): m.Children | 
       Math.ceil((attrs.viewportHeight ?? DEFAULT_VIEWPORT_HEIGHT) / rowHeight),
     );
     return m('.fm-directory-state', { role: 'status', 'aria-live': 'polite' }, [
-      m('.fm-visually-hidden', 'Loading directory'),
+      m('.fm-visually-hidden', t('table', 'loadingDirectory')),
       Array.from({ length: count }, (_, index) =>
         m('.fm-directory-placeholder', {
           key: index,
@@ -333,7 +335,7 @@ function stateView(attrs: DirectoryTableAttrs, rowHeight: number): m.Children | 
     ]);
   }
   if (attrs.state.type === 'error') {
-    const genericMessage = 'Unable to load directory.';
+    const genericMessage = t('table', 'unableToLoad');
     const detail = attrs.state.message.trim();
     const normalizedDetail = detail.replace(/[.!?]+$/, '').toLocaleLowerCase();
     const normalizedGeneric = genericMessage.replace(/[.!?]+$/, '').toLocaleLowerCase();
@@ -342,14 +344,18 @@ function stateView(attrs: DirectoryTableAttrs, rowHeight: number): m.Children | 
       detail.length > 0 && normalizedDetail !== normalizedGeneric ? m('span', detail) : undefined,
       attrs.onRetry === undefined
         ? undefined
-        : m('button.fm-directory-retry', { type: 'button', onclick: attrs.onRetry }, 'Retry'),
+        : m(
+            'button.fm-directory-retry',
+            { type: 'button', onclick: attrs.onRetry },
+            t('table', 'retry'),
+          ),
     ]);
   }
   if (attrs.state.type === 'idle') {
-    return m('.fm-directory-state', { role: 'status' }, 'Directory not loaded.');
+    return m('.fm-directory-state', { role: 'status' }, t('table', 'notLoaded'));
   }
   if ((attrs.source?.length ?? 0) === 0) {
-    return m('.fm-directory-state', { role: 'status' }, 'This directory is empty.');
+    return m('.fm-directory-state', { role: 'status' }, t('state', 'empty'));
   }
   return undefined;
 }
@@ -694,7 +700,7 @@ export const DirectoryTable: FactoryComponent<DirectoryTableAttrs> = () => {
                     ? [
                         m('input[type=text].fm-inline-rename-input', {
                           value: attrs.renameValue ?? entry.name,
-                          'aria-label': `Rename ${entry.name}`,
+                          'aria-label': t('table', 'rename', { name: entry.name }),
                           'aria-invalid': attrs.renameError === undefined ? undefined : 'true',
                           oncreate: ({ dom }: VnodeDOM) => {
                             const input = dom as HTMLInputElement;
@@ -775,7 +781,7 @@ export const DirectoryTable: FactoryComponent<DirectoryTableAttrs> = () => {
             {
               role: 'grid',
               tabindex: 0,
-              'aria-label': attrs.label ?? 'Directory contents',
+              'aria-label': attrs.label ?? t('table', 'directoryContents'),
               'aria-rowcount': (source?.length ?? 0) + 1,
               'aria-colcount': columns.length,
               'aria-activedescendant':
@@ -872,7 +878,9 @@ export const DirectoryTable: FactoryComponent<DirectoryTableAttrs> = () => {
                   'aria-atomic': 'true',
                   style: { top: '0', left: '0' },
                 },
-                cursorEntry === undefined ? '' : `Focused ${cursorEntry.name}`,
+                cursorEntry === undefined
+                  ? ''
+                  : t('table', 'focusedEntry', { name: cursorEntry.name }),
               ),
             ],
           ),

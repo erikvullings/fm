@@ -20,6 +20,7 @@ function fixtureSettings(overrides: Partial<Settings> = {}): Settings {
   return {
     schemaVersion: 2,
     theme: 'auto',
+    language: 'en',
     fontSize: 13,
     rowHeight: 22,
     dateFormat: 'medium',
