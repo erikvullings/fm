@@ -343,6 +343,22 @@
       "ArchiveInfoDto": {
         "description": "Archive-specific metadata for an entry (for example a `.zip` file).",
         "properties": {
+          "compressedSize": {
+            "description": "The entry's compressed size within its archive, in bytes, when known.",
+            "format": "int64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "compressionMethod": {
+            "description": "The compression method used for this entry, when known.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "entryCount": {
             "description": "Number of entries contained in the archive, when known.",
             "format": "int64",

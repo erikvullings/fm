@@ -8,6 +8,17 @@
  */
 export interface ArchiveInfoDto {
   /**
+     * The entry's compressed size within its archive, in bytes, when known.
+     * @minimum 0
+     * @nullable
+     */
+  compressedSize?: number | null;
+  /**
+     * The compression method used for this entry, when known.
+     * @nullable
+     */
+  compressionMethod?: string | null;
+  /**
      * Number of entries contained in the archive, when known.
      * @minimum 0
      * @nullable
@@ -19,15 +30,4 @@ export interface ArchiveInfoDto {
      * @nullable
      */
   uncompressedSize?: number | null;
-  /**
-     * The entry's compressed size within its archive, in bytes, when known.
-     * @minimum 0
-     * @nullable
-     */
-  compressedSize?: number | null;
-  /**
-     * The compression method used for this entry, when known.
-     * @nullable
-     */
-  compressionMethod?: string | null;
 }
