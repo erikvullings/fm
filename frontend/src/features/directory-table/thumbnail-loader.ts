@@ -76,7 +76,7 @@ export class ThumbnailLoader {
   constructor(
     private readonly client: ThumbnailClient,
     private readonly redraw: () => void = m.redraw,
-  ) { }
+  ) {}
 
   thumbnailDataUri(entry: EntrySummary, size: ThumbnailSize): string | undefined {
     if (!isThumbnailable(entry)) return undefined;
@@ -90,8 +90,10 @@ export class ThumbnailLoader {
       return isSvg(entry)
         ? this.readSvgDataUri(entry)
         : this.client
-          .getThumbnail(entry.location.uri, size)
-          .then((bytes) => (bytes === undefined ? undefined : bytesToDataUri(bytes, 'image/jpeg')));
+            .getThumbnail(entry.location.uri, size)
+            .then((bytes) =>
+              bytes === undefined ? undefined : bytesToDataUri(bytes, 'image/jpeg'),
+            );
     };
     // Fire immediately while under the concurrency cap; otherwise queue and let a finishing
     // request's cleanup below start the next queued one. Queuing (not the immediate path) is the
