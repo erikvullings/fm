@@ -51,14 +51,31 @@ async fn copy_directory_with_policy(
             None,
         )
         .expect("accepted");
-    for _ in 0..6_000 {
+    // A fixed wall-clock budget here was flaky under CPU contention (a large copy genuinely
+    // still advancing, just slower than usual, would get killed by an unrelated timer) - only
+    // give up once the operation has made no progress at all for a while, so this stays fast in
+    // the common case and robust under load.
+    const STALL_TIMEOUT: Duration = Duration::from_secs(30);
+    let mut last_progress = None;
+    let mut last_progress_change = tokio::time::Instant::now();
+    loop {
         let current = service.get_operation(operation.id.into()).unwrap();
         if current.state.is_terminal() {
             return current;
         }
+        let progress = (
+            current.progress.completed_items,
+            current.progress.completed_bytes,
+        );
+        if last_progress != Some(progress) {
+            last_progress = Some(progress);
+            last_progress_change = tokio::time::Instant::now();
+        }
+        if last_progress_change.elapsed() > STALL_TIMEOUT {
+            panic!("operation stalled without finishing: {current:?}");
+        }
         tokio::time::sleep(Duration::from_millis(10)).await;
     }
-    panic!("operation did not finish")
 }
 
 #[cfg(unix)]
