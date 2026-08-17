@@ -22,6 +22,8 @@ import type {
   EntryMetadataRequest,
   FileRangeChunk,
   GenerateSyncPlanRequest,
+  GitFileHistoryRequest,
+  GitFileHistoryResult,
   HostKeyProbe,
   InvokeActionRequest,
   ListDirectoryRequest,
@@ -269,6 +271,13 @@ export class TauriFileManagerClient implements FileManagerClient {
     _signal?: AbortSignal,
   ): Promise<CalculateFolderSizeResult> {
     return invoke<CalculateFolderSizeResult>('calculate_folder_size', { request });
+  }
+
+  gitFileHistory(
+    request: GitFileHistoryRequest,
+    _signal?: AbortSignal,
+  ): Promise<GitFileHistoryResult> {
+    return invoke<GitFileHistoryResult>('get_file_git_history', { request });
   }
 
   startOperation(request: StartOperationRequest, _signal?: AbortSignal): Promise<Operation> {

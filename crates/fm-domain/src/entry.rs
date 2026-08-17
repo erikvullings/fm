@@ -41,6 +41,24 @@ pub enum GitFileStatus {
     Ignored,
 }
 
+/// One commit in a file's git history (task 0135's Alt+Space history section), local provider
+/// only. Ordered newest-first, matching `git log`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GitLogEntry {
+    /// The commit's full SHA-1 (or SHA-256, for repositories using that object format).
+    pub commit_id: String,
+    /// The commit's abbreviated id, as `git log --oneline` would show it.
+    pub short_id: String,
+    /// The commit author's display name.
+    pub author_name: String,
+    /// The commit author's email address.
+    pub author_email: String,
+    /// When the commit was authored.
+    pub committed_at: DateTime<Utc>,
+    /// The commit message's first line.
+    pub summary: String,
+}
+
 /// A compact summary of a directory entry, suitable for directory listings.
 ///
 /// Expensive metadata (permissions, checksums, media info, ...) is

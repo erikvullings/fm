@@ -47,7 +47,12 @@ function setup(): {
   readonly states: FileViewerState[];
 } {
   return {
-    client: { readFileRange: vi.fn(), searchInFile: vi.fn(), listDirectory: vi.fn() },
+    client: {
+      readFileRange: vi.fn(),
+      searchInFile: vi.fn(),
+      listDirectory: vi.fn(),
+      gitFileHistory: vi.fn().mockResolvedValue({ commits: [] }),
+    },
     states: [],
   };
 }
@@ -506,6 +511,65 @@ describe('file viewer controller', () => {
     const state = context.states.at(-1);
     expect(state).toMatchObject({ metadataPanelOpen: false });
     expect((state as { metadata?: unknown }).metadata).toBeDefined();
+  });
+
+  it('fetches git history when the metadata panel is opened', async () => {
+    const context = setup();
+    vi.mocked(context.client.readFileRange).mockResolvedValue({
+      data: [104],
+      offset: 0,
+      length: 1,
+      eof: true,
+    });
+    vi.mocked(context.client.gitFileHistory).mockResolvedValue({
+      commits: [
+        {
+          commitId: 'a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0',
+          shortId: 'a1b2c3d',
+          authorName: 'Ada Lovelace',
+          authorEmail: 'ada@example.com',
+          committedAt: '2026-01-15T09:30:00Z',
+          summary: 'fix(app): handle empty selection',
+        },
+      ],
+    });
+    const controller = createFileViewerController({
+      client: context.client,
+      entry: entry(),
+      update: (state) => context.states.push(state),
+    });
+    await vi.waitFor(() => expect(context.states.at(-1)?.status).toBe('ready'));
+
+    controller.toggleMetadataPanel();
+    await vi.waitFor(() =>
+      expect(context.states.at(-1)).toMatchObject({
+        gitHistory: [{ summary: 'fix(app): handle empty selection' }],
+      }),
+    );
+
+    expect(context.client.gitFileHistory).toHaveBeenCalledWith({
+      location: entry().location,
+    });
+  });
+
+  it('resolves git history to an empty list when the file has none, rather than rejecting', async () => {
+    const context = setup();
+    vi.mocked(context.client.readFileRange).mockResolvedValue({
+      data: [104],
+      offset: 0,
+      length: 1,
+      eof: true,
+    });
+    vi.mocked(context.client.gitFileHistory).mockRejectedValue(new Error('network error'));
+    const controller = createFileViewerController({
+      client: context.client,
+      entry: entry(),
+      update: (state) => context.states.push(state),
+    });
+    await vi.waitFor(() => expect(context.states.at(-1)?.status).toBe('ready'));
+
+    controller.toggleMetadataPanel();
+    await vi.waitFor(() => expect(context.states.at(-1)).toMatchObject({ gitHistory: [] }));
   });
 
   it('loads a PDF and exposes page count/current page, navigable via next/previousPage', async () => {

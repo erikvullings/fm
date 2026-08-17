@@ -27,6 +27,8 @@ import type {
   EntrySummary,
   FileRangeChunk,
   GenerateSyncPlanRequest,
+  GitFileHistoryRequest,
+  GitFileHistoryResult,
   HostKeyProbe,
   InvokeActionRequest,
   ListDirectoryRequest,
@@ -122,6 +124,7 @@ export type MockClientMethod =
   | 'readFileRange'
   | 'searchInFile'
   | 'calculateFolderSize'
+  | 'gitFileHistory'
   | 'startOperation'
   | 'listOperations'
   | 'cancelOperation'
@@ -1018,6 +1021,16 @@ export class MockFileManagerClient implements FileManagerClient {
       }
       return { totalBytes, fileCount };
     });
+  }
+
+  gitFileHistory(
+    request: GitFileHistoryRequest,
+    signal?: AbortSignal,
+  ): Promise<GitFileHistoryResult> {
+    // The mock fixtures have no notion of a git working tree, so every file simply has no
+    // history to show - the same outcome a real backend reports for a non-git directory.
+    void request;
+    return this.perform('gitFileHistory', signal, () => ({ commits: [] }));
   }
 
   startOperation(request: StartOperationRequest, signal?: AbortSignal): Promise<Operation> {

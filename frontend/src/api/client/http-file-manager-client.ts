@@ -20,6 +20,8 @@ import type {
   Location as FileLocation,
   FileRangeChunk,
   GenerateSyncPlanRequest,
+  GitFileHistoryRequest,
+  GitFileHistoryResult,
   HostKeyProbe,
   InvokeActionRequest,
   ListDirectoryRequest,
@@ -80,6 +82,7 @@ import {
   getEntryMetadata as requestEntryMetadata,
   getFileIcon as requestFileIcon,
   calculateFolderSize as requestFolderSizeCalculation,
+  getFileGitHistory as requestGitFileHistory,
   loadEditableFile as requestLoadEditableFile,
   navigatePane as requestNavigation,
   cancelOperation as requestOperationCancel,
@@ -456,6 +459,20 @@ export class HttpFileManagerClient implements FileManagerClient {
     );
     if (response.status !== 200) {
       throw new Error(`Unexpected calculateFolderSize response status: ${response.status}`);
+    }
+    return response.data;
+  }
+
+  async gitFileHistory(
+    request: GitFileHistoryRequest,
+    signal?: AbortSignal,
+  ): Promise<GitFileHistoryResult> {
+    const response = await requestGitFileHistory(
+      request,
+      signal !== undefined ? { signal } : undefined,
+    );
+    if (response.status !== 200) {
+      throw new Error(`Unexpected gitFileHistory response status: ${response.status}`);
     }
     return response.data;
   }

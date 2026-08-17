@@ -42,6 +42,9 @@ showcases the column API for third-party authors, matching the "sample plugin" p
   users who don't want it — check 0053's plugin permission model for whether a plugin can watch the
   filesystem and read arbitrary repo metadata within its granted directory scope before committing
   to the plugin route.
+- Follow-up (requested alongside this task): the Alt+Space metadata/info panel also shows the
+  cursor file's git commit history (newest first), and the panel itself opens as a bottom drawer
+  rather than sliding in from the side.
 
 ## Agent Notes
 - 2026-08-16 claude: Shipped as a first-party column (0053's plugin `HostServices` has no
@@ -79,3 +82,43 @@ showcases the column API for third-party authors, matching the "sample plugin" p
   `biome check` clean (one pre-existing, unrelated `noDescendingSpecificity` warning in
   `theme.css`). OpenAPI spec and the Orval client were regenerated (`pnpm api:export && pnpm
   api:generate`).
+- 2026-08-17 claude: Added the follow-up requested in the same session: the Alt+Space info panel's
+  git history section, and repositioned the panel to open from the bottom instead of the side.
+  Backend: `fm_domain::GitLogEntry` (commit id/short id, author name/email, committed-at, summary)
+  is produced by a new `GitStatusService::file_history(path, result_limit, scan_limit)` in
+  `fm-vcs-status`, which reuses the existing repo-root discovery cache, then walks commits reachable
+  from `HEAD` (`git2::Revwalk`, `TOPOLOGICAL | TIME` sort - plain `TIME` sort left same-second
+  commits in an unstable order) and keeps the ones whose pathspec-scoped tree diff against every
+  parent (or, for a root commit, the empty tree) touches the file, stopping at 50 matches or after
+  scanning 2000 commits, whichever comes first, so one Alt+Space press on a huge history can't hang.
+  `fm-application::DirectoryService::git_history` gates this on `provider_id == "local"` (same as
+  the status column) and is exposed through both hosts exactly like `calculateFolderSize`: a new
+  `POST /api/v1/files/git-history` Axum route (`getFileGitHistory`) and a mirrored
+  `get_file_git_history` Tauri command, both delegating to `ApplicationService::git_file_history`,
+  which is infallible - "no history to show" (non-local, outside a working tree, uncommitted) is a
+  normal empty result, never an error. Frontend: `FileViewerController` fetches history via a new
+  `gitFileHistory` client method (added to the HTTP/Tauri/mock `FileManagerClient` implementations)
+  whenever the metadata panel opens (`toggleMetadataPanel`, and on initial load when opened via
+  Alt+Space with no viewer yet), for any content kind - not just text/image, since history isn't
+  tied to what the viewer can render - and swallows a failed request into an empty list rather than
+  surfacing an error, matching the "no history" case. The history section
+  (`renderGitHistorySection` in `file-viewer.ts`) renders nothing while unset or empty, so a
+  non-git file's panel looks exactly as before. The panel itself (`.fm-file-viewer-info-panel` in
+  `file-viewer.css`) changed from `position: absolute; right: 0` sliding in over the content to
+  `left: 0; right: 0; bottom: 0; max-height: 45%`, i.e. a bottom drawer, per this session's explicit
+  request. Verified: 5 new `fm-vcs-status` unit tests (newest-first ordering, excludes unrelated
+  commits, empty for an untracked/non-git file, `result_limit`; `cargo test -p fm-vcs-status`, 15
+  passed), 3 new `fm-application` tests (tracked file, non-git file, non-local provider; `cargo test
+  -p fm-application --lib directory::tests::git_history`), 2 new `fm-transport-dto` DTO round-trip
+  tests, `cargo build --workspace` and `cargo clippy --workspace --all-targets -p fm-vcs-status -p
+  fm-domain -p fm-transport-dto -p fm-application -p fm-server -p fm-desktop -- -D warnings` clean,
+  `cargo fmt --all` clean. Frontend: 2 new `file-viewer-controller.test.ts` tests (history fetched
+  on panel open; a failed request resolves to an empty list rather than rejecting) plus the full
+  `pnpm test:frontend` (1205 passed); `tsc --noEmit` and `biome check` clean on every touched file
+  (pre-existing warnings in untouched CSS files elsewhere in the tree are unrelated). Manually
+  verified in the mock-backed dev server that the panel now opens as a full-width bottom drawer
+  instead of a right-side slide-in; the git history section itself was not visually verified end to
+  end against a real git repository (the mock client has no git-aware fixtures and always resolves
+  to an empty history), so that path relies on the backend/controller test coverage above rather
+  than a screenshot. OpenAPI spec and the Orval client were regenerated
+  (`pnpm api:export && pnpm api:generate`).

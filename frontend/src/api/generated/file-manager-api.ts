@@ -23,6 +23,8 @@ import type {
   EntryMetadataRequest,
   GenerateSyncPlanRequestDto,
   GetComparisonParams,
+  GetFileGitHistoryRequestDto,
+  GetFileGitHistoryResponseDto,
   GetFileIconParams,
   GetPluginIconThemeAssetParams,
   GetThumbnailParams,
@@ -1278,6 +1280,51 @@ export const saveEditableFile = async (saveEditableFileRequestDto: SaveEditableF
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
     body: JSON.stringify(saveEditableFileRequestDto)
+  }
+);}
+
+
+
+export type getFileGitHistoryResponse200 = {
+  data: GetFileGitHistoryResponseDto
+  status: 200
+}
+
+export type getFileGitHistoryResponse400 = {
+  data: ApplicationErrorDto
+  status: 400
+}
+
+export type getFileGitHistoryResponseSuccess = (getFileGitHistoryResponse200) & {
+  headers: Headers;
+};
+export type getFileGitHistoryResponseError = (getFileGitHistoryResponse400) & {
+  headers: Headers;
+};
+
+export type getFileGitHistoryResponse = (getFileGitHistoryResponseSuccess | getFileGitHistoryResponseError)
+
+export const getGetFileGitHistoryUrl = () => {
+
+
+
+
+  return `/api/v1/files/git-history`
+}
+
+/**
+ * @summary Fetches a file's git commit history, for the Alt+Space metadata panel's history section
+(task 0135). Local provider only; returns an empty commit list (never an error) when the
+file is outside a git working tree, on a non-local provider, or not yet committed.
+ */
+export const getFileGitHistory = async (getFileGitHistoryRequestDto: GetFileGitHistoryRequestDto, options?: Parameters<typeof fetchMutator>[1]): Promise<getFileGitHistoryResponse> => {
+
+  return fetchMutator<getFileGitHistoryResponse>(getGetFileGitHistoryUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(getFileGitHistoryRequestDto)
   }
 );}
 

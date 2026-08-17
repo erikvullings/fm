@@ -14,7 +14,8 @@ use fm_transport_dto::{
     ApplySyncPlanRequestDto, ApplySyncPlanResponseDto, ArchiveCredentialRequestDto,
     CalculateFolderSizeRequestDto, CalculateFolderSizeResponseDto, ComparisonPageDto,
     ConnectionDto, CreateConnectionRequestDto, CreateWorkspaceRequestDto, DirectorySnapshotDto,
-    EntryMetadataDto, EntryMetadataRequest, GenerateSyncPlanRequestDto, HostKeyProbeDto,
+    EntryMetadataDto, EntryMetadataRequest, GenerateSyncPlanRequestDto,
+    GetFileGitHistoryRequestDto, GetFileGitHistoryResponseDto, HostKeyProbeDto,
     InvokeActionRequestDto, ListDirectoryRequest, LocationDto, NavigateRequest, OperationDto,
     PluginDescriptorDto, PluginLogEntryDto, ReadFileRangeRequestDto, ReadFileRangeResponseDto,
     ResolveOperationConflictRequestDto, RuntimeCapabilitiesDto, SearchInFileRequestDto,
@@ -484,6 +485,16 @@ pub(crate) async fn calculate_folder_size(
         .calculate_folder_size(request)
         .await
         .map_err(|error| error.into_dto(Uuid::new_v4()))
+}
+
+/// Fetches a file's git commit history through the same application service as Axum, for the
+/// Alt+Space metadata panel's history section (task 0135).
+#[tauri::command]
+pub(crate) async fn get_file_git_history(
+    state: State<'_, AppState>,
+    request: GetFileGitHistoryRequestDto,
+) -> Result<GetFileGitHistoryResponseDto, ApplicationErrorDto> {
+    Ok(state.service.git_file_history(request))
 }
 
 /// A fresh, unique window label for a new window on `workspace_id` (task 0143 sub-task (b)).

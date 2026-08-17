@@ -55,6 +55,7 @@ pub use entry::{
 pub use error::{ApplicationErrorCode, ApplicationErrorDto};
 pub use files::{
     ArchiveCredentialRequestDto, CalculateFolderSizeRequestDto, CalculateFolderSizeResponseDto,
+    GetFileGitHistoryRequestDto, GetFileGitHistoryResponseDto, GitLogEntryDto,
     LoadEditableFileRequestDto, LoadEditableFileResponseDto, ReadFileRangeRequestDto,
     ReadFileRangeResponseDto, SaveEditableFileRequestDto, SaveEditableFileResponseDto,
     SearchInFileMatchDto, SearchInFileRequestDto, SearchInFileResponseDto,
