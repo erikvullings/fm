@@ -73,6 +73,8 @@ export interface MediaMetadata {
 export interface ArchiveInfo {
   entryCount?: number;
   uncompressedSize?: number;
+  compressedSize?: number;
+  compressionMethod?: string;
 }
 
 /**
@@ -119,6 +121,8 @@ function archiveInfoFromDto(dto: ArchiveInfoDto): ArchiveInfo {
   return {
     ...(dto.entryCount == null ? {} : { entryCount: dto.entryCount }),
     ...(dto.uncompressedSize == null ? {} : { uncompressedSize: dto.uncompressedSize }),
+    ...(dto.compressedSize == null ? {} : { compressedSize: dto.compressedSize }),
+    ...(dto.compressionMethod == null ? {} : { compressionMethod: dto.compressionMethod }),
   };
 }
 

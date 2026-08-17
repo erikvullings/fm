@@ -107,6 +107,12 @@ pub struct ArchiveInfo {
     pub entry_count: Option<u64>,
     /// Total uncompressed size in bytes, when known.
     pub uncompressed_size: Option<u64>,
+    /// The entry's compressed size within its archive, in bytes, when known
+    /// (per-entry, not the whole container).
+    pub compressed_size: Option<u64>,
+    /// The compression method used for this entry (for example `"Deflated"`
+    /// or `"Stored"`), when known.
+    pub compression_method: Option<String>,
 }
 
 /// Detailed, non-eagerly-fetched metadata for a single entry (spec §5.2).
@@ -249,6 +255,8 @@ mod tests {
             archive: Some(ArchiveInfo {
                 entry_count: Some(42),
                 uncompressed_size: Some(1_048_576),
+                compressed_size: Some(524_288),
+                compression_method: Some("Deflated".to_owned()),
             }),
             plugin_fields,
         };

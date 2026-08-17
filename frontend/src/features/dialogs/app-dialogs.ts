@@ -22,6 +22,7 @@ import {
   withoutConnection,
 } from '../connections/connections-model';
 import type { DialogUIController } from '../dialogs/dialog-ui-controller';
+import type { EntryFormatSettings } from '../entry-formatting/entry-formatting';
 import { ArchivePasswordDialog } from '../navigation/archive-password-dialog';
 import { ArchiveCreateDialog, type ArchiveFormat } from '../operations/archive-create-dialog';
 import { ConflictDialog } from '../operations/conflict-dialog';
@@ -38,6 +39,7 @@ import type { OperationsController } from '../operations/operations-controller';
 import { PermanentDeleteDialog } from '../operations/permanent-delete-dialog';
 import { CloseLastTabDialog } from '../panes/close-last-tab-dialog';
 import type { TabController } from '../panes/tab-controller';
+import { PropertiesDialog } from '../properties/properties-dialog';
 import type { FindFilesController } from '../search/find-files-controller';
 import type { FindFilesSearchParams } from '../search/find-files-dialog';
 import { FindFilesDialog } from '../search/find-files-dialog';
@@ -58,6 +60,7 @@ export interface AppDialogsContext {
   getCloseTabConfirmation(): { readonly paneId: PaneId; readonly tabId: TabId } | undefined;
   setCloseTabConfirmation(conf?: { readonly paneId: PaneId; readonly tabId: TabId }): void;
   getDialogs(): DialogUIController;
+  getFormatSettings(): EntryFormatSettings;
   getFindFilesController(): FindFilesController;
   getTabController(): TabController;
   getOpsController(): OperationsController;
@@ -167,6 +170,13 @@ export function renderAppDialogs(
         if (sources.length === 0) return;
         void ctx.getOpsController().multiRename(sources, destinations);
       },
+    }),
+    m(PropertiesDialog, {
+      open: ds.propertiesOpen,
+      entries: ds.propertiesEntries,
+      client,
+      formatSettings: ctx.getFormatSettings(),
+      onCancel: () => dialogs.cancelProperties(),
     }),
     m(ArchivePasswordDialog, {
       open: ds.pendingArchiveCredential !== undefined,

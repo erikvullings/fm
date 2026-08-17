@@ -265,6 +265,10 @@ pub struct ArchiveInfoDto {
     pub entry_count: Option<u64>,
     /// Total uncompressed size in bytes, when known.
     pub uncompressed_size: Option<u64>,
+    /// The entry's compressed size within its archive, in bytes, when known.
+    pub compressed_size: Option<u64>,
+    /// The compression method used for this entry, when known.
+    pub compression_method: Option<String>,
 }
 
 impl From<ArchiveInfo> for ArchiveInfoDto {
@@ -272,6 +276,8 @@ impl From<ArchiveInfo> for ArchiveInfoDto {
         Self {
             entry_count: archive.entry_count,
             uncompressed_size: archive.uncompressed_size,
+            compressed_size: archive.compressed_size,
+            compression_method: archive.compression_method,
         }
     }
 }
@@ -281,6 +287,8 @@ impl From<ArchiveInfoDto> for ArchiveInfo {
         Self {
             entry_count: dto.entry_count,
             uncompressed_size: dto.uncompressed_size,
+            compressed_size: dto.compressed_size,
+            compression_method: dto.compression_method,
         }
     }
 }
@@ -461,6 +469,8 @@ mod tests {
             archive: Some(ArchiveInfo {
                 entry_count: Some(42),
                 uncompressed_size: Some(1_048_576),
+                compressed_size: Some(524_288),
+                compression_method: Some("Deflated".to_owned()),
             }),
             plugin_fields: BTreeMap::from([("custom.rating".to_owned(), serde_json::json!(5))]),
         };

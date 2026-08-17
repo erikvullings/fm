@@ -316,6 +316,17 @@ fn core_actions(capabilities: PlatformCapabilities) -> Vec<ActionDescriptor> {
             capability_gated_single_selection(reveal_available),
         ),
         core_action(
+            "core.showProperties",
+            "Properties",
+            "fileOperations",
+            vec![KeyChord {
+                key: "Enter".to_owned(),
+                alt: true,
+                ..KeyChord::default()
+            }],
+            ActionContextRequirements::selection(),
+        ),
+        core_action(
             "core.copy",
             "Copy",
             "fileOperations",

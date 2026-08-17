@@ -291,6 +291,7 @@ even if Mission Control's own gesture isn't visibly triggered.
 | Show All Files (clear filter) | Ctrl+F10 | Cmd+F10 | |
 | Sort by Name / Extension / Date / Size / Unsorted | Ctrl+F3 / F4 / F5 / F6 / F7 | Cmd+F3 / F4 / F5 / F6 / F7 | Literal Ctrl+F3…F7 on macOS is now a safe no-op (previously misfired as View/Edit/Copy/Move/New Folder). |
 | Multi-Rename Tool | Ctrl+M | Cmd+M | Also opens automatically on F2 with 2+ entries selected. Not independently verified against a native window menu; flag if Cmd+M ever minimizes the window instead. |
+| Properties | Alt+Enter | Option+Return | Shows byte-precise size, timestamps, permissions and provider-specific metadata for the selection; an aggregate (total size, item count, folder/file breakdown) for a multi-selection. |
 | Quit | Alt+F4 | Option+F4 | Desktop only. Not independently verified against the OS's own window-close/minimize handling on either platform; macOS users more conventionally expect Cmd+Q, which is not implemented. |
 | Keyboard Shortcuts help | F1 | F1 | |
 | Toggle selection, advance cursor | Insert | Insert | |

@@ -412,6 +412,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
   let keybindingRuntime: KeybindingRuntime = 'browser';
   let runtimeKind: RuntimeKind = 'http';
   let loadedEntryFormatSettings: EntryFormatSettings = DEFAULT_ENTRY_FORMAT_SETTINGS;
+  let currentEntryFormatSettings: EntryFormatSettings = DEFAULT_ENTRY_FORMAT_SETTINGS;
   let workspace: WorkspaceProjection | undefined;
   let workspaceError: string | undefined;
   let workspaceSummaries: readonly WorkspaceSummary[] = [];
@@ -1540,6 +1541,20 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       );
       m.redraw();
     },
+    openPropertiesForActivePane: () => {
+      const active = activeDirectory();
+      if (active === undefined) return;
+      const key = activeTabKey(active.paneId);
+      const directory = directories.get(key);
+      if (directory === undefined) return;
+      const selection = selections.get(key);
+      const entries = getSelectedEntriesOrCursor(selection, directory.entries).filter(
+        (entry) => !isParentEntry(entry.id),
+      );
+      if (entries.length === 0) return;
+      dialogs.openProperties(entries);
+      m.redraw();
+    },
     quitApplication: () => {
       if (keybindingRuntime !== 'desktop') return;
       void attrsClient.quit?.();
@@ -1799,6 +1814,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       closeTabConfirmation = conf;
     },
     getDialogs: () => dialogs,
+    getFormatSettings: () => currentEntryFormatSettings,
     getFindFilesController: () => findFilesController,
     getTabController: () => tabController,
     getOpsController: () => opsController,
@@ -1998,6 +2014,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
 
     view: ({ attrs }) => {
       syncNativeMenu();
+      currentEntryFormatSettings = attrs.entryFormatSettings ?? loadedEntryFormatSettings;
       const pendingDelete = Object.values(operations.byId).find(
         (operation) =>
           operation?.kind === 'delete' && operation.state === 'waitingForConflictResolution',

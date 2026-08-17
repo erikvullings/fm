@@ -14,7 +14,9 @@ use std::{
 
 use async_trait::async_trait;
 use chrono::{DateTime, TimeZone, Utc};
-use fm_domain::{EntryId, EntryKind, EntryMetadata, EntrySummary, Location, ProviderId};
+use fm_domain::{
+    ArchiveInfo, EntryId, EntryKind, EntryMetadata, EntrySummary, Location, ProviderId,
+};
 use fm_vfs::{
     CopyCommitOptions, DirectoryPage, EntryRef, FileSystemProvider, ListOptions,
     ProviderCapabilities, ProviderChangeStream, ProviderReadStream, ProviderWriteStream,
@@ -344,6 +346,16 @@ impl FileSystemProvider for ArchiveFileSystemProvider {
         cancellation: CancellationToken,
     ) -> Result<EntryMetadata, VfsError> {
         let summary = self.inspect(entry, cancellation).await?;
+        let archive = if summary.kind == EntryKind::File {
+            let parsed = ParsedArchiveLocation::parse(&entry.location)?;
+            tokio::task::spawn_blocking(move || {
+                zip_entry_archive_info(&parsed.archive_path, &parsed.inner)
+            })
+            .await
+            .map_err(join_error)??
+        } else {
+            None
+        };
         Ok(EntryMetadata {
             entry_id: summary.id,
             permissions: None,
@@ -352,7 +364,7 @@ impl FileSystemProvider for ArchiveFileSystemProvider {
             checksums: BTreeMap::new(),
             image_dimensions: None,
             media: None,
-            archive: None,
+            archive,
             plugin_fields: BTreeMap::new(),
         })
     }
@@ -976,6 +988,37 @@ fn list_zip(archive_path: &Path, requested: &str) -> Result<Vec<RawEntry>, VfsEr
     let mut values: Vec<_> = children.into_values().collect();
     values.sort_by(|left, right| left.name.cmp(&right.name));
     Ok(values)
+}
+
+/// Looks up a single file entry's compressed size and compression method within a ZIP archive.
+///
+/// Returns `Ok(None)` when `archive_path` isn't a ZIP file, or when `inner_path` can't be found
+/// (for example a directory entry, which ZIP doesn't record per-entry compression for) — this is
+/// best-effort metadata, not required for an entry to be browsable.
+fn zip_entry_archive_info(
+    archive_path: &Path,
+    inner_path: &str,
+) -> Result<Option<ArchiveInfo>, VfsError> {
+    if detect_format(archive_path)? != ArchiveFormat::Zip {
+        return Ok(None);
+    }
+    let file = File::open(archive_path).map_err(|error| io_error(error, archive_path))?;
+    let mut archive = zip::ZipArchive::new(file).map_err(zip_error)?;
+    for index in 0..archive.len() {
+        let item = archive.by_index_raw(index).map_err(zip_error)?;
+        if item.is_dir() {
+            continue;
+        }
+        if safe_entry_path(&item)? == inner_path {
+            return Ok(Some(ArchiveInfo {
+                entry_count: None,
+                uncompressed_size: Some(item.size()),
+                compressed_size: Some(item.compressed_size()),
+                compression_method: Some(format!("{:?}", item.compression())),
+            }));
+        }
+    }
+    Ok(None)
 }
 
 fn open_rar(archive_path: &Path, password: Option<&str>) -> Result<rars::Archive, VfsError> {
