@@ -50,6 +50,7 @@ import type {
   SystemLocation,
   Unsubscribe,
   UpdateConnectionRequest,
+  Volume,
   WorkspaceCommand,
   WorkspaceId,
   WorkspaceProjection,
@@ -85,6 +86,10 @@ export class TauriFileManagerClient implements FileManagerClient {
 
   async getSystemLocations(_signal?: AbortSignal): Promise<SystemLocation[]> {
     return invoke<SystemLocation[]>('get_system_locations');
+  }
+
+  async getVolumes(_signal?: AbortSignal): Promise<Volume[]> {
+    return invoke<Volume[]>('get_volumes');
   }
 
   startNativeDrag(locations: readonly Location[], _signal?: AbortSignal): Promise<void> {

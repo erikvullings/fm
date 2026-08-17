@@ -3,6 +3,7 @@ import type {
   Connection,
   Location,
   SystemLocation,
+  Volume,
   WorkspaceId,
   WorkspaceProjection,
   WorkspaceSummary,
@@ -39,6 +40,9 @@ export interface WorkspaceControllerContext {
   getSystemLocations(): readonly SystemLocation[];
   setSystemLocations(locs: readonly SystemLocation[]): void;
   setSystemLocationsError(msg?: string): void;
+  getVolumes(): readonly Volume[];
+  setVolumes(volumes: readonly Volume[]): void;
+  setVolumesError(msg?: string): void;
   getConnections(): readonly Connection[];
   setConnections(conns: readonly Connection[]): void;
   setDraggedLocations(locs: readonly Location[]): void;
@@ -57,6 +61,7 @@ export interface WorkspaceController {
   recoverActiveWorkspace(summaries: readonly WorkspaceSummary[]): Promise<void>;
   loadWorkspace(): Promise<void>;
   loadSystemLocations(signal?: AbortSignal): Promise<void>;
+  loadVolumes(signal?: AbortSignal): Promise<void>;
   switchWorkspace(workspaceId: WorkspaceId): Promise<void>;
   refreshWorkspaceSummaries(): void;
   revisionForWorkspace(workspaceId: WorkspaceId): number;
@@ -121,6 +126,17 @@ export function createWorkspaceController(
     context.redraw();
   }
 
+  async function loadVolumes(signal?: AbortSignal): Promise<void> {
+    try {
+      context.setVolumes(await client.getVolumes(signal));
+      context.setVolumesError(undefined);
+    } catch {
+      context.setVolumes([]);
+      context.setVolumesError('Unable to discover volumes');
+    }
+    context.redraw();
+  }
+
   async function loadConnectionsList(signal?: AbortSignal): Promise<void> {
     try {
       context.setConnections(await loadConnections(client, signal));
@@ -136,6 +152,7 @@ export function createWorkspaceController(
     try {
       const capabilities = await client.getRuntimeCapabilities(request.signal);
       await loadSystemLocations(request.signal);
+      await loadVolumes(request.signal);
       await loadConnectionsList(request.signal);
       context.setPlatform(capabilities.platform);
       context.setNativeDragOutSupported(capabilities.nativeDragOut);
@@ -282,6 +299,7 @@ export function createWorkspaceController(
     recoverActiveWorkspace,
     loadWorkspace,
     loadSystemLocations,
+    loadVolumes,
     switchWorkspace,
     refreshWorkspaceSummaries,
     revisionForWorkspace,

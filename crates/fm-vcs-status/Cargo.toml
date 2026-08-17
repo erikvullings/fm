@@ -1,0 +1,17 @@
+[package]
+name = "fm-vcs-status"
+description = "Per-directory git working-tree status computation and caching (git2-backed)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+fm-domain.workspace = true
+git2.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true

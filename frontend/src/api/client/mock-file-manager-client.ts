@@ -56,6 +56,7 @@ import type {
   SystemLocation,
   Unsubscribe,
   UpdateConnectionRequest,
+  Volume,
   WorkspaceCommand,
   WorkspaceId,
   WorkspaceProjection,
@@ -99,6 +100,7 @@ const THUMBNAILABLE_MOCK_EXTENSIONS = new Set([
 export type MockClientMethod =
   | 'getRuntimeCapabilities'
   | 'getSystemLocations'
+  | 'getVolumes'
   | 'startNativeDrag'
   | 'getSettings'
   | 'updateSettings'
@@ -573,6 +575,13 @@ export class MockFileManagerClient implements FileManagerClient {
 
   getSystemLocations(signal?: AbortSignal): Promise<SystemLocation[]> {
     return this.perform('getSystemLocations', signal, () => []);
+  }
+
+  getVolumes(signal?: AbortSignal): Promise<Volume[]> {
+    return this.perform('getVolumes', signal, () => [
+      { name: 'Macintosh HD', location: { providerId: 'file', uri: 'mock:///' } },
+      { name: 'Empty Drive', location: { providerId: 'file', uri: 'mock:///Empty' } },
+    ]);
   }
 
   startNativeDrag(_locations: readonly Location[], signal?: AbortSignal): Promise<void> {

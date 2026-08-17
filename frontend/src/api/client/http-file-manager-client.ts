@@ -48,6 +48,7 @@ import type {
   SystemLocation,
   Unsubscribe,
   UpdateConnectionRequest,
+  Volume,
   WorkspaceCommand,
   WorkspaceId,
   WorkspaceProjection,
@@ -106,6 +107,7 @@ import {
   generateSyncPlan as requestSyncPlanGenerate,
   getSystemLocations as requestSystemLocations,
   getThumbnail as requestThumbnail,
+  getVolumes as requestVolumes,
   getWorkspace as requestWorkspace,
   applyWorkspaceCommand as requestWorkspaceCommand,
   createWorkspace as requestWorkspaceCreation,
@@ -178,6 +180,14 @@ export class HttpFileManagerClient implements FileManagerClient {
       ...(item.share == null ? {} : { share: item.share }),
       ...(item.readOnly == null ? {} : { readOnly: item.readOnly }),
     }));
+  }
+
+  async getVolumes(signal?: AbortSignal): Promise<Volume[]> {
+    const response = await requestVolumes(signal === undefined ? undefined : { signal });
+    if (response.status !== 200) {
+      throw new Error(`Unexpected getVolumes response status: ${response.status}`);
+    }
+    return response.data.map((item) => ({ name: item.name, location: { ...item.location } }));
   }
 
   async getFileIcon(

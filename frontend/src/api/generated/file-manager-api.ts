@@ -57,6 +57,7 @@ import type {
   SyncPlanDto,
   SystemLocationDto,
   UpdateConnectionRequestDto,
+  VolumeDto,
   WorkspaceCommandDto,
   WorkspaceDto,
   WorkspaceSummaryDto
@@ -2332,6 +2333,49 @@ entry, if supported.
 export const getThumbnail = async (params: GetThumbnailParams, options?: Parameters<typeof fetchMutator>[1]): Promise<getThumbnailResponse> => {
 
   return fetchMutator<getThumbnailResponse>(getGetThumbnailUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+export type getVolumesResponse200 = {
+  data: VolumeDto[]
+  status: 200
+}
+
+export type getVolumesResponse502 = {
+  data: ApplicationErrorDto
+  status: 502
+}
+
+export type getVolumesResponseSuccess = (getVolumesResponse200) & {
+  headers: Headers;
+};
+export type getVolumesResponseError = (getVolumesResponse502) & {
+  headers: Headers;
+};
+
+export type getVolumesResponse = (getVolumesResponseSuccess | getVolumesResponseError)
+
+export const getGetVolumesUrl = () => {
+
+
+
+
+  return `/api/v1/volumes`
+}
+
+/**
+ * @summary Lists currently mounted local/removable/disk-image volumes.
+ */
+export const getVolumes = async ( options?: Parameters<typeof fetchMutator>[1]): Promise<getVolumesResponse> => {
+
+  return fetchMutator<getVolumesResponse>(getGetVolumesUrl(),
   {
     ...options,
     method: 'GET'

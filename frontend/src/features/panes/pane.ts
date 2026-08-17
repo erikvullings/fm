@@ -1,13 +1,44 @@
 import m, { type FactoryComponent, type VnodeDOM } from 'mithril';
 import { IconButton } from 'mithril-materialized';
 import {
+  arrowsSortIcon,
+  gridDotsIcon,
   heartIcon,
   heartPlusIcon,
-  layoutGridIcon,
   listIcon,
+  photoIcon,
   plusIcon,
 } from '../../components/tabler-icons';
 import { tooltip } from '../../components/tooltip';
+
+/** Renders an icon-only toggle button matching `IconButton`'s `.btn-flat.btn-icon` styling, but
+ * without mithril-materialized's `waves-effect` ripple, which isn't needed for a plain toggle
+ * trigger. */
+function toggleIconButton(
+  attrs: {
+    className: string;
+    'aria-label': string;
+    'aria-haspopup'?: string;
+    'aria-expanded'?: string;
+    'aria-pressed'?: string;
+    onclick: () => void;
+  },
+  icon: m.Children,
+): m.Vnode {
+  return m(
+    `button.btn-flat.btn-icon.${attrs.className}`,
+    {
+      type: 'button',
+      'aria-label': attrs['aria-label'],
+      'aria-haspopup': attrs['aria-haspopup'],
+      'aria-expanded': attrs['aria-expanded'],
+      'aria-pressed': attrs['aria-pressed'],
+      onclick: attrs.onclick,
+    },
+    icon,
+  );
+}
+
 import {
   dispatchKeybinding,
   hasPrimaryModifier,
@@ -24,6 +55,7 @@ import type {
   SortDescriptor,
   SystemLocation,
   TabId,
+  Volume,
   VolumeCapacity,
 } from '../../models';
 import {
@@ -67,6 +99,9 @@ export interface FavouritesAttrs {
   readonly location?: Location | undefined;
   readonly favouriteLocations?: readonly FavouriteLocation[] | undefined;
   readonly recentLocations?: readonly Location[] | undefined;
+  readonly volumes?: readonly Volume[] | undefined;
+  readonly volumesError?: string | undefined;
+  readonly onRetryVolumes?: (() => void | Promise<void>) | undefined;
   readonly systemLocations?: readonly SystemLocation[] | undefined;
   readonly systemLocationsError?: string | undefined;
   readonly onRetrySystemLocations?: (() => void | Promise<void>) | undefined;
@@ -886,6 +921,37 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
                       ],
                     )
                   : undefined,
+                (attrs.favourites.volumes?.length ?? 0) > 0 &&
+                  m('.fm-favourites-recents.fm-volumes-locations', [
+                    m('strong', 'Volumes'),
+                    ...(attrs.favourites.volumes ?? []).map((volume) =>
+                      m(
+                        'button',
+                        {
+                          type: 'button',
+                          role: 'menuitem',
+                          title: volume.location.uri,
+                          onclick: () => void navigateFavourite(volume.location, attrs),
+                        },
+                        attrs.favourites.unavailableLocations?.has(locationKey(volume.location))
+                          ? `${volume.name} (unavailable)`
+                          : volume.name,
+                      ),
+                    ),
+                  ]),
+                attrs.favourites.volumesError === undefined
+                  ? undefined
+                  : m('.fm-path-error.fm-volumes-locations-error', { role: 'status' }, [
+                      'Volumes unavailable. ',
+                      m(
+                        'button',
+                        {
+                          type: 'button',
+                          onclick: () => void attrs.favourites.onRetryVolumes?.(),
+                        },
+                        'Retry',
+                      ),
+                    ]),
                 (attrs.favourites.connections?.length ?? 0) > 0 &&
                   m('.fm-favourites-recents.fm-servers-locations', [
                     m('strong', { key: '__servers_label__' }, 'Servers'),
@@ -1100,8 +1166,7 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
             m('.fm-view-mode-menu-wrapper', [
               tooltip(
                 'View',
-                m(
-                  IconButton,
+                toggleIconButton(
                   {
                     className: 'fm-pane-view-mode',
                     'aria-label': 'View',
@@ -1109,63 +1174,57 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
                     'aria-expanded': String(viewMenuOpen),
                     onclick: () => {
                       viewMenuOpen = !viewMenuOpen;
-                      m.redraw();
                     },
                   },
-                  (attrs.tableConfig.viewMode ?? 'table') === 'table'
-                    ? listIcon()
-                    : layoutGridIcon(),
+                  (attrs.tableConfig.viewMode ?? 'table') === 'table' ? listIcon() : gridDotsIcon(),
                 ),
               ),
-              viewMenuOpen
-                ? [
-                    m('.fm-view-mode-menu-backdrop', { onclick: () => (viewMenuOpen = false) }),
-                    m(
-                      '.fm-view-mode-menu',
-                      { role: 'menu', 'aria-label': 'View mode' },
-                      (
-                        [
-                          { label: 'List', viewMode: 'table', icon: listIcon() },
-                          { label: 'Small icons', viewMode: 'grid', size: 'small' },
-                          { label: 'Medium icons', viewMode: 'grid', size: 'medium' },
-                          { label: 'Large icons', viewMode: 'grid', size: 'large' },
-                        ] as const
-                      ).map((option) => {
-                        const active =
-                          option.viewMode === 'table'
-                            ? (attrs.tableConfig.viewMode ?? 'table') === 'table'
-                            : (attrs.tableConfig.viewMode ?? 'table') === 'grid' &&
-                              (attrs.tableConfig.iconSize ?? 'medium') === option.size;
-                        return m(
-                          'button.fm-view-mode-menu-item',
-                          {
-                            key: option.label,
-                            type: 'button',
-                            role: 'menuitemradio',
-                            'aria-checked': String(active),
-                            onclick: () => {
-                              viewMenuOpen = false;
-                              attrs.tableConfig.onViewModeChange?.(
-                                option.viewMode,
-                                option.viewMode === 'grid' ? option.size : 'medium',
-                              );
-                            },
-                          },
-                          option.label,
-                        );
-                      }),
-                    ),
-                  ]
-                : undefined,
+              viewMenuOpen && [
+                m('.fm-view-mode-menu-backdrop', { onclick: () => (viewMenuOpen = false) }),
+                m(
+                  '.fm-view-mode-menu',
+                  { role: 'menu', 'aria-label': 'View mode' },
+                  (
+                    [
+                      { label: 'List', viewMode: 'table', icon: listIcon() },
+                      { label: 'Small icons', viewMode: 'grid', size: 'small' },
+                      { label: 'Medium icons', viewMode: 'grid', size: 'medium' },
+                      { label: 'Large icons', viewMode: 'grid', size: 'large' },
+                    ] as const
+                  ).map((option) => {
+                    const active =
+                      option.viewMode === 'table'
+                        ? (attrs.tableConfig.viewMode ?? 'table') === 'table'
+                        : (attrs.tableConfig.viewMode ?? 'table') === 'grid' &&
+                          (attrs.tableConfig.iconSize ?? 'medium') === option.size;
+                    return m(
+                      'button.fm-view-mode-menu-item',
+                      {
+                        key: option.label,
+                        type: 'button',
+                        role: 'menuitemradio',
+                        'aria-checked': String(active),
+                        onclick: () => {
+                          viewMenuOpen = false;
+                          attrs.tableConfig.onViewModeChange?.(
+                            option.viewMode,
+                            option.viewMode === 'grid' ? option.size : 'medium',
+                          );
+                        },
+                      },
+                      option.label,
+                    );
+                  }),
+                ),
+              ],
             ]),
             (attrs.tableConfig.viewMode ?? 'table') === 'grid'
               ? m('.fm-grid-sort-menu-wrapper', [
                   tooltip(
                     'Sort',
-                    m(
-                      'button.fm-pane-grid-sort',
+                    toggleIconButton(
                       {
-                        type: 'button',
+                        className: 'fm-pane-grid-sort',
                         'aria-label': 'Sort',
                         'aria-haspopup': 'menu',
                         'aria-expanded': String(sortMenuOpen),
@@ -1174,7 +1233,7 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
                           m.redraw();
                         },
                       },
-                      'Sort',
+                      arrowsSortIcon(),
                     ),
                   ),
                   sortMenuOpen
@@ -1221,10 +1280,9 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
                   photoModeByTab.get(attrs.activeTabId) === true
                     ? 'Turn off photo mode'
                     : 'Photo mode (group by day)',
-                  m(
-                    'button.fm-pane-photo-mode',
+                  toggleIconButton(
                     {
-                      type: 'button',
+                      className: 'fm-pane-photo-mode',
                       'aria-label': 'Photo mode',
                       'aria-pressed': String(photoModeByTab.get(attrs.activeTabId) === true),
                       onclick: () => {
@@ -1234,14 +1292,13 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
                         m.redraw();
                       },
                     },
-                    'Photo',
+                    photoIcon(),
                   ),
                 )
               : undefined,
             tooltip(
               'Favourites',
-              m(
-                IconButton,
+              toggleIconButton(
                 {
                   className: 'fm-pane-tab-favourites',
                   'aria-label': 'Favourites',

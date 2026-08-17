@@ -2,7 +2,9 @@
 //!
 //! Read-only requests (`GET`/`HEAD`) are never throttled; every other method
 //! shares one token-bucket limiter server-wide, protecting against a
-//! runaway or malicious client hammering destructive/mutating routes.
+//! runaway or malicious client hammering destructive/mutating routes. A
+//! handful of `POST` routes are read-only in effect (see
+//! [`READ_ONLY_POST_PATHS`]) and are exempted the same way.
 
 use std::num::NonZeroU32;
 use std::sync::Arc;
@@ -26,6 +28,15 @@ pub(crate) fn build_limiter(requests_per_second: u32) -> Arc<MutationLimiter> {
     Arc::new(RateLimiter::direct(Quota::per_second(per_second)))
 }
 
+/// `POST` routes that only read data - `POST` is used solely to carry a JSON request body, not
+/// because the operation mutates anything - so they're exempt from the mutation limiter. A
+/// directory full of thumbnailable files can legitimately fire many `files/range` reads at once.
+const READ_ONLY_POST_PATHS: &[&str] = &[
+    "/api/v1/files/range",
+    "/api/v1/files/search",
+    "/api/v1/directories/size",
+];
+
 /// Middleware that rejects mutating requests (`POST`/`PUT`/`PATCH`/`DELETE`)
 /// with `429 Too Many Requests` once the shared limiter's quota is
 /// exhausted. `GET`/`HEAD`/`OPTIONS` always pass through unthrottled.
@@ -37,7 +48,7 @@ pub(crate) async fn limit_mutations(
     let is_mutating = matches!(
         *request.method(),
         Method::POST | Method::PUT | Method::PATCH | Method::DELETE
-    );
+    ) && !READ_ONLY_POST_PATHS.contains(&request.uri().path());
 
     if is_mutating && limiter.check().is_err() {
         return Err(StatusCode::TOO_MANY_REQUESTS);

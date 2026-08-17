@@ -21,6 +21,26 @@ pub enum EntryKind {
     Symlink,
 }
 
+/// An entry's git working-tree status (task 0135), local provider only.
+///
+/// For a directory, this is the aggregate of its descendants' statuses
+/// (highest-priority state wins: [`Self::Modified`] > [`Self::Staged`] >
+/// [`Self::Untracked`] > [`Self::Ignored`] > [`Self::Clean`]), matching
+/// common IDE file-tree conventions ("contains changes").
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum GitFileStatus {
+    /// No uncommitted, staged, untracked or ignored changes.
+    Clean,
+    /// Tracked, with unstaged working-tree changes.
+    Modified,
+    /// Staged in the index, with no further unstaged working-tree changes.
+    Staged,
+    /// Not tracked by git and not ignored.
+    Untracked,
+    /// Excluded by `.gitignore` (or equivalent) rules.
+    Ignored,
+}
+
 /// A compact summary of a directory entry, suitable for directory listings.
 ///
 /// Expensive metadata (permissions, checksums, media info, ...) is
@@ -56,6 +76,10 @@ pub struct EntrySummary {
     /// Monotonic revision, incremented whenever this summary is refreshed;
     /// used to reject stale metadata responses.
     pub metadata_revision: u64,
+    /// Git working-tree status, when this entry sits inside a local git
+    /// working tree. `None` outside a working tree, or on non-local
+    /// providers, which are out of scope for task 0135.
+    pub git_status: Option<GitFileStatus>,
 }
 
 /// Filesystem permission information for an entry.
@@ -163,6 +187,7 @@ mod tests {
             mime_type: Some("application/pdf".to_owned()),
             icon_key: Some("pdf".to_owned()),
             metadata_revision: 0,
+            git_status: Some(GitFileStatus::Modified),
         }
     }
 

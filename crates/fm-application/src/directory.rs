@@ -14,6 +14,7 @@ use fm_transport_dto::{
     EntryMetadataRequest, ListDirectoryRequest, NavigateRequest, SortDescriptorDto,
     SortDirectionDto,
 };
+use fm_vcs_status::GitStatusService;
 use fm_vfs::{
     ChangeTracking, EntryRef, FileSystemProvider, ListOptions, ProviderChange,
     ProviderChangeStream, ProviderRegistry, VfsError,
@@ -79,6 +80,7 @@ pub struct DirectoryService {
     panes: Arc<Mutex<HashMap<PaneId, PaneRequest>>>,
     watches: Arc<WatchHub>,
     events: EventBus,
+    git_status: Arc<GitStatusService>,
 }
 
 impl DirectoryService {
@@ -96,6 +98,7 @@ impl DirectoryService {
             panes: Arc::new(Mutex::new(HashMap::new())),
             watches: Arc::new(WatchHub::default()),
             events,
+            git_status: Arc::new(GitStatusService::new()),
         }
     }
 
@@ -175,6 +178,7 @@ impl DirectoryService {
             None => {
                 let mut entries =
                     list_all(provider.clone(), &location, cancellation.clone()).await?;
+                annotate_git_status(&self.git_status, &location, &mut entries, false);
                 if !request.show_hidden {
                     entries.retain(|entry| !entry.hidden);
                 }
@@ -248,6 +252,7 @@ impl DirectoryService {
                 panes: Arc::clone(&self.panes),
                 watches: Arc::clone(&self.watches),
                 events: self.events.clone(),
+                git_status: Arc::clone(&self.git_status),
             });
         }
 
@@ -314,12 +319,13 @@ impl DirectoryService {
                         panes: Arc::clone(&self.panes),
                         watches: Arc::clone(&self.watches),
                         events: self.events.clone(),
+                        git_status: Arc::clone(&self.git_status),
                     })
                 })
                 .collect::<Vec<_>>()
         };
         for refresh in refreshes {
-            let entries = match list_all(
+            let mut entries = match list_all(
                 Arc::clone(&refresh.provider),
                 &refresh.location,
                 refresh.cancellation.clone(),
@@ -329,6 +335,7 @@ impl DirectoryService {
                 Ok(entries) => entries,
                 Err(_) => continue,
             };
+            annotate_git_status(&self.git_status, &refresh.location, &mut entries, true);
             publish_changes(&refresh, ProviderChange::ResetRequired, entries).await;
         }
     }
@@ -562,6 +569,7 @@ struct PaneWatch {
     panes: Arc<Mutex<HashMap<PaneId, PaneRequest>>>,
     watches: Arc<WatchHub>,
     events: EventBus,
+    git_status: Arc<GitStatusService>,
 }
 
 fn spawn_pane_watch(mut watch: PaneWatch) {
@@ -575,7 +583,7 @@ fn spawn_pane_watch(mut watch: PaneWatch) {
                     Err(broadcast::error::RecvError::Closed) => break,
                 }
             };
-            let entries = match list_all(
+            let mut entries = match list_all(
                 Arc::clone(&watch.provider),
                 &watch.location,
                 watch.cancellation.clone(),
@@ -586,10 +594,37 @@ fn spawn_pane_watch(mut watch: PaneWatch) {
                 Err(VfsError::Cancelled) => break,
                 Err(_) => continue,
             };
+            annotate_git_status(&watch.git_status, &watch.location, &mut entries, true);
             publish_changes(&watch, change, entries).await;
         }
         watch.watches.release(&watch.location).await;
     });
+}
+
+/// Annotates `entries` with git working-tree status (task 0135), local
+/// provider directories only — remote and archive providers, and anything
+/// outside a git working tree, are left untouched (`git_status` stays
+/// `None`).
+///
+/// `force_refresh` drops any cached status for `location`'s working tree
+/// before recomputing; callers set it on a filesystem-watch-triggered
+/// relist, so a real change is never served stale.
+fn annotate_git_status(
+    git_status: &GitStatusService,
+    location: &fm_domain::Location,
+    entries: &mut [fm_domain::EntrySummary],
+    force_refresh: bool,
+) {
+    if location.provider_id.as_str() != "local" {
+        return;
+    }
+    let Ok(dir) = location.to_native_path() else {
+        return;
+    };
+    if force_refresh {
+        git_status.invalidate(&dir);
+    }
+    git_status.annotate(&dir, entries);
 }
 
 async fn list_all(
@@ -1215,6 +1250,7 @@ mod tests {
             mime_type: None,
             icon_key: None,
             metadata_revision: 0,
+            git_status: None,
         }
     }
 
@@ -1648,6 +1684,7 @@ mod tests {
             mime_type: None,
             icon_key: None,
             metadata_revision: 0,
+            git_status: None,
         }
     }
 
@@ -1690,6 +1727,7 @@ mod tests {
                 mime_type: None,
                 icon_key: None,
                 metadata_revision: 0,
+                git_status: None,
             })
             .collect();
 
@@ -1739,5 +1777,128 @@ mod tests {
             [DirectoryDeltaPayload::Reset { snapshot }]
                 if snapshot.pane_id == pane_id && snapshot.revision == 2
         ));
+    }
+
+    fn init_git_repo(root: &std::path::Path) {
+        let repo = git2::Repository::init(root).expect("init repo");
+        let mut config = repo.config().expect("repo config");
+        config.set_str("user.name", "Test").expect("set name");
+        config
+            .set_str("user.email", "test@example.com")
+            .expect("set email");
+        let mut index = repo.index().expect("index");
+        index
+            .add_all(["*"].iter(), git2::IndexAddOption::DEFAULT, None)
+            .expect("stage all");
+        index.write().expect("write index");
+        let tree_id = index.write_tree().expect("write tree");
+        let tree = repo.find_tree(tree_id).expect("find tree");
+        let signature = repo.signature().expect("signature");
+        repo.commit(Some("HEAD"), &signature, &signature, "initial", &tree, &[])
+            .expect("commit");
+    }
+
+    #[tokio::test]
+    async fn listing_a_git_working_tree_annotates_entries_with_git_status() {
+        let root = tempfile::tempdir().expect("temporary directory");
+        std::fs::write(root.path().join("tracked.txt"), b"a").expect("write tracked file");
+        init_git_repo(root.path());
+        std::fs::write(root.path().join("tracked.txt"), b"changed").expect("modify tracked file");
+        std::fs::write(root.path().join("new.txt"), b"new").expect("write untracked file");
+
+        let mut providers = ProviderRegistry::new();
+        providers.register(Arc::new(fm_vfs_local::LocalFileSystemProvider));
+        let service = DirectoryService::new(providers);
+        let pane_id = PaneId::new();
+        let location =
+            LocationDto::from(Location::from_native_path(root.path()).expect("local location"));
+        let mut req = request(pane_id, Uuid::new_v4());
+        req.location = location;
+
+        let snapshot = service.list(req).await.expect("list git working tree");
+
+        let tracked = snapshot
+            .entries
+            .iter()
+            .find(|entry| entry.name == "tracked.txt")
+            .expect("tracked entry present");
+        assert_eq!(tracked.git_status, Some(fm_domain::GitFileStatus::Modified));
+        let untracked = snapshot
+            .entries
+            .iter()
+            .find(|entry| entry.name == "new.txt")
+            .expect("untracked entry present");
+        assert_eq!(
+            untracked.git_status,
+            Some(fm_domain::GitFileStatus::Untracked)
+        );
+    }
+
+    #[tokio::test]
+    async fn listing_a_non_git_directory_leaves_git_status_unset() {
+        let root = tempfile::tempdir().expect("temporary directory");
+        std::fs::write(root.path().join("plain.txt"), b"a").expect("write plain file");
+
+        let mut providers = ProviderRegistry::new();
+        providers.register(Arc::new(fm_vfs_local::LocalFileSystemProvider));
+        let service = DirectoryService::new(providers);
+        let pane_id = PaneId::new();
+        let location =
+            LocationDto::from(Location::from_native_path(root.path()).expect("local location"));
+        let mut req = request(pane_id, Uuid::new_v4());
+        req.location = location;
+
+        let snapshot = service.list(req).await.expect("list non-git directory");
+
+        assert!(
+            snapshot
+                .entries
+                .iter()
+                .all(|entry| entry.git_status.is_none())
+        );
+    }
+
+    #[tokio::test]
+    async fn refreshing_affected_locations_reflects_a_new_git_status() {
+        let root = tempfile::tempdir().expect("temporary directory");
+        std::fs::write(root.path().join("tracked.txt"), b"a").expect("write tracked file");
+        init_git_repo(root.path());
+
+        let mut providers = ProviderRegistry::new();
+        providers.register(Arc::new(fm_vfs_local::LocalFileSystemProvider));
+        let service = DirectoryService::new(providers);
+        let pane_id = PaneId::new();
+        let location = Location::from_native_path(root.path()).expect("local location");
+        let mut req = request(pane_id, Uuid::new_v4());
+        req.location = LocationDto::from(location.clone());
+
+        let snapshot = service.list(req).await.expect("initial listing");
+        let tracked = snapshot
+            .entries
+            .iter()
+            .find(|entry| entry.name == "tracked.txt")
+            .expect("tracked entry present");
+        assert_eq!(tracked.git_status, Some(fm_domain::GitFileStatus::Clean));
+
+        std::fs::write(root.path().join("tracked.txt"), b"changed")
+            .expect("modify tracked file after listing");
+
+        let mut affected = HashSet::new();
+        affected.insert(location);
+        service.refresh_affected(&affected).await;
+
+        let refreshed = {
+            let panes = service.panes.lock().await;
+            panes
+                .get(&pane_id)
+                .and_then(|state| state.snapshot.clone())
+                .expect("refreshed snapshot present")
+        };
+        let tracked = refreshed
+            .entries
+            .iter()
+            .find(|entry| entry.name == "tracked.txt")
+            .expect("tracked entry present after refresh");
+        assert_eq!(tracked.git_status, Some(fm_domain::GitFileStatus::Modified));
     }
 }

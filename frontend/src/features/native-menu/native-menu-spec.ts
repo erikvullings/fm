@@ -1,17 +1,26 @@
 import type {
   ActionDescriptor,
+  Connection,
+  Location,
   NativeMenu,
   NativeMenuItem,
   NativeMenuSpec,
   PaneId,
+  SystemLocation,
   TabId,
+  Volume,
   WorkspaceId,
   WorkspaceSummary,
 } from '../../models';
+import { connectionStatusLabel, isBrowsable } from '../connections/connections-model';
 import {
   NEW_WORKSPACE_WINDOW_MENU_ID,
   WINDOW_OPEN_WORKSPACE_MENU_ID_PREFIX,
 } from './native-menu-dispatch';
+
+function locationKey(location: Location): string {
+  return `${location.providerId}:${location.uri}`;
+}
 
 /** One open tab, flattened for the Window menu (task 0133). */
 export interface NativeMenuTab {
@@ -44,6 +53,18 @@ export interface NativeMenuInputs {
   /** The workspace currently shown in this window, if any - the "Open Workspace" submenu checks
    * its matching entry, mirroring the switcher's active-workspace highlight. */
   readonly currentWorkspaceId: WorkspaceId | undefined;
+  /** Currently mounted local/removable/disk-image volumes (task 0144) - the Go menu's `VOLUMES`
+   * group, same data the favourites dropdown's Volumes section consumes. */
+  readonly volumes: readonly Volume[];
+  /** Saved application-managed connections - the Go menu's `SERVERS` group, mirroring the
+   * favourites dropdown's Servers section. */
+  readonly connections: readonly Connection[];
+  /** OS-discovered locations - the Go menu's `CLOUD`/`NETWORK` groups, mirroring the favourites
+   * dropdown's Cloud/Network sections. */
+  readonly systemLocations: readonly SystemLocation[];
+  /** Location keys (`locationKey`-encoded) that recently failed to navigate - labels the
+   * matching Volumes/Cloud/Network item `(unavailable)`, mirroring the favourites dropdown. */
+  readonly unavailableLocations: ReadonlySet<string>;
 }
 
 const PREFERENCES_SHORTCUT = { key: ',', meta: true } as const;
@@ -173,12 +194,95 @@ function toolsMenu(actions: readonly ActionDescriptor[]): NativeMenu {
 /** Excludes `core.favourites` itself: invoking it opens the command palette pre-filtered to
  * favourites (its intended behaviour from the palette/keyboard), which makes no sense as a native
  * menu item - the Go menu already lists each saved favourite as its own `core.favourite.<index>`
- * item below, so it's the menu itself acting as the favourites browser, not a launcher for one. */
-function goMenu(favouriteActions: readonly ActionDescriptor[]): NativeMenu {
-  return {
-    title: 'Go',
-    items: favouriteActions.filter((action) => action.id !== 'core.favourites').map(actionItem),
-  };
+ * item below, so it's the menu itself acting as the favourites browser, not a launcher for one.
+ *
+ * After the favourites, mirrors the favourites dropdown's remaining sections in the same order
+ * (Volumes, Servers, Cloud, Network - Recent is intentionally omitted, it isn't in the dropdown
+ * order relative to these either): each group gets its own leading separator, including the first
+ * one, so it reads as visually distinct from the plain favourite items above it. */
+function goMenu(
+  favouriteActions: readonly ActionDescriptor[],
+  volumes: readonly Volume[],
+  connections: readonly Connection[],
+  systemLocations: readonly SystemLocation[],
+  unavailableLocations: ReadonlySet<string>,
+): NativeMenu {
+  const items: NativeMenuItem[] = favouriteActions
+    .filter((action) => action.id !== 'core.favourites')
+    .map(actionItem);
+
+  if (volumes.length > 0) {
+    items.push({ kind: 'separator' });
+    volumes.forEach((volume, index) => {
+      const unavailable = unavailableLocations.has(locationKey(volume.location));
+      items.push({
+        kind: 'action',
+        id: `ui.goMenu.volume.${index}`,
+        title: unavailable ? `${volume.name} (unavailable)` : volume.name,
+        enabled: true,
+        checked: false,
+      });
+    });
+  }
+
+  if (connections.length > 0) {
+    items.push({ kind: 'separator' });
+    connections.forEach((connection) => {
+      // Matches the dropdown's `disabled: !isBrowsable(connection)` (browsable connections stay
+      // clickable regardless of status - clicking one that isn't connected yet still navigates
+      // and connects). The dropdown additionally shows a status glyph next to every connection;
+      // a native menu item has no glyph, so the status is folded into the title text instead,
+      // suppressed only for the common "nothing to say" case of an already-connected server.
+      const browsable = isBrowsable(connection);
+      const title =
+        connection.status === 'connected'
+          ? connection.name
+          : `${connection.name} (${connectionStatusLabel(connection.status)})`;
+      items.push({
+        kind: 'action',
+        id: `ui.goMenu.connection.${connection.id}`,
+        title,
+        enabled: browsable,
+        checked: false,
+      });
+    });
+  }
+
+  const cloudLocations = systemLocations.filter(({ kind }) => kind === 'cloud');
+  if (cloudLocations.length > 0) {
+    items.push({ kind: 'separator' });
+    for (const systemLocation of cloudLocations) {
+      const unavailable = unavailableLocations.has(locationKey(systemLocation.location));
+      items.push({
+        kind: 'action',
+        id: `ui.goMenu.systemLocation.${systemLocations.indexOf(systemLocation)}`,
+        title: unavailable ? `${systemLocation.name} (unavailable)` : systemLocation.name,
+        enabled: true,
+        checked: false,
+      });
+    }
+  }
+
+  const networkLocations = systemLocations.filter(({ kind }) => kind === 'network');
+  if (networkLocations.length > 0) {
+    items.push({ kind: 'separator' });
+    for (const systemLocation of networkLocations) {
+      const unavailable = unavailableLocations.has(locationKey(systemLocation.location));
+      items.push({
+        kind: 'action',
+        id: `ui.goMenu.systemLocation.${systemLocations.indexOf(systemLocation)}`,
+        title: unavailable
+          ? `${systemLocation.name} (unavailable)`
+          : systemLocation.readOnly === true
+            ? `${systemLocation.name} (read-only)`
+            : systemLocation.name,
+        enabled: true,
+        checked: false,
+      });
+    }
+  }
+
+  return { title: 'Go', items };
 }
 
 function windowMenu(
@@ -237,7 +341,13 @@ export function buildNativeMenuSpec(inputs: NativeMenuInputs): NativeMenuSpec {
       editMenu(inputs.actions),
       viewMenu(inputs.actions),
       toolsMenu(inputs.actions),
-      goMenu(inputs.favouriteActions),
+      goMenu(
+        inputs.favouriteActions,
+        inputs.volumes,
+        inputs.connections,
+        inputs.systemLocations,
+        inputs.unavailableLocations,
+      ),
       windowMenu(
         inputs.tabs,
         inputs.canOpenNewWindow,

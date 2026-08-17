@@ -263,6 +263,7 @@ Features not yet implemented.
 - [ ] 0141 Archive summary preview *(split out of 0071)*
 - [ ] 0142 Plugin-contributed preview renderers *(split out of 0071)*
 - [x] 0143 Workspace last-active restore and per-window desktop placement *(wire up unused `WorkspaceService::start`; multi-window support; per-workspace window-frame restore via tauri-plugin-window-state; macOS Space placement explicitly out of scope, no public API)*
+- [ ] 0144 Volumes in Favourites/Go menu, plus Go menu Servers/Cloud/Network sections
 
 ## Architecture deepening — backend
 

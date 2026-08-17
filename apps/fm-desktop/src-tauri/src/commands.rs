@@ -296,6 +296,18 @@ pub(crate) async fn get_system_locations(
         .map_err(|error| error.into_dto(uuid::Uuid::new_v4()))
 }
 
+/// Lists currently mounted volumes through the shared application service.
+#[tauri::command]
+pub(crate) async fn get_volumes(
+    state: State<'_, AppState>,
+) -> Result<Vec<fm_transport_dto::VolumeDto>, ApplicationErrorDto> {
+    state
+        .service
+        .volumes()
+        .await
+        .map_err(|error| error.into_dto(uuid::Uuid::new_v4()))
+}
+
 /// Returns the same native PNG bytes as `GET /api/v1/icons`.
 #[tauri::command]
 pub(crate) fn get_file_icon(
