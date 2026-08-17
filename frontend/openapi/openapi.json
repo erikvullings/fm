@@ -1618,6 +1618,17 @@
               "null"
             ]
           },
+          "gitStatus": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/GitFileStatusDto",
+                "description": "Git working-tree status, when this entry sits inside a local git\nworking tree (task 0135)."
+              }
+            ]
+          },
           "hidden": {
             "description": "Whether the entry is hidden.",
             "type": "boolean"
@@ -1754,6 +1765,17 @@
           "mode"
         ],
         "type": "object"
+      },
+      "GitFileStatusDto": {
+        "description": "An entry's git working-tree status (task 0135).",
+        "enum": [
+          "clean",
+          "modified",
+          "staged",
+          "untracked",
+          "ignored"
+        ],
+        "type": "string"
       },
       "HealthDto": {
         "description": "Response body for `GET /api/v1/health`.",
