@@ -1,4 +1,5 @@
 import m, { type FactoryComponent, type VnodeDOM } from 'mithril';
+import { t } from '../../i18n';
 import type { EntryId, EntrySummary, LoadingState } from '../../models';
 import type { CursorClickModifiers, DirectoryEntrySource } from './directory-table';
 import { entryIcon } from './entry-icons';
@@ -64,24 +65,32 @@ function tileDimensions(element: HTMLElement | undefined): { width: number; heig
 function stateView(attrs: DirectoryGridAttrs): m.Children | undefined {
   if (attrs.state.type === 'loading') {
     if ((attrs.source?.length ?? 0) > 0) return undefined;
-    return m('.fm-directory-state', { role: 'status', 'aria-live': 'polite' }, 'Loading directory');
+    return m(
+      '.fm-directory-state',
+      { role: 'status', 'aria-live': 'polite' },
+      t('table', 'loadingDirectory'),
+    );
   }
   if (attrs.state.type === 'error') {
-    const genericMessage = 'Unable to load directory.';
+    const genericMessage = t('table', 'unableToLoad');
     const detail = attrs.state.message.trim();
     return m('.fm-directory-state.fm-directory-error', { role: 'alert' }, [
       m('strong', genericMessage),
       detail.length > 0 ? m('span', detail) : undefined,
       attrs.onRetry === undefined
         ? undefined
-        : m('button.fm-directory-retry', { type: 'button', onclick: attrs.onRetry }, 'Retry'),
+        : m(
+            'button.fm-directory-retry',
+            { type: 'button', onclick: attrs.onRetry },
+            t('table', 'retry'),
+          ),
     ]);
   }
   if (attrs.state.type === 'idle') {
-    return m('.fm-directory-state', { role: 'status' }, 'Directory not loaded.');
+    return m('.fm-directory-state', { role: 'status' }, t('table', 'notLoaded'));
   }
   if ((attrs.source?.length ?? 0) === 0) {
-    return m('.fm-directory-state', { role: 'status' }, 'This directory is empty.');
+    return m('.fm-directory-state', { role: 'status' }, t('pane', 'emptyDirectory'));
   }
   return undefined;
 }

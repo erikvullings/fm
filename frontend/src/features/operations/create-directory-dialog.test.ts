@@ -1,6 +1,7 @@
 import m from 'mithril';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { setLocale } from '../../i18n';
 import { CreateDirectoryDialog, validateDirectoryName } from './create-directory-dialog';
 
 let root: HTMLElement;
@@ -11,6 +12,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  setLocale('en');
   m.mount(root, null);
   root.remove();
 });
@@ -42,5 +44,18 @@ describe('CreateDirectoryDialog', () => {
 
     input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     expect(cancel).toHaveBeenCalledOnce();
+  });
+
+  it('redraws its visible and accessible copy after a runtime locale switch', () => {
+    m.mount(root, {
+      view: () => m(CreateDirectoryDialog, { open: true, onConfirm: vi.fn(), onCancel: vi.fn() }),
+    });
+    m.redraw.sync();
+    expect(root.textContent).toContain('New folder');
+
+    setLocale('nl');
+    m.redraw.sync();
+    expect(root.textContent).toContain('Nieuwe map');
+    expect(root.textContent).toContain('Annuleren');
   });
 });

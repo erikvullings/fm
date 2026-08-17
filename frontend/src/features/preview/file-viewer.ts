@@ -2,6 +2,7 @@ import m, { type FactoryComponent } from 'mithril';
 import { toast } from 'mithril-materialized';
 import { closeIcon, copyIcon, infoCircleIcon } from '../../components/tabler-icons';
 import { tooltip } from '../../components/tooltip';
+import { t } from '../../i18n';
 import type { GitLogEntry } from '../../models';
 import { CodeMirrorEditor } from '../editor/code-mirror-editor';
 import { editableLanguageForExtension, languageExtension } from '../editor/editor-language';
@@ -29,7 +30,7 @@ async function copyWithToast(action: () => Promise<void>, successMessage: string
     await action();
     toast({ html: successMessage });
   } catch {
-    toast({ html: 'Copy failed.' });
+    toast({ html: t('viewer', 'copyFailed') });
   }
 }
 
@@ -101,7 +102,7 @@ function metadataField(label: string, value: string, href?: string): m.Children 
 function renderMetadataPanel(metadata: FileViewerMetadata | 'loading' | undefined): m.Children {
   if (metadata === undefined) return undefined;
   if (metadata === 'loading') {
-    return m('.fm-file-viewer-metadata', m('span', 'Loading metadata…'));
+    return m('.fm-file-viewer-metadata', m('span', t('viewer', 'loadingMetadata')));
   }
   const fields: m.Children[] = [];
   if (metadata.kind === 'image') {
@@ -208,9 +209,9 @@ function renderSearchBar(
   return m('.fm-file-viewer-search', [
     m('input.fm-file-viewer-search-input', {
       type: 'text',
-      placeholder: 'Search this file…',
+      placeholder: t('viewer', 'searchPlaceholder'),
       value: query,
-      'aria-label': 'Search this file',
+      'aria-label': t('viewer', 'searchThisFile'),
       oninput: (event: InputEvent) =>
         attrs.onSearchQueryChange((event.currentTarget as HTMLInputElement).value),
       onkeydown: (event: KeyboardEvent) => {
@@ -224,7 +225,7 @@ function renderSearchBar(
       'button.fm-file-viewer-search-toggle',
       {
         type: 'button',
-        title: 'Match case',
+        title: t('viewer', 'matchCase'),
         'aria-pressed': search?.caseSensitive === true ? 'true' : 'false',
         onclick: () =>
           attrs.onSearchOptionChange({ caseSensitive: search?.caseSensitive !== true }),
@@ -235,7 +236,7 @@ function renderSearchBar(
       'button.fm-file-viewer-search-toggle',
       {
         type: 'button',
-        title: 'Match whole word',
+        title: t('viewer', 'matchWholeWord'),
         'aria-pressed': search?.wholeWord === true ? 'true' : 'false',
         onclick: () => attrs.onSearchOptionChange({ wholeWord: search?.wholeWord !== true }),
       },
@@ -245,7 +246,7 @@ function renderSearchBar(
       'button.fm-file-viewer-search-toggle',
       {
         type: 'button',
-        title: 'Use regular expression',
+        title: t('viewer', 'useRegex'),
         'aria-pressed': search?.regex === true ? 'true' : 'false',
         onclick: () => attrs.onSearchOptionChange({ regex: search?.regex !== true }),
       },
@@ -256,20 +257,20 @@ function renderSearchBar(
       search === undefined
         ? undefined
         : search.searching
-          ? 'Searching…'
+          ? t('viewer', 'searching')
           : search.error !== undefined
             ? search.error
             : matches.length === 0
               ? query.trim() === ''
                 ? undefined
-                : 'No results'
+                : t('viewer', 'noResults')
               : `${(currentMatchIndex ?? 0) + 1} of ${matches.length}${search.truncated ? '+' : ''}`,
     ),
     m(
       'button.fm-file-viewer-search-nav',
       {
         type: 'button',
-        title: 'Previous match',
+        title: t('viewer', 'previousMatch'),
         disabled: matches.length === 0,
         onclick: attrs.onPreviousMatch,
       },
@@ -279,7 +280,7 @@ function renderSearchBar(
       'button.fm-file-viewer-search-nav',
       {
         type: 'button',
-        title: 'Next match',
+        title: t('viewer', 'nextMatch'),
         disabled: matches.length === 0,
         onclick: attrs.onNextMatch,
       },
@@ -437,9 +438,9 @@ function renderPdfSearchBar(
   return m('.fm-file-viewer-search', [
     m('input.fm-file-viewer-search-input', {
       type: 'text',
-      placeholder: 'Search this PDF…',
+      placeholder: t('viewer', 'searchPdfPlaceholder'),
       value: query,
-      'aria-label': 'Search this PDF',
+      'aria-label': t('viewer', 'searchPdfPlaceholder'),
       oninput: (event: InputEvent) =>
         attrs.onPdfSearchQueryChange((event.currentTarget as HTMLInputElement).value),
     }),
@@ -448,18 +449,18 @@ function renderPdfSearchBar(
       pdfSearch === undefined
         ? undefined
         : pdfSearch.searching
-          ? 'Searching…'
+          ? t('viewer', 'searching')
           : matches.length === 0
             ? query.trim() === ''
               ? undefined
-              : 'No results'
+              : t('viewer', 'noResults')
             : `Page ${matches[currentMatchIndex ?? 0]} · ${(currentMatchIndex ?? 0) + 1} of ${matches.length}`,
     ),
     m(
       'button.fm-file-viewer-search-nav',
       {
         type: 'button',
-        title: 'Previous match',
+        title: t('viewer', 'previousMatch'),
         disabled: matches.length === 0,
         onclick: attrs.onPreviousPdfMatch,
       },
@@ -469,7 +470,7 @@ function renderPdfSearchBar(
       'button.fm-file-viewer-search-nav',
       {
         type: 'button',
-        title: 'Next match',
+        title: t('viewer', 'nextMatch'),
         disabled: matches.length === 0,
         onclick: attrs.onNextPdfMatch,
       },
@@ -493,7 +494,7 @@ function renderComicBody(state: Extract<FileViewerState, { status: 'ready' }>): 
   return m(
     '.fm-file-viewer-body.fm-file-viewer-body-image',
     content.currentPageDataUri === undefined
-      ? m('span', 'Loading page…')
+      ? m('span', t('viewer', 'loadingPage'))
       : m('img.fm-file-viewer-image-fit', {
           src: content.currentPageDataUri,
           alt: `Page ${content.currentPage + 1} of ${state.entry.name}`,
@@ -507,7 +508,7 @@ function renderEpubBody(state: Extract<FileViewerState, { status: 'ready' }>): m
   return m(
     '.fm-file-viewer-body.fm-file-viewer-body-epub',
     content.currentChapterHtml === undefined
-      ? m('span', 'Loading chapter…')
+      ? m('span', t('viewer', 'loadingChapter'))
       : m('.fm-file-viewer-epub-chapter.browser-default', {
           innerHTML: content.currentChapterHtml,
         }),
@@ -534,132 +535,155 @@ export const FileViewer: FactoryComponent<FileViewerAttrs> = () => {
       const state = attrs.state;
       const search =
         state.status === 'ready' && state.content.kind === 'text' ? state.search : undefined;
-      return m('section.fm-file-viewer', { 'aria-label': `Viewing ${state.entry.name}` }, [
-        m('.fm-file-viewer-header', [
-          m('strong.fm-file-viewer-title', state.entry.name),
-          state.status === 'ready' && state.content.kind === 'image'
-            ? m('.fm-file-viewer-zoom-controls', [
-                tooltip('Zoom out', m('button', { type: 'button', onclick: attrs.onZoomOut }, '−')),
-                m(
-                  'span.fm-file-viewer-zoom-level',
-                  state.content.fitToContainer ? 'Fit' : `${Math.round(state.content.zoom * 100)}%`,
-                ),
-                tooltip('Zoom in', m('button', { type: 'button', onclick: attrs.onZoomIn }, '+')),
-                tooltip(
-                  'Fit to window',
-                  m('button', { type: 'button', onclick: attrs.onResetZoom }, 'Fit'),
-                ),
+      return m(
+        'section.fm-file-viewer',
+        { 'aria-label': t('viewer', 'viewing', { name: state.entry.name }) },
+        [
+          m('.fm-file-viewer-header', [
+            m('strong.fm-file-viewer-title', state.entry.name),
+            state.status === 'ready' && state.content.kind === 'image'
+              ? m('.fm-file-viewer-zoom-controls', [
+                  tooltip(
+                    t('viewer', 'zoomOut'),
+                    m('button', { type: 'button', onclick: attrs.onZoomOut }, '−'),
+                  ),
+                  m(
+                    'span.fm-file-viewer-zoom-level',
+                    state.content.fitToContainer
+                      ? t('viewer', 'fit')
+                      : `${Math.round(state.content.zoom * 100)}%`,
+                  ),
+                  tooltip(
+                    t('viewer', 'zoomIn'),
+                    m('button', { type: 'button', onclick: attrs.onZoomIn }, '+'),
+                  ),
+                  tooltip(
+                    t('viewer', 'fitToWindow'),
+                    m('button', { type: 'button', onclick: attrs.onResetZoom }, t('viewer', 'fit')),
+                  ),
+                ])
+              : undefined,
+            state.status === 'ready' && pagedContentInfo(state.content) !== undefined
+              ? (() => {
+                  const pageInfo = pagedContentInfo(state.content);
+                  if (pageInfo === undefined) return undefined;
+                  return m('.fm-file-viewer-page-controls', [
+                    tooltip(
+                      t('viewer', 'previousPage'),
+                      m(
+                        'button',
+                        {
+                          type: 'button',
+                          'aria-label': t('viewer', 'previousPage'),
+                          disabled: pageInfo.current <= 1,
+                          onclick: attrs.onPreviousPage,
+                        },
+                        '◀',
+                      ),
+                    ),
+                    m('span.fm-file-viewer-page-count', `${pageInfo.current} / ${pageInfo.total}`),
+                    tooltip(
+                      t('viewer', 'nextPage'),
+                      m(
+                        'button',
+                        {
+                          type: 'button',
+                          'aria-label': t('viewer', 'nextPage'),
+                          disabled: pageInfo.current >= pageInfo.total,
+                          onclick: attrs.onNextPage,
+                        },
+                        '▶',
+                      ),
+                    ),
+                  ]);
+                })()
+              : undefined,
+            state.status === 'ready' &&
+            (state.content.kind === 'text' || state.content.kind === 'image')
+              ? tooltip(
+                  state.content.kind === 'image'
+                    ? t('viewer', 'copyImage')
+                    : t('viewer', 'copyText'),
+                  m(
+                    'button.fm-file-viewer-copy',
+                    {
+                      type: 'button',
+                      'aria-label':
+                        state.content.kind === 'image'
+                          ? t('viewer', 'copyImage')
+                          : t('viewer', 'copyText'),
+                      onclick: () =>
+                        void copyWithToast(
+                          attrs.onCopy,
+                          state.content.kind === 'image'
+                            ? t('viewer', 'imageCopied')
+                            : t('viewer', 'textCopied'),
+                        ),
+                    },
+                    copyIcon({ size: 15 }),
+                  ),
+                )
+              : undefined,
+            state.status === 'ready' &&
+            (state.content.kind === 'text' || state.content.kind === 'image')
+              ? tooltip(
+                  t('viewer', 'showInfo'),
+                  m(
+                    'button.fm-file-viewer-metadata-toggle',
+                    {
+                      type: 'button',
+                      'aria-label': t('viewer', 'showInfo'),
+                      'aria-pressed': state.metadataPanelOpen === true ? 'true' : 'false',
+                      onclick: attrs.onToggleMetadata,
+                    },
+                    infoCircleIcon({ size: 15 }),
+                  ),
+                )
+              : undefined,
+            tooltip(
+              t('viewer', 'closeViewer'),
+              m(
+                'button.fm-file-viewer-close',
+                {
+                  type: 'button',
+                  'aria-label': t('viewer', 'closeViewer'),
+                  onclick: attrs.onClose,
+                },
+                closeIcon({ size: 13 }),
+              ),
+            ),
+          ]),
+          state.status === 'ready' && state.content.kind === 'text'
+            ? renderSearchBar(attrs, search)
+            : undefined,
+          state.status === 'ready' && state.content.kind === 'pdf'
+            ? renderPdfSearchBar(attrs, state.pdfSearch)
+            : undefined,
+          state.status === 'loading'
+            ? m('.fm-file-viewer-body', m('span', t('shell', 'loading')))
+            : state.status === 'unsupported'
+              ? m('.fm-file-viewer-body', m('span', t('viewer', 'previewUnavailableGeneric')))
+              : state.status === 'error'
+                ? m('.fm-file-viewer-body', m('span', state.message))
+                : state.content.kind === 'text'
+                  ? renderTextBody(attrs, state)
+                  : state.content.kind === 'audio'
+                    ? renderAudioBody(state)
+                    : state.content.kind === 'pdf'
+                      ? renderPdfBody(state)
+                      : state.content.kind === 'comic'
+                        ? renderComicBody(state)
+                        : state.content.kind === 'epub'
+                          ? renderEpubBody(state)
+                          : renderImageBody(attrs, state),
+          state.status === 'ready' && state.metadataPanelOpen === true
+            ? m('.fm-file-viewer-info-panel', [
+                renderMetadataPanel(state.metadata),
+                renderGitHistorySection(state.gitHistory),
               ])
             : undefined,
-          state.status === 'ready' && pagedContentInfo(state.content) !== undefined
-            ? (() => {
-                const pageInfo = pagedContentInfo(state.content);
-                if (pageInfo === undefined) return undefined;
-                return m('.fm-file-viewer-page-controls', [
-                  tooltip(
-                    'Previous page',
-                    m(
-                      'button',
-                      {
-                        type: 'button',
-                        'aria-label': 'Previous page',
-                        disabled: pageInfo.current <= 1,
-                        onclick: attrs.onPreviousPage,
-                      },
-                      '◀',
-                    ),
-                  ),
-                  m('span.fm-file-viewer-page-count', `${pageInfo.current} / ${pageInfo.total}`),
-                  tooltip(
-                    'Next page',
-                    m(
-                      'button',
-                      {
-                        type: 'button',
-                        'aria-label': 'Next page',
-                        disabled: pageInfo.current >= pageInfo.total,
-                        onclick: attrs.onNextPage,
-                      },
-                      '▶',
-                    ),
-                  ),
-                ]);
-              })()
-            : undefined,
-          state.status === 'ready' &&
-          (state.content.kind === 'text' || state.content.kind === 'image')
-            ? tooltip(
-                state.content.kind === 'image' ? 'Copy image' : 'Copy text',
-                m(
-                  'button.fm-file-viewer-copy',
-                  {
-                    type: 'button',
-                    'aria-label': state.content.kind === 'image' ? 'Copy image' : 'Copy text',
-                    onclick: () =>
-                      void copyWithToast(
-                        attrs.onCopy,
-                        state.content.kind === 'image' ? 'Image copied.' : 'Text copied.',
-                      ),
-                  },
-                  copyIcon({ size: 15 }),
-                ),
-              )
-            : undefined,
-          state.status === 'ready' &&
-          (state.content.kind === 'text' || state.content.kind === 'image')
-            ? tooltip(
-                'Show info (Alt+Space)',
-                m(
-                  'button.fm-file-viewer-metadata-toggle',
-                  {
-                    type: 'button',
-                    'aria-label': 'Show info (Alt+Space)',
-                    'aria-pressed': state.metadataPanelOpen === true ? 'true' : 'false',
-                    onclick: attrs.onToggleMetadata,
-                  },
-                  infoCircleIcon({ size: 15 }),
-                ),
-              )
-            : undefined,
-          tooltip(
-            'Close viewer',
-            m(
-              'button.fm-file-viewer-close',
-              { type: 'button', 'aria-label': 'Close viewer', onclick: attrs.onClose },
-              closeIcon({ size: 13 }),
-            ),
-          ),
-        ]),
-        state.status === 'ready' && state.content.kind === 'text'
-          ? renderSearchBar(attrs, search)
-          : undefined,
-        state.status === 'ready' && state.content.kind === 'pdf'
-          ? renderPdfSearchBar(attrs, state.pdfSearch)
-          : undefined,
-        state.status === 'loading'
-          ? m('.fm-file-viewer-body', m('span', 'Loading…'))
-          : state.status === 'unsupported'
-            ? m('.fm-file-viewer-body', m('span', 'Preview not available for this file.'))
-            : state.status === 'error'
-              ? m('.fm-file-viewer-body', m('span', state.message))
-              : state.content.kind === 'text'
-                ? renderTextBody(attrs, state)
-                : state.content.kind === 'audio'
-                  ? renderAudioBody(state)
-                  : state.content.kind === 'pdf'
-                    ? renderPdfBody(state)
-                    : state.content.kind === 'comic'
-                      ? renderComicBody(state)
-                      : state.content.kind === 'epub'
-                        ? renderEpubBody(state)
-                        : renderImageBody(attrs, state),
-        state.status === 'ready' && state.metadataPanelOpen === true
-          ? m('.fm-file-viewer-info-panel', [
-              renderMetadataPanel(state.metadata),
-              renderGitHistorySection(state.gitHistory),
-            ])
-          : undefined,
-      ]);
+        ],
+      );
     },
   };
 };

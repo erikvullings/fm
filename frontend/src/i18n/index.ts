@@ -1,9 +1,13 @@
+import m from 'mithril';
 import type { Messages } from 'translate.js';
 import translate from 'translate.js';
-
+import type { EnglishCatalogue } from './en';
 import { en } from './en';
 import { nl } from './nl';
-import type { Entry, Locale, Params, Translator } from './types';
+import type { Entry, Locale, LocalisedCatalogue, Params, Translator } from './types';
+
+type Catalogue = LocalisedCatalogue<EnglishCatalogue>;
+type AppTranslator = Translator<EnglishCatalogue>;
 
 /** The initial and fallback locale (task 0098). */
 export const DEFAULT_LOCALE: Locale = 'en';
@@ -12,7 +16,7 @@ export const DEFAULT_LOCALE: Locale = 'en';
  * Every catalogue, keyed by locale. Adding a language is one import and one
  * entry here; the parity test in `i18n.test.ts` guards key coverage.
  */
-export const catalogues: Record<Locale, import('./types').Catalogue> = { en, nl };
+export const catalogues: Record<Locale, Catalogue> = { en, nl };
 
 function isDev(): boolean {
   if (typeof import.meta !== 'undefined' && import.meta.env) {
@@ -39,7 +43,7 @@ function resolvePlural(entry: Entry, count: number): string {
  * lacks the key. In development the result is conspicuous (`@@key@@`) and a
  * warning is emitted; production never throws.
  */
-export function createTranslatorFor(locale: Locale): Translator {
+export function createTranslatorFor(locale: Locale): AppTranslator {
   const dev = isDev();
   const lib = translate(catalogues[locale] as unknown as Messages, {
     debug: dev,
@@ -75,7 +79,7 @@ export function createTranslatorFor(locale: Locale): Translator {
   }
 
   function resolve(
-    group: keyof typeof catalogue,
+    group: keyof EnglishCatalogue,
     second: string | Params,
     third?: Params | number,
   ): string {
@@ -150,29 +154,45 @@ export function createTranslatorFor(locale: Locale): Translator {
     return (lib.arr as (...a: unknown[]) => unknown[])(...args);
   }
 
-  const wrapped = resolve as Translator & { arr: Translator['arr'] };
-  wrapped.arr = arrResolve as Translator['arr'];
+  const wrapped = resolve as AppTranslator & { arr: AppTranslator['arr'] };
+  wrapped.arr = arrResolve as AppTranslator['arr'];
   return wrapped;
 }
 
 let currentLocale: Locale = DEFAULT_LOCALE;
-let currentTranslator: Translator = createTranslatorFor(currentLocale);
+let currentTranslator: AppTranslator = createTranslatorFor(currentLocale);
+
+if (import.meta.hot !== undefined) {
+  import.meta.hot.accept(['./en.ts', './nl.ts'], ([englishModule, dutchModule]) => {
+    if (englishModule !== undefined) catalogues.en = englishModule.en;
+    if (dutchModule !== undefined) catalogues.nl = dutchModule.nl;
+    currentTranslator = createTranslatorFor(currentLocale);
+    m.redraw();
+  });
+}
 
 /**
  * The stable, process-wide translator. Components import this single object
  * and always get the current locale's catalogue, so `setLocale` updates every
  * surface on the next redraw without re-importing.
  */
-export const t: Translator = Object.assign(
-  (...args: Parameters<Translator>) => currentTranslator(...args),
+export const t: AppTranslator = Object.assign(
+  (...args: Parameters<AppTranslator>) => currentTranslator(...args),
   {
-    arr: (...args: Parameters<Translator['arr']>) => currentTranslator.arr(...args),
+    arr: (...args: Parameters<AppTranslator['arr']>) => currentTranslator.arr(...args),
   },
-) as unknown as Translator;
+) as unknown as AppTranslator;
 
 /** The current locale. */
 export function getLocale(): Locale {
   return currentLocale;
+}
+
+/** Maps stable core action ids to frontend-owned copy; plugin titles remain plugin-owned. */
+export function actionTitle(actionId: string, fallback: string): string {
+  const key = actionId.startsWith('core.') ? actionId.slice('core.'.length) : undefined;
+  if (key === undefined || !Object.hasOwn(en.action, key)) return fallback;
+  return t('action', key as keyof EnglishCatalogue['action']);
 }
 
 /**
@@ -183,8 +203,10 @@ export function getLocale(): Locale {
 export function setLocale(locale: Locale): Locale {
   currentLocale = locale;
   currentTranslator = createTranslatorFor(locale);
+  m.redraw();
   return locale;
 }
 
-export type { Catalogue, Entry, Locale, Params, PluralEntry, Translator } from './types';
+export type { EnglishCatalogue } from './en';
+export type { Entry, Locale, LocalisedCatalogue, Params, PluralEntry, Translator } from './types';
 export { LOCALES } from './types';

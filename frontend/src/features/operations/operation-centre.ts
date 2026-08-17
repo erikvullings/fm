@@ -1,5 +1,6 @@
 import m, { type Component } from 'mithril';
 
+import { t } from '../../i18n';
 import type { Operation, OperationId } from '../../models';
 import type { OperationCentreState } from './operation-state';
 
@@ -38,7 +39,7 @@ function completedWithWarningsResult(operation: Operation): string {
   if (warningCount > 0) {
     return `Completed with ${warningCount} ${warningCount === 1 ? 'warning' : 'warnings'}.`;
   }
-  return operation.result?.message ?? 'Completed with warnings.';
+  return operation.result?.message ?? t('operation', 'completedWithWarnings');
 }
 
 /** Search operations show a running match count instead of the current-entry filename - the
@@ -87,7 +88,7 @@ export const OperationCentre: Component<OperationCentreAttrs> = {
     }
     return m(
       '.fm-operation-centre',
-      { 'aria-label': 'Operation centre' },
+      { 'aria-label': t('operation', 'centre') },
       operations.map((operation) => {
         const progress = operation.progress;
         const failure = attrs.state.failuresById[operation.id];
@@ -136,7 +137,9 @@ export const OperationCentre: Component<OperationCentreAttrs> = {
             ? m('progress', {
                 value: progress.completedBytes,
                 max: Math.max(progress.totalBytes, 1),
-                'aria-label': `${operation.kind ?? 'operation'} progress`,
+                'aria-label': t('operation', 'progress', {
+                  kind: operation.kind ?? 'operation',
+                }),
               })
             : undefined,
           operation.state !== 'completed' && operation.state !== 'completedWithWarnings'
@@ -158,7 +161,12 @@ export const OperationCentre: Component<OperationCentreAttrs> = {
             ? undefined
             : m('.fm-operation-warning', [
                 m('details', [
-                  m('summary', warnings.length === 1 ? 'Show warning' : 'Show warnings'),
+                  m(
+                    'summary',
+                    warnings.length === 1
+                      ? t('operation', 'showWarning')
+                      : t('operation', 'showWarnings'),
+                  ),
                   m(
                     'ul',
                     warnings.map((warning) =>
@@ -175,7 +183,7 @@ export const OperationCentre: Component<OperationCentreAttrs> = {
             : m('.fm-operation-failure', [
                 m('span', failure.message),
                 m('details', [
-                  m('summary', 'Details'),
+                  m('summary', t('button', 'details')),
                   m('pre', JSON.stringify(failure.details ?? { code: failure.code }, null, 2)),
                 ]),
               ]),
@@ -183,16 +191,16 @@ export const OperationCentre: Component<OperationCentreAttrs> = {
             operation.state === 'queued' ||
             operation.state === 'planning' ||
             operation.state === 'running'
-              ? button('Cancel', 'cancel', () => attrs.onCancel(operation.id))
+              ? button(t('button', 'cancel'), 'cancel', () => attrs.onCancel(operation.id))
               : undefined,
             operation.state === 'running'
-              ? button('Pause', 'pause', () => attrs.onPause(operation.id))
+              ? button(t('button', 'pause'), 'pause', () => attrs.onPause(operation.id))
               : undefined,
             operation.state === 'paused'
-              ? button('Resume', 'resume', () => attrs.onResume(operation.id))
+              ? button(t('button', 'resume'), 'resume', () => attrs.onResume(operation.id))
               : undefined,
             terminal
-              ? button('Dismiss', 'dismiss', () => attrs.onDismiss(operation.id))
+              ? button(t('button', 'dismiss'), 'dismiss', () => attrs.onDismiss(operation.id))
               : undefined,
           ]),
         ]);

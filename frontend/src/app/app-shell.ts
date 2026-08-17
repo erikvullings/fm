@@ -149,7 +149,7 @@ import {
 } from '../features/workspace/workspace-layout';
 import { sortWorkspaceSummaries } from '../features/workspace/workspace-manager';
 import { WorkspaceSwitcher } from '../features/workspace/workspace-switcher';
-import { t } from '../i18n';
+import { actionTitle, t } from '../i18n';
 import { footerFunctionKeyBindings, type KeybindingRuntime } from '../keybindings/dispatcher';
 import type {
   ActionDescriptor,
@@ -307,8 +307,8 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     return [
       {
         id: 'core.favourites',
-        title: 'Open favourites',
-        description: 'Show saved locations in the command palette',
+        title: t('action', 'openFavourites'),
+        description: t('action', 'showSavedLocations'),
         category: 'navigation',
         defaultShortcuts: [{ key: 'h', ctrl: true, shift: true }],
         contextRequirements: {},
@@ -316,7 +316,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       },
       ...favourites.map((favourite, index) => ({
         id: `core.favourite.${index}`,
-        title: `Open favourite: ${favourite.label}`,
+        title: t('action', 'openFavourite', { name: favourite.label }),
         description: favourite.location.uri,
         category: 'navigation',
         // TC-style quick-switch-to-saved-location: Ctrl/Cmd+1..9 for the first nine favourites
@@ -329,8 +329,15 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     ];
   }
 
+  function localisedRegisteredActions(): readonly ActionDescriptor[] {
+    return registeredActions.map((action) => ({
+      ...action,
+      title: actionTitle(action.id, action.title),
+    }));
+  }
+
   function actionsWithFavourites(): readonly ActionDescriptor[] {
-    return [...registeredActions, ...favouriteActions()];
+    return [...localisedRegisteredActions(), ...favouriteActions()];
   }
 
   /** Every open tab across every pane, flattened for the native Window menu (task 0133). */
@@ -377,7 +384,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
   function syncNativeMenu(): void {
     if (runtimeKind !== 'tauri' || !nativeMenuChannelReady) return;
     const spec: NativeMenuSpec = buildNativeMenuSpec({
-      actions: registeredActions,
+      actions: localisedRegisteredActions(),
       favouriteActions: favouriteActions(),
       tabs: nativeMenuWindowTabs(),
       canOpenNewWindow: attrsClient.openWorkspaceWindow !== undefined,
@@ -2118,7 +2125,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
         [
           isMacOverlay
             ? m('.fm-titlebar-spacer', { 'data-tauri-drag-region': '' }, [
-                m('span.fm-titlebar-label', 'Procyon'),
+                m('span.fm-titlebar-label', t('shell', 'title')),
               ])
             : null,
           m('.fm-workspace-toolbar', [
@@ -2419,7 +2426,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
                         : settingsDialogOpen
                           ? m(SettingsEditor, {
                               settings: currentSettings,
-                              actions: registeredActions,
+                              actions: localisedRegisteredActions(),
                               platform,
                               runtime: keybindingRuntime,
                               plugins,
@@ -2577,7 +2584,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
               contextMenu === undefined
                 ? []
                 : menuActionsForContext(
-                    registeredActions,
+                    localisedRegisteredActions(),
                     actionCommandController.commandAvailabilityContext(
                       contextMenu.entries,
                       contextMenu.paneId,
@@ -2590,7 +2597,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
           }),
           m(ShortcutsHelpDialog, {
             open: shortcutsHelpOpen,
-            actions: registeredActions,
+            actions: localisedRegisteredActions(),
             keybindings: currentSettings?.keybindings ?? {},
             platform,
             runtime: keybindingRuntime,
@@ -2602,7 +2609,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
           m(
             '.fm-function-key-bar',
             footerFunctionKeyBindings(
-              registeredActions,
+              localisedRegisteredActions(),
               currentSettings?.keybindings ?? {},
               {
                 scope: 'table',

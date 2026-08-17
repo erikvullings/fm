@@ -10,6 +10,7 @@ import {
   plusIcon,
 } from '../../components/tabler-icons';
 import { tooltip } from '../../components/tooltip';
+import { t } from '../../i18n';
 
 /** Renders an icon-only toggle button matching `IconButton`'s `.btn-flat.btn-icon` styling, but
  * without mithril-materialized's `waves-effect` ripple, which isn't needed for a plain toggle
@@ -810,7 +811,7 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
               {
                 role: 'menu',
                 tabindex: -1,
-                'aria-label': 'Favourites',
+                'aria-label': t('pane', 'favourites'),
                 oncreate: ({ dom }: VnodeDOM) => focusFirstFavouritesItem(dom as HTMLElement),
                 onclick: (event: MouseEvent) => event.stopPropagation(),
                 ondblclick: (event: MouseEvent) => event.stopPropagation(),
@@ -834,7 +835,7 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
                   'button.fm-favourites-close',
                   {
                     type: 'button',
-                    'aria-label': 'Close favourites menu',
+                    'aria-label': t('pane', 'closeFavourites'),
                     onclick: () => {
                       closeFavourites();
                       m.redraw();
@@ -844,7 +845,7 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
                 ),
                 (attrs.favourites.favouriteLocations?.length ?? 0) > 0 &&
                   m('.fm-favourites-recents', [
-                    m('strong', 'Favorites'),
+                    m('strong', t('pane', 'favourites')),
                     ...(attrs.favourites.favouriteLocations ?? []).map((favourite, index) =>
                       m('.fm-favourites-item', [
                         m(
@@ -900,8 +901,8 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
                       [
                         m('input[type=text]', {
                           value: favouriteLabel,
-                          placeholder: 'Favourite name',
-                          'aria-label': 'Favourite name',
+                          placeholder: t('pane', 'favouriteName'),
+                          'aria-label': t('pane', 'favouriteName'),
                           oninput: (event: InputEvent) => {
                             favouriteLabel = (event.currentTarget as HTMLInputElement).value;
                           },
@@ -912,7 +913,7 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
                             IconButton,
                             {
                               className: 'fm-favourites-add-button',
-                              'aria-label': 'Add current location',
+                              'aria-label': t('pane', 'addCurrentLocation'),
                               onclick: () => addCurrentFavourite(attrs),
                             },
                             plusIcon(),
@@ -1093,7 +1094,7 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
                 ? m('.fm-path-editor', [
                     m('input[type=text].fm-path-input', {
                       value: draftPath,
-                      'aria-label': 'Path',
+                      'aria-label': t('pane', 'path'),
                       'aria-invalid': pathError === undefined ? undefined : 'true',
                       oncreate: (vnode: VnodeDOM) => {
                         inputElement = vnode.dom as HTMLInputElement;
@@ -1118,7 +1119,7 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
                       ? undefined
                       : m('.fm-path-error', { role: 'alert' }, pathError),
                   ])
-                : m('nav.fm-breadcrumb', { 'aria-label': 'Current path' }, [
+                : m('nav.fm-breadcrumb', { 'aria-label': t('pane', 'currentPath') }, [
                     isSftpLocation
                       ? m('span.fm-breadcrumb-scheme', { 'aria-hidden': 'true' }, 'sftp://')
                       : undefined,
@@ -1152,12 +1153,12 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
                       : m('.fm-path-error', { role: 'alert' }, pathError),
                   ]),
             tooltip(
-              'New tab',
+              t('pane', 'newTab'),
               m(
                 IconButton,
                 {
                   className: 'fm-pane-tab-new',
-                  'aria-label': 'New tab',
+                  'aria-label': t('pane', 'newTab'),
                   onclick: () => attrs.onNewTab(),
                 },
                 plusIcon(),
@@ -1165,11 +1166,11 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
             ),
             m('.fm-view-mode-menu-wrapper', [
               tooltip(
-                'View',
+                t('pane', 'view'),
                 toggleIconButton(
                   {
                     className: 'fm-pane-view-mode',
-                    'aria-label': 'View',
+                    'aria-label': t('pane', 'view'),
                     'aria-haspopup': 'menu',
                     'aria-expanded': String(viewMenuOpen),
                     onclick: () => {
@@ -1183,13 +1184,13 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
                 m('.fm-view-mode-menu-backdrop', { onclick: () => (viewMenuOpen = false) }),
                 m(
                   '.fm-view-mode-menu',
-                  { role: 'menu', 'aria-label': 'View mode' },
+                  { role: 'menu', 'aria-label': t('pane', 'viewMode') },
                   (
                     [
-                      { label: 'List', viewMode: 'table', icon: listIcon() },
-                      { label: 'Small icons', viewMode: 'grid', size: 'small' },
-                      { label: 'Medium icons', viewMode: 'grid', size: 'medium' },
-                      { label: 'Large icons', viewMode: 'grid', size: 'large' },
+                      { label: t('pane', 'list'), viewMode: 'table', icon: listIcon() },
+                      { label: t('pane', 'smallIcons'), viewMode: 'grid', size: 'small' },
+                      { label: t('pane', 'mediumIcons'), viewMode: 'grid', size: 'medium' },
+                      { label: t('pane', 'largeIcons'), viewMode: 'grid', size: 'large' },
                     ] as const
                   ).map((option) => {
                     const active =
@@ -1221,11 +1222,11 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
             (attrs.tableConfig.viewMode ?? 'table') === 'grid'
               ? m('.fm-grid-sort-menu-wrapper', [
                   tooltip(
-                    'Sort',
+                    t('pane', 'sort'),
                     toggleIconButton(
                       {
                         className: 'fm-pane-grid-sort',
-                        'aria-label': 'Sort',
+                        'aria-label': t('pane', 'sort'),
                         'aria-haspopup': 'menu',
                         'aria-expanded': String(sortMenuOpen),
                         onclick: () => {
@@ -1241,13 +1242,13 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
                         m('.fm-view-mode-menu-backdrop', { onclick: () => (sortMenuOpen = false) }),
                         m(
                           '.fm-view-mode-menu.fm-grid-sort-menu',
-                          { role: 'menu', 'aria-label': 'Sort by' },
+                          { role: 'menu', 'aria-label': t('pane', 'sortBy') },
                           (
                             [
-                              { label: 'Name', columnId: 'core.name' },
-                              { label: 'Date modified', columnId: 'core.modified' },
-                              { label: 'Size', columnId: 'core.size' },
-                              { label: 'Extension', columnId: 'core.extension' },
+                              { label: t('table', 'name'), columnId: 'core.name' },
+                              { label: t('pane', 'dateModified'), columnId: 'core.modified' },
+                              { label: t('table', 'size'), columnId: 'core.size' },
+                              { label: t('pane', 'extension'), columnId: 'core.extension' },
                             ] as const
                           ).flatMap((column) =>
                             (['ascending', 'descending'] as const).map((direction) => {
@@ -1278,12 +1279,12 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
             (attrs.tableConfig.viewMode ?? 'table') === 'grid'
               ? tooltip(
                   photoModeByTab.get(attrs.activeTabId) === true
-                    ? 'Turn off photo mode'
-                    : 'Photo mode (group by day)',
+                    ? t('pane', 'photoModeOff')
+                    : t('pane', 'photoModeOn'),
                   toggleIconButton(
                     {
                       className: 'fm-pane-photo-mode',
-                      'aria-label': 'Photo mode',
+                      'aria-label': t('pane', 'photoMode'),
                       'aria-pressed': String(photoModeByTab.get(attrs.activeTabId) === true),
                       onclick: () => {
                         const next = new Map(photoModeByTab);
@@ -1297,11 +1298,11 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
                 )
               : undefined,
             tooltip(
-              'Favourites',
+              t('pane', 'favourites'),
               toggleIconButton(
                 {
                   className: 'fm-pane-tab-favourites',
-                  'aria-label': 'Favourites',
+                  'aria-label': t('pane', 'favourites'),
                   'aria-expanded': String(favouritesOpen),
                   onclick: () => {
                     if (favouritesOpen) closeFavourites();

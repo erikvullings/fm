@@ -1,5 +1,6 @@
 import m, { type FactoryComponent } from 'mithril';
 import { ModalPanel } from 'mithril-materialized';
+import { t } from '../../i18n';
 
 export interface PermanentDeleteDialogAttrs {
   readonly open: boolean;
@@ -43,7 +44,7 @@ export const PermanentDeleteDialog: FactoryComponent<PermanentDeleteDialogAttrs>
   return {
     view: ({ attrs }) =>
       m(ModalPanel, {
-        title: 'Permanently delete?',
+        title: t('operation', 'confirmDeleteTitle'),
         description: m(
           '.fm-permanent-delete-warning',
           {
@@ -54,9 +55,12 @@ export const PermanentDeleteDialog: FactoryComponent<PermanentDeleteDialogAttrs>
           [
             m(
               'p',
-              `This will permanently delete ${attrs.itemCount} items (${attrs.totalBytes} bytes).`,
+              t('operation', 'permanentDeleteSummary', {
+                count: attrs.itemCount,
+                bytes: attrs.totalBytes,
+              }),
             ),
-            m('strong', 'This action is irreversible.'),
+            m('strong', t('operation', 'irreversible')),
           ],
         ),
         isOpen: attrs.open,
@@ -66,11 +70,11 @@ export const PermanentDeleteDialog: FactoryComponent<PermanentDeleteDialogAttrs>
         },
         buttons: [
           {
-            label: 'Cancel',
+            label: t('button', 'cancel'),
             onclick: attrs.onCancel,
             className: 'fm-permanent-delete-cancel',
           },
-          { label: 'Delete permanently', onclick: attrs.onConfirm },
+          { label: t('button', 'confirmDelete'), onclick: attrs.onConfirm },
         ],
       }),
   };

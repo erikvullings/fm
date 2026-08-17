@@ -2,6 +2,7 @@ import m, { type FactoryComponent } from 'mithril';
 import { IconButton } from 'mithril-materialized';
 import { heartIcon, heartPlusIcon, plusIcon, searchIcon } from '../../components/tabler-icons';
 import { tooltip } from '../../components/tooltip';
+import { t } from '../../i18n';
 import type { TabId } from '../../models';
 import { reorderedTabIds } from './tab-navigation';
 
@@ -44,7 +45,7 @@ export const TabStrip: FactoryComponent<TabStripAttrs> = () => {
 
   return {
     view: ({ attrs }) =>
-      m('.fm-pane-tabs', { role: 'tablist', 'aria-label': 'Pane tabs' }, [
+      m('.fm-pane-tabs', { role: 'tablist', 'aria-label': t('pane', 'paneTabs') }, [
         ...attrs.tabs.map((tab) =>
           m(
             '.fm-pane-tab',
@@ -121,7 +122,7 @@ export const TabStrip: FactoryComponent<TabStripAttrs> = () => {
                 'button.fm-pane-tab-close',
                 {
                   type: 'button',
-                  'aria-label': `Close ${tab.title}`,
+                  'aria-label': t('pane', 'closeNamedTab', { name: tab.title }),
                   tabindex: -1,
                   onclick: (event: MouseEvent) => {
                     event.stopPropagation();
@@ -137,12 +138,12 @@ export const TabStrip: FactoryComponent<TabStripAttrs> = () => {
           ? []
           : [
               tooltip(
-                'New tab',
+                t('pane', 'newTab'),
                 m(
                   IconButton,
                   {
                     className: 'fm-pane-tab-new',
-                    'aria-label': 'New tab',
+                    'aria-label': t('pane', 'newTab'),
                     onclick: () => attrs.onNewTab(),
                   },
                   plusIcon(),
@@ -150,12 +151,12 @@ export const TabStrip: FactoryComponent<TabStripAttrs> = () => {
                 { key: '__new-tab__' },
               ),
               tooltip(
-                'Favourites',
+                t('pane', 'favourites'),
                 m(
                   IconButton,
                   {
                     className: 'fm-pane-tab-favourites',
-                    'aria-label': 'Favourites',
+                    'aria-label': t('pane', 'favourites'),
                     'aria-expanded': String(attrs.favouritesOpen),
                     onclick: () => attrs.onToggleFavourites(),
                   },

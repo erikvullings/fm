@@ -1,5 +1,6 @@
 import m, { type FactoryComponent } from 'mithril';
 import { ModalPanel } from 'mithril-materialized';
+import { t } from '../../i18n';
 import type { ConflictResolution, OperationConflict } from '../../models';
 
 export interface ConflictDialogAttrs {
@@ -45,7 +46,7 @@ export const ConflictDialog: FactoryComponent<ConflictDialogAttrs> = () => {
         attrs.onResolve(resolution, applyToAllSimilar);
       return m(ModalPanel, {
         id: 'conflict-dialog',
-        title: 'Resolve conflict',
+        title: t('operation', 'resolveConflict'),
         className: 'fm-conflict-dialog',
         isOpen: true,
         showCloseButton: false,
@@ -54,9 +55,9 @@ export const ConflictDialog: FactoryComponent<ConflictDialogAttrs> = () => {
         description: m('div', [
           m('p', conflict.message),
           m('dl.fm-conflict-dialog-entries', [
-            m('dt', 'Source'),
+            m('dt', t('operation', 'source')),
             m('dd', formatConflictMetadata(conflict.source)),
-            m('dt', 'Destination'),
+            m('dt', t('operation', 'destination')),
             m('dd', formatConflictMetadata(conflict.destination)),
           ]),
           m('label.fm-conflict-dialog-checkbox', [
@@ -66,14 +67,14 @@ export const ConflictDialog: FactoryComponent<ConflictDialogAttrs> = () => {
                 applyToAllSimilar = (event.currentTarget as HTMLInputElement).checked;
               },
             }),
-            m('span', 'Apply to all similar conflicts'),
+            m('span', t('operation', 'applyToAllSimilar')),
           ]),
         ]),
         buttons: [
-          { label: 'Cancel operation', onclick: () => resolve('cancelOperation') },
-          { label: 'Skip', onclick: () => resolve('skip') },
-          { label: 'Rename new', onclick: () => resolve('renameNew') },
-          { label: 'Overwrite', onclick: () => resolve('overwrite') },
+          { label: t('operation', 'cancelOperation'), onclick: () => resolve('cancelOperation') },
+          { label: t('button', 'skip'), onclick: () => resolve('skip') },
+          { label: t('button', 'renameNew'), onclick: () => resolve('renameNew') },
+          { label: t('button', 'overwrite'), onclick: () => resolve('overwrite') },
         ],
       });
     },

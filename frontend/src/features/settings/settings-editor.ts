@@ -388,7 +388,7 @@ export const SettingsEditor: FactoryComponent<SettingsEditorAttrs> = () => {
           m(
             'button.fm-settings-cancel',
             { type: 'button', onclick: () => handleCancel(current) },
-            t('settings', 'cancel'),
+            t('button', 'cancel'),
           ),
           m(
             'button.fm-settings-save',
@@ -397,7 +397,7 @@ export const SettingsEditor: FactoryComponent<SettingsEditorAttrs> = () => {
               disabled: errors.length > 0 || saving,
               onclick: () => handleSave(current),
             },
-            saving ? t('settings', 'saving') : t('settings', 'save'),
+            saving ? t('button', 'saving') : t('button', 'save'),
           ),
         ]),
       ]);

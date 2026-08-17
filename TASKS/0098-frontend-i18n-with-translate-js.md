@@ -74,3 +74,15 @@ i18n framework around it.
   `tsc --noEmit` clean. Known: operation dialog UIs (conflict, create directory/file, permanent
   delete) and panes Chrome (favourites, tabs) are not yet wired — they use hardcoded strings
   because their catalogue keys exist but the components haven't been converted.
+- 2026-08-17 codex: Completed the outstanding frontend work and corrected the catalogue typing.
+  English now defines the exact translation schema; every other locale must satisfy the same
+  groups, keys, and plural variants, and `t()` rejects unknown group/sub-key pairs during `tsc`.
+  Locale changes redraw directly, while Vite catalogue updates rebuild the active translator so
+  edits are visible without stale singleton state. Wired the remaining core operation/conflict
+  dialogs and controls, pane/tab chrome, file-viewer controls and states, grid empty/error states,
+  titlebar, and frontend-owned favourite actions. Documented shallow-key and translate.js limits.
+  Added 3 regression tests for compile-time key rejection, core-action localisation, and a live
+  Dutch component redraw.
+  Verified focused i18n/component tests, all 110 frontend test files (1289 passed, 1 skipped),
+  frontend typecheck, Biome frontend lint (one pre-existing CSS specificity warning), and
+  `git diff --check`.

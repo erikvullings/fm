@@ -1,9 +1,21 @@
 import m from 'mithril';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { catalogues, DEFAULT_LOCALE, getLocale, LOCALES, setLocale, t } from './index';
-import type { EnglishCatalogue, Locale } from './types';
+import type { EnglishCatalogue } from './en';
+import { actionTitle, catalogues, DEFAULT_LOCALE, getLocale, LOCALES, setLocale, t } from './index';
+import { nl } from './nl';
+import type { Locale, LocalisedCatalogue } from './types';
 
 describe('i18n', () => {
+  it('rejects unknown translation groups and keys at compile time', () => {
+    const assertTypeSafety = () => {
+      // @ts-expect-error unknown groups must not compile
+      t('unknown', 'save');
+      // @ts-expect-error unknown keys within a known group must not compile
+      t('button', 'unknown');
+    };
+    expect(assertTypeSafety).toBeTypeOf('function');
+  });
+
   beforeEach(() => {
     setLocale(DEFAULT_LOCALE);
   });
@@ -43,6 +55,12 @@ describe('i18n', () => {
       expect(before).toBe('Language');
       expect(after).toBe('Taal');
     });
+
+    it('localises stable core action ids while preserving plugin-owned titles', () => {
+      setLocale('nl');
+      expect(actionTitle('core.copy', 'Copy')).toBe('Kopiëren');
+      expect(actionTitle('plugin.example', 'Example action')).toBe('Example action');
+    });
   });
 
   describe('interpolation', () => {
@@ -80,17 +98,16 @@ describe('i18n', () => {
     });
 
     it('falls back to the English value when the active locale lacks the key', () => {
-      const full = JSON.parse(JSON.stringify(catalogues.nl)) as EnglishCatalogue;
-      delete (full.settings as Record<string, unknown>)['language'];
-      (catalogues as Record<Locale, unknown>)['nl'] = full;
+      const full = JSON.parse(
+        JSON.stringify(catalogues.nl),
+      ) as LocalisedCatalogue<EnglishCatalogue>;
+      delete (full.settings as Record<string, unknown>).language;
+      (catalogues as Record<Locale, unknown>).nl = full;
       setLocale('nl');
       try {
         expect(t('settings', 'language')).toBe('Language');
       } finally {
-        // Restore the real nl catalogue.
-        import('./nl').then((mod) => {
-          (catalogues as Record<Locale, unknown>)['nl'] = mod.nl;
-        });
+        (catalogues as Record<Locale, unknown>).nl = nl;
         setLocale('en');
       }
     });

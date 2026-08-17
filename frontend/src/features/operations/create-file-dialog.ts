@@ -1,5 +1,6 @@
 import m, { type FactoryComponent } from 'mithril';
 import { ModalPanel } from 'mithril-materialized';
+import { t } from '../../i18n';
 import { validateDirectoryName } from './create-directory-dialog';
 
 export interface CreateFileDialogAttrs {
@@ -56,10 +57,10 @@ export const CreateFileDialog: FactoryComponent<CreateFileDialogAttrs> = () => {
     },
     view: ({ attrs }) =>
       m(ModalPanel, {
-        title: 'New file',
+        title: t('operation', 'newFile'),
         className: 'fm-dense-modal',
         description: m('label.fm-create-directory-field', [
-          m('span', 'File name'),
+          m('span', t('operation', 'fileName')),
           m('input#create-file-name', {
             type: 'text',
             value: name,
@@ -88,9 +89,9 @@ export const CreateFileDialog: FactoryComponent<CreateFileDialogAttrs> = () => {
           if (!open) cancel(attrs);
         },
         buttons: [
-          { label: 'Cancel', onclick: () => cancel(attrs) },
+          { label: t('button', 'cancel'), onclick: () => cancel(attrs) },
           {
-            label: 'Create',
+            label: t('button', 'create'),
             disabled: validateDirectoryName(name) !== undefined,
             onclick: () => confirm(attrs),
           },

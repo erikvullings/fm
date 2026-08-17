@@ -147,6 +147,16 @@ The `VITE_RUNTIME` environment variable selects the client adapter at build time
 | `http` | HTTP + SSE against Axum | `fm-server` on port 8787 |
 | `tauri` | Tauri IPC commands + Tauri channel events | Embedded in the Tauri shell |
 
+### Frontend translations
+
+Application-owned UI copy lives in `frontend/src/i18n/`. English is the canonical catalogue:
+add a shallow semantic key such as `pane.newTab` there first, then add the same key to every other
+locale. TypeScript enforces exact catalogue parity and rejects unknown keys passed to `t()`.
+
+`translate.js` supports only one group and one sub-key, named placeholders, and basic numeric
+plural forms with an `n` fallback. Do not introduce deep dotted keys or locale-specific plural
+rules. Use `t.arr()` whenever a placeholder value is a Mithril vnode.
+
 ### Swagger UI
 
 When `fm-server` is running, open <http://127.0.0.1:8787/api/v1/docs> to browse the interactive

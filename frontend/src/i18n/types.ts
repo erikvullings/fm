@@ -16,42 +16,19 @@ export interface PluralEntry {
   readonly [count: number]: string | undefined;
 }
 
-/**
- * The catalogue shape shared by every locale file. Every key that exists in
- * `EnglishCatalogue` must exist in every other locale catalogue (checked by
- * `src/i18n/i18n.test.ts`), and the typing of `t` is anchored to this shape.
- */
-export interface EnglishCatalogue {
-  /** Generic buttons and actions shared across surfaces. */
-  button: Record<string, string>;
+/** Broad constraint used while defining the canonical English catalogue. */
+export type CatalogueShape = Readonly<Record<string, Readonly<Record<string, Entry>>>>;
 
-  /** Application shell, status bar, connection status, load states. */
-  shell: Record<string, Entry>;
-
-  /** Pane chrome: breadcrumbs, tabs, favourites. */
-  pane: Record<string, Entry>;
-
-  /** Localised titles for core action ids (core.* descriptors are English protocol values). */
-  action: Record<string, string>;
-
-  /** Settings editor. */
-  settings: Record<string, Entry>;
-
-  /** Operation centre, conflict dialog, creation dialogs. */
-  operation: Record<string, Entry>;
-
-  /** File viewer and content previews. */
-  viewer: Record<string, Entry>;
-
-  /** Common empty, error and warning states. */
-  state: Record<string, Entry>;
-
-  /** Directory table: column headers, loading/error states. */
-  table: Record<string, Entry>;
-}
-
-/** A fully resolved catalogue for one locale. */
-export type Catalogue = EnglishCatalogue;
+/** Widens translated text while preserving the exact keys and plural forms from English. */
+export type LocalisedCatalogue<Canonical extends CatalogueShape> = {
+  readonly [Group in keyof Canonical]: {
+    readonly [Key in keyof Canonical[Group]]: Canonical[Group][Key] extends string
+      ? string
+      : Canonical[Group][Key] extends Readonly<Record<PropertyKey, unknown>>
+        ? { readonly [Variant in keyof Canonical[Group][Key]]: string }
+        : never;
+  };
+};
 
 /** Placeholder parameters for a single translation call. */
 export type Params = Record<string, string | number>;
@@ -61,18 +38,28 @@ export type Params = Record<string, string | number>;
  *
  * Overloads ordered so the most specific (number/count) is checked first.
  */
-export interface Translator {
+export interface Translator<Canonical extends CatalogueShape> {
   /** Lookup: `t('group', 'subKey', { params })` */
-  (key: keyof EnglishCatalogue, subKey: string, params?: Params): string;
+  <Group extends keyof Canonical, Key extends keyof Canonical[Group] & string>(
+    key: Group,
+    subKey: Key,
+    params?: Params,
+  ): string;
   /** Pluralisation: `t('group', 'pluralKey', count)` */
-  (key: keyof EnglishCatalogue, subKey: string, count: number): string;
-  /** Simple: `t('group', 'subKey')` */
-  (key: keyof EnglishCatalogue, subKey: string): string;
-  /** Lookup: `t('group', { params })` */
-  (key: keyof EnglishCatalogue, params?: Params): string;
+  <Group extends keyof Canonical, Key extends keyof Canonical[Group] & string>(
+    key: Group,
+    subKey: Key,
+    count: number,
+  ): string;
   /** VDOM-safe array output for interpolating vnodes. */
-  arr(key: keyof EnglishCatalogue, subKey: string, params?: Params): unknown[];
-  arr(key: keyof EnglishCatalogue, subKey: string, count: number): unknown[];
-  arr(key: keyof EnglishCatalogue, subKey: string): unknown[];
-  arr(key: keyof EnglishCatalogue, params?: Params): unknown[];
+  arr<Group extends keyof Canonical, Key extends keyof Canonical[Group] & string>(
+    key: Group,
+    subKey: Key,
+    params?: Params,
+  ): unknown[];
+  arr<Group extends keyof Canonical, Key extends keyof Canonical[Group] & string>(
+    key: Group,
+    subKey: Key,
+    count: number,
+  ): unknown[];
 }
