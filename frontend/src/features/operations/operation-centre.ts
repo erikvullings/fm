@@ -23,6 +23,16 @@ function hasValue<T>(value: T | null | undefined): value is T {
   return value !== undefined && value !== null;
 }
 
+/** Below this age, a problem-free operation stays invisible rather than flashing a card that's
+ * gone before it could be read or cancelled - only operations substantial enough to matter get
+ * one. Failures and warnings always show immediately regardless of age. */
+const MIN_VISIBLE_DURATION_MS = 2_000;
+
+function isWorthShowing(operation: Operation): boolean {
+  if (operation.state === 'failed' || operation.state === 'completedWithWarnings') return true;
+  return Date.now() - Date.parse(operation.createdAt) >= MIN_VISIBLE_DURATION_MS;
+}
+
 function currentEntryName(operation: Operation): string | undefined {
   const uri = operation.progress.currentEntry?.location.uri;
   if (uri === undefined) return undefined;
@@ -82,6 +92,10 @@ export const OperationCentre: Component<OperationCentreAttrs> = {
   view: ({ attrs }) => {
     const operations = Object.values(attrs.state.byId)
       .filter((operation): operation is Operation => operation !== undefined)
+      // A dedicated modal (PermanentDeleteDialog/ConflictDialog) already prompts for these -
+      // duplicating that as a background card here is redundant.
+      .filter((operation) => operation.state !== 'waitingForConflictResolution')
+      .filter(isWorthShowing)
       .sort((left, right) => left.createdAt.localeCompare(right.createdAt));
     if (operations.length === 0) {
       return null;

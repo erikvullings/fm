@@ -2417,7 +2417,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
                     },
                   },
                   [
-                    m('.fm-settings-editor-panel', [
+                    m('.fm-settings-editor-panel.fm-settings-editor-panel--fixed-footer', [
                       m('.fm-settings-editor-heading', [
                         m('strong', t('shell', 'settings')),
                         m(

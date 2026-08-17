@@ -146,6 +146,8 @@ export interface TableConfigAttrs {
   readonly sort: readonly SortDescriptor[];
   readonly formatSettings?: EntryFormatSettings | undefined;
   readonly pluginColumns?: readonly DirectoryColumnDescriptor[] | undefined;
+  /** Restricts non-mandatory columns to this set; see `DirectoryTableAttrs.visibleColumnIds`. */
+  readonly visibleColumnIds?: ReadonlySet<string> | undefined;
   /** Shows the Git-status column; hidden unless enabled and the directory is inside a git repo. */
   readonly showGitStatusColumn?: boolean | undefined;
   readonly nativeIconLoader?: NativeIconLoader | undefined;
@@ -1430,6 +1432,9 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
                   ...(attrs.tableConfig.pluginColumns === undefined
                     ? {}
                     : { pluginColumns: attrs.tableConfig.pluginColumns }),
+                  ...(attrs.tableConfig.visibleColumnIds === undefined
+                    ? {}
+                    : { visibleColumnIds: attrs.tableConfig.visibleColumnIds }),
                   ...(attrs.tableConfig.formatSettings === undefined
                     ? {}
                     : { formatSettings: attrs.tableConfig.formatSettings }),

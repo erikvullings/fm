@@ -25,6 +25,7 @@ function fixtureSettings(overrides: Partial<Settings> = {}): Settings {
     operationConcurrency: 2,
     defaultPaneLayout: 'dual',
     defaultColumns: ['core.name', 'core.size'],
+    columnWidths: {},
     keybindings: { 'core.rename': 'F2' },
     enabledPlugins: ['example.plugin'],
     pluginSettings: { 'example.plugin': { flag: true } },

@@ -63,9 +63,9 @@ import type {
   SetPaneActivityRequest,
   SetSpotlightCommentParams,
   SettingsDto,
+  SpotlightCommentDto,
   StartChecksumRequestDto,
   StartChecksumResponseDto,
-  SpotlightCommentDto,
   StartComparisonRequestDto,
   StartComparisonResponseDto,
   StartDuplicateScanRequestDto,
@@ -3404,5 +3404,6 @@ export const openWorkspace = async (workspaceId: string, options?: Parameters<ty
 
   }
 );}
+
 
 

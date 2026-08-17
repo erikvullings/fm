@@ -66,6 +66,15 @@ type InitialSearch = {
   readonly wholeWord: boolean;
 };
 
+/** Shown before settings finish loading, mirroring the backend's own default (`core.gitStatus`
+ * stays opt-in even then). */
+const DEFAULT_VISIBLE_COLUMN_IDS: readonly string[] = [
+  'core.name',
+  'core.extension',
+  'core.size',
+  'core.modified',
+];
+
 export interface PaneContentContext {
   // Scalar state getters
   getWorkspace(): WorkspaceProjection | undefined;
@@ -340,13 +349,14 @@ export function createPaneContentBuilder(
           ? [SAMPLE_FILE_AGE_COLUMN]
           : []),
       ],
-      // Only worth showing once the setting is explicitly on (or a persisted per-tab column
-      // toggle turns it on) *and* this directory actually reports git status - most users have no
-      // git projects, so it stays out of the way by default.
+      // Column visibility is a single global setting, not persisted per tab (see
+      // `columnWidths`/`onColumnWidthChange` below for the same treatment of widths).
+      visibleColumnIds: new Set(currentSettings?.defaultColumns ?? DEFAULT_VISIBLE_COLUMN_IDS),
+      // Only worth showing once the setting is explicitly on *and* this directory actually
+      // reports git status - most users have no git projects, so it stays out of the way by
+      // default.
       showGitStatusColumn:
-        (tab?.view.columns.find((column) => column.columnId === 'core.gitStatus')?.visible ??
-          currentSettings?.defaultColumns.includes('core.gitStatus') ??
-          false) &&
+        (currentSettings?.defaultColumns.includes('core.gitStatus') ?? false) &&
         directory.entries.some((entry) => entry.gitStatus !== undefined),
       platform: context.getPlatform(),
       keybindingRuntime: context.getKeybindingRuntime(),
@@ -549,31 +559,16 @@ export function createPaneContentBuilder(
           context.replaceWorkspace,
         ).catch(() => undefined);
       },
-      columnWidths: tab?.view.columns.map((column) => ({
-        columnId: column.columnId,
-        width: column.width,
-      })),
+      // Column widths are a single global setting (not persisted per tab): resizing a column in
+      // one tab is expected to apply to every tab and pane.
+      columnWidths: Object.entries(currentSettings?.columnWidths ?? {}).map(
+        ([columnId, width]) => ({ columnId, width }),
+      ),
       onColumnWidthChange: (columnId, width) => {
-        const liveWorkspace = context.getWorkspace();
-        if (liveWorkspace === undefined || tab === undefined) return;
-        const alreadyPresent = tab.view.columns.some((column) => column.columnId === columnId);
-        const nextColumns = alreadyPresent
-          ? tab.view.columns.map((column) =>
-              column.columnId === columnId ? { ...column, width } : column,
-            )
-          : [...tab.view.columns, { columnId, width, visible: true }];
-        void dispatchWorkspaceCommand(
-          client,
-          {
-            type: 'updateView',
-            workspaceId: liveWorkspace.id,
-            paneId,
-            tabId: tab.id,
-            patch: { columns: nextColumns },
-            expectedRevision: liveWorkspace.revision,
-          },
-          context.replaceWorkspace,
-        ).catch(() => undefined);
+        void context.updateLocationSettings(client, (settings) => ({
+          ...settings,
+          columnWidths: { ...settings.columnWidths, [columnId]: width },
+        }));
       },
       onFilterQueryChange: (query) => {
         if (key === undefined) return;

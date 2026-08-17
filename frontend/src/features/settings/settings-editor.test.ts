@@ -31,6 +31,7 @@ function fixtureSettings(overrides: Partial<Settings> = {}): Settings {
     operationConcurrency: 2,
     defaultPaneLayout: 'dual',
     defaultColumns: ['core.name', 'core.size'],
+    columnWidths: {},
     keybindings: {},
     enabledPlugins: [],
     pluginSettings: {},

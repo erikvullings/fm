@@ -102,6 +102,10 @@ export interface DirectoryTableAttrs {
   /** Persisted per-column widths; a column with no entry falls back to its default track. */
   readonly columnWidths?: readonly ColumnWidthEntry[];
   readonly onColumnWidthChange?: (columnId: string, width: number) => void;
+  /** Restricts non-mandatory columns (everything but `core.name`) to this set; `undefined` shows
+   * every column. `core.gitStatus` is controlled by `showGitStatusColumn` instead, regardless of
+   * membership here. */
+  readonly visibleColumnIds?: ReadonlySet<string>;
   /** Shows the Git-status column; only meaningful for directories inside a git repository, and
    * defaults to hidden even then (some users have no git projects). */
   readonly showGitStatusColumn?: boolean;
@@ -228,7 +232,14 @@ const INITIAL_COLUMNS: readonly DirectoryColumnDescriptor[] = [
         nameMatchPrefix === undefined
           ? -1
           : name.toLocaleLowerCase().indexOf(nameMatchPrefix.toLocaleLowerCase());
-      const thumbnailDataUri = thumbnailLoader?.thumbnailDataUri(entry, 'small');
+      // PDF thumbnails are a partial first-page-image render (see `fm_metadata::pdf`'s module
+      // docs) that reads as a nice preview at grid-tile size but not at this 16px list-row size,
+      // and fetching/decoding it here is wasted work for a result the user won't be able to make
+      // out. Fall through to the native/generic icon instead; grid view is unaffected.
+      const isPdf = (entry.extension ?? '').toLocaleLowerCase() === 'pdf';
+      const thumbnailDataUri = isPdf
+        ? undefined
+        : thumbnailLoader?.thumbnailDataUri(entry, 'small');
       return [
         thumbnailDataUri !== undefined
           ? m('img.fm-entry-icon.fm-thumbnail-entry-icon', {
@@ -656,9 +667,13 @@ export const DirectoryTable: FactoryComponent<DirectoryTableAttrs> = () => {
               overscan: attrs.overscan ?? DEFAULT_OVERSCAN,
             });
       const rows: m.Children[] = [];
-      const columns = [...INITIAL_COLUMNS, ...(attrs.pluginColumns ?? [])].filter(
-        (column) => column.id !== 'core.gitStatus' || attrs.showGitStatusColumn === true,
-      );
+      const columns = [...INITIAL_COLUMNS, ...(attrs.pluginColumns ?? [])].filter((column) => {
+        if (column.id === 'core.gitStatus') return attrs.showGitStatusColumn === true;
+        // Only the fixed built-in columns (besides Name and Git) are settings-gated; plugin
+        // columns manage their own visibility upstream.
+        if (column.id === 'core.name' || !column.id.startsWith('core.')) return true;
+        return attrs.visibleColumnIds === undefined || attrs.visibleColumnIds.has(column.id);
+      });
       const now = Date.now();
       let sawUnloadedEntry = false;
       if (source !== undefined && window !== undefined && state === undefined) {

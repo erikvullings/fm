@@ -7,6 +7,7 @@ import type { DateFormatDto } from './dateFormatDto.ts';
 import type { DefaultPaneLayoutDto } from './defaultPaneLayoutDto.ts';
 import type { FavouriteLocationDto } from './favouriteLocationDto.ts';
 import type { LanguageDto } from './languageDto.ts';
+import type { SettingsDtoColumnWidths } from './settingsDtoColumnWidths.ts';
 import type { SettingsDtoKeybindings } from './settingsDtoKeybindings.ts';
 import type { SettingsDtoPluginSettings } from './settingsDtoPluginSettings.ts';
 import type { SettingsDtoRecentLocationsByWorkspace } from './settingsDtoRecentLocationsByWorkspace.ts';
@@ -17,6 +18,8 @@ import type { ThemeDto } from './themeDto.ts';
  * Versioned global settings. Live workspace content is deliberately absent.
  */
 export interface SettingsDto {
+  /** Column widths in CSS pixels, keyed by column id, shared by every tab and pane. */
+  columnWidths: SettingsDtoColumnWidths;
   /** Confirm permanent deletion. */
   confirmPermanentDelete: boolean;
   /** Timestamp presentation. */

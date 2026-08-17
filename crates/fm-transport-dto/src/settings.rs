@@ -118,6 +118,8 @@ pub struct SettingsDto {
     pub default_pane_layout: DefaultPaneLayoutDto,
     /// Columns inherited by new tabs.
     pub default_columns: Vec<String>,
+    /// Column widths in CSS pixels, keyed by column id, shared by every tab and pane.
+    pub column_widths: BTreeMap<String, u32>,
     /// Action-to-shortcut mappings.
     pub keybindings: BTreeMap<String, String>,
     /// Enabled plugin identifiers.

@@ -607,6 +607,7 @@ export class MockFileManagerClient implements FileManagerClient {
     operationConcurrency: 2,
     defaultPaneLayout: 'dual',
     defaultColumns: ['core.name', 'core.size', 'core.modified'],
+    columnWidths: {},
     keybindings: {},
     enabledPlugins: [],
     pluginSettings: {},

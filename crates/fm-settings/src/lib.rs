@@ -142,6 +142,9 @@ pub struct Settings {
     pub default_pane_layout: DefaultPaneLayout,
     /// Columns inherited by new directory tabs.
     pub default_columns: Vec<String>,
+    /// Column widths in CSS pixels, keyed by column id. Shared by every tab and pane rather than
+    /// persisted per tab, so resizing a column anywhere applies everywhere.
+    pub column_widths: BTreeMap<String, u32>,
     /// Action identifier to shortcut mapping.
     pub keybindings: BTreeMap<String, String>,
     /// Enabled plugin identifiers.
@@ -184,6 +187,7 @@ impl Default for Settings {
                 "core.size".into(),
                 "core.modified".into(),
             ],
+            column_widths: BTreeMap::new(),
             keybindings: BTreeMap::new(),
             enabled_plugins: Vec::new(),
             plugin_settings: BTreeMap::new(),

@@ -49,6 +49,7 @@ pub(crate) fn settings_to_dto(settings: Settings) -> SettingsDto {
             DefaultPaneLayout::Single => DefaultPaneLayoutDto::Single,
         },
         default_columns: settings.default_columns,
+        column_widths: settings.column_widths,
         keybindings: settings.keybindings,
         enabled_plugins: settings.enabled_plugins,
         plugin_settings: serde_json::to_value(settings.plugin_settings)
@@ -116,6 +117,7 @@ pub(crate) fn settings_from_dto(settings: SettingsDto) -> Settings {
             DefaultPaneLayoutDto::Single => DefaultPaneLayout::Single,
         },
         default_columns: settings.default_columns,
+        column_widths: settings.column_widths,
         keybindings: settings.keybindings,
         enabled_plugins: settings.enabled_plugins,
         plugin_settings: serde_json::from_value(settings.plugin_settings).unwrap_or_default(),

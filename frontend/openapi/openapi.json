@@ -4074,6 +4074,18 @@
       "SettingsDto": {
         "description": "Versioned global settings. Live workspace content is deliberately absent.",
         "properties": {
+          "columnWidths": {
+            "additionalProperties": {
+              "format": "int32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "description": "Column widths in CSS pixels, keyed by column id, shared by every tab and pane.",
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
           "confirmPermanentDelete": {
             "description": "Confirm permanent deletion.",
             "type": "boolean"
@@ -4218,6 +4230,7 @@
           "operationConcurrency",
           "defaultPaneLayout",
           "defaultColumns",
+          "columnWidths",
           "keybindings",
           "enabledPlugins",
           "pluginSettings",

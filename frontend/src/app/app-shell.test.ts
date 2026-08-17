@@ -1864,6 +1864,7 @@ describe('AppShell', () => {
       operationConcurrency: 2,
       defaultPaneLayout: 'dual',
       defaultColumns: ['core.name', 'core.size', 'core.modified'],
+      columnWidths: {},
       keybindings: {},
       enabledPlugins: ['mock.archive'],
       pluginSettings: {},

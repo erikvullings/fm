@@ -464,6 +464,21 @@ main.fm-workspace {
   box-shadow: var(--fm-shadow);
 }
 
+/* Keeps the save/cancel actions visible without scrolling: the panel itself no
+ * longer scrolls, only the `.fm-settings-editor-body` between the fixed
+ * heading and the fixed footer does. */
+.fm-settings-editor-panel--fixed-footer {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.fm-settings-editor-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
 .fm-settings-section-heading {
   font-size: 1rem;
   font-weight: 600;
@@ -514,6 +529,7 @@ main.fm-workspace {
 
 .fm-settings-editor-heading {
   display: flex;
+  flex: 0 0 auto;
   align-items: center;
   justify-content: space-between;
   margin-bottom: 0.5rem;
@@ -521,11 +537,48 @@ main.fm-workspace {
 
 .fm-settings-editor-actions {
   display: flex;
+  flex: 0 0 auto;
   justify-content: flex-end;
   gap: 0.5rem;
   margin-top: 1rem;
   padding-top: 0.75rem;
   border-top: 1px solid var(--fm-border);
+}
+
+.fm-settings-column-select {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--fm-border);
+  border-radius: var(--fm-radius);
+  padding: 0.5rem 0.75rem;
+  margin: 0;
+}
+
+.fm-settings-column-select legend {
+  padding: 0 0.35rem;
+  font-size: 0.85rem;
+  color: var(--fm-text-muted);
+}
+
+.fm-settings-column-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1.25rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.fm-settings-column-list li {
+  display: flex;
+}
+
+.fm-settings-column-list label {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  cursor: pointer;
 }
 
 .fm-workspace-disclosure {

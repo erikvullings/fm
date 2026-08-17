@@ -242,6 +242,7 @@ export * from './setPaneActivityRequest.ts';
 export * from './setSpotlightCommentParams.ts';
 export * from './settingsDto.ts';
 export * from './settingsDto';
+export * from './settingsDtoColumnWidths.ts';
 export * from './settingsDtoKeybindings.ts';
 export * from './settingsDtoKeybindings';
 export * from './settingsDtoPluginSettings.ts';

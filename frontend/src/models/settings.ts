@@ -21,6 +21,9 @@ export interface Settings {
   readonly operationConcurrency: number;
   readonly defaultPaneLayout: 'dual' | 'single';
   readonly defaultColumns: readonly string[];
+  /** Column widths, keyed by column id, shared by every tab and pane rather than persisted per
+   * tab - resizing a column in one tab is expected to apply everywhere. */
+  readonly columnWidths: Readonly<Record<string, number>>;
   readonly keybindings: Readonly<Record<string, string>>;
   readonly enabledPlugins: readonly string[];
   readonly pluginSettings: Readonly<Record<string, unknown>>;
