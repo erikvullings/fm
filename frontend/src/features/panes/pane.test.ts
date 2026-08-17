@@ -406,7 +406,7 @@ describe('Pane view-mode menu', () => {
     mount(attrs({ viewMode: 'grid', iconSize: 'large' }));
 
     expect(root.querySelector('.fm-icon-list')).toBeNull();
-    expect(root.querySelector('.fm-icon-layout-grid')).not.toBeNull();
+    expect(root.querySelector('.fm-icon-grid-dots')).not.toBeNull();
 
     root.querySelector<HTMLButtonElement>('.fm-pane-view-mode')?.click();
     m.redraw.sync();
