@@ -17,8 +17,7 @@ function trustedStrokeIcon(innerMarkup: string, extraClass: string) {
   return (attrs?: IconAttrs): m.Children => {
     const size = attrs?.size ?? 18;
     return m(
-      `svg.fm-icon.fm-icon-tabler.${extraClass}${
-        attrs?.className === undefined ? '' : `.${attrs.className}`
+      `svg.fm-icon.fm-icon-tabler.${extraClass}${attrs?.className === undefined ? '' : `.${attrs.className}`
       }`,
       {
         'aria-hidden': 'true',
@@ -94,7 +93,7 @@ export const heartIcon = trustedStrokeIcon(
 /** "heart-plus" — add the current location to favourites. */
 export const heartPlusIcon = trustedStrokeIcon(
   '<path d="M12 20l-7.5 -7.428a5 5 0 1 1 7.5 -6.566a5 5 0 1 1 7.96 6.053" />' +
-    '<path d="M16 19h6" /><path d="M19 16v6" />',
+  '<path d="M16 19h6" /><path d="M19 16v6" />',
   'fm-icon-heart-plus',
 );
 
@@ -107,10 +106,39 @@ export const plusIcon = trustedStrokeIcon(
 /** "layout-grid" — workspace switcher. */
 export const layoutGridIcon = trustedStrokeIcon(
   '<path d="M4 5a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v4a1 1 0 0 1 -1 1h-4a1 1 0 0 1 -1 -1l0 -4" />' +
-    '<path d="M14 5a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v4a1 1 0 0 1 -1 1h-4a1 1 0 0 1 -1 -1l0 -4" />' +
-    '<path d="M4 15a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v4a1 1 0 0 1 -1 1h-4a1 1 0 0 1 -1 -1l0 -4" />' +
-    '<path d="M14 15a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v4a1 1 0 0 1 -1 1h-4a1 1 0 0 1 -1 -1l0 -4" />',
+  '<path d="M14 5a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v4a1 1 0 0 1 -1 1h-4a1 1 0 0 1 -1 -1l0 -4" />' +
+  '<path d="M4 15a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v4a1 1 0 0 1 -1 1h-4a1 1 0 0 1 -1 -1l0 -4" />' +
+  '<path d="M14 15a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v4a1 1 0 0 1 -1 1h-4a1 1 0 0 1 -1 -1l0 -4" />',
   'fm-icon-layout-grid',
+);
+
+/** "arrows-sort" — the grid view's sort menu toggle (task 0134). */
+export const arrowsSortIcon = trustedStrokeIcon(
+  '<path d="M3 9l4 -4l4 4" /><path d="M7 5l0 14" /><path d="M13 15l4 4l4 -4" /><path d="M17 19l0 -14" />',
+  'fm-icon-arrows-sort',
+);
+/** "photo" — the grid view's photo-mode (day grouping) toggle (task 0134). */
+export const photoIcon = trustedStrokeIcon(
+  '<path d="M15 8h.01" />' +
+  '<path d="M3 6a3 3 0 0 1 3 -3h12a3 3 0 0 1 3 3v12a3 3 0 0 1 -3 3h-12a3 3 0 0 1 -3 -3v-12z" />' +
+  '<path d="M3 16l5 -5c.928 -.893 2.072 -.893 3 0l5 5" />' +
+  '<path d="M14 14l1 -1c.928 -.893 2.072 -.893 3 0l3 3" />',
+  'fm-icon-photo',
+);
+
+/** "grid-dots" — the pane's View toggle when in grid mode; kept visually distinct from
+ * `layoutGridIcon` (used by the unrelated workspace switcher button) so the two aren't confused. */
+export const gridDotsIcon = trustedStrokeIcon(
+  '<path d="M5 8m-1 0a1 1 0 1 0 2 0a1 1 0 1 0 -2 0" />' +
+  '<path d="M12 8m-1 0a1 1 0 1 0 2 0a1 1 0 1 0 -2 0" />' +
+  '<path d="M19 8m-1 0a1 1 0 1 0 2 0a1 1 0 1 0 -2 0" />' +
+  '<path d="M5 12m-1 0a1 1 0 1 0 2 0a1 1 0 1 0 -2 0" />' +
+  '<path d="M12 12m-1 0a1 1 0 1 0 2 0a1 1 0 1 0 -2 0" />' +
+  '<path d="M19 12m-1 0a1 1 0 1 0 2 0a1 1 0 1 0 -2 0" />' +
+  '<path d="M5 16m-1 0a1 1 0 1 0 2 0a1 1 0 1 0 -2 0" />' +
+  '<path d="M12 16m-1 0a1 1 0 1 0 2 0a1 1 0 1 0 -2 0" />' +
+  '<path d="M19 16m-1 0a1 1 0 1 0 2 0a1 1 0 1 0 -2 0" />',
+  'fm-icon-grid-dots',
 );
 
 /** "x" — close a dialog/disclosure panel. */
@@ -122,8 +150,8 @@ export const closeIcon = trustedStrokeIcon(
 /** "eye-off" — hidden-entry indicator in the directory table's name column. */
 export const eyeOffIcon = trustedStrokeIcon(
   '<path d="M10.585 10.587a2 2 0 0 0 2.829 2.828" />' +
-    '<path d="M16.681 16.673a8.717 8.717 0 0 1 -4.681 1.327c-3.6 0 -6.6 -2 -9 -6c1.272 -2.12 2.712 -3.678 4.32 -4.674m2.86 -1.146a9.055 9.055 0 0 1 1.82 -.18c3.6 0 6.6 2 9 6c-.666 1.11 -1.379 2.067 -2.138 2.87" />' +
-    '<path d="M3 3l18 18" />',
+  '<path d="M16.681 16.673a8.717 8.717 0 0 1 -4.681 1.327c-3.6 0 -6.6 -2 -9 -6c1.272 -2.12 2.712 -3.678 4.32 -4.674m2.86 -1.146a9.055 9.055 0 0 1 1.82 -.18c3.6 0 6.6 2 9 6c-.666 1.11 -1.379 2.067 -2.138 2.87" />' +
+  '<path d="M3 3l18 18" />',
   'fm-icon-eye-off',
 );
 
@@ -136,8 +164,8 @@ export const filterIcon = trustedStrokeIcon(
 /** "link" — symbolic-link indicator in the directory table's name column. */
 export const linkIcon = trustedStrokeIcon(
   '<path d="M9 15l6 -6" />' +
-    '<path d="M11 6l.463 -.536a5 5 0 0 1 7.071 7.072l-.534 .464" />' +
-    '<path d="M13 18l-.397 .534a5.068 5.068 0 0 1 -7.127 0a4.972 4.972 0 0 1 0 -7.071l.523 -.461" />',
+  '<path d="M11 6l.463 -.536a5 5 0 0 1 7.071 7.072l-.534 .464" />' +
+  '<path d="M13 18l-.397 .534a5.068 5.068 0 0 1 -7.127 0a4.972 4.972 0 0 1 0 -7.071l.523 -.461" />',
   'fm-icon-link',
 );
 
@@ -150,32 +178,32 @@ export const activityIcon = trustedStrokeIcon(
 /** "copy" — copy text/image content or a metadata field to the clipboard. */
 export const copyIcon = trustedStrokeIcon(
   '<path d="M9 3m0 2a2 2 0 0 1 2 -2h2a2 2 0 0 1 2 2v0a2 2 0 0 1 -2 2h-2a2 2 0 0 1 -2 -2z" />' +
-    '<path d="M9 5h-2a2 2 0 0 0 -2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2 -2v-12a2 2 0 0 0 -2 -2h-2" />',
+  '<path d="M9 5h-2a2 2 0 0 0 -2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2 -2v-12a2 2 0 0 0 -2 -2h-2" />',
   'fm-icon-copy',
 );
 
 /** "pencil" — rename a workspace. */
 export const pencilIcon = trustedStrokeIcon(
   '<path d="M4 20h4l10.5 -10.5a2.828 2.828 0 1 0 -4 -4l-10.5 10.5v4" />' +
-    '<path d="M13.5 6.5l4 4" />',
+  '<path d="M13.5 6.5l4 4" />',
   'fm-icon-pencil',
 );
 
 /** "trash" — delete a workspace. */
 export const trashIcon = trustedStrokeIcon(
   '<path d="M4 7l16 0" />' +
-    '<path d="M10 11l0 6" />' +
-    '<path d="M14 11l0 6" />' +
-    '<path d="M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2 -2l1 -12" />' +
-    '<path d="M9 7v-3a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v3" />',
+  '<path d="M10 11l0 6" />' +
+  '<path d="M14 11l0 6" />' +
+  '<path d="M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2 -2l1 -12" />' +
+  '<path d="M9 7v-3a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v3" />',
   'fm-icon-trash',
 );
 
 /** "external-link" — open a workspace in its own OS window (task 0143). */
 export const externalLinkIcon = trustedStrokeIcon(
   '<path d="M12 6h-6a2 2 0 0 0 -2 2v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2 -2v-6" />' +
-    '<path d="M11 13l9 -9" />' +
-    '<path d="M15 4h5v5" />',
+  '<path d="M11 13l9 -9" />' +
+  '<path d="M15 4h5v5" />',
   'fm-icon-external-link',
 );
 
