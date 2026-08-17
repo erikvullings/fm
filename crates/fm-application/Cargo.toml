@@ -25,6 +25,7 @@ fm-search.workspace = true
 fm-settings.workspace = true
 fm-ssh.workspace = true
 fm-transport-dto.workspace = true
+fm-vcs-status.workspace = true
 fm-vfs.workspace = true
 fm-vfs-local.workspace = true
 fm-vfs-ftp.workspace = true
@@ -43,6 +44,7 @@ workspace = true
 
 [dev-dependencies]
 fm-ssh.workspace = true
+git2.workspace = true
 image.workspace = true
 lopdf.workspace = true
 mp4.workspace = true

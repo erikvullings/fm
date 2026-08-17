@@ -59,6 +59,7 @@ crates/
   fm-metadata/          file metadata helpers; pure-Rust thumbnail generation + disk cache
   fm-archive/           archive VFS provider (zip, tar, …)
   fm-comparison/        directory comparison and sync-plan generation
+  fm-vcs-status/        per-directory git working-tree status (git2-backed, cached)
   fm-test-support/      shared test fixtures and helpers
 frontend/
   src/                  Mithril/TypeScript sources
@@ -318,6 +319,12 @@ size, and sort status counters.
 Name, extension, size, and modified headers sort the loaded page in either direction, using stable
 natural name ordering and raw metadata values; large sorts yield cooperatively to keep the UI
 responsive. Folder grouping comes from the persisted tab view rather than the table component.
+A single-letter git status column sits before Modified, always present, populated only for local
+directories inside a git working tree (M/S/U/I for modified/staged/untracked/ignored, blank for
+clean or non-git entries); a directory's letter is the highest-priority status among its
+descendants. `fm-vcs-status` computes it with one `git2` status walk per repository, caches the
+result per working-tree root, and invalidates it on the same filesystem-watch-triggered relists
+that already refresh the rest of a listing.
 The cursor also drives a cancellable lazy metadata summary, while typed size/date presentation
 settings keep table and summary formatting consistent.
 Per-pane selection is keyed by stable entry IDs and remains independent of the keyboard cursor.
