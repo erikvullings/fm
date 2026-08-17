@@ -1,6 +1,12 @@
 import m, { type FactoryComponent, type VnodeDOM } from 'mithril';
 import { IconButton } from 'mithril-materialized';
-import { heartIcon, heartPlusIcon, plusIcon } from '../../components/tabler-icons';
+import {
+  heartIcon,
+  heartPlusIcon,
+  layoutGridIcon,
+  listIcon,
+  plusIcon,
+} from '../../components/tabler-icons';
 import { tooltip } from '../../components/tooltip';
 import {
   dispatchKeybinding,
@@ -26,13 +32,16 @@ import {
   isBrowsable,
   remoteRootLocation,
 } from '../connections/connections-model';
+import { DirectoryGrid, type GridIconSize } from '../directory-table/directory-grid';
 import {
   type ColumnWidthEntry,
+  type CursorClickModifiers,
   type DirectoryColumnDescriptor,
   DirectoryTable,
   entryArraySource,
 } from '../directory-table/directory-table';
 import type { NativeIconLoader } from '../directory-table/native-icon-loader';
+import type { ThumbnailLoader } from '../directory-table/thumbnail-loader';
 import type { EntryFormatSettings } from '../entry-formatting/entry-formatting';
 import { truncateLocationForDisplay } from '../favourites/favourites';
 import { matchesGlobMask } from '../quick-filter/quick-filter';
@@ -101,6 +110,14 @@ export interface TableConfigAttrs {
   readonly formatSettings?: EntryFormatSettings | undefined;
   readonly pluginColumns?: readonly DirectoryColumnDescriptor[] | undefined;
   readonly nativeIconLoader?: NativeIconLoader | undefined;
+  readonly thumbnailLoader?: ThumbnailLoader | undefined;
+  /** Table vs. thumbnail grid (task 0134). Defaults to `'table'`. */
+  readonly viewMode?: 'table' | 'grid' | undefined;
+  /** Grid tile size; only meaningful while `viewMode` is `'grid'`. Defaults to `'medium'`. */
+  readonly iconSize?: GridIconSize | undefined;
+  readonly onViewModeChange?:
+    | ((viewMode: 'table' | 'grid', iconSize: GridIconSize) => void)
+    | undefined;
   readonly columnWidths?: readonly ColumnWidthEntry[] | undefined;
   readonly onColumnWidthChange?: ((columnId: string, width: number) => void) | undefined;
 }
@@ -278,6 +295,9 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
   let favouriteLabel = '';
   let favouriteError: string | undefined;
   let favouritesPreviousFocus: HTMLElement | undefined;
+  let viewMenuOpen = false;
+  let sortMenuOpen = false;
+  let photoModeByTab = new Map<TabId, boolean>();
   let typeaheadPath: string | undefined;
   /** The pane's own `section.fm-pane` DOM node - the actual keyboard target (`onkeydown` is bound
    * here, see the view below). Mouse row clicks only ever changed selection *state*; nothing moved
@@ -706,6 +726,16 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
               if (action !== undefined) {
                 attrs.onSelectionAction(action);
               }
+              if (typeaheadCtrl.prefix !== undefined && attrs.directorySummary.hasMore === true) {
+                // Only the entries loaded so far were searched above - a better (or the only)
+                // match may exist among the entries not loaded yet. Let the workspace layer
+                // background-load the rest of the directory and retry once it's in (task:
+                // type-to-select only searching loaded entries).
+                attrs.onSelectionAction({
+                  type: 'typeaheadPending',
+                  prefix: typeaheadCtrl.prefix,
+                });
+              }
               m.redraw();
             }
           },
@@ -777,6 +807,116 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
                   },
                   '×',
                 ),
+                (attrs.favourites.favouriteLocations?.length ?? 0) > 0 &&
+                  m('.fm-favourites-recents', [
+                    m('strong', 'Favorites'),
+                    ...(attrs.favourites.favouriteLocations ?? []).map((favourite, index) =>
+                      m('.fm-favourites-item', [
+                        m(
+                          'button',
+                          {
+                            type: 'button',
+                            role: 'menuitem',
+                            onclick: () => void navigateFavourite(favourite.location, attrs),
+                          },
+                          attrs.favourites.unavailableLocations?.has(
+                            locationKey(favourite.location),
+                          )
+                            ? `${favourite.label} (unavailable)`
+                            : favourite.label,
+                        ),
+                        attrs.favourites.onReorderFavourites === undefined
+                          ? undefined
+                          : m(
+                              'button',
+                              {
+                                type: 'button',
+                                disabled: index === 0,
+                                'aria-label': `Move ${favourite.label} up`,
+                                onclick: () =>
+                                  void attrs.favourites.onReorderFavourites?.(index, index - 1),
+                              },
+                              '↑',
+                            ),
+                        attrs.favourites.onDeleteFavourite === undefined
+                          ? undefined
+                          : m(
+                              'button',
+                              {
+                                type: 'button',
+                                'aria-label': `Remove ${favourite.label}`,
+                                onclick: () =>
+                                  void attrs.favourites.onDeleteFavourite?.(favourite.location),
+                              },
+                              '×',
+                            ),
+                      ]),
+                    ),
+                  ]),
+                canAddCurrentFavourite(attrs.favourites)
+                  ? m(
+                      'form.fm-favourites-add',
+                      {
+                        onsubmit: (event: SubmitEvent) => {
+                          event.preventDefault();
+                          addCurrentFavourite(attrs);
+                        },
+                      },
+                      [
+                        m('input[type=text]', {
+                          value: favouriteLabel,
+                          placeholder: 'Favourite name',
+                          'aria-label': 'Favourite name',
+                          oninput: (event: InputEvent) => {
+                            favouriteLabel = (event.currentTarget as HTMLInputElement).value;
+                          },
+                        }),
+                        tooltip(
+                          'Add current location',
+                          m(
+                            IconButton,
+                            {
+                              className: 'fm-favourites-add-button',
+                              'aria-label': 'Add current location',
+                              onclick: () => addCurrentFavourite(attrs),
+                            },
+                            plusIcon(),
+                          ),
+                        ),
+                      ],
+                    )
+                  : undefined,
+                (attrs.favourites.connections?.length ?? 0) > 0 &&
+                  m('.fm-favourites-recents.fm-servers-locations', [
+                    m('strong', { key: '__servers_label__' }, 'Servers'),
+                    ...(attrs.favourites.connections ?? []).map((connection) =>
+                      (() => {
+                        const openInPane = attrs.tabs.some(
+                          (tab) => tab.locationUri?.includes(`://${connection.id}/`) === true,
+                        );
+                        const status = openInPane ? 'connected' : connection.status;
+                        return m(
+                          'button.fm-server-item',
+                          {
+                            key: connection.id,
+                            type: 'button',
+                            role: 'menuitem',
+                            title: isBrowsable(connection)
+                              ? `${connectionStatusLabel(status)} — open ${connection.name}`
+                              : connectionStatusLabel(status),
+                            disabled: !isBrowsable(connection),
+                            onclick: isBrowsable(connection)
+                              ? () => void navigateFavourite(remoteRootLocation(connection), attrs)
+                              : undefined,
+                          },
+                          [
+                            m('span.fm-server-name', connection.name),
+                            m('span.fm-server-status', connectionStatusGlyph(status)),
+                          ],
+                        );
+                      })(),
+                    ),
+                  ]),
                 (attrs.favourites.systemLocations?.some(({ kind }) => kind === 'cloud') ?? false) &&
                   m('.fm-favourites-recents.fm-cloud-locations', [
                     m('strong', 'Cloud'),
@@ -824,37 +964,6 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
                         ),
                       ),
                   ]),
-                (attrs.favourites.connections?.length ?? 0) > 0 &&
-                  m('.fm-favourites-recents.fm-servers-locations', [
-                    m('strong', { key: '__servers_label__' }, 'Servers'),
-                    ...(attrs.favourites.connections ?? []).map((connection) =>
-                      (() => {
-                        const openInPane = attrs.tabs.some(
-                          (tab) => tab.locationUri?.includes(`://${connection.id}/`) === true,
-                        );
-                        const status = openInPane ? 'connected' : connection.status;
-                        return m(
-                          'button.fm-server-item',
-                          {
-                            key: connection.id,
-                            type: 'button',
-                            role: 'menuitem',
-                            title: isBrowsable(connection)
-                              ? `${connectionStatusLabel(status)} — open ${connection.name}`
-                              : connectionStatusLabel(status),
-                            disabled: !isBrowsable(connection),
-                            onclick: isBrowsable(connection)
-                              ? () => void navigateFavourite(remoteRootLocation(connection), attrs)
-                              : undefined,
-                          },
-                          [
-                            m('span.fm-server-name', connection.name),
-                            m('span.fm-server-status', connectionStatusGlyph(status)),
-                          ],
-                        );
-                      })(),
-                    ),
-                  ]),
                 attrs.favourites.systemLocationsError === undefined
                   ? undefined
                   : m('.fm-path-error.fm-cloud-locations-error', { role: 'status' }, [
@@ -868,85 +977,6 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
                         'Retry',
                       ),
                     ]),
-                canAddCurrentFavourite(attrs.favourites)
-                  ? m(
-                      'form.fm-favourites-add',
-                      {
-                        onsubmit: (event: SubmitEvent) => {
-                          event.preventDefault();
-                          addCurrentFavourite(attrs);
-                        },
-                      },
-                      [
-                        m('input[type=text]', {
-                          value: favouriteLabel,
-                          placeholder: 'Favourite name',
-                          'aria-label': 'Favourite name',
-                          oninput: (event: InputEvent) => {
-                            favouriteLabel = (event.currentTarget as HTMLInputElement).value;
-                          },
-                        }),
-                        tooltip(
-                          'Add current location',
-                          m(
-                            IconButton,
-                            {
-                              className: 'fm-favourites-add-button',
-                              'aria-label': 'Add current location',
-                              onclick: () => addCurrentFavourite(attrs),
-                            },
-                            plusIcon(),
-                          ),
-                        ),
-                      ],
-                    )
-                  : undefined,
-                (attrs.favourites.favouriteLocations?.length ?? 0) > 0 &&
-                  m('.fm-favourites-recents', [
-                    m('strong', 'Favorites'),
-                    ...(attrs.favourites.favouriteLocations ?? []).map((favourite, index) =>
-                      m('.fm-favourites-item', [
-                        m(
-                          'button',
-                          {
-                            type: 'button',
-                            role: 'menuitem',
-                            onclick: () => void navigateFavourite(favourite.location, attrs),
-                          },
-                          attrs.favourites.unavailableLocations?.has(
-                            locationKey(favourite.location),
-                          )
-                            ? `${favourite.label} (unavailable)`
-                            : favourite.label,
-                        ),
-                        attrs.favourites.onReorderFavourites === undefined
-                          ? undefined
-                          : m(
-                              'button',
-                              {
-                                type: 'button',
-                                disabled: index === 0,
-                                'aria-label': `Move ${favourite.label} up`,
-                                onclick: () =>
-                                  void attrs.favourites.onReorderFavourites?.(index, index - 1),
-                              },
-                              '↑',
-                            ),
-                        attrs.favourites.onDeleteFavourite === undefined
-                          ? undefined
-                          : m(
-                              'button',
-                              {
-                                type: 'button',
-                                'aria-label': `Remove ${favourite.label}`,
-                                onclick: () =>
-                                  void attrs.favourites.onDeleteFavourite?.(favourite.location),
-                              },
-                              '×',
-                            ),
-                      ]),
-                    ),
-                  ]),
                 (attrs.favourites.recentLocations?.length ?? 0) > 0 &&
                   m('.fm-favourites-recents', [
                     m('strong', 'Recent locations'),
@@ -1067,6 +1097,147 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
                 plusIcon(),
               ),
             ),
+            m('.fm-view-mode-menu-wrapper', [
+              tooltip(
+                'View',
+                m(
+                  IconButton,
+                  {
+                    className: 'fm-pane-view-mode',
+                    'aria-label': 'View',
+                    'aria-haspopup': 'menu',
+                    'aria-expanded': String(viewMenuOpen),
+                    onclick: () => {
+                      viewMenuOpen = !viewMenuOpen;
+                      m.redraw();
+                    },
+                  },
+                  (attrs.tableConfig.viewMode ?? 'table') === 'table'
+                    ? listIcon()
+                    : layoutGridIcon(),
+                ),
+              ),
+              viewMenuOpen
+                ? [
+                    m('.fm-view-mode-menu-backdrop', { onclick: () => (viewMenuOpen = false) }),
+                    m(
+                      '.fm-view-mode-menu',
+                      { role: 'menu', 'aria-label': 'View mode' },
+                      (
+                        [
+                          { label: 'List', viewMode: 'table', icon: listIcon() },
+                          { label: 'Small icons', viewMode: 'grid', size: 'small' },
+                          { label: 'Medium icons', viewMode: 'grid', size: 'medium' },
+                          { label: 'Large icons', viewMode: 'grid', size: 'large' },
+                        ] as const
+                      ).map((option) => {
+                        const active =
+                          option.viewMode === 'table'
+                            ? (attrs.tableConfig.viewMode ?? 'table') === 'table'
+                            : (attrs.tableConfig.viewMode ?? 'table') === 'grid' &&
+                              (attrs.tableConfig.iconSize ?? 'medium') === option.size;
+                        return m(
+                          'button.fm-view-mode-menu-item',
+                          {
+                            key: option.label,
+                            type: 'button',
+                            role: 'menuitemradio',
+                            'aria-checked': String(active),
+                            onclick: () => {
+                              viewMenuOpen = false;
+                              attrs.tableConfig.onViewModeChange?.(
+                                option.viewMode,
+                                option.viewMode === 'grid' ? option.size : 'medium',
+                              );
+                            },
+                          },
+                          option.label,
+                        );
+                      }),
+                    ),
+                  ]
+                : undefined,
+            ]),
+            (attrs.tableConfig.viewMode ?? 'table') === 'grid'
+              ? m('.fm-grid-sort-menu-wrapper', [
+                  tooltip(
+                    'Sort',
+                    m(
+                      'button.fm-pane-grid-sort',
+                      {
+                        type: 'button',
+                        'aria-label': 'Sort',
+                        'aria-haspopup': 'menu',
+                        'aria-expanded': String(sortMenuOpen),
+                        onclick: () => {
+                          sortMenuOpen = !sortMenuOpen;
+                          m.redraw();
+                        },
+                      },
+                      'Sort',
+                    ),
+                  ),
+                  sortMenuOpen
+                    ? [
+                        m('.fm-view-mode-menu-backdrop', { onclick: () => (sortMenuOpen = false) }),
+                        m(
+                          '.fm-view-mode-menu.fm-grid-sort-menu',
+                          { role: 'menu', 'aria-label': 'Sort by' },
+                          (
+                            [
+                              { label: 'Name', columnId: 'core.name' },
+                              { label: 'Date modified', columnId: 'core.modified' },
+                              { label: 'Size', columnId: 'core.size' },
+                              { label: 'Extension', columnId: 'core.extension' },
+                            ] as const
+                          ).flatMap((column) =>
+                            (['ascending', 'descending'] as const).map((direction) => {
+                              const active =
+                                attrs.tableConfig.sort[0]?.columnId === column.columnId &&
+                                attrs.tableConfig.sort[0]?.direction === direction;
+                              return m(
+                                'button.fm-view-mode-menu-item',
+                                {
+                                  key: `${column.columnId}-${direction}`,
+                                  type: 'button',
+                                  role: 'menuitemradio',
+                                  'aria-checked': String(active),
+                                  onclick: () => {
+                                    sortMenuOpen = false;
+                                    attrs.onSortChange([{ columnId: column.columnId, direction }]);
+                                  },
+                                },
+                                `${column.label} (${direction === 'ascending' ? 'A–Z' : 'Z–A'})`,
+                              );
+                            }),
+                          ),
+                        ),
+                      ]
+                    : undefined,
+                ])
+              : undefined,
+            (attrs.tableConfig.viewMode ?? 'table') === 'grid'
+              ? tooltip(
+                  photoModeByTab.get(attrs.activeTabId) === true
+                    ? 'Turn off photo mode'
+                    : 'Photo mode (group by day)',
+                  m(
+                    'button.fm-pane-photo-mode',
+                    {
+                      type: 'button',
+                      'aria-label': 'Photo mode',
+                      'aria-pressed': String(photoModeByTab.get(attrs.activeTabId) === true),
+                      onclick: () => {
+                        const next = new Map(photoModeByTab);
+                        next.set(attrs.activeTabId, next.get(attrs.activeTabId) !== true);
+                        photoModeByTab = next;
+                        m.redraw();
+                      },
+                    },
+                    'Photo',
+                  ),
+                )
+              : undefined,
             tooltip(
               'Favourites',
               m(
@@ -1085,124 +1256,142 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
               ),
             ),
           ]),
-          m(DirectoryTable, {
-            state: attrs.state,
-            source: entryArraySource(attrs.entries, ds.totalKnownEntries),
-            selectedEntryIds: attrs.selectedEntryIds,
-            cutEntryIds: attrs.cutEntryIds,
-            active: attrs.active,
-            sort: attrs.tableConfig.sort,
-            ...(attrs.tableConfig.pluginColumns === undefined
-              ? {}
-              : { pluginColumns: attrs.tableConfig.pluginColumns }),
-            ...(attrs.tableConfig.formatSettings === undefined
-              ? {}
-              : { formatSettings: attrs.tableConfig.formatSettings }),
-            ...(attrs.tableConfig.nativeIconLoader === undefined
-              ? {}
-              : { nativeIconLoader: attrs.tableConfig.nativeIconLoader }),
-            ...(attrs.tableConfig.columnWidths === undefined
-              ? {}
-              : { columnWidths: attrs.tableConfig.columnWidths }),
-            ...(attrs.tableConfig.onColumnWidthChange === undefined
-              ? {}
-              : { onColumnWidthChange: attrs.tableConfig.onColumnWidthChange }),
-            label: `${attrs.tabTitle} directory`,
-            showFullPath: isSearchLocation,
-            ...(renameCtrl.entry === undefined ? {} : { renamingEntryId: renameCtrl.entry.id }),
-            renameValue: renameCtrl.value,
-            ...(renameCtrl.error === undefined ? {} : { renameError: renameCtrl.error }),
-            onRenameInput: (value) => {
-              renameCtrl.updateValue(value);
-            },
-            onRenameCancel: () => {
-              renameCtrl.cancel();
-              m.redraw();
-            },
-            onRenameCommit: () => {
-              const committed = renameCtrl.commit();
-              if (committed !== undefined) {
-                void attrs.onRename(committed.entry, committed.name);
-              } else {
-                m.redraw();
-              }
-            },
-            ...(typeaheadCtrl.prefix === undefined
-              ? {}
-              : { nameMatchPrefix: typeaheadCtrl.prefix }),
-            onRetry: () => void attrs.onRetry(),
-            onEndReached: () => void attrs.onLoadNextPage(),
-            onCursorChange: (index, modifiers) => {
-              const entry = attrs.entries[index];
-              if (entry === undefined) return;
-              // A mouse click only ever changed selection *state* - nothing moved real DOM focus
-              // to match, so a keypress immediately after clicking a row could race (or entirely
-              // miss) this pane's `onkeydown` handler depending on whatever had focus beforehand.
-              // Grabbing focus here makes a click reliably prime keyboard input the same way
-              // clicking anywhere else in the app already does.
-              if (document.activeElement !== sectionElement) sectionElement?.focus();
-              if (isParentEntry(entry.id)) {
-                attrs.onSelectionAction({ type: 'selectOnly', entryId: entry.id });
-              } else if (modifiers?.shiftKey === true) {
-                attrs.onSelectionAction({ type: 'extendRangeTo', entryId: entry.id });
-              } else if (modifiers?.ctrlKey === true) {
-                attrs.onSelectionAction({ type: 'toggle', entryId: entry.id });
-              } else {
-                // A plain click only repositions the cursor (Total Commander parity) - it must
-                // not mark the row, or the very next Space (a toggle) would immediately un-mark
-                // whatever the click just landed on instead of marking it. `positionCursor` (not
-                // `setCursor`, which typeahead uses and leaves marks untouched) also drops a
-                // stale lone mark left over from elsewhere, matching `moveCursor`'s convention.
-                attrs.onSelectionAction({ type: 'positionCursor', entryId: entry.id });
-              }
-            },
-            onActivate: (index) => {
-              const entry = attrs.entries[index];
-              if (entry !== undefined) {
-                void attrs.onOpenEntry(entry);
-              }
-            },
-            onContextMenu: (index, x, y) => {
-              if (index === undefined) {
-                attrs.onContextMenu([], x, y);
-                return;
-              }
-              const target = attrs.entries[index];
-              if (
-                target !== undefined &&
-                !isParentEntry(target.id) &&
-                !attrs.selectedEntryIds.has(target.id)
-              ) {
-                attrs.onSelectionAction({ type: 'selectOnly', entryId: target.id });
-                attrs.onContextMenu([target], x, y);
-                return;
-              }
-              attrs.onContextMenu(
-                attrs.entries.filter(
-                  (entry) => !isParentEntry(entry.id) && attrs.selectedEntryIds.has(entry.id),
-                ),
-                x,
-                y,
-              );
-            },
-            onDragStart: (index, event) => {
-              const dragged = attrs.entries[index];
-              if (dragged === undefined || isParentEntry(dragged.id)) return;
-              const selection = attrs.selectedEntryIds.has(dragged.id)
-                ? attrs.entries.filter(
+          (() => {
+            const isGridView = attrs.tableConfig.viewMode === 'grid';
+            const sharedListAttrs = {
+              state: attrs.state,
+              source: entryArraySource(attrs.entries, ds.totalKnownEntries),
+              selectedEntryIds: attrs.selectedEntryIds,
+              cutEntryIds: attrs.cutEntryIds,
+              ...(attrs.tableConfig.nativeIconLoader === undefined
+                ? {}
+                : { nativeIconLoader: attrs.tableConfig.nativeIconLoader }),
+              ...(attrs.tableConfig.thumbnailLoader === undefined
+                ? {}
+                : { thumbnailLoader: attrs.tableConfig.thumbnailLoader }),
+              label: `${attrs.tabTitle} directory`,
+              onRetry: () => void attrs.onRetry(),
+              onEndReached: () => void attrs.onLoadNextPage(),
+              onCursorChange: (index: number, modifiers?: CursorClickModifiers) => {
+                const entry = attrs.entries[index];
+                if (entry === undefined) return;
+                // A mouse click only ever changed selection *state* - nothing moved real DOM focus
+                // to match, so a keypress immediately after clicking a row could race (or entirely
+                // miss) this pane's `onkeydown` handler depending on whatever had focus beforehand.
+                // Grabbing focus here makes a click reliably prime keyboard input the same way
+                // clicking anywhere else in the app already does.
+                if (document.activeElement !== sectionElement) sectionElement?.focus();
+                if (isParentEntry(entry.id)) {
+                  attrs.onSelectionAction({ type: 'selectOnly', entryId: entry.id });
+                } else if (modifiers?.shiftKey === true) {
+                  attrs.onSelectionAction({ type: 'extendRangeTo', entryId: entry.id });
+                } else if (modifiers?.ctrlKey === true) {
+                  attrs.onSelectionAction({ type: 'toggle', entryId: entry.id });
+                } else {
+                  // A plain click only repositions the cursor (Total Commander parity) - it must
+                  // not mark the row, or the very next Space (a toggle) would immediately un-mark
+                  // whatever the click just landed on instead of marking it. `positionCursor` (not
+                  // `setCursor`, which typeahead uses and leaves marks untouched) also drops a
+                  // stale lone mark left over from elsewhere, matching `moveCursor`'s convention.
+                  attrs.onSelectionAction({ type: 'positionCursor', entryId: entry.id });
+                }
+              },
+              onActivate: (index: number) => {
+                const entry = attrs.entries[index];
+                if (entry !== undefined) {
+                  void attrs.onOpenEntry(entry);
+                }
+              },
+              onContextMenu: (index: number | undefined, x: number, y: number) => {
+                if (index === undefined) {
+                  attrs.onContextMenu([], x, y);
+                  return;
+                }
+                const target = attrs.entries[index];
+                if (
+                  target !== undefined &&
+                  !isParentEntry(target.id) &&
+                  !attrs.selectedEntryIds.has(target.id)
+                ) {
+                  attrs.onSelectionAction({ type: 'selectOnly', entryId: target.id });
+                  attrs.onContextMenu([target], x, y);
+                  return;
+                }
+                attrs.onContextMenu(
+                  attrs.entries.filter(
                     (entry) => !isParentEntry(entry.id) && attrs.selectedEntryIds.has(entry.id),
-                  )
-                : [dragged];
-              attrs.onDragStart?.(selection, event);
-            },
-            onDragOver: (index, event) =>
-              attrs.onDragOver?.(index === undefined ? undefined : attrs.entries[index], event) ??
-              false,
-            onDrop: (index, event) =>
-              attrs.onDrop?.(index === undefined ? undefined : attrs.entries[index], event),
-            onSortChange: attrs.onSortChange,
-            ...(attrs.cursorIndex === undefined ? {} : { cursorIndex: attrs.cursorIndex }),
-          }),
+                  ),
+                  x,
+                  y,
+                );
+              },
+              onDragStart: (index: number, event: DragEvent) => {
+                const dragged = attrs.entries[index];
+                if (dragged === undefined || isParentEntry(dragged.id)) return;
+                const selection = attrs.selectedEntryIds.has(dragged.id)
+                  ? attrs.entries.filter(
+                      (entry) => !isParentEntry(entry.id) && attrs.selectedEntryIds.has(entry.id),
+                    )
+                  : [dragged];
+                attrs.onDragStart?.(selection, event);
+              },
+              onDragOver: (index: number | undefined, event: DragEvent) =>
+                attrs.onDragOver?.(index === undefined ? undefined : attrs.entries[index], event) ??
+                false,
+              onDrop: (index: number | undefined, event: DragEvent) =>
+                attrs.onDrop?.(index === undefined ? undefined : attrs.entries[index], event),
+              ...(attrs.cursorIndex === undefined ? {} : { cursorIndex: attrs.cursorIndex }),
+            };
+
+            return isGridView
+              ? m(DirectoryGrid, {
+                  ...sharedListAttrs,
+                  iconSize: attrs.tableConfig.iconSize ?? 'medium',
+                  photoMode: photoModeByTab.get(attrs.activeTabId) === true,
+                })
+              : m(DirectoryTable, {
+                  ...sharedListAttrs,
+                  active: attrs.active,
+                  sort: attrs.tableConfig.sort,
+                  ...(attrs.tableConfig.pluginColumns === undefined
+                    ? {}
+                    : { pluginColumns: attrs.tableConfig.pluginColumns }),
+                  ...(attrs.tableConfig.formatSettings === undefined
+                    ? {}
+                    : { formatSettings: attrs.tableConfig.formatSettings }),
+                  ...(attrs.tableConfig.columnWidths === undefined
+                    ? {}
+                    : { columnWidths: attrs.tableConfig.columnWidths }),
+                  ...(attrs.tableConfig.onColumnWidthChange === undefined
+                    ? {}
+                    : { onColumnWidthChange: attrs.tableConfig.onColumnWidthChange }),
+                  showFullPath: isSearchLocation,
+                  ...(renameCtrl.entry === undefined
+                    ? {}
+                    : { renamingEntryId: renameCtrl.entry.id }),
+                  renameValue: renameCtrl.value,
+                  ...(renameCtrl.error === undefined ? {} : { renameError: renameCtrl.error }),
+                  onRenameInput: (value: string) => {
+                    renameCtrl.updateValue(value);
+                  },
+                  onRenameCancel: () => {
+                    renameCtrl.cancel();
+                    m.redraw();
+                  },
+                  onRenameCommit: () => {
+                    const committed = renameCtrl.commit();
+                    if (committed !== undefined) {
+                      void attrs.onRename(committed.entry, committed.name);
+                    } else {
+                      m.redraw();
+                    }
+                  },
+                  ...(typeaheadCtrl.prefix === undefined
+                    ? {}
+                    : { nameMatchPrefix: typeaheadCtrl.prefix }),
+                  onSortChange: attrs.onSortChange,
+                });
+          })(),
           m('.fm-pane-status', { role: 'status' }, [
             m(
               'span',

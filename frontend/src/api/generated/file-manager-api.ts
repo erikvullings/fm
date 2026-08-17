@@ -25,6 +25,7 @@ import type {
   GetComparisonParams,
   GetFileIconParams,
   GetPluginIconThemeAssetParams,
+  GetThumbnailParams,
   HealthDto,
   HostKeyProbeDto,
   InvokeActionRequestDto,
@@ -2275,6 +2276,62 @@ export const getGetSystemLocationsUrl = () => {
 export const getSystemLocations = async ( options?: Parameters<typeof fetchMutator>[1]): Promise<getSystemLocationsResponse> => {
 
   return fetchMutator<getSystemLocationsResponse>(getGetSystemLocationsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+export type getThumbnailResponse200 = {
+  data: Blob
+  status: 200
+}
+
+export type getThumbnailResponse400 = {
+  data: ApplicationErrorDto
+  status: 400
+}
+
+export type getThumbnailResponse404 = {
+  data: ApplicationErrorDto
+  status: 404
+}
+
+export type getThumbnailResponseSuccess = (getThumbnailResponse200) & {
+  headers: Headers;
+};
+export type getThumbnailResponseError = (getThumbnailResponse400 | getThumbnailResponse404) & {
+  headers: Headers;
+};
+
+export type getThumbnailResponse = (getThumbnailResponseSuccess | getThumbnailResponseError)
+
+export const getGetThumbnailUrl = (params: GetThumbnailParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/thumbnails?${stringifiedParams}` : `/api/v1/thumbnails`
+}
+
+/**
+ * @summary Returns JPEG thumbnail bytes for an image or CBZ/CBR comic archive
+entry, if supported.
+ */
+export const getThumbnail = async (params: GetThumbnailParams, options?: Parameters<typeof fetchMutator>[1]): Promise<getThumbnailResponse> => {
+
+  return fetchMutator<getThumbnailResponse>(getGetThumbnailUrl(params),
   {
     ...options,
     method: 'GET'

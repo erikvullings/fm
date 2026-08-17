@@ -30,8 +30,10 @@ export interface EntrySizeValue {
   readonly size?: number;
 }
 
-const BINARY_UNITS = ['B', 'KiB', 'MiB', 'GiB', 'TiB', 'PiB'] as const;
-const DECIMAL_UNITS = ['B', 'kB', 'MB', 'GB', 'TB', 'PB'] as const;
+/** Single-letter units (Total Commander convention) rather than "KiB"/"MiB": binary and decimal
+ * share the same letters since TC doesn't visually distinguish the two bases either. */
+const BINARY_UNITS = ['B', 'K', 'M', 'G', 'T', 'P'] as const;
+const DECIMAL_UNITS = ['B', 'K', 'M', 'G', 'T', 'P'] as const;
 
 function scaledSize(
   bytes: number,

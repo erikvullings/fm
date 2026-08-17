@@ -3,9 +3,10 @@
 
 use chrono::{DateTime, Utc};
 use fm_domain::{
-    ColumnConfiguration, DirectoryViewConfiguration, NavigationHistory, OperationCentrePreferences,
-    PaneId, PaneState, PersistedFilter, SortDescriptor, SortDirection, SplitAxis, TabId, TabState,
-    Workspace, WorkspaceId, WorkspaceLayout,
+    ColumnConfiguration, DirectoryViewConfiguration, DirectoryViewMode, IconSize,
+    NavigationHistory, OperationCentrePreferences, PaneId, PaneState, PersistedFilter,
+    SortDescriptor, SortDirection, SplitAxis, TabId, TabState, Workspace, WorkspaceId,
+    WorkspaceLayout,
 };
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
@@ -151,6 +152,68 @@ impl From<NavigationHistoryDto> for NavigationHistory {
     }
 }
 
+/// The active view mode for a directory listing tab (task 0134).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema, Default)]
+#[serde(rename_all = "camelCase")]
+pub enum DirectoryViewModeDto {
+    /// The existing dense, row-based listing.
+    #[default]
+    Table,
+    /// A grid of larger thumbnails with the filename below.
+    Grid,
+}
+
+impl From<DirectoryViewMode> for DirectoryViewModeDto {
+    fn from(mode: DirectoryViewMode) -> Self {
+        match mode {
+            DirectoryViewMode::Table => Self::Table,
+            DirectoryViewMode::Grid => Self::Grid,
+        }
+    }
+}
+
+impl From<DirectoryViewModeDto> for DirectoryViewMode {
+    fn from(dto: DirectoryViewModeDto) -> Self {
+        match dto {
+            DirectoryViewModeDto::Table => Self::Table,
+            DirectoryViewModeDto::Grid => Self::Grid,
+        }
+    }
+}
+
+/// Grid tile / icon size (task 0134).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema, Default)]
+#[serde(rename_all = "camelCase")]
+pub enum IconSizeDto {
+    /// Icon-sized, for the directory table's icon column.
+    Small,
+    /// The default grid-view tile size.
+    #[default]
+    Medium,
+    /// The largest grid-view tile size.
+    Large,
+}
+
+impl From<IconSize> for IconSizeDto {
+    fn from(size: IconSize) -> Self {
+        match size {
+            IconSize::Small => Self::Small,
+            IconSize::Medium => Self::Medium,
+            IconSize::Large => Self::Large,
+        }
+    }
+}
+
+impl From<IconSizeDto> for IconSize {
+    fn from(dto: IconSizeDto) -> Self {
+        match dto {
+            IconSizeDto::Small => Self::Small,
+            IconSizeDto::Medium => Self::Medium,
+            IconSizeDto::Large => Self::Large,
+        }
+    }
+}
+
 /// Persisted view configuration for a directory listing: sorting, columns
 /// and filters. Contains no frontend-only selection/cursor fields.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
@@ -166,6 +229,12 @@ pub struct DirectoryViewConfigurationDto {
     pub folders_first: bool,
     /// A persisted quick-filter query, if one is saved with the tab.
     pub quick_filter: Option<PersistedFilterDto>,
+    /// The active view mode (task 0134).
+    #[serde(default)]
+    pub view_mode: DirectoryViewModeDto,
+    /// Grid tile size, used only when `view_mode` is `grid` (task 0134).
+    #[serde(default)]
+    pub icon_size: IconSizeDto,
 }
 
 impl From<DirectoryViewConfiguration> for DirectoryViewConfigurationDto {
@@ -176,6 +245,8 @@ impl From<DirectoryViewConfiguration> for DirectoryViewConfigurationDto {
             show_hidden: view.show_hidden,
             folders_first: view.folders_first,
             quick_filter: view.quick_filter.map(Into::into),
+            view_mode: view.view_mode.into(),
+            icon_size: view.icon_size.into(),
         }
     }
 }
@@ -188,6 +259,8 @@ impl From<DirectoryViewConfigurationDto> for DirectoryViewConfiguration {
             show_hidden: dto.show_hidden,
             folders_first: dto.folders_first,
             quick_filter: dto.quick_filter.map(Into::into),
+            view_mode: dto.view_mode.into(),
+            icon_size: dto.icon_size.into(),
         }
     }
 }
@@ -530,6 +603,8 @@ mod tests {
             show_hidden: true,
             folders_first: true,
             quick_filter: None,
+            view_mode: DirectoryViewMode::Table,
+            icon_size: IconSize::Medium,
         }
     }
 
@@ -609,6 +684,45 @@ mod tests {
         ] {
             assert!(json.contains(field), "expected {json} to contain {field}");
         }
+    }
+
+    #[test]
+    fn directory_view_configuration_dto_uses_camel_case_view_mode_and_icon_size() {
+        let dto: DirectoryViewConfigurationDto = sample_view().into();
+        let json = serde_json::to_string(&dto).expect("serialization must succeed");
+        assert!(json.contains("\"viewMode\":\"table\""), "{json}");
+        assert!(json.contains("\"iconSize\":\"medium\""), "{json}");
+    }
+
+    #[test]
+    fn directory_view_configuration_dto_round_trips_the_grid_view_mode() {
+        let dto = DirectoryViewConfigurationDto {
+            view_mode: DirectoryViewModeDto::Grid,
+            icon_size: IconSizeDto::Large,
+            ..sample_view().into()
+        };
+        let json = serde_json::to_string(&dto).expect("serialization must succeed");
+        let parsed: DirectoryViewConfigurationDto =
+            serde_json::from_str(&json).expect("deserialization must succeed");
+        assert_eq!(dto, parsed);
+        assert!(json.contains("\"viewMode\":\"grid\""), "{json}");
+        assert!(json.contains("\"iconSize\":\"large\""), "{json}");
+    }
+
+    #[test]
+    fn directory_view_configuration_dto_defaults_view_mode_and_icon_size_for_pre_0134_json() {
+        let json = serde_json::json!({
+            "sort": [],
+            "columns": [],
+            "showHidden": false,
+            "foldersFirst": false,
+            "quickFilter": null,
+        });
+
+        let parsed: DirectoryViewConfigurationDto =
+            serde_json::from_value(json).expect("pre-0134 JSON must still deserialize");
+        assert_eq!(parsed.view_mode, DirectoryViewModeDto::Table);
+        assert_eq!(parsed.icon_size, IconSizeDto::Medium);
     }
 
     #[test]

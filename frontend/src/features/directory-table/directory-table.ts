@@ -1,6 +1,14 @@
 import m, { type FactoryComponent, type VnodeDOM } from 'mithril';
 import { eyeOffIcon, linkIcon } from '../../components/tabler-icons';
-import type { EntryId, EntrySummary, LoadingState, SortDescriptor } from '../../models';
+
+import { t } from '../../i18n';
+import type {
+  EntryId,
+  EntrySummary,
+  GitFileStatus,
+  LoadingState,
+  SortDescriptor,
+} from '../../models';
 import {
   DEFAULT_ENTRY_FORMAT_SETTINGS,
   type EntryFormatSettings,
@@ -11,6 +19,7 @@ import { isParentEntry } from '../panes/parent-entry';
 import { fileAgeColumn } from '../plugin-columns/file-age-column';
 import { entryIcon } from './entry-icons';
 import type { NativeIconLoader } from './native-icon-loader';
+import type { ThumbnailLoader } from './thumbnail-loader';
 import { calculateVisibleWindow, scrollOffsetForIndex } from './windowing';
 import './directory-table.css';
 
@@ -68,6 +77,8 @@ export interface DirectoryTableAttrs {
   readonly onSortChange?: (sort: readonly SortDescriptor[]) => void;
   readonly formatSettings?: EntryFormatSettings;
   readonly nativeIconLoader?: NativeIconLoader;
+  /** Overlays a downscaled preview onto the icon column for supported files (task 0134). */
+  readonly thumbnailLoader?: ThumbnailLoader;
   /** Enabled declarative plugin columns, already validated by the host. */
   readonly pluginColumns?: readonly DirectoryColumnDescriptor[];
   readonly onCursorChange?: (index: number, modifiers?: CursorClickModifiers) => void;
@@ -114,7 +125,7 @@ function typeLabel(entry: EntrySummary): string {
   if (entry.kind === 'directory' || entry.kind === 'symlink') {
     return '';
   }
-  return entry.extension ?? entry.mimeType ?? 'File';
+  return entry.extension ?? entry.mimeType ?? t('table', 'file');
 }
 
 function rowId(entryId: EntryId): string {
@@ -137,6 +148,7 @@ export interface DirectoryColumnDescriptor {
     now?: number,
     nativeIconLoader?: NativeIconLoader,
     showFullPath?: boolean,
+    thumbnailLoader?: ThumbnailLoader,
   ): m.Children;
 }
 
@@ -167,27 +179,60 @@ function displayName(entry: EntrySummary, showFullPath = false): string {
   }
 }
 
+const GIT_STATUS_LETTERS: Record<GitFileStatus, string> = {
+  clean: '',
+  modified: 'M',
+  staged: 'S',
+  untracked: 'U',
+  ignored: 'I',
+};
+
+const GIT_STATUS_LABELS: Record<GitFileStatus, string> = {
+  clean: 'Clean',
+  modified: 'Modified',
+  staged: 'Staged',
+  untracked: 'Untracked',
+  ignored: 'Ignored',
+};
+
 const INITIAL_COLUMNS: readonly DirectoryColumnDescriptor[] = [
   {
     id: 'core.name',
-    label: 'Name',
+    label: t('table', 'name'),
     cellClass: 'fm-directory-name',
-    render: (entry, nameMatchPrefix, _formatSettings, _now, nativeIconLoader, showFullPath) => {
+    render: (
+      entry,
+      nameMatchPrefix,
+      _formatSettings,
+      _now,
+      nativeIconLoader,
+      showFullPath,
+      thumbnailLoader,
+    ) => {
       const name = displayName(entry, showFullPath);
       const matchIndex =
         nameMatchPrefix === undefined
           ? -1
           : name.toLocaleLowerCase().indexOf(nameMatchPrefix.toLocaleLowerCase());
+      const thumbnailDataUri = thumbnailLoader?.thumbnailDataUri(entry, 'small');
       return [
-        nativeIconLoader?.iconDataUri(entry) === undefined
-          ? entryIcon(entry, { className: 'fm-entry-icon' })
-          : m('img.fm-entry-icon.fm-native-entry-icon', {
-              src: nativeIconLoader.iconDataUri(entry),
+        thumbnailDataUri !== undefined
+          ? m('img.fm-entry-icon.fm-thumbnail-entry-icon', {
+              src: thumbnailDataUri,
               width: 16,
               height: 16,
               alt: '',
               'aria-hidden': 'true',
-            }),
+            })
+          : nativeIconLoader?.iconDataUri(entry) === undefined
+            ? entryIcon(entry, { className: 'fm-entry-icon' })
+            : m('img.fm-entry-icon.fm-native-entry-icon', {
+                src: nativeIconLoader.iconDataUri(entry),
+                width: 16,
+                height: 16,
+                alt: '',
+                'aria-hidden': 'true',
+              }),
         m(
           showFullPath && !isParentEntry(entry.id)
             ? 'span.fm-entry-name.fm-entry-name--path'
@@ -208,14 +253,14 @@ const INITIAL_COLUMNS: readonly DirectoryColumnDescriptor[] = [
         entry.kind === 'symlink'
           ? m(
               'span.fm-entry-symlink-indicator',
-              { title: 'Link entry', 'aria-label': 'Link entry' },
+              { title: t('table', 'linkEntry'), 'aria-label': t('table', 'linkEntry') },
               linkIcon({ size: 14 }),
             )
           : undefined,
         entry.hidden
           ? m(
               'span.fm-entry-hidden-indicator',
-              { title: 'Hidden entry', 'aria-label': 'Hidden entry' },
+              { title: t('table', 'hiddenEntry'), 'aria-label': t('table', 'hiddenEntry') },
               eyeOffIcon({ size: 14 }),
             )
           : undefined,
@@ -224,20 +269,36 @@ const INITIAL_COLUMNS: readonly DirectoryColumnDescriptor[] = [
   },
   {
     id: 'core.extension',
-    label: 'Ext',
+    label: t('table', 'ext'),
     cellClass: 'fm-directory-type',
     render: typeLabel,
   },
   {
     id: 'core.size',
-    label: 'Size',
+    label: t('table', 'size'),
     cellClass: 'fm-directory-size',
     render: (entry, _nameMatchPrefix, settings = DEFAULT_ENTRY_FORMAT_SETTINGS) =>
       isParentEntry(entry.id) || entry.kind === 'symlink' ? '' : formatEntrySize(entry, settings),
   },
   {
+    id: 'core.gitStatus',
+    label: 'Git',
+    cellClass: 'fm-directory-git-status',
+    render: (entry) => {
+      if (isParentEntry(entry.id) || entry.gitStatus === undefined) return '';
+      const letter = GIT_STATUS_LETTERS[entry.gitStatus];
+      return letter === ''
+        ? ''
+        : m(
+            `span.fm-directory-git-status-badge.fm-directory-git-status-badge--${entry.gitStatus}`,
+            { title: GIT_STATUS_LABELS[entry.gitStatus] },
+            letter,
+          );
+    },
+  },
+  {
     id: 'core.modified',
-    label: 'Modified',
+    label: t('table', 'modified'),
     cellClass: 'fm-directory-modified',
     render: (entry, _nameMatchPrefix, settings = DEFAULT_ENTRY_FORMAT_SETTINGS) =>
       isParentEntry(entry.id) ? '' : formatEntryModifiedAt(entry.modifiedAt, settings),
@@ -263,7 +324,7 @@ function stateView(attrs: DirectoryTableAttrs, rowHeight: number): m.Children | 
       Math.ceil((attrs.viewportHeight ?? DEFAULT_VIEWPORT_HEIGHT) / rowHeight),
     );
     return m('.fm-directory-state', { role: 'status', 'aria-live': 'polite' }, [
-      m('.fm-visually-hidden', 'Loading directory'),
+      m('.fm-visually-hidden', t('table', 'loadingDirectory')),
       Array.from({ length: count }, (_, index) =>
         m('.fm-directory-placeholder', {
           key: index,
@@ -274,7 +335,7 @@ function stateView(attrs: DirectoryTableAttrs, rowHeight: number): m.Children | 
     ]);
   }
   if (attrs.state.type === 'error') {
-    const genericMessage = 'Unable to load directory.';
+    const genericMessage = t('table', 'unableToLoad');
     const detail = attrs.state.message.trim();
     const normalizedDetail = detail.replace(/[.!?]+$/, '').toLocaleLowerCase();
     const normalizedGeneric = genericMessage.replace(/[.!?]+$/, '').toLocaleLowerCase();
@@ -283,14 +344,18 @@ function stateView(attrs: DirectoryTableAttrs, rowHeight: number): m.Children | 
       detail.length > 0 && normalizedDetail !== normalizedGeneric ? m('span', detail) : undefined,
       attrs.onRetry === undefined
         ? undefined
-        : m('button.fm-directory-retry', { type: 'button', onclick: attrs.onRetry }, 'Retry'),
+        : m(
+            'button.fm-directory-retry',
+            { type: 'button', onclick: attrs.onRetry },
+            t('table', 'retry'),
+          ),
     ]);
   }
   if (attrs.state.type === 'idle') {
-    return m('.fm-directory-state', { role: 'status' }, 'Directory not loaded.');
+    return m('.fm-directory-state', { role: 'status' }, t('table', 'notLoaded'));
   }
   if ((attrs.source?.length ?? 0) === 0) {
-    return m('.fm-directory-state', { role: 'status' }, 'This directory is empty.');
+    return m('.fm-directory-state', { role: 'status' }, t('state', 'empty'));
   }
   return undefined;
 }
@@ -367,6 +432,12 @@ function headerView(
                   const button = (event.currentTarget as HTMLElement).closest('button');
                   const currentWidth =
                     widths?.get(column.id) ?? button?.getBoundingClientRect().width ?? 160;
+                  // Without capture, a fast/excessive drag that carries the pointer outside the
+                  // window loses the `pointermove`/`pointerup` pair entirely - the next drag's own
+                  // cleanup then discards the abandoned session with no commit, which looks like
+                  // the resize "reverted". Capturing keeps both events targeted at this element
+                  // for the rest of the gesture regardless of where the pointer physically is.
+                  (event.currentTarget as Element).setPointerCapture?.(event.pointerId);
                   onResizeStart(event, column.id, currentWidth);
                 },
               }),
@@ -384,6 +455,7 @@ function gridTemplate(
     'minmax(12rem, 1fr)',
     'minmax(6rem, 0.25fr)',
     'minmax(6rem, 0.2fr)',
+    'minmax(2.5rem, 0.08fr)',
     'minmax(10rem, 0.35fr)',
   ];
   return columns
@@ -628,7 +700,7 @@ export const DirectoryTable: FactoryComponent<DirectoryTableAttrs> = () => {
                     ? [
                         m('input[type=text].fm-inline-rename-input', {
                           value: attrs.renameValue ?? entry.name,
-                          'aria-label': `Rename ${entry.name}`,
+                          'aria-label': t('table', 'rename', { name: entry.name }),
                           'aria-invalid': attrs.renameError === undefined ? undefined : 'true',
                           oncreate: ({ dom }: VnodeDOM) => {
                             const input = dom as HTMLInputElement;
@@ -661,6 +733,7 @@ export const DirectoryTable: FactoryComponent<DirectoryTableAttrs> = () => {
                         now,
                         attrs.nativeIconLoader,
                         attrs.showFullPath,
+                        attrs.thumbnailLoader,
                       ),
                 ),
               ),
@@ -708,7 +781,7 @@ export const DirectoryTable: FactoryComponent<DirectoryTableAttrs> = () => {
             {
               role: 'grid',
               tabindex: 0,
-              'aria-label': attrs.label ?? 'Directory contents',
+              'aria-label': attrs.label ?? t('table', 'directoryContents'),
               'aria-rowcount': (source?.length ?? 0) + 1,
               'aria-colcount': columns.length,
               'aria-activedescendant':
@@ -805,7 +878,9 @@ export const DirectoryTable: FactoryComponent<DirectoryTableAttrs> = () => {
                   'aria-atomic': 'true',
                   style: { top: '0', left: '0' },
                 },
-                cursorEntry === undefined ? '' : `Focused ${cursorEntry.name}`,
+                cursorEntry === undefined
+                  ? ''
+                  : t('table', 'focusedEntry', { name: cursorEntry.name }),
               ),
             ],
           ),

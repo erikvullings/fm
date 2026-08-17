@@ -120,6 +120,18 @@ export class TauriFileManagerClient implements FileManagerClient {
     }
   }
 
+  async getThumbnail(
+    locationUri: string,
+    size: 'small' | 'medium' | 'large',
+    _signal?: AbortSignal,
+  ): Promise<Uint8Array | undefined> {
+    try {
+      return new Uint8Array(await invoke<number[]>('get_thumbnail', { uri: locationUri, size }));
+    } catch {
+      return undefined;
+    }
+  }
+
   getSettings(_signal?: AbortSignal): Promise<Settings> {
     return invoke<Settings>('get_settings');
   }

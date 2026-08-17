@@ -1,10 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import type { ActionDescriptor, PaneId, SortDescriptor } from '../../models';
+import type { ActionDescriptor, PaneId, SortDescriptor, WorkspaceId } from '../../models';
 import {
   dispatchNativeMenuAction,
   type NativeMenuDispatchContext,
+  NEW_WORKSPACE_WINDOW_MENU_ID,
   OPEN_SETTINGS_MENU_ID,
+  WINDOW_OPEN_WORKSPACE_MENU_ID_PREFIX,
 } from './native-menu-dispatch';
 
 function action(id: string): ActionDescriptor {
@@ -27,6 +29,8 @@ interface ContextMocks {
     typeof vi.fn<(paneId: PaneId, sort: readonly SortDescriptor[]) => void>
   >;
   readonly invokeAction: ReturnType<typeof vi.fn<(action: ActionDescriptor) => void>>;
+  readonly openNewWorkspaceWindow: ReturnType<typeof vi.fn<() => void>>;
+  readonly openWorkspaceWindowById: ReturnType<typeof vi.fn<(workspaceId: WorkspaceId) => void>>;
 }
 
 function contextMocks(
@@ -38,6 +42,8 @@ function contextMocks(
   const activePaneId = vi.fn<() => PaneId | undefined>(() => paneId);
   const setSort = vi.fn<(paneId: PaneId, sort: readonly SortDescriptor[]) => void>();
   const invokeAction = vi.fn<(action: ActionDescriptor) => void>();
+  const openNewWorkspaceWindow = vi.fn<() => void>();
+  const openWorkspaceWindowById = vi.fn<(workspaceId: WorkspaceId) => void>();
   return {
     findAction,
     openSettingsDialog,
@@ -45,6 +51,8 @@ function contextMocks(
     activePaneId,
     setSort,
     invokeAction,
+    openNewWorkspaceWindow,
+    openWorkspaceWindowById,
     context: {
       findAction,
       openSettingsDialog,
@@ -52,6 +60,8 @@ function contextMocks(
       activePaneId,
       setSort,
       invokeAction,
+      openNewWorkspaceWindow,
+      openWorkspaceWindowById,
     },
   };
 }
@@ -73,6 +83,20 @@ describe('dispatchNativeMenuAction', () => {
     expect(mocks.invokeAction).not.toHaveBeenCalled();
   });
 
+  it('opens a new workspace window for the frontend-local ui.newWorkspaceWindow id', () => {
+    const mocks = contextMocks();
+    dispatchNativeMenuAction(mocks.context, NEW_WORKSPACE_WINDOW_MENU_ID);
+    expect(mocks.openNewWorkspaceWindow).toHaveBeenCalledOnce();
+    expect(mocks.invokeAction).not.toHaveBeenCalled();
+  });
+
+  it('opens the given workspace window for the ui.window.openWorkspace. prefix', () => {
+    const mocks = contextMocks();
+    dispatchNativeMenuAction(mocks.context, `${WINDOW_OPEN_WORKSPACE_MENU_ID_PREFIX}workspace-2`);
+    expect(mocks.openWorkspaceWindowById).toHaveBeenCalledExactlyOnceWith('workspace-2');
+    expect(mocks.invokeAction).not.toHaveBeenCalled();
+  });
+
   it('looks up any other id in the action registry and invokes it via invokePaletteAction', () => {
     const copy = action('core.copy');
     const mocks = contextMocks();
@@ -87,6 +111,7 @@ describe('dispatchNativeMenuAction', () => {
     expect(mocks.invokeAction).not.toHaveBeenCalled();
     expect(mocks.openSettingsDialog).not.toHaveBeenCalled();
     expect(mocks.activateTabByKey).not.toHaveBeenCalled();
+    expect(mocks.openNewWorkspaceWindow).not.toHaveBeenCalled();
   });
 
   it('applies a sort-menu id as a local setSort call to the active pane, not a registry dispatch', () => {

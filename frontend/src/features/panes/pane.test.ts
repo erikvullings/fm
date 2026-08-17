@@ -14,6 +14,7 @@ import type {
   TabId,
   VolumeCapacity,
 } from '../../models';
+import type { GridIconSize } from '../directory-table/directory-grid';
 import type { DirectoryColumnDescriptor } from '../directory-table/directory-table';
 import type { NativeIconLoader } from '../directory-table/native-icon-loader';
 import type { EntryFormatSettings } from '../entry-formatting/entry-formatting';
@@ -178,6 +179,9 @@ type FlatAttrsInput = Partial<{
   formatSettings: EntryFormatSettings;
   pluginColumns: readonly DirectoryColumnDescriptor[];
   nativeIconLoader: NativeIconLoader;
+  viewMode: 'table' | 'grid';
+  iconSize: GridIconSize;
+  onViewModeChange: (viewMode: 'table' | 'grid', iconSize: GridIconSize) => void;
   // Directory summary props
   hasMore: boolean;
   totalEntryCount: number;
@@ -262,6 +266,9 @@ function attrs(input: FlatAttrsInput = {}): PaneAttrs {
       formatSettings: input.formatSettings,
       pluginColumns: input.pluginColumns,
       nativeIconLoader: input.nativeIconLoader,
+      viewMode: input.viewMode,
+      iconSize: input.iconSize,
+      onViewModeChange: input.onViewModeChange,
     },
     directorySummary: {
       hasMore: input.hasMore,
@@ -366,6 +373,174 @@ describe('Pane inline rename', () => {
     expect(onMultiRename).toHaveBeenCalledWith([entries[0], entries[1]]);
     expect(onRename).not.toHaveBeenCalled();
     expect(root.querySelector('.fm-inline-rename-input')).toBeNull();
+  });
+});
+
+describe('Pane view-mode menu', () => {
+  it('opens a menu offering list and three grid sizes, closing on selection', () => {
+    const onViewModeChange = vi.fn();
+    mount(attrs({ onViewModeChange }));
+
+    expect(root.querySelector('.fm-view-mode-menu')).toBeNull();
+    root.querySelector<HTMLButtonElement>('.fm-pane-view-mode')?.click();
+    m.redraw.sync();
+
+    const menu = root.querySelector('.fm-view-mode-menu');
+    expect(menu).not.toBeNull();
+    const items = Array.from(menu?.querySelectorAll('[role="menuitemradio"]') ?? []).map(
+      (item) => item.textContent,
+    );
+    expect(items).toEqual(['List', 'Small icons', 'Medium icons', 'Large icons']);
+
+    root
+      .querySelectorAll<HTMLButtonElement>('.fm-view-mode-menu-item')[2]
+      // "Medium icons"
+      ?.click();
+    m.redraw.sync();
+
+    expect(onViewModeChange).toHaveBeenCalledWith('grid', 'medium');
+    expect(root.querySelector('.fm-view-mode-menu')).toBeNull();
+  });
+
+  it('marks the active option checked and shows the grid icon once in grid mode', () => {
+    mount(attrs({ viewMode: 'grid', iconSize: 'large' }));
+
+    expect(root.querySelector('.fm-icon-list')).toBeNull();
+    expect(root.querySelector('.fm-icon-layout-grid')).not.toBeNull();
+
+    root.querySelector<HTMLButtonElement>('.fm-pane-view-mode')?.click();
+    m.redraw.sync();
+
+    const items = root.querySelectorAll('.fm-view-mode-menu-item');
+    expect(items[0]?.getAttribute('aria-checked')).toBe('false'); // List
+    expect(items[3]?.getAttribute('aria-checked')).toBe('true'); // Large icons
+  });
+
+  it('closes the menu when clicking the backdrop without changing the view mode', () => {
+    const onViewModeChange = vi.fn();
+    mount(attrs({ onViewModeChange }));
+
+    root.querySelector<HTMLButtonElement>('.fm-pane-view-mode')?.click();
+    m.redraw.sync();
+    expect(root.querySelector('.fm-view-mode-menu')).not.toBeNull();
+
+    root.querySelector<HTMLElement>('.fm-view-mode-menu-backdrop')?.click();
+    m.redraw.sync();
+
+    expect(root.querySelector('.fm-view-mode-menu')).toBeNull();
+    expect(onViewModeChange).not.toHaveBeenCalled();
+  });
+
+  it('renders a DirectoryGrid instead of the table once viewMode is grid', () => {
+    mount(attrs({ viewMode: 'grid' }));
+
+    expect(root.querySelector('.fm-directory-grid')).not.toBeNull();
+    expect(root.querySelector('.fm-directory-table')).toBeNull();
+  });
+
+  it('hides the grid-only sort and photo-mode controls in table view', () => {
+    mount(attrs({ viewMode: 'table' }));
+
+    expect(root.querySelector('.fm-pane-grid-sort')).toBeNull();
+    expect(root.querySelector('.fm-pane-photo-mode')).toBeNull();
+  });
+});
+
+describe('Pane grid sort menu', () => {
+  it('offers name/date/size/extension ascending and descending, dispatching onSortChange', () => {
+    const onSortChange = vi.fn();
+    mount(attrs({ viewMode: 'grid', onSortChange }));
+
+    expect(root.querySelector('.fm-grid-sort-menu')).toBeNull();
+    root.querySelector<HTMLButtonElement>('.fm-pane-grid-sort')?.click();
+    m.redraw.sync();
+
+    const items = Array.from(
+      root.querySelectorAll('.fm-grid-sort-menu [role="menuitemradio"]'),
+    ).map((item) => item.textContent);
+    expect(items).toEqual([
+      'Name (A–Z)',
+      'Name (Z–A)',
+      'Date modified (A–Z)',
+      'Date modified (Z–A)',
+      'Size (A–Z)',
+      'Size (Z–A)',
+      'Extension (A–Z)',
+      'Extension (Z–A)',
+    ]);
+
+    root
+      .querySelectorAll<HTMLButtonElement>('.fm-grid-sort-menu .fm-view-mode-menu-item')[2]
+      // "Date modified (A–Z)"
+      ?.click();
+    m.redraw.sync();
+
+    expect(onSortChange).toHaveBeenCalledWith([
+      { columnId: 'core.modified', direction: 'ascending' },
+    ]);
+    expect(root.querySelector('.fm-grid-sort-menu')).toBeNull();
+  });
+
+  it('marks the active sort column/direction as checked', () => {
+    mount(attrs({ viewMode: 'grid', sort: [{ columnId: 'core.size', direction: 'descending' }] }));
+
+    root.querySelector<HTMLButtonElement>('.fm-pane-grid-sort')?.click();
+    m.redraw.sync();
+
+    const items = root.querySelectorAll('.fm-grid-sort-menu .fm-view-mode-menu-item');
+    expect(items[5]?.textContent).toBe('Size (Z–A)');
+    expect(items[5]?.getAttribute('aria-checked')).toBe('true');
+    expect(items[4]?.getAttribute('aria-checked')).toBe('false');
+  });
+
+  it('closes on backdrop click without changing sort', () => {
+    const onSortChange = vi.fn();
+    mount(attrs({ viewMode: 'grid', onSortChange }));
+
+    root.querySelector<HTMLButtonElement>('.fm-pane-grid-sort')?.click();
+    m.redraw.sync();
+    expect(root.querySelector('.fm-grid-sort-menu')).not.toBeNull();
+
+    root.querySelector<HTMLElement>('.fm-view-mode-menu-backdrop')?.click();
+    m.redraw.sync();
+
+    expect(root.querySelector('.fm-grid-sort-menu')).toBeNull();
+    expect(onSortChange).not.toHaveBeenCalled();
+  });
+});
+
+describe('Pane photo mode toggle', () => {
+  it('toggles aria-pressed and forwards photoMode to DirectoryGrid', () => {
+    mount(attrs({ viewMode: 'grid' }));
+
+    const button = root.querySelector<HTMLButtonElement>('.fm-pane-photo-mode');
+    expect(button?.getAttribute('aria-pressed')).toBe('false');
+
+    button?.click();
+    m.redraw.sync();
+
+    expect(root.querySelector('.fm-pane-photo-mode')?.getAttribute('aria-pressed')).toBe('true');
+  });
+});
+
+describe('Pane grid view type-to-select and quick filter', () => {
+  // task 0134: type-to-select and the quick filter are handled entirely at the pane level
+  // (`onkeydown` on `.fm-pane`, and `attrs.filter` in the breadcrumb row) with no branch on
+  // `tableConfig.viewMode` - so they already work unchanged once a pane is showing its grid view.
+  it('type-to-select dispatches the same cursor action in grid view as in table view', () => {
+    const onSelectionAction = vi.fn();
+    mount(attrs({ viewMode: 'grid', cursorIndex: 0, onSelectionAction }));
+    const pane = root.querySelector<HTMLElement>('.fm-pane');
+
+    pane?.dispatchEvent(new KeyboardEvent('keydown', { key: 't', bubbles: true }));
+
+    expect(onSelectionAction).toHaveBeenCalledWith({ type: 'selectOnly', entryId: 'one' });
+  });
+
+  it('renders the quick filter input in grid view exactly as in table view', () => {
+    mount(attrs({ viewMode: 'grid', filterOpen: true, filterQuery: 'txt' }));
+
+    expect(root.querySelector('.fm-quick-filter')).not.toBeNull();
   });
 });
 
@@ -580,10 +755,17 @@ describe('Pane breadcrumb editing', () => {
     expect(root.querySelector('.fm-pane-tab-favourites')?.classList.contains('btn-icon')).toBe(
       true,
     );
+    // New tab -> view-mode toggle (task 0134) -> Favourites, in that order.
     expect(
       root
         .querySelector('.fm-pane-tab-new')
         ?.closest('.fm-tooltip')
+        ?.nextElementSibling?.querySelector('.fm-pane-view-mode'),
+    ).not.toBeNull();
+    expect(
+      root
+        .querySelector('.fm-pane-view-mode')
+        ?.closest('.fm-view-mode-menu-wrapper')
         ?.nextElementSibling?.querySelector('.fm-pane-tab-favourites'),
     ).not.toBeNull();
     expect(root.querySelector('.fm-icon-heart')).not.toBeNull();
@@ -1183,6 +1365,58 @@ describe('Pane navigation input', () => {
     expect(root.querySelector('.fm-typeahead-status')?.textContent).toBe('do');
     expect(root.querySelector('.fm-typeahead-match')?.textContent).toBe('do');
     vi.useRealTimers();
+  });
+
+  it('dispatches typeaheadPending so an unmatched prefix can trigger a background full-directory load', () => {
+    const onSelectionAction = vi.fn();
+    mount(
+      attrs({
+        entries: [{ ...(entries[0] as EntrySummary), id: 'document', name: 'document.txt' }],
+        hasMore: true,
+        onSelectionAction,
+      }),
+    );
+    const pane = root.querySelector<HTMLElement>('.fm-pane');
+
+    pane?.dispatchEvent(new KeyboardEvent('keydown', { key: 'z', bubbles: true }));
+    m.redraw.sync();
+
+    expect(onSelectionAction).toHaveBeenCalledWith({ type: 'typeaheadPending', prefix: 'z' });
+  });
+
+  it('also dispatches typeaheadPending alongside an immediate match when more entries remain unloaded', () => {
+    const onSelectionAction = vi.fn();
+    mount(
+      attrs({
+        entries: [{ ...(entries[0] as EntrySummary), id: 'document', name: 'document.txt' }],
+        hasMore: true,
+        onSelectionAction,
+      }),
+    );
+    const pane = root.querySelector<HTMLElement>('.fm-pane');
+
+    pane?.dispatchEvent(new KeyboardEvent('keydown', { key: 'd', bubbles: true }));
+    m.redraw.sync();
+
+    expect(onSelectionAction).toHaveBeenCalledWith({ type: 'selectOnly', entryId: 'document' });
+    expect(onSelectionAction).toHaveBeenCalledWith({ type: 'typeaheadPending', prefix: 'd' });
+  });
+
+  it('does not dispatch typeaheadPending once the directory is fully loaded', () => {
+    const onSelectionAction = vi.fn();
+    mount(
+      attrs({
+        entries: [{ ...(entries[0] as EntrySummary), id: 'document', name: 'document.txt' }],
+        hasMore: false,
+        onSelectionAction,
+      }),
+    );
+    const pane = root.querySelector<HTMLElement>('.fm-pane');
+
+    pane?.dispatchEvent(new KeyboardEvent('keydown', { key: 'z', bubbles: true }));
+    m.redraw.sync();
+
+    expect(onSelectionAction).not.toHaveBeenCalledWith({ type: 'typeaheadPending', prefix: 'z' });
   });
 
   it('uses Backspace to edit typeahead before navigating to the parent', () => {

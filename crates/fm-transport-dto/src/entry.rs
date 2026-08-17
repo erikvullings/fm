@@ -5,8 +5,8 @@ use std::collections::BTreeMap;
 
 use chrono::{DateTime, Utc};
 use fm_domain::{
-    ArchiveInfo, EntryId, EntryKind, EntryMetadata, EntrySummary, ImageDimensions, MediaMetadata,
-    OwnershipInfo, PermissionsInfo,
+    ArchiveInfo, EntryId, EntryKind, EntryMetadata, EntrySummary, GitFileStatus, ImageDimensions,
+    MediaMetadata, OwnershipInfo, PermissionsInfo,
 };
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
@@ -42,6 +42,46 @@ impl From<EntryKindDto> for EntryKind {
             EntryKindDto::File => Self::File,
             EntryKindDto::Directory => Self::Directory,
             EntryKindDto::Symlink => Self::Symlink,
+        }
+    }
+}
+
+/// An entry's git working-tree status (task 0135).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub enum GitFileStatusDto {
+    /// No uncommitted, staged, untracked or ignored changes.
+    Clean,
+    /// Tracked, with unstaged working-tree changes.
+    Modified,
+    /// Staged in the index, with no further unstaged working-tree changes.
+    Staged,
+    /// Not tracked by git and not ignored.
+    Untracked,
+    /// Excluded by `.gitignore` (or equivalent) rules.
+    Ignored,
+}
+
+impl From<GitFileStatus> for GitFileStatusDto {
+    fn from(status: GitFileStatus) -> Self {
+        match status {
+            GitFileStatus::Clean => Self::Clean,
+            GitFileStatus::Modified => Self::Modified,
+            GitFileStatus::Staged => Self::Staged,
+            GitFileStatus::Untracked => Self::Untracked,
+            GitFileStatus::Ignored => Self::Ignored,
+        }
+    }
+}
+
+impl From<GitFileStatusDto> for GitFileStatus {
+    fn from(status: GitFileStatusDto) -> Self {
+        match status {
+            GitFileStatusDto::Clean => Self::Clean,
+            GitFileStatusDto::Modified => Self::Modified,
+            GitFileStatusDto::Staged => Self::Staged,
+            GitFileStatusDto::Untracked => Self::Untracked,
+            GitFileStatusDto::Ignored => Self::Ignored,
         }
     }
 }
@@ -91,6 +131,9 @@ pub struct EntrySummaryDto {
     pub icon_key: Option<String>,
     /// Monotonic revision, incremented whenever this summary is refreshed.
     pub metadata_revision: u64,
+    /// Git working-tree status, when this entry sits inside a local git
+    /// working tree (task 0135).
+    pub git_status: Option<GitFileStatusDto>,
 }
 
 impl From<EntrySummary> for EntrySummaryDto {
@@ -109,6 +152,7 @@ impl From<EntrySummary> for EntrySummaryDto {
             mime_type: entry.mime_type,
             icon_key: entry.icon_key,
             metadata_revision: entry.metadata_revision,
+            git_status: entry.git_status.map(Into::into),
         }
     }
 }
@@ -129,6 +173,7 @@ impl From<EntrySummaryDto> for EntrySummary {
             mime_type: dto.mime_type,
             icon_key: dto.icon_key,
             metadata_revision: dto.metadata_revision,
+            git_status: dto.git_status.map(Into::into),
         }
     }
 }
@@ -366,6 +411,7 @@ mod tests {
             mime_type: Some("application/pdf".to_owned()),
             icon_key: Some("pdf".to_owned()),
             metadata_revision: 0,
+            git_status: Some(GitFileStatusDto::Modified),
         }
     }
 
@@ -388,6 +434,7 @@ mod tests {
             "\"metadataRevision\"",
             "\"modifiedAt\"",
             "\"createdAt\"",
+            "\"gitStatus\"",
         ] {
             assert!(json.contains(field), "expected {json} to contain {field}");
         }
@@ -423,6 +470,7 @@ mod tests {
             mime_type: Some("application/pdf".to_owned()),
             icon_key: Some("pdf".to_owned()),
             metadata_revision: 0,
+            git_status: Some(GitFileStatus::Staged),
         };
 
         let dto: EntrySummaryDto = entry.clone().into();

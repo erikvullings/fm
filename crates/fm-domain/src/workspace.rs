@@ -137,6 +137,43 @@ pub struct DirectoryViewConfiguration {
     pub folders_first: bool,
     /// A persisted quick-filter query, if one is saved with the tab.
     pub quick_filter: Option<PersistedFilter>,
+    /// The active view mode (task 0134). `#[serde(default)]` so a workspace
+    /// saved before this field existed still deserializes, defaulting to the
+    /// table view it was already showing.
+    #[serde(default)]
+    pub view_mode: DirectoryViewMode,
+    /// Grid tile size, used only when `view_mode` is [`DirectoryViewMode::Grid`]
+    /// (task 0134).
+    #[serde(default)]
+    pub icon_size: IconSize,
+}
+
+/// The active view mode for a directory listing tab (task 0134): the
+/// existing dense table, or a thumbnail grid. Deliberately an open-ended
+/// enum (not a bool) so a future "brief"/"full details" mode - flagged as a
+/// prerequisite by task 0129's view-mode cluster - can slot in beside
+/// [`Self::Grid`] without another data-model change; only `Table`/`Grid`
+/// ship now.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum DirectoryViewMode {
+    /// The existing dense, row-based listing (task 0024).
+    #[default]
+    Table,
+    /// A grid of larger thumbnails with the filename below (task 0134).
+    Grid,
+}
+
+/// Grid tile / icon size (task 0134 acceptance criteria: "Icon size is
+/// small, medium and large").
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum IconSize {
+    /// Icon-sized, for the directory table's icon column.
+    Small,
+    /// The default grid-view tile size.
+    #[default]
+    Medium,
+    /// The largest grid-view tile size.
+    Large,
 }
 
 /// A single sort descriptor: a column and a direction.
@@ -490,6 +527,8 @@ mod tests {
             show_hidden: true,
             folders_first: true,
             quick_filter: None,
+            view_mode: DirectoryViewMode::Table,
+            icon_size: IconSize::Medium,
         }
     }
 
@@ -619,6 +658,24 @@ mod tests {
         let parsed: DirectoryViewConfiguration =
             serde_json::from_str(&json).expect("deserialization must succeed");
         assert_eq!(view, parsed);
+    }
+
+    #[test]
+    fn directory_view_configuration_defaults_view_mode_and_icon_size_for_pre_0134_json() {
+        // A workspace saved before task 0134 introduced these fields must
+        // still load, defaulting to the table view it was already showing.
+        let json = serde_json::json!({
+            "sort": [],
+            "columns": [],
+            "show_hidden": false,
+            "folders_first": false,
+            "quick_filter": null,
+        });
+
+        let parsed: DirectoryViewConfiguration =
+            serde_json::from_value(json).expect("pre-0134 JSON must still deserialize");
+        assert_eq!(parsed.view_mode, DirectoryViewMode::Table);
+        assert_eq!(parsed.icon_size, IconSize::Medium);
     }
 
     #[test]

@@ -31,6 +31,7 @@ fm-credentials-macos = { path = "crates/fm-credentials-macos" }
 fm-credentials-windows = { path = "crates/fm-credentials-windows" }
 fm-domain = { path = "crates/fm-domain" }
 fm-events = { path = "crates/fm-events" }
+fm-metadata = { path = "crates/fm-metadata" }
 fm-operations = { path = "crates/fm-operations" }
 fm-platform = { path = "crates/fm-platform" }
 fm-platform-macos = { path = "crates/fm-platform-macos" }
@@ -41,6 +42,7 @@ fm-search = { path = "crates/fm-search" }
 fm-settings = { path = "crates/fm-settings" }
 fm-ssh = { path = "crates/fm-ssh" }
 fm-transport-dto = { path = "crates/fm-transport-dto" }
+fm-vcs-status = { path = "crates/fm-vcs-status" }
 fm-vfs = { path = "crates/fm-vfs" }
 fm-vfs-local = { path = "crates/fm-vfs-local" }
 fm-vfs-ftp = { path = "crates/fm-vfs-ftp" }
@@ -58,17 +60,27 @@ dirs = "6.0.0"
 drag = "2.1.1"
 futures = "0.3.31"
 fs2 = "0.4.3"
+git2 = { version = "0.20.4", default-features = false, features = ["vendored-libgit2"] }
 ignore = "0.4.23"
+image = { version = "0.25.10", default-features = false, features = [
+  "jpeg",
+  "png",
+  "gif",
+  "webp",
+] }
+lopdf = { version = "0.44.0", default-features = false }
 mlua = { version = "0.12.0", features = [
   "lua54",
   "vendored",
   "send",
   "serialize",
 ] }
+mp4 = "0.14.0"
 notify = "8.2.0"
 objc2 = "0.6.4"
 objc2-app-kit = "0.3.2"
 objc2-foundation = "0.3.2"
+openh264 = "0.9.8"
 rand = "0.10"
 regex = "1.11.3"
 reqwest = { version = "0.13.4", default-features = false, features = [

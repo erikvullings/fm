@@ -10,6 +10,7 @@ import {
   SAMPLE_FILE_AGE_COLUMN,
 } from './directory-table';
 import type { NativeIconLoader } from './native-icon-loader';
+import type { ThumbnailLoader } from './thumbnail-loader';
 
 let root: HTMLElement;
 
@@ -71,6 +72,65 @@ describe('DirectoryTable states', () => {
     expect(icon?.width).toBe(16);
     expect(icon?.height).toBe(16);
     expect(root.querySelector('.fm-entry-icon:not(.fm-native-entry-icon)')).toBeNull();
+  });
+
+  it('overlays a loaded thumbnail and otherwise keeps the themed icon', () => {
+    const thumbnailLoader = {
+      thumbnailDataUri: vi.fn().mockReturnValue('data:image/jpeg;base64,/9j/4A=='),
+    } as unknown as ThumbnailLoader;
+    mount({
+      state: { type: 'loaded' },
+      source: entryArraySource([entry({ extension: 'png' })]),
+      viewportHeight: 120,
+      thumbnailLoader,
+    });
+
+    const icon = root.querySelector<HTMLImageElement>('img.fm-thumbnail-entry-icon');
+    expect(icon?.src).toBe('data:image/jpeg;base64,/9j/4A==');
+    expect(icon?.width).toBe(16);
+    expect(icon?.height).toBe(16);
+    expect(thumbnailLoader.thumbnailDataUri).toHaveBeenCalledWith(
+      expect.objectContaining({ extension: 'png' }),
+      'small',
+    );
+  });
+
+  it('prefers a loaded thumbnail over a loaded native icon for the same entry', () => {
+    const nativeIconLoader = {
+      iconDataUri: vi.fn().mockReturnValue('data:image/png;base64,iVBORw=='),
+    } as unknown as NativeIconLoader;
+    const thumbnailLoader = {
+      thumbnailDataUri: vi.fn().mockReturnValue('data:image/jpeg;base64,/9j/4A=='),
+    } as unknown as ThumbnailLoader;
+    mount({
+      state: { type: 'loaded' },
+      source: entryArraySource([entry({ extension: 'png' })]),
+      viewportHeight: 120,
+      nativeIconLoader,
+      thumbnailLoader,
+    });
+
+    expect(root.querySelector('img.fm-thumbnail-entry-icon')).not.toBeNull();
+    expect(root.querySelector('img.fm-native-entry-icon')).toBeNull();
+  });
+
+  it('falls back to the native icon while no thumbnail is available for the entry', () => {
+    const nativeIconLoader = {
+      iconDataUri: vi.fn().mockReturnValue('data:image/png;base64,iVBORw=='),
+    } as unknown as NativeIconLoader;
+    const thumbnailLoader = {
+      thumbnailDataUri: vi.fn().mockReturnValue(undefined),
+    } as unknown as ThumbnailLoader;
+    mount({
+      state: { type: 'loaded' },
+      source: entryArraySource([entry({ extension: 'txt' })]),
+      viewportHeight: 120,
+      nativeIconLoader,
+      thumbnailLoader,
+    });
+
+    expect(root.querySelector('img.fm-native-entry-icon')).not.toBeNull();
+    expect(root.querySelector('img.fm-thumbnail-entry-icon')).toBeNull();
   });
 
   it('renders bounded loading placeholders with an accessible status', () => {
@@ -187,9 +247,39 @@ describe('DirectoryTable rows', () => {
       pluginColumns: [SAMPLE_FILE_AGE_COLUMN],
     });
 
-    expect(root.querySelector('[role="grid"]')?.getAttribute('aria-colcount')).toBe('5');
+    expect(root.querySelector('[role="grid"]')?.getAttribute('aria-colcount')).toBe('6');
     expect(root.querySelector('[data-column-id="sample.fileAge"]')?.textContent).toContain('Age');
     expect(root.querySelectorAll('.fm-directory-file-age').item(1)?.textContent).toBe('1h');
+  });
+
+  it('renders a single-letter git status badge before the Modified column, blank outside a working tree', () => {
+    mount({
+      state: { type: 'loaded' },
+      source: entryArraySource([
+        entry({ id: 'entry-1', name: 'modified.txt', gitStatus: 'modified' }),
+        entry({ id: 'entry-2', name: 'staged.txt', gitStatus: 'staged' }),
+        entry({ id: 'entry-3', name: 'untracked.txt', gitStatus: 'untracked' }),
+        entry({ id: 'entry-4', name: 'ignored.txt', gitStatus: 'ignored' }),
+        entry({ id: 'entry-5', name: 'clean.txt', gitStatus: 'clean' }),
+        entry({ id: 'entry-6', name: 'outside.txt' }),
+      ]),
+    });
+
+    const headers = Array.from(root.querySelectorAll('[role="columnheader"]'));
+    const gitHeaderIndex = headers.findIndex(
+      (header) => header.getAttribute('data-column-id') === 'core.gitStatus',
+    );
+    const modifiedHeaderIndex = headers.findIndex(
+      (header) => header.getAttribute('data-column-id') === 'core.modified',
+    );
+    expect(gitHeaderIndex).toBeGreaterThanOrEqual(0);
+    expect(gitHeaderIndex).toBeLessThan(modifiedHeaderIndex);
+
+    const badges = root.querySelectorAll('.fm-directory-git-status-badge');
+    expect(Array.from(badges).map((badge) => badge.textContent)).toEqual(['M', 'S', 'U', 'I']);
+    const cells = root.querySelectorAll('[role="gridcell"].fm-directory-git-status');
+    expect(cells.item(4)?.textContent).toBe('');
+    expect(cells.item(5)?.textContent).toBe('');
   });
 
   it('activates sortable headers by click and keyboard and indicates the active direction', () => {
@@ -412,8 +502,8 @@ describe('DirectoryTable rows', () => {
     });
 
     const grid = root.querySelector('[role="grid"]');
-    expect(grid?.getAttribute('aria-colcount')).toBe('4');
-    expect(root.querySelectorAll('[role="columnheader"]')).toHaveLength(4);
+    expect(grid?.getAttribute('aria-colcount')).toBe('5');
+    expect(root.querySelectorAll('[role="columnheader"]')).toHaveLength(5);
     expect(root.querySelectorAll('[role="row"]')).toHaveLength(3);
     expect(root.querySelector('[aria-label="Hidden entry"]')).not.toBeNull();
     expect(root.querySelector('[aria-label="Link entry"]')).not.toBeNull();
@@ -444,7 +534,7 @@ describe('DirectoryTable rows', () => {
     });
 
     const row = root.querySelector('.fm-directory-row');
-    expect(row?.querySelector('.fm-directory-size')?.textContent).toBe('1 KiB');
+    expect(row?.querySelector('.fm-directory-size')?.textContent).toBe('1 K');
   });
 
   it('leaves parent and link metadata columns empty', () => {

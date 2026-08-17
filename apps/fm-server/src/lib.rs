@@ -64,6 +64,7 @@ fn api_router() -> OpenApiRouter<AppState> {
         .routes(utoipa_axum::routes!(routes::files::calculate_folder_size))
         .routes(utoipa_axum::routes!(routes::files::cache_archive_password))
         .routes(utoipa_axum::routes!(routes::icons::get_file_icon))
+        .routes(utoipa_axum::routes!(routes::thumbnails::get_thumbnail))
         .routes(utoipa_axum::routes!(routes::search::start_search))
         .routes(utoipa_axum::routes!(routes::search::cancel_search))
         .routes(utoipa_axum::routes!(routes::comparison::start_comparison))

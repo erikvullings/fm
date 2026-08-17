@@ -1,6 +1,7 @@
 import { Channel, invoke } from '@tauri-apps/api/core';
 import m, { type FactoryComponent } from 'mithril';
 import { IconButton, type Theme, ThemeManager, toast } from 'mithril-materialized';
+
 import type { FileManagerClient } from '../api/client/file-manager-client';
 import {
   activityIcon,
@@ -41,6 +42,7 @@ import { DiagnosticsViewComponent } from '../features/diagnostics/diagnostics-vi
 import { type AppDialogsContext, renderAppDialogs } from '../features/dialogs/app-dialogs';
 import { createDialogUIController } from '../features/dialogs/dialog-ui-controller';
 import type { NativeIconLoader } from '../features/directory-table/native-icon-loader';
+import type { ThumbnailLoader } from '../features/directory-table/thumbnail-loader';
 import {
   createFileEditorController,
   type FileEditorController,
@@ -360,6 +362,9 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       actions: registeredActions,
       favouriteActions: favouriteActions(),
       tabs: nativeMenuWindowTabs(),
+      canOpenNewWindow: attrsClient.openWorkspaceWindow !== undefined,
+      workspaces: sortWorkspaceSummaries(workspaceSummaries),
+      currentWorkspaceId: workspace?.id,
     });
     const serialized = JSON.stringify(spec);
     if (serialized === lastSentNativeMenuSpecJson) return;
@@ -396,6 +401,13 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     activePaneId: () => activeDirectory()?.paneId,
     setSort: (paneId, sort) => globalKeydownHandlerContext.setSort(paneId, sort),
     invokeAction: (action) => actionCommandController.invokePaletteAction(action),
+    openNewWorkspaceWindow: () => {
+      if (workspace === undefined) return;
+      void attrsClient.openWorkspaceWindow?.(workspace.id);
+    },
+    openWorkspaceWindowById: (workspaceId) => {
+      void attrsClient.openWorkspaceWindow?.(workspaceId);
+    },
   };
   let installedIconThemeId: string | undefined;
   let keybindingRuntime: KeybindingRuntime = 'browser';
@@ -436,6 +448,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
   const openTerminalLocations = new Set<string>();
   let openTerminalSupported = false;
   let nativeIconLoader: NativeIconLoader | undefined;
+  let thumbnailLoader: ThumbnailLoader | undefined;
   let contextMenu:
     | {
         readonly paneId: PaneId;
@@ -766,10 +779,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       .catch((error: unknown) => {
         if (controller.signal.aborted) return;
         toast({
-          html: t('shell', 'folderSizeError', {
-            name: entry.name,
-            error: error instanceof Error ? error.message : String(error),
-          }),
+          html: `Couldn't calculate the size of "${entry.name}": ${error instanceof Error ? error.message : String(error)}`,
         });
       });
   }
@@ -810,7 +820,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
           if (state.status === 'unsupported') {
             closeViewer(viewer.paneId, viewer.tabId);
             toast({
-              html: t('viewer', 'previewUnavailable', { name: entry.name }),
+              html: `Preview not available for "${entry.name}". Press Alt+F3 to open it in the default application.`,
             });
             return;
           }
@@ -858,7 +868,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
             if (state.status === 'unsupported') {
               closeViewer(paneId, tabId);
               toast({
-                html: t('viewer', 'previewUnavailable', { name: entry.name }),
+                html: `Preview not available for "${entry.name}". Press Alt+F3 to open it in the default application.`,
               });
               return;
             }
@@ -1241,6 +1251,9 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     setNativeIconLoader: (loader) => {
       nativeIconLoader = loader;
     },
+    setThumbnailLoader: (loader) => {
+      thumbnailLoader = loader;
+    },
     getSystemLocations: () => systemLocations,
     setSystemLocations: (locs) => {
       systemLocations = locs;
@@ -1622,6 +1635,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     getConnections: () => connections,
     getUnavailableLocations: () => unavailableLocations,
     getNativeIconLoader: () => nativeIconLoader,
+    getThumbnailLoader: () => thumbnailLoader,
     getPlugins: () => plugins,
     getPlatform: () => platform,
     getKeybindingRuntime: () => keybindingRuntime,
@@ -2001,7 +2015,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
         [
           isMacOverlay
             ? m('.fm-titlebar-spacer', { 'data-tauri-drag-region': '' }, [
-                m('span.fm-titlebar-label', t('shell', 'title')),
+                m('span.fm-titlebar-label', 'Procyon'),
               ])
             : null,
           m('.fm-workspace-toolbar', [
@@ -2064,7 +2078,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
               ),
             ),
             tooltip(
-              t('shell', 'comparePanesTooltip'),
+              t('shell', 'comparePanes'),
               m(
                 IconButton,
                 {
@@ -2091,13 +2105,13 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
               ),
             ),
             tooltip(
-              t('shell', 'workspaceSwitcherLabel', { name: workspace?.name ?? 'none' }),
+              t('shell', 'workspaceSwitcherLabel', { name: workspace?.name ?? t('shell', 'none') }),
               m(
                 IconButton,
                 {
                   className: 'fm-workspace-switcher-button',
                   'aria-label': t('shell', 'workspaceSwitcherLabel', {
-                    name: workspace?.name ?? 'none',
+                    name: workspace?.name ?? t('shell', 'none'),
                   }),
                   onclick: () => {
                     if (workspaceDisclosureElement !== undefined) {
@@ -2128,10 +2142,10 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
                 }),
                 m(
                   '.fm-workspace-switcher-panel',
-                  { role: 'dialog', 'aria-label': t('shell', 'workspaces') },
+                  { role: 'dialog', 'aria-label': t('shell', 'workspaceSwitcher') },
                   [
                     m('.fm-workspace-switcher-heading', [
-                      m('strong', t('shell', 'workspaces')),
+                      m('strong', t('shell', 'workspaceSwitcher')),
                       m(
                         'button',
                         {
@@ -2164,6 +2178,9 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
                         : {
                             onOpenInNewWindow: (workspaceId) => {
                               void attrsClient.openWorkspaceWindow?.(workspaceId);
+                              if (workspaceDisclosureElement !== undefined) {
+                                workspaceDisclosureElement.open = false;
+                              }
                             },
                           }),
                     }),
@@ -2172,7 +2189,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
               ],
             ),
             tooltip(
-              t('shell', 'showDiagnostics'),
+              t('shell', 'diagnostics'),
               m(
                 IconButton,
                 {
@@ -2295,7 +2312,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
                         ),
                       ]),
                       currentSettings === undefined
-                        ? m('p', t('shell', 'settingsLoading'))
+                        ? m('p', t('shell', 'loading'))
                         : settingsDialogOpen
                           ? m(SettingsEditor, {
                               settings: currentSettings,
@@ -2342,7 +2359,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
           ]),
           m('main.fm-workspace', [
             workspace === undefined
-              ? m('.fm-workspace-loading', workspaceError ?? t('shell', 'workspaceLoading'))
+              ? m('.fm-workspace-loading', workspaceError ?? t('shell', 'loading'))
               : m(WorkspaceLayoutView, {
                   workspace,
                   paneContent: (paneId) =>

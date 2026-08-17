@@ -9,11 +9,11 @@ import {
 
 describe('entry presentation formatting', () => {
   it('uses binary units from the raw byte count', () => {
-    expect(formatEntrySize({ kind: 'file', size: 1_536 }, settings('binary'))).toBe('1.5 KiB');
+    expect(formatEntrySize({ kind: 'file', size: 1_536 }, settings('binary'))).toBe('1.5 K');
   });
 
   it('uses decimal units when selected', () => {
-    expect(formatEntrySize({ kind: 'file', size: 1_500 }, settings('decimal'))).toBe('1.5 kB');
+    expect(formatEntrySize({ kind: 'file', size: 1_500 }, settings('decimal'))).toBe('1.5 K');
   });
 
   it('can display the unscaled raw byte count', () => {
@@ -26,7 +26,7 @@ describe('entry presentation formatting', () => {
   });
 
   it('formats a directory size once one has been computed (task 0071 Ctrl+.)', () => {
-    expect(formatEntrySize({ kind: 'directory', size: 4_096 }, settings('binary'))).toBe('4 KiB');
+    expect(formatEntrySize({ kind: 'directory', size: 4_096 }, settings('binary'))).toBe('4 K');
   });
 
   it('formats a raw timestamp with the selected short date format', () => {

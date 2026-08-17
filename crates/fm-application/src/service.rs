@@ -62,6 +62,7 @@ use crate::platform_mapping::{
 use crate::plugin_manager::PluginManager;
 use crate::remote_terminal::RemoteTerminalService;
 use crate::settings_mapping::{settings_from_dto, settings_to_dto};
+use crate::thumbnails::ThumbnailService;
 use crate::workspace::{JsonFileWorkspaceRepository, WorkspaceService, WorkspaceSummary};
 
 /// Central application service that every host (Axum, Tauri, CLI) calls into.
@@ -98,6 +99,7 @@ pub struct FileManagerService {
     search: SearchEngine,
     comparison: ComparisonEngine,
     comparison_store: Arc<ComparisonResultsStore>,
+    thumbnails: ThumbnailService,
 }
 
 impl FileManagerService {
@@ -337,7 +339,29 @@ impl FileManagerService {
             search,
             comparison,
             comparison_store,
+            thumbnails: ThumbnailService::new(settings_directory.join("thumbnails")),
         }
+    }
+
+    /// Generates (or reuses a cached) downscaled preview for an image or
+    /// CBZ/CBR comic archive entry (task 0134). `size` must be `"small"`,
+    /// `"medium"` or `"large"`. Every unsupported/oversized/undecodable
+    /// input is reported as [`ApplicationError::NotFound`], matching
+    /// [`Self::file_icon`]'s convention - the frontend falls back to the
+    /// generic type icon rather than treating it as a hard error.
+    pub async fn thumbnail(&self, uri: &str, size: &str) -> Result<Vec<u8>, ApplicationError> {
+        let location = Location::parse(uri)
+            .map_err(|error| ApplicationError::InvalidRequest(format!("invalid `uri`: {error}")))?;
+        let size = fm_metadata::ThumbnailSize::parse(size).ok_or_else(|| {
+            ApplicationError::InvalidRequest(format!(
+                "invalid `size`: must be `small`, `medium` or `large`, got {size:?}"
+            ))
+        })?;
+        let thumbnail = self
+            .thumbnails
+            .thumbnail(&self.providers, &location, size)
+            .await?;
+        Ok(thumbnail.bytes)
     }
 
     /// Starts a semantic operation, deduplicating retries by idempotency key.

@@ -4,9 +4,10 @@ use std::path::{Path, PathBuf};
 
 use chrono::Utc;
 use fm_domain::{
-    CURRENT_WORKSPACE_SCHEMA_VERSION, ColumnConfiguration, DirectoryViewConfiguration, Location,
-    NavigationHistory, OperationCentrePreferences, PaneId, PaneState, ProviderId, SortDescriptor,
-    SortDirection, SplitAxis, TabId, TabState, Workspace, WorkspaceId, WorkspaceLayout,
+    CURRENT_WORKSPACE_SCHEMA_VERSION, ColumnConfiguration, DirectoryViewConfiguration,
+    DirectoryViewMode, IconSize, Location, NavigationHistory, OperationCentrePreferences, PaneId,
+    PaneState, ProviderId, SortDescriptor, SortDirection, SplitAxis, TabId, TabState, Workspace,
+    WorkspaceId, WorkspaceLayout,
 };
 
 /// Resolves the current user's home directory through the `dirs` crate
@@ -58,6 +59,8 @@ fn default_directory_view() -> DirectoryViewConfiguration {
         show_hidden: false,
         folders_first: true,
         quick_filter: None,
+        view_mode: DirectoryViewMode::Table,
+        icon_size: IconSize::Medium,
     }
 }
 

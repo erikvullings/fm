@@ -5,7 +5,13 @@ import type {
   NativeMenuSpec,
   PaneId,
   TabId,
+  WorkspaceId,
+  WorkspaceSummary,
 } from '../../models';
+import {
+  NEW_WORKSPACE_WINDOW_MENU_ID,
+  WINDOW_OPEN_WORKSPACE_MENU_ID_PREFIX,
+} from './native-menu-dispatch';
 
 /** One open tab, flattened for the Window menu (task 0133). */
 export interface NativeMenuTab {
@@ -28,6 +34,16 @@ export interface NativeMenuInputs {
   readonly favouriteActions: readonly ActionDescriptor[];
   /** Every open tab across every pane, in display order. */
   readonly tabs: readonly NativeMenuTab[];
+  /** Whether the host can open a workspace in its own OS window (task 0143) - `false` on hosts
+   * with no window concept (browser/HTTP), in which case the File menu's "New Window" item and
+   * the Window menu's "Open Workspace" submenu are omitted entirely rather than added disabled. */
+  readonly canOpenNewWindow: boolean;
+  /** Every stored workspace, in display order - backs the Window menu's "Open Workspace"
+   * submenu (task 0143 follow-up), the native-menu equivalent of the workspace switcher's list. */
+  readonly workspaces: readonly WorkspaceSummary[];
+  /** The workspace currently shown in this window, if any - the "Open Workspace" submenu checks
+   * its matching entry, mirroring the switcher's active-workspace highlight. */
+  readonly currentWorkspaceId: WorkspaceId | undefined;
 }
 
 const PREFERENCES_SHORTCUT = { key: ',', meta: true } as const;
@@ -94,8 +110,22 @@ function appMenu(): NativeMenu {
   };
 }
 
-function fileMenu(actions: readonly ActionDescriptor[]): NativeMenu {
-  return { title: 'File', items: actionItems(actions, ['core.newTab', 'core.closeTab']) };
+function fileMenu(actions: readonly ActionDescriptor[], canOpenNewWindow: boolean): NativeMenu {
+  const newWindowItem: NativeMenuItem = {
+    kind: 'action',
+    id: NEW_WORKSPACE_WINDOW_MENU_ID,
+    title: 'New Window',
+    shortcut: { key: 'n', meta: true, shift: true },
+    enabled: true,
+    checked: false,
+  };
+  return {
+    title: 'File',
+    items: [
+      ...(canOpenNewWindow ? [newWindowItem] : []),
+      ...actionItems(actions, ['core.newTab', 'core.closeTab']),
+    ],
+  };
 }
 
 /** Only Copy/Paste/Select All: this app has no Undo/Redo feature and no Cut action anywhere in
@@ -124,6 +154,22 @@ function viewMenu(actions: readonly ActionDescriptor[]): NativeMenu {
   };
 }
 
+/** Miscellaneous per-selection/location utilities - the same ids the "tools" category groups in
+ * the command palette and context menu (`action.rs`'s `core_action(..., "tools", ...)` /
+ * `"clipboard"` categories), surfaced as their own top-level menu for discoverability. */
+function toolsMenu(actions: readonly ActionDescriptor[]): NativeMenu {
+  return {
+    title: 'Tools',
+    items: actionItems(actions, [
+      'core.copyName',
+      'core.copyPath',
+      'core.copyRelativePath',
+      'core.openTerminal',
+      'core.revealInSystemFileManager',
+    ]),
+  };
+}
+
 /** Excludes `core.favourites` itself: invoking it opens the command palette pre-filtered to
  * favourites (its intended behaviour from the palette/keyboard), which makes no sense as a native
  * menu item - the Go menu already lists each saved favourite as its own `core.favourite.<index>`
@@ -135,11 +181,30 @@ function goMenu(favouriteActions: readonly ActionDescriptor[]): NativeMenu {
   };
 }
 
-function windowMenu(tabs: readonly NativeMenuTab[]): NativeMenu {
+function windowMenu(
+  tabs: readonly NativeMenuTab[],
+  canOpenNewWindow: boolean,
+  workspaces: readonly WorkspaceSummary[],
+  currentWorkspaceId: WorkspaceId | undefined,
+): NativeMenu {
   const items: NativeMenuItem[] = [
     { kind: 'role', role: 'minimize' },
     { kind: 'role', role: 'zoom' },
   ];
+  if (canOpenNewWindow && workspaces.length > 0) {
+    items.push({ kind: 'separator' });
+    items.push({
+      kind: 'submenu',
+      title: 'Open Workspace',
+      items: workspaces.map((workspace) => ({
+        kind: 'action',
+        id: `${WINDOW_OPEN_WORKSPACE_MENU_ID_PREFIX}${workspace.id}`,
+        title: workspace.name,
+        enabled: true,
+        checked: workspace.id === currentWorkspaceId,
+      })),
+    });
+  }
   if (tabs.length > 0) {
     items.push({ kind: 'separator' });
     for (const tab of tabs) {
@@ -168,11 +233,17 @@ export function buildNativeMenuSpec(inputs: NativeMenuInputs): NativeMenuSpec {
   return {
     menus: [
       appMenu(),
-      fileMenu(inputs.actions),
+      fileMenu(inputs.actions, inputs.canOpenNewWindow),
       editMenu(inputs.actions),
       viewMenu(inputs.actions),
+      toolsMenu(inputs.actions),
       goMenu(inputs.favouriteActions),
-      windowMenu(inputs.tabs),
+      windowMenu(
+        inputs.tabs,
+        inputs.canOpenNewWindow,
+        inputs.workspaces,
+        inputs.currentWorkspaceId,
+      ),
       helpMenu(inputs.actions),
     ],
   };

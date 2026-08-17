@@ -45,6 +45,9 @@ export interface EnglishCatalogue {
 
   /** Common empty, error and warning states. */
   state: Record<string, Entry>;
+
+  /** Directory table: column headers, loading/error states. */
+  table: Record<string, Entry>;
 }
 
 /** A fully resolved catalogue for one locale. */

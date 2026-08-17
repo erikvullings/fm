@@ -16,6 +16,7 @@ fm-comparison.workspace = true
 fm-connections.workspace = true
 fm-credentials.workspace = true
 fm-events.workspace = true
+fm-metadata.workspace = true
 fm-operations.workspace = true
 fm-platform.workspace = true
 fm-plugin-api.workspace = true
@@ -24,6 +25,7 @@ fm-search.workspace = true
 fm-settings.workspace = true
 fm-ssh.workspace = true
 fm-transport-dto.workspace = true
+fm-vcs-status.workspace = true
 fm-vfs.workspace = true
 fm-vfs-local.workspace = true
 fm-vfs-ftp.workspace = true
@@ -42,6 +44,11 @@ workspace = true
 
 [dev-dependencies]
 fm-ssh.workspace = true
+git2.workspace = true
+image.workspace = true
+lopdf.workspace = true
+mp4.workspace = true
+openh264.workspace = true
 russh.workspace = true
 tempfile.workspace = true
 zip.workspace = true

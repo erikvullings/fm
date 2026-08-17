@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import type { ActionDescriptor, KeyChord } from '../../models';
+import type { ActionDescriptor, KeyChord, WorkspaceSummary } from '../../models';
 import { buildNativeMenuSpec, type NativeMenuInputs, type NativeMenuTab } from './native-menu-spec';
 
 function action(
@@ -30,8 +30,26 @@ function tab(overrides: Partial<NativeMenuTab> = {}): NativeMenuTab {
   };
 }
 
+function workspaceSummary(overrides: Partial<WorkspaceSummary> = {}): WorkspaceSummary {
+  return {
+    id: 'workspace-1',
+    name: 'Default',
+    revision: 0,
+    updatedAt: '2026-01-01T00:00:00Z',
+    ...overrides,
+  };
+}
+
 function inputs(overrides: Partial<NativeMenuInputs> = {}): NativeMenuInputs {
-  return { actions: [], favouriteActions: [], tabs: [], ...overrides };
+  return {
+    actions: [],
+    favouriteActions: [],
+    tabs: [],
+    canOpenNewWindow: false,
+    workspaces: [],
+    currentWorkspaceId: undefined,
+    ...overrides,
+  };
 }
 
 describe('buildNativeMenuSpec', () => {
@@ -42,6 +60,7 @@ describe('buildNativeMenuSpec', () => {
       'File',
       'Edit',
       'View',
+      'Tools',
       'Go',
       'Window',
       'Help',
@@ -107,6 +126,31 @@ describe('buildNativeMenuSpec', () => {
     expect(fileMenu?.items).toEqual([]);
   });
 
+  it('adds a New Window item first in the File menu when the host can open one', () => {
+    const fileMenu = buildNativeMenuSpec(inputs({ canOpenNewWindow: true })).menus.find(
+      (menu) => menu.title === 'File',
+    );
+    expect(fileMenu?.items).toEqual([
+      {
+        kind: 'action',
+        id: 'ui.newWorkspaceWindow',
+        title: 'New Window',
+        shortcut: { key: 'n', meta: true, shift: true },
+        enabled: true,
+        checked: false,
+      },
+    ]);
+  });
+
+  it('omits New Window entirely on a host with no window concept', () => {
+    const fileMenu = buildNativeMenuSpec(inputs({ canOpenNewWindow: false })).menus.find(
+      (menu) => menu.title === 'File',
+    );
+    expect(
+      fileMenu?.items.some((item) => 'id' in item && item.id === 'ui.newWorkspaceWindow'),
+    ).toBe(false);
+  });
+
   it('restricts the Edit menu to Copy, Paste and Select All only', () => {
     const actions = [
       action('core.copy', 'Copy'),
@@ -143,6 +187,34 @@ describe('buildNativeMenuSpec', () => {
       'core.sortBySize',
       'core.sortUnsorted',
     ]);
+  });
+
+  it('populates the Tools menu from the copy/terminal/reveal action ids', () => {
+    const actions = [
+      action('core.copyName', 'Copy Filename'),
+      action('core.copyPath', 'Copy Full Path'),
+      action('core.copyRelativePath', 'Copy Relative Path'),
+      action('core.openTerminal', 'Open Terminal Here'),
+      action('core.revealInSystemFileManager', 'Reveal in Finder'),
+      action('core.copy', 'Copy'),
+    ];
+    const toolsMenu = buildNativeMenuSpec(inputs({ actions })).menus.find(
+      (menu) => menu.title === 'Tools',
+    );
+    expect(toolsMenu?.items.map((item) => (item.kind === 'action' ? item.id : item.kind))).toEqual([
+      'core.copyName',
+      'core.copyPath',
+      'core.copyRelativePath',
+      'core.openTerminal',
+      'core.revealInSystemFileManager',
+    ]);
+  });
+
+  it('skips Tools menu ids that are not currently registered instead of crashing', () => {
+    const toolsMenu = buildNativeMenuSpec(inputs({ actions: [] })).menus.find(
+      (menu) => menu.title === 'Tools',
+    );
+    expect(toolsMenu?.items).toEqual([]);
   });
 
   it('builds the Go menu from favourite actions, not the plain registered actions', () => {
@@ -228,6 +300,51 @@ describe('buildNativeMenuSpec', () => {
       .filter((item) => item.checked)
       .map((item) => item.id);
     expect(checkedIds).toEqual(['ui.window.tab.pane-1:tab-2']);
+  });
+
+  it('adds an Open Workspace submenu listing every workspace when the host can open windows', () => {
+    const workspaces = [
+      workspaceSummary({ id: 'workspace-1', name: 'Default' }),
+      workspaceSummary({ id: 'workspace-2', name: 'Photos' }),
+    ];
+    const windowMenu = buildNativeMenuSpec(
+      inputs({ canOpenNewWindow: true, workspaces, currentWorkspaceId: 'workspace-2' }),
+    ).menus.find((menu) => menu.title === 'Window');
+    expect(windowMenu?.items).toEqual([
+      { kind: 'role', role: 'minimize' },
+      { kind: 'role', role: 'zoom' },
+      { kind: 'separator' },
+      {
+        kind: 'submenu',
+        title: 'Open Workspace',
+        items: [
+          {
+            kind: 'action',
+            id: 'ui.window.openWorkspace.workspace-1',
+            title: 'Default',
+            enabled: true,
+            checked: false,
+          },
+          {
+            kind: 'action',
+            id: 'ui.window.openWorkspace.workspace-2',
+            title: 'Photos',
+            enabled: true,
+            checked: true,
+          },
+        ],
+      },
+    ]);
+  });
+
+  it('omits the Open Workspace submenu on a host with no window concept', () => {
+    const windowMenu = buildNativeMenuSpec(
+      inputs({ canOpenNewWindow: false, workspaces: [workspaceSummary()] }),
+    ).menus.find((menu) => menu.title === 'Window');
+    expect(windowMenu?.items).toEqual([
+      { kind: 'role', role: 'minimize' },
+      { kind: 'role', role: 'zoom' },
+    ]);
   });
 
   it('populates the Help menu with the shortcuts-help action when registered', () => {

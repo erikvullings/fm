@@ -244,3 +244,98 @@ Spaces-assignment itself as a known macOS limitation.
     (sub-task b), per-workspace window frames persist and restore via public APIs (sub-task c), and
     macOS Space placement is explicitly and deliberately out of scope with the reasoning recorded
     above. Marking this task done.
+- 2026-08-16 (same day, third pass): the user actually tried "Open in New Window" and found sub-task
+  (b) was never really working — the new window opened frozen (immovable, only resizable) with
+  "Unable to load Workspace" as its only content. Root cause: **`apps/fm-desktop/src-tauri/capabilities/default.json`
+  scoped `"windows": ["main"]`** — every permission in that file (all commands, plus
+  `core:window:allow-start-dragging`) applied only to a window literally labeled `"main"`. A
+  per-workspace window's label is `workspace-<uuid>`, so it matched *no* capability at all: every
+  IPC call it made was silently rejected by Tauri's ACL, starting with the very first one
+  (`getRuntimeCapabilities`) in the frontend's boot sequence — hence the generic "Unable to load
+  workspace" error screen and, separately, no drag permission at all (hence frozen/immovable, while
+  native OS-level resize still worked since that's not gated by this permission).
+  - Confirmed by reading `tauri-utils`' capability docs
+    (`~/.cargo/registry/.../tauri-utils-2.9.3/src/acl/capability.rs`): the `windows` field
+    explicitly supports glob patterns ("List of windows that affected by this capability. Can be a
+    glob pattern"). Fix: `"windows": ["main", "workspace-*"]`.
+  - This was a real gap in the "verified" state from the earlier same-day note above — `cargo build`/
+    `clippy`/`fmt`/the mock-runtime smoke test all stay green regardless of capability-file content,
+    since ACL enforcement happens at IPC-call time in the running app, not at compile/lint time, and
+    the mock-runtime test harness doesn't invoke it through the real ACL layer either. **Lesson for
+    next time**: a new window label needs an explicit capability-file entry; this is easy to miss
+    since nothing in the Rust or TS type system enforces it, and no automated test in this repo
+    currently exercises the ACL layer at all — worth a regression test if this area gets touched
+    again (e.g. a mock-runtime test that builds a `workspace-*`-labeled window and asserts a command
+    succeeds through the real ACL, not just the mock IPC bypass the existing smoke tests use).
+  - Verified: `cargo build -p fm-desktop` (clean, capability file changes are picked up by
+    `tauri-build` at build time), `cargo test -p fm-desktop --lib` (16 passed). Still not manually
+    verified in the real native window (same standing limitation) — this is the one that most needs
+    the user's own confirmation, given it was the exact bug reported.
+  - Also fixed in this pass, reported alongside the frozen-window bug: pointer capture on the
+    column-resize handle (a fast/excessive drag that carried the pointer outside the window lost its
+    `pointerup` and reverted on the next drag's cleanup — `setPointerCapture` fixes it); Size column
+    now uses Total Commander-style single-letter units (B/K/M/G/T/P) instead of "KiB"/"MiB"
+    (`frontend/src/features/entry-formatting/entry-formatting.ts`); Modified column gained
+    `font-variant-numeric: tabular-nums` so digits align without a font change; and the Workspace
+    Switcher's Rename/Delete/Open-in-New-Window buttons were rebuilt as `IconButton` + the app's own
+    `tooltip()` helper (matching the rest of the toolbar) instead of cramped text buttons, fixing
+    both the "looks ugly" complaint and the workspace name being ellipsis-truncated to "Def...".
+    None of these four are part of this task's original acceptance criteria (general polish/bugs
+    surfaced while testing it) — noted here only because they landed in the same commit
+    (`a0c20cd`).
+- 2026-08-16 (fourth pass): user's own multi-window matrix testing (main → opens workspace A's
+  window fine → from A's window, opening A again "does nothing", opening B works → from B's window,
+  opening either A or B "does nothing") pinned down the remaining sub-task (b) bug precisely: **not**
+  a dedup/label-matching failure (`get_webview_window(&label)` was finding the right window every
+  time) but `existing.set_focus()` alone silently failing to visibly raise a window that isn't
+  already frontmost/visible. `apps/fm-desktop/src-tauri/src/commands.rs`'s `open_workspace_window`
+  now calls `.show()` and `.unminimize()` before `.set_focus()`, mirroring the pairing already used
+  by the single-instance callback in `lib.rs`. Also: the switcher panel now closes itself after
+  "Open in New Window" is clicked (`frontend/src/app/app-shell.ts`), per explicit user request,
+  instead of staying open over a window that's no longer the relevant one. Commit `ec076cc`.
+  Verified: `cargo build/test/clippy/fmt -p fm-desktop` all clean, frontend `tsc`/`biome`/`vitest`
+  clean. **Still not confirmed in the real app** — this fix is inferred from the reported symptom
+  pattern, not from seeing the actual failure directly (no tool here can drive the native window);
+  ask the user to re-run the same open-A/open-B/open-either matrix and confirm each window now
+  visibly raises.
+  - Separately clarified for the user (not a code issue, no fix applied): "no permission" opening
+    `~/Downloads` in both the browser and the Tauri app is a macOS TCC (Files and Folders) grant
+    that dev-binary rebuilds routinely invalidate, not something introduced by this task's changes —
+    confirmed by `ls ~/Downloads` failing from this session's own shell tool too, and by
+    `crates/fm-vfs-local/src/lib.rs` mapping the error straight from `io::ErrorKind::PermissionDenied`.
+    User needs to re-grant it themselves in System Settings; not actionable from here.
+- 2026-08-16 (fifth pass): the fourth pass's fix was aimed at the wrong target. User's follow-up:
+  *"open new workspace only focusses the previous one - it does not create another window, as was
+  the intent."* The `.show()`/`.unminimize()`/`.set_focus()` change from the fourth pass was real
+  and harmless, but the actual bug was the *design* one pass earlier than that: `open_workspace_window`
+  deduplicated by a stable `workspace-<id>` label, so a second "Open in New Window" for a workspace
+  that already had a window always found-and-focused it rather than opening another one - which was
+  never the intent. Fixed by making `workspace_window_label` return a fresh `workspace-<id>_<nonce>`
+  label on every call (so labels never collide and the dedup/focus branch is gone entirely), and
+  registering `tauri-plugin-window-state` with `.map_label(commands::canonical_workspace_window_label)`
+  so windows for the same workspace still share one remembered frame despite no longer sharing a
+  label (`canonical_workspace_window_label` strips the `_<nonce>` suffix back to `workspace-<id>`
+  before the plugin persists/restores by that key). Commit `8c2ae78`.
+  - Added two unit tests (`commands.rs`) for the label/canonicalization contract specifically, since
+    the fourth pass's blind spot was exactly this: nothing exercised what "open twice" should
+    actually do, so a plausible-looking symptom (silent focus failure) was fixed with high confidence
+    while missing that the underlying behavior (dedup at all) was never wanted. Verified:
+    `cargo build/test/clippy/fmt -p fm-desktop` all clean (18 tests, was 16).
+  - **Lesson**: when a user reports "X does nothing," don't assume the *mechanism* (focus/visibility)
+    is the bug without first confirming the *intended* behavior — ask "should this open a new window
+    every time, or focus an existing one?" rather than picking the more defensible-sounding
+    interpretation and building a whole verification story around it. Still not confirmed in the
+    real app (same standing limitation) - ask the user to retest the same matrix once more.
+- 2026-08-16 (sixth pass): user confirmed the fifth pass's fix works, then asked to wire "Open in
+  New Window" into the native menu bar too - closing the "no native menu entry" item noted as
+  deliberately out of scope back in the second-pass note. Added a "New Window" item (Cmd+Shift+N)
+  at the top of the File menu, above New Tab/Close Tab (`native-menu-spec.ts`'s `fileMenu`), calling
+  the same `openWorkspaceWindow` the switcher's button already uses, for the *current* workspace.
+  Frontend-local id `ui.newWorkspaceWindow` (not a backend action, same pattern as `ui.openSettings`
+  and the Window menu's per-tab ids), dispatched via a new `openNewWorkspaceWindow` callback on
+  `NativeMenuDispatchContext`. Gated by a new `NativeMenuInputs.canOpenNewWindow` flag (mirrors
+  `attrsClient.openWorkspaceWindow`'s availability) so the item is absent, not disabled, on the
+  browser/HTTP host. Commit `abd6cc5`. Added tests for both the spec-building (item present/absent)
+  and dispatch (id routes to the callback) sides. Verified: `tsc`, `biome check`, `vitest run` (1119
+  passed, up from 1116; one pre-existing unrelated flaky build-integration test timeout, confirmed
+  flaky in isolation earlier in this task, not a regression).

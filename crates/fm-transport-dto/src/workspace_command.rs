@@ -10,7 +10,8 @@ use uuid::Uuid;
 
 use crate::location::LocationDto;
 use crate::workspace::{
-    ColumnConfigurationDto, PersistedFilterDto, SortDescriptorDto, WorkspaceLayoutDto,
+    ColumnConfigurationDto, DirectoryViewModeDto, IconSizeDto, PersistedFilterDto,
+    SortDescriptorDto, WorkspaceLayoutDto,
 };
 
 /// How a tab's location changed, so navigation history can be updated
@@ -100,6 +101,10 @@ pub struct DirectoryViewPatchDto {
     pub folders_first: Option<bool>,
     /// Set or clear the saved quick-filter, if present.
     pub quick_filter: Option<QuickFilterPatchDto>,
+    /// Replace the active view mode, if present (task 0134).
+    pub view_mode: Option<DirectoryViewModeDto>,
+    /// Replace the grid tile size, if present (task 0134).
+    pub icon_size: Option<IconSizeDto>,
 }
 
 impl From<DirectoryViewPatch> for DirectoryViewPatchDto {
@@ -114,6 +119,8 @@ impl From<DirectoryViewPatch> for DirectoryViewPatchDto {
             show_hidden: patch.show_hidden,
             folders_first: patch.folders_first,
             quick_filter: patch.quick_filter.map(Into::into),
+            view_mode: patch.view_mode.map(Into::into),
+            icon_size: patch.icon_size.map(Into::into),
         }
     }
 }
@@ -130,6 +137,8 @@ impl From<DirectoryViewPatchDto> for DirectoryViewPatch {
             show_hidden: dto.show_hidden,
             folders_first: dto.folders_first,
             quick_filter: dto.quick_filter.map(Into::into),
+            view_mode: dto.view_mode.map(Into::into),
+            icon_size: dto.icon_size.map(Into::into),
         }
     }
 }

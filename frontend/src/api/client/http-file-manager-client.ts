@@ -105,6 +105,7 @@ import {
   applySyncPlan as requestSyncPlanApply,
   generateSyncPlan as requestSyncPlanGenerate,
   getSystemLocations as requestSystemLocations,
+  getThumbnail as requestThumbnail,
   getWorkspace as requestWorkspace,
   applyWorkspaceCommand as requestWorkspaceCommand,
   createWorkspace as requestWorkspaceCreation,
@@ -186,6 +187,23 @@ export class HttpFileManagerClient implements FileManagerClient {
     try {
       const response = await requestFileIcon(
         { uri: sampleLocationUri },
+        signal === undefined ? undefined : { signal },
+      );
+      if (response.status !== 200) return undefined;
+      return new Uint8Array(await response.data.arrayBuffer());
+    } catch {
+      return undefined;
+    }
+  }
+
+  async getThumbnail(
+    locationUri: string,
+    size: 'small' | 'medium' | 'large',
+    signal?: AbortSignal,
+  ): Promise<Uint8Array | undefined> {
+    try {
+      const response = await requestThumbnail(
+        { uri: locationUri, size },
         signal === undefined ? undefined : { signal },
       );
       if (response.status !== 200) return undefined;

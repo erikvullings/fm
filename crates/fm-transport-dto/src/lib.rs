@@ -85,9 +85,9 @@ pub use snapshot::{DirectorySnapshotDto, LoadingStateDto, VolumeCapacityDto};
 pub use system_location::{SystemLocationDto, SystemLocationKindDto};
 pub use workspace::{
     ColumnConfigurationDto, CreateWorkspaceRequestDto, DirectoryViewConfigurationDto,
-    NavigationHistoryDto, OperationCentrePreferencesDto, PaneStateDto, PersistedFilterDto,
-    SortDescriptorDto, SortDirectionDto, SplitAxisDto, TabStateDto, WorkspaceDto,
-    WorkspaceLayoutDto, WorkspaceSummaryDto,
+    DirectoryViewModeDto, IconSizeDto, NavigationHistoryDto, OperationCentrePreferencesDto,
+    PaneStateDto, PersistedFilterDto, SortDescriptorDto, SortDirectionDto, SplitAxisDto,
+    TabStateDto, WorkspaceDto, WorkspaceLayoutDto, WorkspaceSummaryDto,
 };
 pub use workspace_command::{
     DirectoryViewPatchDto, NavigationModeDto, QuickFilterPatchDto, WorkspaceCommandDto,

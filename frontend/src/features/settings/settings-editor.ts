@@ -87,7 +87,7 @@ export const SettingsEditor: FactoryComponent<SettingsEditorAttrs> = () => {
       },
       (error: unknown) => {
         saving = false;
-        saveError = errorMessage(error, t('settings', 'saveError'));
+        saveError = errorMessage(error, 'Failed to save settings.');
         m.redraw();
       },
     );
@@ -119,8 +119,8 @@ export const SettingsEditor: FactoryComponent<SettingsEditorAttrs> = () => {
       const conflictedActionIds = new Set(conflicts.flatMap((conflict) => conflict.actionIds));
 
       return m('.fm-settings-editor-body', { 'aria-label': t('settings', 'settingsEditor') }, [
+        m('.row', m('h4.fm-settings-section-heading.col.s12', t('settings', 'appearance'))),
         m('.row', [
-          m('h4.fm-settings-section-heading.col.s12', t('settings', 'appearance')),
           m(Select<Locale>, {
             className: 'col s12',
             label: t('settings', 'language'),
@@ -192,11 +192,7 @@ export const SettingsEditor: FactoryComponent<SettingsEditorAttrs> = () => {
                 .filter((plugin) => plugin.iconTheme !== undefined)
                 .map((plugin) => ({
                   id: plugin.id,
-                  label: plugin.enabled
-                    ? plugin.name
-                    : t('settings', 'pluginDisabled', {
-                        name: plugin.name,
-                      }),
+                  label: plugin.enabled ? plugin.name : `${plugin.name} (plugin disabled)`,
                 })),
             ],
             checkedId: activeDraft.iconTheme,
@@ -210,16 +206,16 @@ export const SettingsEditor: FactoryComponent<SettingsEditorAttrs> = () => {
             className: 'col s12 m6',
             label: t('settings', 'showHiddenFiles'),
             checked: activeDraft.showHiddenFiles,
-            left: t('settings', 'hidden'),
-            right: t('settings', 'shown'),
+            left: 'Hidden',
+            right: 'Shown',
             onchange: (checked: boolean) => update(current, { showHiddenFiles: checked }),
           }),
           m(Switch, {
             className: 'col s12 m6',
             label: t('settings', 'confirmPermanentDelete'),
             checked: activeDraft.confirmPermanentDelete,
-            left: t('settings', 'off'),
-            right: t('settings', 'on'),
+            left: 'Off',
+            right: 'On',
             onchange: (checked: boolean) => update(current, { confirmPermanentDelete: checked }),
           }),
         ]),
@@ -388,11 +384,11 @@ export const SettingsEditor: FactoryComponent<SettingsEditorAttrs> = () => {
         saveError === undefined
           ? undefined
           : m('.fm-settings-save-error', { role: 'alert' }, saveError),
-        m('.fm-settings-editor-actions', [
+        m('.fm-settings-editor-actions.fm-sticky-footer', [
           m(
             'button.fm-settings-cancel',
             { type: 'button', onclick: () => handleCancel(current) },
-            t('button', 'cancel'),
+            t('settings', 'cancel'),
           ),
           m(
             'button.fm-settings-save',
@@ -401,7 +397,7 @@ export const SettingsEditor: FactoryComponent<SettingsEditorAttrs> = () => {
               disabled: errors.length > 0 || saving,
               onclick: () => handleSave(current),
             },
-            saving ? t('button', 'saving') : t('button', 'save'),
+            saving ? t('settings', 'saving') : t('settings', 'save'),
           ),
         ]),
       ]);

@@ -28,6 +28,7 @@ import { isCutLocation } from '../clipboard/clipboard';
 import { loadConnections } from '../connections/connections-model';
 import { SAMPLE_FILE_AGE_COLUMN } from '../directory-table/directory-table';
 import type { NativeIconLoader } from '../directory-table/native-icon-loader';
+import type { ThumbnailLoader } from '../directory-table/thumbnail-loader';
 import { operationForDrop, resolveDropTarget, validateDropTarget } from '../drag-drop/drag-drop';
 import { FileEditor } from '../editor/file-editor';
 import type { FileEditorController, FileEditorState } from '../editor/file-editor-controller';
@@ -72,6 +73,7 @@ export interface PaneContentContext {
   getConnections(): readonly Connection[];
   getUnavailableLocations(): ReadonlySet<string>;
   getNativeIconLoader(): NativeIconLoader | undefined;
+  getThumbnailLoader(): ThumbnailLoader | undefined;
   getPlugins(): readonly PluginDescriptor[];
   getPlatform(): SelectionPlatform;
   getKeybindingRuntime(): KeybindingRuntime;
@@ -94,7 +96,8 @@ export interface PaneContentContext {
     }
   >;
   getSortRequests(): Map<string, object>;
-  /** Tokens guarding the async "moveCursorTo last" flow — see onSelectionAction below. */
+  /** Tokens guarding the async "moveCursorTo last" and typeahead-no-match background-load flows
+   * — see onSelectionAction below. */
   getCursorLoadTokens(): Map<string, object>;
   getViewerByTab(): Map<
     string,
@@ -208,6 +211,54 @@ export function createPaneContentBuilder(
     const entries =
       tab === undefined ? filtered : withParentEntry(pathFromUri(tab.location.uri), filtered);
     const entryIds = entries.map((entry) => entry.id);
+    // Shared by the "moveCursorTo last" and typeahead-no-match background flows below: both need
+    // the fully-loaded, correctly sorted/filtered/parent-prefixed entry list once `loadAllPages`
+    // resolves, not just the loaded-so-far prefix `entries` above was computed from.
+    async function resolveFreshLoadedEntries(): Promise<readonly EntrySummary[]> {
+      // `entriesSortedFor`'s cache is only refreshed by a redraw, and no redraw happens between
+      // the background page fetches in `loadAllPages`. For directories at/over its 10k
+      // responsive-sort threshold, reading the cache right now would otherwise return a stale
+      // sort of a much smaller (pre-`loadAllPages`) prefix. Force a fresh, correctly-ordered sort
+      // of the fully-loaded entries first, and seed the cache with it so this call (and the next
+      // redraw) see the real order.
+      if (key !== undefined && tab !== undefined) {
+        const freshDirectory = context.getDirectories().get(key);
+        if (freshDirectory !== undefined) {
+          const sortDescriptors = context.effectiveSort(tab.view.sort);
+          const cacheKey = JSON.stringify([sortDescriptors, tab.view.foldersFirst]);
+          // Invalidate any in-flight sort of an earlier (smaller) entries snapshot so it can't
+          // overwrite the fresh result seeded below once it resolves.
+          context.getSortRequests().set(key, {});
+          const sorted = await sortEntriesResponsive(
+            freshDirectory.entries,
+            context.frontendSort(sortDescriptors),
+            tab.view.foldersFirst,
+          );
+          context.getSortedEntries().set(key, {
+            input: freshDirectory.entries,
+            key: cacheKey,
+            entries: sorted,
+          });
+          context.getSortRequests().delete(key);
+        }
+      }
+      const sortedFresh =
+        tab === undefined || key === undefined
+          ? (context.getDirectories().get(key ?? '')?.entries ?? [])
+          : context.entriesSortedFor(
+              key,
+              context.getDirectories().get(key)?.entries ?? [],
+              context.effectiveSort(tab.view.sort),
+              tab.view.foldersFirst,
+            );
+      const filteredFresh =
+        key === undefined
+          ? sortedFresh
+          : context.entriesFilteredFor(key, sortedFresh, context.quickFilterQueryFor(key, tab));
+      return tab === undefined
+        ? filteredFresh
+        : withParentEntry(pathFromUri(tab.location.uri), filteredFresh);
+    }
     const cursorIndex =
       selection.cursorEntryId === undefined ? undefined : entryIds.indexOf(selection.cursorEntryId);
     const selectedEntryIds = new Set<EntryId>(selection.selectedEntryIds);
@@ -222,6 +273,7 @@ export function createPaneContentBuilder(
     const currentSettings = context.getCurrentSettings();
     const systemLocationsError = context.getSystemLocationsError();
     const nativeIconLoader = context.getNativeIconLoader();
+    const thumbnailLoader = context.getThumbnailLoader();
     const viewerTitles = new Map(
       (pane?.tabOrder ?? []).flatMap((tabId) => {
         const title = context.getViewerByTab().get(context.tabKey(paneId, tabId))?.state.entry.name;
@@ -265,6 +317,7 @@ export function createPaneContentBuilder(
       filterQuery: quickFilterQuery,
       formatSettings: entryFormatSettings,
       ...(nativeIconLoader === undefined ? {} : { nativeIconLoader }),
+      ...(thumbnailLoader === undefined ? {} : { thumbnailLoader }),
       pluginColumns: [
         ...(context
           .getPlugins()
@@ -374,65 +427,48 @@ export function createPaneContentBuilder(
             .getNavigation()
             .loadAllPages(paneId)
             .then(async () => {
-              // `entriesSortedFor`'s cache is only refreshed by a redraw, and no redraw happens
-              // between the background page fetches above. For directories at/over its 10k
-              // responsive-sort threshold, reading the cache right now would otherwise return a
-              // stale sort of a much smaller (pre-`loadAllPages`) prefix and land the cursor on
-              // the wrong entry. Force a fresh, correctly-ordered sort of the fully-loaded
-              // entries first, and seed the cache with it so this call (and the next redraw) see
-              // the real order.
-              //
+              const loadedEntries = await resolveFreshLoadedEntries();
+              const loadedEntryIds = loadedEntries.map((entry) => entry.id);
+              // Drop this resolution if the user has since taken another selection action (e.g.
+              // pressed Up while the pages were still loading) — applying it now would silently
+              // snap the cursor back to the last entry and undo their more recent navigation.
               // This must stay scoped to `tab`/`key` as captured when the action was dispatched,
               // never re-derived from `pane.activeTabId` — the user may have switched to a
               // different tab while the pages were still loading in the background, and applying
               // the result to whichever tab is active *now* would write this tab's cursor/entry
               // into the wrong tab's selection state.
-              const freshDirectory = context.getDirectories().get(key);
-              if (tab !== undefined && freshDirectory !== undefined) {
-                const sortDescriptors = context.effectiveSort(tab.view.sort);
-                const cacheKey = JSON.stringify([sortDescriptors, tab.view.foldersFirst]);
-                // Invalidate any in-flight sort of an earlier (smaller) entries snapshot so it
-                // can't overwrite the fresh result seeded below once it resolves.
-                context.getSortRequests().set(key, {});
-                const sorted = await sortEntriesResponsive(
-                  freshDirectory.entries,
-                  context.frontendSort(sortDescriptors),
-                  tab.view.foldersFirst,
-                );
-                context.getSortedEntries().set(key, {
-                  input: freshDirectory.entries,
-                  key: cacheKey,
-                  entries: sorted,
-                });
-                context.getSortRequests().delete(key);
-              }
-              const sortedFresh =
-                tab === undefined
-                  ? (context.getDirectories().get(key)?.entries ?? [])
-                  : context.entriesSortedFor(
-                      key,
-                      context.getDirectories().get(key)?.entries ?? [],
-                      context.effectiveSort(tab.view.sort),
-                      tab.view.foldersFirst,
-                    );
-              const filteredFresh = context.entriesFilteredFor(
-                key,
-                sortedFresh,
-                context.quickFilterQueryFor(key, tab),
-              );
-              const loadedEntries =
-                tab === undefined
-                  ? filteredFresh
-                  : withParentEntry(pathFromUri(tab.location.uri), filteredFresh);
-              const loadedEntryIds = loadedEntries.map((entry) => entry.id);
-              // Drop this resolution if the user has since taken another selection action (e.g.
-              // pressed Up while the pages were still loading) — applying it now would silently
-              // snap the cursor back to the last entry and undo their more recent navigation.
               if (context.getCursorLoadTokens().get(key) !== loadToken) return;
               const next = reduceSelection(
                 context.getSelections().get(key) ?? selection,
                 action,
                 loadedEntryIds,
+              );
+              context.getSelections().set(key, next);
+              m.redraw();
+            });
+          return;
+        }
+        if (action.type === 'typeaheadPending' && directory.hasMore) {
+          // The directory isn't fully loaded yet, so the prefix may have matched only among the
+          // entries loaded so far (or not at all) while a better/only match exists further in.
+          // Background-load every remaining page (task: type-to-select only searching loaded
+          // entries) and, once in, select the true first match for the prefix if one exists.
+          const loadToken = {};
+          context.getCursorLoadTokens().set(key, loadToken);
+          void context
+            .getNavigation()
+            .loadAllPages(paneId)
+            .then(async () => {
+              const loadedEntries = await resolveFreshLoadedEntries();
+              if (context.getCursorLoadTokens().get(key) !== loadToken) return;
+              const match = loadedEntries.find((entry) =>
+                entry.name.toLocaleLowerCase().includes(action.prefix),
+              );
+              if (match === undefined) return;
+              const next = reduceSelection(
+                context.getSelections().get(key) ?? selection,
+                { type: 'selectOnly', entryId: match.id },
+                loadedEntries.map((entry) => entry.id),
               );
               context.getSelections().set(key, next);
               m.redraw();
@@ -471,6 +507,24 @@ export function createPaneContentBuilder(
             paneId,
             tabId: tab.id,
             patch: { sort: [...sort] },
+            expectedRevision: liveWorkspace.revision,
+          },
+          context.replaceWorkspace,
+        ).catch(() => undefined);
+      },
+      viewMode: tab?.view.viewMode ?? 'table',
+      iconSize: tab?.view.iconSize ?? 'medium',
+      onViewModeChange: (viewMode, iconSize) => {
+        const liveWorkspace = context.getWorkspace();
+        if (liveWorkspace === undefined || tab === undefined) return;
+        void dispatchWorkspaceCommand(
+          client,
+          {
+            type: 'updateView',
+            workspaceId: liveWorkspace.id,
+            paneId,
+            tabId: tab.id,
+            patch: { viewMode, iconSize },
             expectedRevision: liveWorkspace.revision,
           },
           context.replaceWorkspace,
