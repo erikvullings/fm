@@ -23,6 +23,8 @@ import type {
   EntryMetadataRequest,
   FileRangeChunk,
   GenerateSyncPlanRequest,
+  GitFileHistoryRequest,
+  GitFileHistoryResult,
   HostKeyProbe,
   InvokeActionRequest,
   ListDirectoryRequest,
@@ -58,6 +60,7 @@ import type {
   Unsubscribe,
   UpdateConnectionRequest,
   VerificationReport,
+  Volume,
   WorkspaceCommand,
   WorkspaceId,
   WorkspaceProjection,
@@ -93,6 +96,7 @@ export interface FileManagerClient {
   readonly connection: EventStreamStatusObservable;
   getRuntimeCapabilities(signal?: AbortSignal): Promise<RuntimeCapabilities>;
   getSystemLocations(signal?: AbortSignal): Promise<SystemLocation[]>;
+  getVolumes(signal?: AbortSignal): Promise<Volume[]>;
 
   /** Starts an OS file-reference drag from the desktop host. */
   startNativeDrag(locations: readonly Location[], signal?: AbortSignal): Promise<void>;
@@ -108,6 +112,14 @@ export interface FileManagerClient {
   updateSettings(settings: Settings, signal?: AbortSignal): Promise<Settings>;
 
   listWorkspaces(signal?: AbortSignal): Promise<WorkspaceSummary[]>;
+
+  /** Runs the workspace startup lifecycle (spec §5.3.7): opens `workspaceId` if given, otherwise
+   * the last-active workspace, otherwise creates a default. */
+  startWorkspace(workspaceId?: WorkspaceId, signal?: AbortSignal): Promise<WorkspaceProjection>;
+
+  /** Opens (or focuses, if already open) a dedicated OS window for `workspaceId` (task 0143
+   * sub-task (b)). Desktop-only, like {@link quit}: the browser/HTTP host has no window concept. */
+  openWorkspaceWindow?(workspaceId: WorkspaceId): Promise<void>;
 
   createWorkspace(
     request: CreateWorkspaceRequest,
@@ -150,6 +162,13 @@ export interface FileManagerClient {
   /** Lazily fetches a native PNG icon; unsupported/failure is a themed-icon fallback. */
   getFileIcon(sampleLocationUri: string, signal?: AbortSignal): Promise<Uint8Array | undefined>;
 
+  /** Lazily fetches a downscaled JPEG preview; unsupported/failure is an icon fallback (task 0134). */
+  getThumbnail(
+    locationUri: string,
+    size: 'small' | 'medium' | 'large',
+    signal?: AbortSignal,
+  ): Promise<Uint8Array | undefined>;
+
   /** Reads one bounded byte range from a file, for the in-app large file viewer (task 0088). */
   readFileRange(request: ReadFileRangeRequest, signal?: AbortSignal): Promise<FileRangeChunk>;
   loadEditableFile(request: LoadEditableFileRequest, signal?: AbortSignal): Promise<EditableFile>;
@@ -168,6 +187,14 @@ export interface FileManagerClient {
     request: CalculateFolderSizeRequest,
     signal?: AbortSignal,
   ): Promise<CalculateFolderSizeResult>;
+
+  /** Fetches a file's git commit history, for the Alt+Space metadata panel's history section
+   * (task 0135). Resolves to an empty commit list (never rejects) when the file has no history
+   * to show: outside a git working tree, on a non-local provider, or not yet committed. */
+  gitFileHistory(
+    request: GitFileHistoryRequest,
+    signal?: AbortSignal,
+  ): Promise<GitFileHistoryResult>;
 
   startOperation(request: StartOperationRequest, signal?: AbortSignal): Promise<Operation>;
 

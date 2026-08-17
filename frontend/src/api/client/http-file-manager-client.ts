@@ -24,6 +24,8 @@ import type {
   Location as FileLocation,
   FileRangeChunk,
   GenerateSyncPlanRequest,
+  GitFileHistoryRequest,
+  GitFileHistoryResult,
   HostKeyProbe,
   InvokeActionRequest,
   ListDirectoryRequest,
@@ -59,6 +61,7 @@ import type {
   Unsubscribe,
   UpdateConnectionRequest,
   VerificationReport,
+  Volume,
   WorkspaceCommand,
   WorkspaceId,
   WorkspaceProjection,
@@ -104,6 +107,7 @@ import {
   getEntryMetadata as requestEntryMetadata,
   getFileIcon as requestFileIcon,
   calculateFolderSize as requestFolderSizeCalculation,
+  getFileGitHistory as requestGitFileHistory,
   loadEditableFile as requestLoadEditableFile,
   navigatePane as requestNavigation,
   cancelOperation as requestOperationCancel,
@@ -130,11 +134,14 @@ import {
   applySyncPlan as requestSyncPlanApply,
   generateSyncPlan as requestSyncPlanGenerate,
   getSystemLocations as requestSystemLocations,
+  getThumbnail as requestThumbnail,
+  getVolumes as requestVolumes,
   getWorkspace as requestWorkspace,
   applyWorkspaceCommand as requestWorkspaceCommand,
   createWorkspace as requestWorkspaceCreation,
   deleteWorkspace as requestWorkspaceDeletion,
   openWorkspace as requestWorkspaceOpen,
+  startWorkspace as requestWorkspaceStart,
   listWorkspaces as requestWorkspaces,
 } from '../generated/file-manager-api';
 import type { ActionDescriptorDto } from '../generated/models/actionDescriptorDto';
@@ -203,6 +210,14 @@ export class HttpFileManagerClient implements FileManagerClient {
     }));
   }
 
+  async getVolumes(signal?: AbortSignal): Promise<Volume[]> {
+    const response = await requestVolumes(signal === undefined ? undefined : { signal });
+    if (response.status !== 200) {
+      throw new Error(`Unexpected getVolumes response status: ${response.status}`);
+    }
+    return response.data.map((item) => ({ name: item.name, location: { ...item.location } }));
+  }
+
   async getFileIcon(
     sampleLocationUri: string,
     signal?: AbortSignal,
@@ -210,6 +225,23 @@ export class HttpFileManagerClient implements FileManagerClient {
     try {
       const response = await requestFileIcon(
         { uri: sampleLocationUri },
+        signal === undefined ? undefined : { signal },
+      );
+      if (response.status !== 200) return undefined;
+      return new Uint8Array(await response.data.arrayBuffer());
+    } catch {
+      return undefined;
+    }
+  }
+
+  async getThumbnail(
+    locationUri: string,
+    size: 'small' | 'medium' | 'large',
+    signal?: AbortSignal,
+  ): Promise<Uint8Array | undefined> {
+    try {
+      const response = await requestThumbnail(
+        { uri: locationUri, size },
         signal === undefined ? undefined : { signal },
       );
       if (response.status !== 200) return undefined;
@@ -239,6 +271,20 @@ export class HttpFileManagerClient implements FileManagerClient {
   async listWorkspaces(signal?: AbortSignal): Promise<WorkspaceSummary[]> {
     const response = await requestWorkspaces(signal === undefined ? undefined : { signal });
     return response.data;
+  }
+
+  async startWorkspace(
+    workspaceId?: WorkspaceId,
+    signal?: AbortSignal,
+  ): Promise<WorkspaceProjection> {
+    const response = await requestWorkspaceStart(
+      workspaceId === undefined ? undefined : { workspaceId },
+      signal === undefined ? undefined : { signal },
+    );
+    if (response.status !== 200) {
+      throw new Error(`Unexpected startWorkspace response status: ${response.status}`);
+    }
+    return workspaceProjectionFromDto(response.data, { redirectSessionOnlyTabs: true });
   }
 
   async createWorkspace(
@@ -438,6 +484,20 @@ export class HttpFileManagerClient implements FileManagerClient {
     );
     if (response.status !== 200) {
       throw new Error(`Unexpected calculateFolderSize response status: ${response.status}`);
+    }
+    return response.data;
+  }
+
+  async gitFileHistory(
+    request: GitFileHistoryRequest,
+    signal?: AbortSignal,
+  ): Promise<GitFileHistoryResult> {
+    const response = await requestGitFileHistory(
+      request,
+      signal !== undefined ? { signal } : undefined,
+    );
+    if (response.status !== 200) {
+      throw new Error(`Unexpected gitFileHistory response status: ${response.status}`);
     }
     return response.data;
   }

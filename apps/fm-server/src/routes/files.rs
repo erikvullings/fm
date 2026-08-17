@@ -5,9 +5,10 @@ use axum::extract::{Extension, State};
 use axum::{Json, http::StatusCode};
 use fm_transport_dto::{
     ApplicationErrorDto, ArchiveCredentialRequestDto, CalculateFolderSizeRequestDto,
-    CalculateFolderSizeResponseDto, LoadEditableFileRequestDto, LoadEditableFileResponseDto,
-    ReadFileRangeRequestDto, ReadFileRangeResponseDto, SaveEditableFileRequestDto,
-    SaveEditableFileResponseDto, SearchInFileRequestDto, SearchInFileResponseDto,
+    CalculateFolderSizeResponseDto, GetFileGitHistoryRequestDto, GetFileGitHistoryResponseDto,
+    LoadEditableFileRequestDto, LoadEditableFileResponseDto, ReadFileRangeRequestDto,
+    ReadFileRangeResponseDto, SaveEditableFileRequestDto, SaveEditableFileResponseDto,
+    SearchInFileRequestDto, SearchInFileResponseDto,
 };
 use tower_http::request_id::RequestId;
 
@@ -176,4 +177,27 @@ pub(crate) async fn calculate_folder_size(
         .await
         .map(Json)
         .map_err(|error| ApiError::new(error, request_id))
+}
+
+/// Fetches a file's git commit history, for the Alt+Space metadata panel's history section
+/// (task 0135). Local provider only; returns an empty commit list (never an error) when the
+/// file is outside a git working tree, on a non-local provider, or not yet committed.
+#[utoipa::path(
+    post,
+    path = "/api/v1/files/git-history",
+    operation_id = "getFileGitHistory",
+    request_body = GetFileGitHistoryRequestDto,
+    responses(
+        (status = 200, description = "Commits touching the file, newest first", body = GetFileGitHistoryResponseDto),
+        (status = 400, description = "The request was invalid", body = ApplicationErrorDto),
+    )
+)]
+pub(crate) async fn get_file_git_history(
+    State(state): State<AppState>,
+    Extension(request_id): Extension<RequestId>,
+    Json(request): Json<GetFileGitHistoryRequestDto>,
+) -> Result<Json<GetFileGitHistoryResponseDto>, ApiError> {
+    let request_id = extract_request_id(&request_id);
+    crate::error::require_within_roots(&request.location, &state.accessible_roots, request_id)?;
+    Ok(Json(state.service.git_file_history(request)))
 }

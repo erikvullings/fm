@@ -308,8 +308,9 @@ mod tests {
 
     use fm_domain::{
         CURRENT_WORKSPACE_SCHEMA_VERSION, ColumnConfiguration, DirectoryViewConfiguration,
-        Location, NavigationHistory, OperationCentrePreferences, PaneId, PaneState, ProviderId,
-        SortDescriptor, SortDirection, TabId, TabState, Workspace, WorkspaceLayout,
+        DirectoryViewMode, IconSize, Location, NavigationHistory, OperationCentrePreferences,
+        PaneId, PaneState, ProviderId, SortDescriptor, SortDirection, TabId, TabState, Workspace,
+        WorkspaceLayout,
     };
     use tempfile::TempDir;
 
@@ -331,6 +332,8 @@ mod tests {
             show_hidden: false,
             folders_first: true,
             quick_filter: None,
+            view_mode: DirectoryViewMode::Table,
+            icon_size: IconSize::Medium,
         };
         let now = Utc::now();
         Workspace {

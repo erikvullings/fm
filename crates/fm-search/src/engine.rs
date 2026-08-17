@@ -810,6 +810,7 @@ fn build_entry_summary(search_id: Uuid, path: &Path) -> Option<EntrySummary> {
         mime_type: None,
         icon_key: None,
         metadata_revision: 0,
+        git_status: None,
     })
 }
 
@@ -1515,6 +1516,7 @@ mod tests {
                         mime_type: None,
                         icon_key: None,
                         metadata_revision: 0,
+                        git_status: None,
                     },
                     fm_domain::EntrySummary {
                         id: fm_domain::EntryId::new(),
@@ -1533,6 +1535,7 @@ mod tests {
                         mime_type: None,
                         icon_key: None,
                         metadata_revision: 0,
+                        git_status: None,
                     },
                 ],
             );
@@ -1555,6 +1558,7 @@ mod tests {
                     mime_type: None,
                     icon_key: None,
                     metadata_revision: 0,
+                    git_status: None,
                 }],
             );
 

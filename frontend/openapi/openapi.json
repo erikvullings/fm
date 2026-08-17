@@ -343,6 +343,22 @@
       "ArchiveInfoDto": {
         "description": "Archive-specific metadata for an entry (for example a `.zip` file).",
         "properties": {
+          "compressedSize": {
+            "description": "The entry's compressed size within its archive, in bytes, when known.",
+            "format": "int64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "compressionMethod": {
+            "description": "The compression method used for this entry, when known.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "entryCount": {
             "description": "Number of entries contained in the archive, when known.",
             "format": "int64",
@@ -1456,6 +1472,10 @@
             "description": "Whether directories are grouped before files.",
             "type": "boolean"
           },
+          "iconSize": {
+            "$ref": "#/components/schemas/IconSizeDto",
+            "description": "Grid tile size, used only when `view_mode` is `grid` (task 0134)."
+          },
           "quickFilter": {
             "oneOf": [
               {
@@ -1477,6 +1497,10 @@
               "$ref": "#/components/schemas/SortDescriptorDto"
             },
             "type": "array"
+          },
+          "viewMode": {
+            "$ref": "#/components/schemas/DirectoryViewModeDto",
+            "description": "The active view mode (task 0134)."
           }
         },
         "required": [
@@ -1486,6 +1510,14 @@
           "foldersFirst"
         ],
         "type": "object"
+      },
+      "DirectoryViewModeDto": {
+        "description": "The active view mode for a directory listing tab (task 0134).",
+        "enum": [
+          "table",
+          "grid"
+        ],
+        "type": "string"
       },
       "DirectoryViewPatchDto": {
         "description": "A partial update to a tab's persisted view configuration; only fields\nset to `Some` are changed (spec §5.3.9 `UpdateView`).",
@@ -1505,6 +1537,17 @@
             "type": [
               "boolean",
               "null"
+            ]
+          },
+          "iconSize": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/IconSizeDto",
+                "description": "Replace the grid tile size, if present (task 0134)."
+              }
             ]
           },
           "quickFilter": {
@@ -1533,6 +1576,17 @@
             "type": [
               "array",
               "null"
+            ]
+          },
+          "viewMode": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/DirectoryViewModeDto",
+                "description": "Replace the active view mode, if present (task 0134)."
+              }
             ]
           }
         },
@@ -1895,6 +1949,17 @@
               "null"
             ]
           },
+          "gitStatus": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/GitFileStatusDto",
+                "description": "Git working-tree status, when this entry sits inside a local git\nworking tree (task 0135)."
+              }
+            ]
+          },
           "hidden": {
             "description": "Whether the entry is hidden.",
             "type": "boolean"
@@ -2032,6 +2097,102 @@
         ],
         "type": "object"
       },
+      "GetFileGitHistoryRequestDto": {
+        "description": "Requests a file's git commit history (`POST /api/v1/files/git-history`), for the Alt+Space\nmetadata panel's history section (task 0135).",
+        "example": {
+          "location": {
+            "providerId": "local",
+            "uri": "file:///Users/erik/report.txt"
+          }
+        },
+        "properties": {
+          "location": {
+            "$ref": "#/components/schemas/LocationDto",
+            "description": "The file to look up history for."
+          }
+        },
+        "required": [
+          "location"
+        ],
+        "type": "object"
+      },
+      "GetFileGitHistoryResponseDto": {
+        "description": "A file's git history: empty when the file is outside a git working tree, on a non-local\nprovider, or not yet tracked by any commit.",
+        "example": {
+          "commits": []
+        },
+        "properties": {
+          "commits": {
+            "description": "Commits touching the file, newest first, up to a server-side cap.",
+            "items": {
+              "$ref": "#/components/schemas/GitLogEntryDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "commits"
+        ],
+        "type": "object"
+      },
+      "GitFileStatusDto": {
+        "description": "An entry's git working-tree status (task 0135).",
+        "enum": [
+          "clean",
+          "modified",
+          "staged",
+          "untracked",
+          "ignored"
+        ],
+        "type": "string"
+      },
+      "GitLogEntryDto": {
+        "description": "One commit touching the requested file, newest first.",
+        "example": {
+          "authorEmail": "ada@example.com",
+          "authorName": "Ada Lovelace",
+          "commitId": "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0",
+          "committedAt": "2026-01-15T09:30:00Z",
+          "shortId": "a1b2c3d",
+          "summary": "fix(app): handle empty selection"
+        },
+        "properties": {
+          "authorEmail": {
+            "description": "The commit author's email address.",
+            "type": "string"
+          },
+          "authorName": {
+            "description": "The commit author's display name.",
+            "type": "string"
+          },
+          "commitId": {
+            "description": "The commit's full SHA.",
+            "type": "string"
+          },
+          "committedAt": {
+            "description": "When the commit was authored.",
+            "format": "date-time",
+            "type": "string"
+          },
+          "shortId": {
+            "description": "The commit's abbreviated id, as `git log --oneline` would show it.",
+            "type": "string"
+          },
+          "summary": {
+            "description": "The commit message's first line.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "commitId",
+          "shortId",
+          "authorName",
+          "authorEmail",
+          "committedAt",
+          "summary"
+        ],
+        "type": "object"
+      },
       "HardlinkClusterDto": {
         "description": "Two or more paths that are the same file through a hardlink.",
         "properties": {
@@ -2162,6 +2323,15 @@
             "type": "object"
           }
         ]
+      },
+      "IconSizeDto": {
+        "description": "Grid tile / icon size (task 0134).",
+        "enum": [
+          "small",
+          "medium",
+          "large"
+        ],
+        "type": "string"
       },
       "ImageDimensionsDto": {
         "description": "Pixel dimensions of an image entry.",
@@ -4820,6 +4990,24 @@
         ],
         "type": "object"
       },
+      "VolumeDto": {
+        "description": "A currently mounted local/removable/disk-image volume (task 0144),\nmirroring Marta's Go-menu \"Volumes\" list. Distinct from\n[`SystemLocationDto`]: volumes carry no protocol/server/share metadata.",
+        "properties": {
+          "location": {
+            "$ref": "#/components/schemas/LocationDto",
+            "description": "Existing provider-neutral local location."
+          },
+          "name": {
+            "description": "Human-readable volume/drive name.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "location"
+        ],
+        "type": "object"
+      },
       "WebDavConnectionConfigurationDto": {
         "description": "Minimal WebDAV configuration stub.",
         "properties": {
@@ -6935,6 +7123,44 @@
         }
       }
     },
+    "/api/v1/files/git-history": {
+      "post": {
+        "operationId": "getFileGitHistory",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GetFileGitHistoryRequestDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetFileGitHistoryResponseDto"
+                }
+              }
+            },
+            "description": "Commits touching the file, newest first"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationErrorDto"
+                }
+              }
+            },
+            "description": "The request was invalid"
+          }
+        },
+        "summary": "Fetches a file's git commit history, for the Alt+Space metadata panel's history section\n(task 0135). Local provider only; returns an empty commit list (never an error) when the\nfile is outside a git working tree, on a non-local provider, or not yet committed."
+      }
+    },
     "/api/v1/files/range": {
       "post": {
         "operationId": "readFileRange",
@@ -7807,6 +8033,90 @@
         "summary": "Lists currently reachable OS-managed filesystem locations."
       }
     },
+    "/api/v1/thumbnails": {
+      "get": {
+        "operationId": "getThumbnail",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "uri",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "One of `small`, `medium`, `large`.",
+            "in": "query",
+            "name": "size",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "image/jpeg": {}
+            },
+            "description": "Downscaled JPEG preview"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationErrorDto"
+                }
+              }
+            },
+            "description": "The location URI or size was invalid"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationErrorDto"
+                }
+              }
+            },
+            "description": "No thumbnail is available for this entry"
+          }
+        },
+        "summary": "Returns JPEG thumbnail bytes for an image or CBZ/CBR comic archive\nentry, if supported."
+      }
+    },
+    "/api/v1/volumes": {
+      "get": {
+        "operationId": "getVolumes",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/VolumeDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Discovered mounted volumes"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationErrorDto"
+                }
+              }
+            },
+            "description": "Platform discovery failed"
+          }
+        },
+        "summary": "Lists currently mounted local/removable/disk-image volumes."
+      }
+    },
     "/api/v1/workspaces": {
       "get": {
         "operationId": "listWorkspaces",
@@ -7862,6 +8172,36 @@
           }
         },
         "summary": "Creates and persists a new workspace."
+      }
+    },
+    "/api/v1/workspaces/start": {
+      "post": {
+        "operationId": "startWorkspace",
+        "parameters": [
+          {
+            "description": "Opens this workspace explicitly. When absent, the last-active\nworkspace is reopened, falling back to a fresh default if none exists\nor the last-active one is missing/corrupt (spec §5.3.7).",
+            "in": "query",
+            "name": "workspaceId",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceDto"
+                }
+              }
+            },
+            "description": "The selected or created workspace"
+          }
+        },
+        "summary": "Runs the workspace startup lifecycle (spec §5.3.7): opens the requested\nworkspace, otherwise the last-active one, otherwise creates a default."
       }
     },
     "/api/v1/workspaces/{workspaceId}": {

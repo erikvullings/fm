@@ -61,8 +61,8 @@ if (stagedRustSources.length > 0) {
 // Clippy only, not `cargo test`: clippy type-checks and lints without executing
 // anything, so it stays fast on an incremental build. The full test suite
 // (including slow integration tests - large-tree copies, real SFTP sessions,
-// etc.) runs in the pre-push hook and in CI instead, where it fires once per
-// push rather than once per commit.
+// etc.) only runs in CI now (see scripts/pre-push.mjs), not in a local hook -
+// run `pnpm test` yourself before pushing if you want it to run locally too.
 const stagedRust = stagedFiles(['*.rs', '**/Cargo.toml', 'Cargo.toml', 'Cargo.lock']);
 if (stagedRust.length > 0) {
   const manifests = [...new Set(stagedRust.map(owningManifest))];

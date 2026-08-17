@@ -21,7 +21,8 @@ use std::{
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use fm_domain::{
-    EntryId, EntryKind, EntryMetadata, EntrySummary, Location, PermissionsInfo, ProviderId,
+    EntryId, EntryKind, EntryMetadata, EntrySummary, Location, OwnershipInfo, PermissionsInfo,
+    ProviderId,
 };
 use fm_vfs::{
     CopyCommitOptions, DirectoryPage, EntryRef, FileSystemProvider, ListOptions,
@@ -155,7 +156,7 @@ impl FileSystemProvider for LocalFileSystemProvider {
         Ok(EntryMetadata {
             entry_id: entry.id,
             permissions: Some(permissions(&metadata)),
-            ownership: None,
+            ownership: ownership(&metadata),
             extended_attributes: BTreeMap::new(),
             checksums: BTreeMap::new(),
             image_dimensions: None,
@@ -829,6 +830,7 @@ async fn summarize_entry(
         mime_type: None,
         icon_key: None,
         metadata_revision: 0,
+        git_status: None,
     })
 }
 
@@ -866,6 +868,7 @@ async fn summarize_path(path: &Path, location: &Location) -> Result<EntrySummary
         mime_type: None,
         icon_key: None,
         metadata_revision: 0,
+        git_status: None,
     })
 }
 
@@ -1032,6 +1035,22 @@ fn permissions(metadata: &std::fs::Metadata) -> PermissionsInfo {
         executable: executable(metadata),
         unix_mode: unix_mode(metadata),
     }
+}
+
+/// POSIX owner/group, reported as the raw numeric uid/gid (no `std`-only API resolves them to
+/// names without an extra dependency, so this mirrors what `ls -n` shows).
+#[cfg(unix)]
+fn ownership(metadata: &std::fs::Metadata) -> Option<OwnershipInfo> {
+    use std::os::unix::fs::MetadataExt;
+    Some(OwnershipInfo {
+        owner: Some(metadata.uid().to_string()),
+        group: Some(metadata.gid().to_string()),
+    })
+}
+
+#[cfg(not(unix))]
+fn ownership(_metadata: &std::fs::Metadata) -> Option<OwnershipInfo> {
+    None
 }
 
 /// Windows sets `FILE_ATTRIBUTE_READONLY` on directories to flag folder customisation rather than

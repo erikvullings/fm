@@ -51,6 +51,7 @@ fn api_router() -> OpenApiRouter<AppState> {
         .routes(utoipa_axum::routes!(
             routes::system_location::get_system_locations
         ))
+        .routes(utoipa_axum::routes!(routes::volume::get_volumes))
         .routes(utoipa_axum::routes!(routes::settings::update_settings))
         .routes(utoipa_axum::routes!(routes::directory::list_directory))
         .routes(utoipa_axum::routes!(routes::directory::refresh_directory))
@@ -62,8 +63,10 @@ fn api_router() -> OpenApiRouter<AppState> {
         .routes(utoipa_axum::routes!(routes::files::save_editable_file))
         .routes(utoipa_axum::routes!(routes::files::search_in_file))
         .routes(utoipa_axum::routes!(routes::files::calculate_folder_size))
+        .routes(utoipa_axum::routes!(routes::files::get_file_git_history))
         .routes(utoipa_axum::routes!(routes::files::cache_archive_password))
         .routes(utoipa_axum::routes!(routes::icons::get_file_icon))
+        .routes(utoipa_axum::routes!(routes::thumbnails::get_thumbnail))
         .routes(utoipa_axum::routes!(routes::search::start_search))
         .routes(utoipa_axum::routes!(routes::search::cancel_search))
         .routes(utoipa_axum::routes!(routes::comparison::start_comparison))
@@ -83,6 +86,7 @@ fn api_router() -> OpenApiRouter<AppState> {
             routes::checksum::cancel_duplicate_scan
         ))
         .routes(utoipa_axum::routes!(routes::workspace::list_workspaces))
+        .routes(utoipa_axum::routes!(routes::workspace::start_workspace))
         .routes(utoipa_axum::routes!(routes::operation::list_operations))
         .routes(utoipa_axum::routes!(routes::operation::start_operation))
         .routes(utoipa_axum::routes!(routes::operation::get_operation))

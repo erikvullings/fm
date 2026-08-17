@@ -29,11 +29,28 @@ use fm_search::{SearchEngine, SearchFileSystemProvider, SearchResultsStore};
 use fm_settings::{Settings, SettingsStore};
 use fm_transport_dto::{
     ActionDescriptorDto, ActionResultDto, ApplySyncPlanRequestDto, ApplySyncPlanResponseDto,
-    ChecksumFileDto, ChecksumPageDto, ComparisonPageDto, ConflictResolutionDto, ConnectionDto,
-    CreateConnectionRequestDto, DirectorySnapshotDto, DuplicatePageDto, EntryMetadataRequest,
-    GenerateSyncPlanRequestDto, InvokeActionRequestDto, ListDirectoryRequest, NavigateRequest,
-    OperationConflictPolicyDto, OperationDto, PluginDescriptorDto, PluginLogEntryDto,
-    ReadFileRangeRequestDto, ReadFileRangeResponseDto, RenderChecksumFileRequestDto,
+    ChecksumFileDto,
+    ChecksumPageDto,
+    ComparisonPageDto,
+    ConflictResolutionDto,
+    ConnectionDto,
+    CreateConnectionRequestDto,
+    DirectorySnapshotDto,
+    DuplicatePageDto,
+    EntryMetadataRequest,
+    GenerateSyncPlanRequestDto,
+    GetFileGitHistoryRequestDto,
+    GetFileGitHistoryResponseDto,
+    InvokeActionRequestDto,
+    ListDirectoryRequest,
+    NavigateRequest,
+    OperationConflictPolicyDto,
+    OperationDto,
+    PluginDescriptorDto,
+    PluginLogEntryDto,
+    ReadFileRangeRequestDto,
+    ReadFileRangeResponseDto,
+    RenderChecksumFileRequestDto,
     ResolveOperationConflictRequestDto, RuntimeCapabilitiesDto, RuntimeKindDto,
     SearchInFileRequestDto, SearchInFileResponseDto, SetPaneActivityRequest, SettingsDto,
     StartChecksumRequestDto, StartChecksumResponseDto, StartComparisonRequestDto,
@@ -67,12 +84,14 @@ use crate::operation_requests::{
     operation_kind,
 };
 use crate::platform_mapping::{
-    PlatformActionKind, discover_system_locations, map_file_icon_error, map_platform_error,
-    platform_action_kind, runtime_capabilities_dto, volume_capacity,
+    PlatformActionKind, discover_system_locations, discover_volumes, map_file_icon_error,
+    map_native_menu_error, map_platform_error, platform_action_kind, runtime_capabilities_dto,
+    volume_capacity,
 };
 use crate::plugin_manager::PluginManager;
 use crate::remote_terminal::RemoteTerminalService;
 use crate::settings_mapping::{settings_from_dto, settings_to_dto};
+use crate::thumbnails::ThumbnailService;
 use crate::workspace::{JsonFileWorkspaceRepository, WorkspaceService, WorkspaceSummary};
 
 /// Central application service that every host (Axum, Tauri, CLI) calls into.
@@ -112,6 +131,7 @@ pub struct FileManagerService {
     checksum: ChecksumEngine,
     checksum_store: Arc<ChecksumResultsStore>,
     duplicate_store: Arc<DuplicateResultsStore>,
+    thumbnails: ThumbnailService,
 }
 
 impl FileManagerService {
@@ -120,6 +140,12 @@ impl FileManagerService {
         &self,
     ) -> Result<Vec<fm_transport_dto::SystemLocationDto>, ApplicationError> {
         discover_system_locations(Arc::clone(&self.platform)).await
+    }
+
+    /// Discovers currently mounted local/removable/disk-image volumes (task
+    /// 0144) and maps their native paths to the existing local provider.
+    pub async fn volumes(&self) -> Result<Vec<fm_transport_dto::VolumeDto>, ApplicationError> {
+        discover_volumes(Arc::clone(&self.platform)).await
     }
 
     /// Builds a service for the given host runtime, persisting workspaces
@@ -362,7 +388,29 @@ impl FileManagerService {
             checksum,
             checksum_store,
             duplicate_store,
+            thumbnails: ThumbnailService::new(settings_directory.join("thumbnails")),
         }
+    }
+
+    /// Generates (or reuses a cached) downscaled preview for an image or
+    /// CBZ/CBR comic archive entry (task 0134). `size` must be `"small"`,
+    /// `"medium"` or `"large"`. Every unsupported/oversized/undecodable
+    /// input is reported as [`ApplicationError::NotFound`], matching
+    /// [`Self::file_icon`]'s convention - the frontend falls back to the
+    /// generic type icon rather than treating it as a hard error.
+    pub async fn thumbnail(&self, uri: &str, size: &str) -> Result<Vec<u8>, ApplicationError> {
+        let location = Location::parse(uri)
+            .map_err(|error| ApplicationError::InvalidRequest(format!("invalid `uri`: {error}")))?;
+        let size = fm_metadata::ThumbnailSize::parse(size).ok_or_else(|| {
+            ApplicationError::InvalidRequest(format!(
+                "invalid `size`: must be `small`, `medium` or `large`, got {size:?}"
+            ))
+        })?;
+        let thumbnail = self
+            .thumbnails
+            .thumbnail(&self.providers, &location, size)
+            .await?;
+        Ok(thumbnail.bytes)
     }
 
     /// Starts a semantic operation, deduplicating retries by idempotency key.
@@ -864,6 +912,23 @@ impl FileManagerService {
         request: fm_transport_dto::CalculateFolderSizeRequestDto,
     ) -> Result<fm_transport_dto::CalculateFolderSizeResponseDto, ApplicationError> {
         crate::folder_size::calculate_folder_size(&self.providers, request.location.into()).await
+    }
+
+    /// Fetches a file's git commit history for the Alt+Space metadata panel's history section
+    /// (task 0135). Never errors: an empty commit list means the file has no history to show
+    /// (non-local provider, outside a git working tree, or not yet committed).
+    pub fn git_file_history(
+        &self,
+        request: GetFileGitHistoryRequestDto,
+    ) -> GetFileGitHistoryResponseDto {
+        let location: Location = request.location.into();
+        let commits = self
+            .directories
+            .git_history(&location)
+            .into_iter()
+            .map(Into::into)
+            .collect();
+        GetFileGitHistoryResponseDto { commits }
     }
 
     /// Starts a cancellable recursive filename search over one or more
@@ -1506,6 +1571,21 @@ impl FileManagerService {
             .and_then(|location| location.to_native_path())
             .map_err(|error| ApplicationError::InvalidRequest(format!("invalid `uri`: {error}")))?;
         self.platform.file_icon(&path).map_err(map_file_icon_error)
+    }
+
+    /// Installs the native menu bar from `spec` (task 0133), a thin
+    /// passthrough to the platform adapter. `on_action` is invoked whenever
+    /// the user clicks a `NativeMenuItem::Action` item, with that item's
+    /// action-registry id, so the caller can dispatch it exactly like an
+    /// `invoke_action` call from the keyboard.
+    pub fn install_native_menu(
+        &self,
+        spec: &fm_domain::NativeMenuSpec,
+        on_action: Arc<dyn Fn(String) + Send + Sync>,
+    ) -> Result<(), ApplicationError> {
+        self.platform
+            .install_native_menu(spec, on_action)
+            .map_err(map_native_menu_error)
     }
 
     /// Runs the workspace startup lifecycle (spec §5.3.7): selects an
@@ -2632,6 +2712,68 @@ mod tests {
         assert!(capacity.is_none());
     }
 
+    /// A platform adapter test double reporting a fixed set of mounted
+    /// volumes (task 0144), so `volumes` tests can distinguish "the service
+    /// actually calls into the adapter and forwards its result" from a
+    /// coincidentally-passing empty default.
+    #[derive(Debug, Clone, Copy)]
+    struct MountedVolumesPlatformAdapter {
+        capabilities: PlatformCapabilities,
+    }
+
+    impl fm_platform::PlatformAdapter for MountedVolumesPlatformAdapter {
+        fn capabilities(&self) -> PlatformCapabilities {
+            self.capabilities
+        }
+
+        fn mounted_volumes(
+            &self,
+        ) -> Result<Vec<fm_platform::MountedVolume>, fm_platform::PlatformError> {
+            Ok(vec![fm_platform::MountedVolume {
+                name: "Macintosh HD".to_owned(),
+                mount_point: PathBuf::from("/"),
+            }])
+        }
+    }
+
+    #[tokio::test]
+    async fn volumes_are_surfaced_when_the_platform_adapter_supports_it() {
+        let dir = tempfile::tempdir().expect("must create a temp dir");
+        let service = FileManagerService::with_platform_adapter(
+            RuntimeKindDto::BrowserServer,
+            dir.path(),
+            dir.path().join("settings"),
+            EventBus::default(),
+            Arc::new(MountedVolumesPlatformAdapter {
+                capabilities: PlatformCapabilities::MOUNTED_VOLUMES,
+            }),
+        );
+
+        let volumes = service.volumes().await.expect("volumes discovered");
+
+        assert_eq!(volumes.len(), 1);
+        assert_eq!(volumes[0].name, "Macintosh HD");
+        assert_eq!(volumes[0].location.provider_id, "local");
+    }
+
+    #[tokio::test]
+    async fn volumes_are_empty_when_the_adapter_lacks_the_capability() {
+        let dir = tempfile::tempdir().expect("must create a temp dir");
+        let service = FileManagerService::with_platform_adapter(
+            RuntimeKindDto::BrowserServer,
+            dir.path(),
+            dir.path().join("settings"),
+            EventBus::default(),
+            Arc::new(MountedVolumesPlatformAdapter {
+                capabilities: PlatformCapabilities::empty(),
+            }),
+        );
+
+        let volumes = service.volumes().await.expect("volumes discovered");
+
+        assert!(volumes.is_empty());
+    }
+
     /// A platform adapter test double that records every call it receives
     /// (task 0061), so `invoke_action`'s platform dispatch can be asserted
     /// end to end: which path was passed (verifying `Location`
@@ -2648,6 +2790,8 @@ mod tests {
         trashed: Mutex<Vec<PathBuf>>,
         open_error: Mutex<Option<fm_platform::PlatformError>>,
         trash_error: Mutex<Option<fm_platform::PlatformError>>,
+        installed_menus: Mutex<Vec<fm_domain::NativeMenuSpec>>,
+        install_native_menu_error: Mutex<Option<fm_platform::PlatformError>>,
     }
 
     impl RecordingPlatformAdapter {
@@ -2662,6 +2806,8 @@ mod tests {
                 trashed: Mutex::new(Vec::new()),
                 open_error: Mutex::new(None),
                 trash_error: Mutex::new(None),
+                installed_menus: Mutex::new(Vec::new()),
+                install_native_menu_error: Mutex::new(None),
             }
         }
 
@@ -2671,6 +2817,13 @@ mod tests {
 
         fn fail_next_trash_with(&self, error: fm_platform::PlatformError) {
             *self.trash_error.lock().expect("lock must not be poisoned") = Some(error);
+        }
+
+        fn fail_next_install_native_menu_with(&self, error: fm_platform::PlatformError) {
+            *self
+                .install_native_menu_error
+                .lock()
+                .expect("lock must not be poisoned") = Some(error);
         }
     }
 
@@ -2751,6 +2904,29 @@ mod tests {
                 .lock()
                 .expect("lock must not be poisoned")
                 .push(path.to_path_buf());
+            Ok(())
+        }
+
+        fn install_native_menu(
+            &self,
+            spec: &fm_domain::NativeMenuSpec,
+            on_action: Arc<dyn Fn(String) + Send + Sync>,
+        ) -> Result<(), fm_platform::PlatformError> {
+            if let Some(error) = self
+                .install_native_menu_error
+                .lock()
+                .expect("lock must not be poisoned")
+                .take()
+            {
+                return Err(error);
+            }
+            self.installed_menus
+                .lock()
+                .expect("lock must not be poisoned")
+                .push(spec.clone());
+            // Exercises the wiring end to end: a real caller's `on_action`
+            // would forward this to the frontend over a Tauri `Channel`.
+            on_action("recorded-action-id".to_owned());
             Ok(())
         }
     }
@@ -3152,6 +3328,55 @@ mod tests {
             error
                 .to_string()
                 .contains("no default application is registered for .xyz files")
+        );
+    }
+
+    /// `install_native_menu` (task 0133) is a thin passthrough: it forwards
+    /// the spec and callback unchanged to the platform adapter, and maps
+    /// whatever failure the adapter reports to a user-readable
+    /// `PlatformOperationFailed` error rather than swallowing it.
+    #[test]
+    fn install_native_menu_forwards_the_spec_and_maps_adapter_failures() {
+        let (_dir, service, adapter) = service_with_recording_adapter();
+        let spec = fm_domain::NativeMenuSpec {
+            menus: vec![fm_domain::NativeMenu {
+                title: "File".to_owned(),
+                items: vec![fm_domain::NativeMenuItem::Action {
+                    id: "core.newWindow".to_owned(),
+                    title: "New Window".to_owned(),
+                    shortcut: None,
+                    enabled: true,
+                    checked: false,
+                }],
+            }],
+        };
+        let received_ids = Arc::new(Mutex::new(Vec::new()));
+        let received_ids_clone = Arc::clone(&received_ids);
+        let on_action: Arc<dyn Fn(String) + Send + Sync> =
+            Arc::new(move |id| received_ids_clone.lock().unwrap().push(id));
+
+        service
+            .install_native_menu(&spec, Arc::clone(&on_action))
+            .expect("the recording adapter always succeeds by default");
+
+        assert_eq!(
+            adapter.installed_menus.lock().unwrap().as_slice(),
+            std::slice::from_ref(&spec)
+        );
+        assert_eq!(
+            received_ids.lock().unwrap().as_slice(),
+            &["recorded-action-id".to_owned()]
+        );
+
+        adapter.fail_next_install_native_menu_with(fm_platform::PlatformError::Unsupported {
+            capability: PlatformCapabilities::NATIVE_MENUS,
+        });
+        let error = service
+            .install_native_menu(&spec, on_action)
+            .expect_err("an adapter failure must be reported, not swallowed");
+        assert_eq!(
+            error.code(),
+            fm_transport_dto::ApplicationErrorCode::PlatformOperationFailed
         );
     }
 

@@ -577,6 +577,14 @@ async fn metadata_is_separate_and_capabilities_are_truthful() {
     assert!(metadata.image_dimensions.is_none());
     assert!(metadata.media.is_none());
     assert!(metadata.archive.is_none());
+    #[cfg(unix)]
+    {
+        let ownership = metadata.ownership.expect("unix ownership is always known");
+        assert!(ownership.owner.is_some());
+        assert!(ownership.group.is_some());
+    }
+    #[cfg(not(unix))]
+    assert!(metadata.ownership.is_none());
 }
 
 #[cfg(unix)]

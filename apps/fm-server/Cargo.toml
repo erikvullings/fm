@@ -50,5 +50,6 @@ fm-platform-windows.workspace = true
 workspace = true
 
 [dev-dependencies]
+image.workspace = true
 reqwest.workspace = true
 tempfile.workspace = true

@@ -32,8 +32,10 @@ import type { FileViewerController, FileViewerState } from '../preview/file-view
 import type { SelectionPlatform } from '../selection/keybindings';
 import { getSelectedEntriesOrCursor, type SelectionState } from '../selection/selection';
 
-/** Fixed sort applied by the Ctrl+F3..Ctrl+F7 shortcuts (Total Commander parity, task 0128). */
-const SORT_SHORTCUT_DESCRIPTORS: Readonly<Record<string, readonly SortDescriptor[]>> = {
+/** Fixed sort applied by the Ctrl+F3..Ctrl+F7 shortcuts (Total Commander parity, task 0128) and
+ * by the native macOS View menu's sort items (task 0133 follow-up) - exported so both dispatch
+ * through this single mapping rather than maintaining two copies of it. */
+export const SORT_SHORTCUT_DESCRIPTORS: Readonly<Record<string, readonly SortDescriptor[]>> = {
   'core.sortByName': [{ columnId: 'core.name', direction: 'ascending' }],
   'core.sortByExtension': [{ columnId: 'core.extension', direction: 'ascending' }],
   'core.sortByDate': [{ columnId: 'core.modified', direction: 'ascending' }],
@@ -137,6 +139,9 @@ export interface GlobalKeydownContext {
   swapPaneTabSets(paneAId: PaneId, paneBId: PaneId): void;
   /** Opens the Multi-Rename Tool directly (Ctrl+M), defaulting to every entry when none is selected. */
   openMultiRenameForActivePane(): void;
+  /** Opens the Properties dialog for the active pane's selection (Alt+Enter), falling back to the
+   * cursor entry when nothing is explicitly selected. */
+  openPropertiesForActivePane(): void;
   /** Closes the desktop window (Alt+F4); a no-op in browser runtime. */
   quitApplication(): void;
   /** Starts (or re-runs) a directory comparison of the first two panes (Shift+F2, task 0075).
@@ -822,6 +827,11 @@ export function createGlobalKeydownHandler(
     if (dispatchedAction === 'core.openMultiRename') {
       event.preventDefault();
       context.openMultiRenameForActivePane();
+      return;
+    }
+    if (dispatchedAction === 'core.showProperties') {
+      event.preventDefault();
+      context.openPropertiesForActivePane();
       return;
     }
     if (dispatchedAction === 'core.quit') {

@@ -75,11 +75,25 @@ where
     /// workspace (spec §5.3.7's "Default workspace"), optionally overriding
     /// its name. Does not mark it as the last-active workspace; callers
     /// wanting that should call [`WorkspaceService::open`] afterwards.
+    ///
+    /// Workspace names must stay unique (case-insensitive, trimmed) so
+    /// they're distinguishable in the switcher and Window menu. An
+    /// explicitly requested `name` that collides is rejected with
+    /// [`WorkspaceError::DuplicateName`]; the default name (used whenever the
+    /// frontend's "New Workspace" button asks for `None`, since it never lets
+    /// a user type a name up front) is silently deduplicated instead by
+    /// appending " 2", " 3", etc., so that button always succeeds.
     pub async fn create(&self, name: Option<String>) -> Result<Workspace, WorkspaceError> {
         let mut workspace =
             default_workspace(&self.home_directory, self.secondary_location.as_deref());
-        if let Some(name) = name {
-            workspace.name = name;
+        match name {
+            Some(name) => {
+                self.ensure_name_available(&name, None).await?;
+                workspace.name = name;
+            }
+            None => {
+                workspace.name = self.unique_name(&workspace.name).await?;
+            }
         }
         validate_or_error(&workspace)?;
         let persisted = self.repository.save(&workspace, None).await?;
@@ -178,6 +192,10 @@ where
             });
         }
 
+        if let WorkspaceCommand::RenameWorkspace { ref name, .. } = command {
+            self.ensure_name_available(name, Some(workspace_id)).await?;
+        }
+
         command::apply(&mut workspace, command.clone(), &self.home_directory)?;
 
         let persisted = self
@@ -228,6 +246,54 @@ where
 
         Ok(workspace)
     }
+
+    /// Rejects `name` (trimmed, case-insensitive) if any other stored
+    /// workspace already has it. `excluding` is the workspace being renamed,
+    /// if any - renaming a workspace to the name it already has must not
+    /// collide with itself.
+    async fn ensure_name_available(
+        &self,
+        name: &str,
+        excluding: Option<WorkspaceId>,
+    ) -> Result<(), WorkspaceError> {
+        let summaries = self.repository.list().await?;
+        let collides = summaries
+            .iter()
+            .any(|summary| Some(summary.id) != excluding && names_match(&summary.name, name));
+        if collides {
+            return Err(WorkspaceError::DuplicateName {
+                name: name.to_owned(),
+            });
+        }
+        Ok(())
+    }
+
+    /// Returns `base` unchanged if no stored workspace already has that name
+    /// (trimmed, case-insensitive); otherwise appends " 2", " 3", etc. until
+    /// finding one that's free.
+    async fn unique_name(&self, base: &str) -> Result<String, WorkspaceError> {
+        let summaries = self.repository.list().await?;
+        let taken = |candidate: &str| {
+            summaries
+                .iter()
+                .any(|summary| names_match(&summary.name, candidate))
+        };
+        if !taken(base) {
+            return Ok(base.to_owned());
+        }
+        let mut suffix = 2u32;
+        loop {
+            let candidate = format!("{base} {suffix}");
+            if !taken(&candidate) {
+                return Ok(candidate);
+            }
+            suffix += 1;
+        }
+    }
+}
+
+fn names_match(a: &str, b: &str) -> bool {
+    a.trim().eq_ignore_ascii_case(b.trim())
 }
 
 fn validate_or_error(workspace: &Workspace) -> Result<(), WorkspaceError> {
@@ -382,6 +448,87 @@ mod tests {
                 .unwrap()
                 .is_none()
         );
+    }
+
+    #[tokio::test]
+    async fn create_with_no_name_uniquifies_the_default_name_instead_of_failing() {
+        let service = service();
+        let first = service
+            .create(None)
+            .await
+            .expect("first create must succeed");
+        let second = service
+            .create(None)
+            .await
+            .expect("second create must succeed");
+        let third = service
+            .create(None)
+            .await
+            .expect("third create must succeed");
+
+        assert_eq!(first.name, "Default");
+        assert_eq!(second.name, "Default 2");
+        assert_eq!(third.name, "Default 3");
+    }
+
+    #[tokio::test]
+    async fn create_rejects_an_explicit_name_that_collides_with_an_existing_workspace() {
+        let service = service();
+        service
+            .create(Some("Photos".to_owned()))
+            .await
+            .expect("first create must succeed");
+
+        let error = service.create(Some("photos".to_owned())).await.unwrap_err();
+
+        assert_eq!(
+            error,
+            WorkspaceError::DuplicateName {
+                name: "photos".to_owned()
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn apply_command_rejects_renaming_to_a_name_already_used_by_another_workspace() {
+        let service = service();
+        let first = service.create_default().await.unwrap();
+        let second = service.create(Some("Photos".to_owned())).await.unwrap();
+
+        let error = service
+            .apply_command(WorkspaceCommand::RenameWorkspace {
+                workspace_id: second.id,
+                name: "  default ".to_owned(),
+                expected_revision: second.revision,
+            })
+            .await
+            .unwrap_err();
+
+        assert_eq!(
+            error,
+            WorkspaceError::DuplicateName {
+                name: "  default ".to_owned()
+            }
+        );
+        // The rejected rename must not have mutated the first workspace's name.
+        assert_eq!(service.load(first.id).await.unwrap().name, "Default");
+    }
+
+    #[tokio::test]
+    async fn apply_command_allows_renaming_a_workspace_to_its_own_current_name() {
+        let service = service();
+        let workspace = service.create_default().await.unwrap();
+
+        let renamed = service
+            .apply_command(WorkspaceCommand::RenameWorkspace {
+                workspace_id: workspace.id,
+                name: "Default".to_owned(),
+                expected_revision: workspace.revision,
+            })
+            .await
+            .expect("renaming to the same name must succeed");
+
+        assert_eq!(renamed.name, "Default");
     }
 
     #[tokio::test]

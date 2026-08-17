@@ -28,8 +28,11 @@ import type {
   GetChecksumsParams,
   GetComparisonParams,
   GetDuplicateScanParams,
+  GetFileGitHistoryRequestDto,
+  GetFileGitHistoryResponseDto,
   GetFileIconParams,
   GetPluginIconThemeAssetParams,
+  GetThumbnailParams,
   HealthDto,
   HostKeyProbeDto,
   InvokeActionRequestDto,
@@ -64,11 +67,13 @@ import type {
   StartOperationRequestDto,
   StartSearchRequestDto,
   StartSearchResponseDto,
+  StartWorkspaceParams,
   SyncPlanDto,
   SystemLocationDto,
   UpdateConnectionRequestDto,
   VerificationReportDto,
   VerifyChecksumFileRequestDto,
+  VolumeDto,
   WorkspaceCommandDto,
   WorkspaceDto,
   WorkspaceSummaryDto
@@ -1685,6 +1690,51 @@ export const saveEditableFile = async (saveEditableFileRequestDto: SaveEditableF
 
 
 
+export type getFileGitHistoryResponse200 = {
+  data: GetFileGitHistoryResponseDto
+  status: 200
+}
+
+export type getFileGitHistoryResponse400 = {
+  data: ApplicationErrorDto
+  status: 400
+}
+
+export type getFileGitHistoryResponseSuccess = (getFileGitHistoryResponse200) & {
+  headers: Headers;
+};
+export type getFileGitHistoryResponseError = (getFileGitHistoryResponse400) & {
+  headers: Headers;
+};
+
+export type getFileGitHistoryResponse = (getFileGitHistoryResponseSuccess | getFileGitHistoryResponseError)
+
+export const getGetFileGitHistoryUrl = () => {
+
+
+
+
+  return `/api/v1/files/git-history`
+}
+
+/**
+ * @summary Fetches a file's git commit history, for the Alt+Space metadata panel's history section
+(task 0135). Local provider only; returns an empty commit list (never an error) when the
+file is outside a git working tree, on a non-local provider, or not yet committed.
+ */
+export const getFileGitHistory = async (getFileGitHistoryRequestDto: GetFileGitHistoryRequestDto, options?: Parameters<typeof fetchMutator>[1]): Promise<getFileGitHistoryResponse> => {
+
+  return fetchMutator<getFileGitHistoryResponse>(getGetFileGitHistoryUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(getFileGitHistoryRequestDto)
+  }
+);}
+
+
+
 export type readFileRangeResponse200 = {
   data: ReadFileRangeResponseDto
   status: 200
@@ -2689,6 +2739,105 @@ export const getSystemLocations = async ( options?: Parameters<typeof fetchMutat
 
 
 
+export type getThumbnailResponse200 = {
+  data: Blob
+  status: 200
+}
+
+export type getThumbnailResponse400 = {
+  data: ApplicationErrorDto
+  status: 400
+}
+
+export type getThumbnailResponse404 = {
+  data: ApplicationErrorDto
+  status: 404
+}
+
+export type getThumbnailResponseSuccess = (getThumbnailResponse200) & {
+  headers: Headers;
+};
+export type getThumbnailResponseError = (getThumbnailResponse400 | getThumbnailResponse404) & {
+  headers: Headers;
+};
+
+export type getThumbnailResponse = (getThumbnailResponseSuccess | getThumbnailResponseError)
+
+export const getGetThumbnailUrl = (params: GetThumbnailParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/thumbnails?${stringifiedParams}` : `/api/v1/thumbnails`
+}
+
+/**
+ * @summary Returns JPEG thumbnail bytes for an image or CBZ/CBR comic archive
+entry, if supported.
+ */
+export const getThumbnail = async (params: GetThumbnailParams, options?: Parameters<typeof fetchMutator>[1]): Promise<getThumbnailResponse> => {
+
+  return fetchMutator<getThumbnailResponse>(getGetThumbnailUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+export type getVolumesResponse200 = {
+  data: VolumeDto[]
+  status: 200
+}
+
+export type getVolumesResponse502 = {
+  data: ApplicationErrorDto
+  status: 502
+}
+
+export type getVolumesResponseSuccess = (getVolumesResponse200) & {
+  headers: Headers;
+};
+export type getVolumesResponseError = (getVolumesResponse502) & {
+  headers: Headers;
+};
+
+export type getVolumesResponse = (getVolumesResponseSuccess | getVolumesResponseError)
+
+export const getGetVolumesUrl = () => {
+
+
+
+
+  return `/api/v1/volumes`
+}
+
+/**
+ * @summary Lists currently mounted local/removable/disk-image volumes.
+ */
+export const getVolumes = async ( options?: Parameters<typeof fetchMutator>[1]): Promise<getVolumesResponse> => {
+
+  return fetchMutator<getVolumesResponse>(getGetVolumesUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
 export type listWorkspacesResponse200 = {
   data: WorkspaceSummaryDto[]
   status: 200
@@ -2763,6 +2912,50 @@ export const createWorkspace = async (createWorkspaceRequestDto: CreateWorkspace
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
     body: JSON.stringify(createWorkspaceRequestDto)
+  }
+);}
+
+
+
+export type startWorkspaceResponse200 = {
+  data: WorkspaceDto
+  status: 200
+}
+
+export type startWorkspaceResponseSuccess = (startWorkspaceResponse200) & {
+  headers: Headers;
+};
+;
+
+export type startWorkspaceResponse = (startWorkspaceResponseSuccess)
+
+export const getStartWorkspaceUrl = (params?: StartWorkspaceParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/workspaces/start?${stringifiedParams}` : `/api/v1/workspaces/start`
+}
+
+/**
+ * @summary Runs the workspace startup lifecycle (spec §5.3.7): opens the requested
+workspace, otherwise the last-active one, otherwise creates a default.
+ */
+export const startWorkspace = async (params?: StartWorkspaceParams, options?: Parameters<typeof fetchMutator>[1]): Promise<startWorkspaceResponse> => {
+
+  return fetchMutator<startWorkspaceResponse>(getStartWorkspaceUrl(params),
+  {
+    ...options,
+    method: 'POST'
+
+
   }
 );}
 

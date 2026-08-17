@@ -3,12 +3,14 @@ import type {
   Connection,
   Location,
   SystemLocation,
+  Volume,
   WorkspaceId,
   WorkspaceProjection,
   WorkspaceSummary,
 } from '../../models';
 import { loadConnections } from '../connections/connections-model';
 import { NativeIconLoader } from '../directory-table/native-icon-loader';
+import { ThumbnailLoader } from '../directory-table/thumbnail-loader';
 import type { NavigationController } from '../navigation/navigation';
 import type { SelectionPlatform } from '../selection/keybindings';
 import { isWorkspaceRevisionConflict } from './dispatch-workspace-command';
@@ -34,9 +36,13 @@ export interface WorkspaceControllerContext {
   subscribeNativeFileDrops(callback: (drop: NativeFileDrop) => void): Promise<() => void>;
   setOpenTerminalSupported(v: boolean): void;
   setNativeIconLoader(loader?: NativeIconLoader): void;
+  setThumbnailLoader(loader?: ThumbnailLoader): void;
   getSystemLocations(): readonly SystemLocation[];
   setSystemLocations(locs: readonly SystemLocation[]): void;
   setSystemLocationsError(msg?: string): void;
+  getVolumes(): readonly Volume[];
+  setVolumes(volumes: readonly Volume[]): void;
+  setVolumesError(msg?: string): void;
   getConnections(): readonly Connection[];
   setConnections(conns: readonly Connection[]): void;
   setDraggedLocations(locs: readonly Location[]): void;
@@ -55,6 +61,7 @@ export interface WorkspaceController {
   recoverActiveWorkspace(summaries: readonly WorkspaceSummary[]): Promise<void>;
   loadWorkspace(): Promise<void>;
   loadSystemLocations(signal?: AbortSignal): Promise<void>;
+  loadVolumes(signal?: AbortSignal): Promise<void>;
   switchWorkspace(workspaceId: WorkspaceId): Promise<void>;
   refreshWorkspaceSummaries(): void;
   revisionForWorkspace(workspaceId: WorkspaceId): number;
@@ -85,14 +92,16 @@ export function createWorkspaceController(
   async function openOrCreateDefaultWorkspace(
     signal?: AbortSignal,
   ): Promise<{ loaded: WorkspaceProjection; summaries: readonly WorkspaceSummary[] }> {
+    // Goes through the backend's startup lifecycle (spec §5.3.7) rather than picking
+    // `listWorkspaces()[0]` (an unsorted filesystem-order listing): this reliably reopens the
+    // workspace that was actually last active, not just an arbitrary one when several exist.
+    // A window opened for a specific workspace (task 0143 sub-task (b), see
+    // `open_workspace_window` on the Tauri side) carries that workspace's id in the URL so this
+    // window starts on it explicitly instead of racing every other open window for last-active.
+    const requestedWorkspaceId = new URLSearchParams(window.location.search).get('workspaceId');
+    const loaded = await client.startWorkspace(requestedWorkspaceId ?? undefined, signal);
     const summaries = await client.listWorkspaces(signal);
-    const loaded =
-      summaries[0] === undefined
-        ? await client.createWorkspace({ name: 'Default' }, signal)
-        : await client.openWorkspace(summaries[0].id, signal);
-    const refreshedSummaries =
-      summaries[0] === undefined ? await client.listWorkspaces(signal) : summaries;
-    return { loaded, summaries: refreshedSummaries };
+    return { loaded, summaries };
   }
 
   async function recoverActiveWorkspace(summaries: readonly WorkspaceSummary[]): Promise<void> {
@@ -117,6 +126,17 @@ export function createWorkspaceController(
     context.redraw();
   }
 
+  async function loadVolumes(signal?: AbortSignal): Promise<void> {
+    try {
+      context.setVolumes(await client.getVolumes(signal));
+      context.setVolumesError(undefined);
+    } catch {
+      context.setVolumes([]);
+      context.setVolumesError('Unable to discover volumes');
+    }
+    context.redraw();
+  }
+
   async function loadConnectionsList(signal?: AbortSignal): Promise<void> {
     try {
       context.setConnections(await loadConnections(client, signal));
@@ -132,6 +152,7 @@ export function createWorkspaceController(
     try {
       const capabilities = await client.getRuntimeCapabilities(request.signal);
       await loadSystemLocations(request.signal);
+      await loadVolumes(request.signal);
       await loadConnectionsList(request.signal);
       context.setPlatform(capabilities.platform);
       context.setNativeDragOutSupported(capabilities.nativeDragOut);
@@ -161,6 +182,11 @@ export function createWorkspaceController(
       context.setNativeIconLoader(
         capabilities.nativeFileIcons ? new NativeIconLoader(client) : undefined,
       );
+      // Not capability-gated (task 0134): the backend's pure-Rust thumbnail
+      // pipeline works on every runtime/platform, unlike native OS icons.
+      // Unsupported formats/files simply fail per-request and fall back to
+      // the themed icon, exactly like a `nativeFileIcons: false` host does.
+      context.setThumbnailLoader(new ThumbnailLoader(client));
       const { loaded, summaries } = await openOrCreateDefaultWorkspace(request.signal);
       activateWorkspace(loaded);
       context.setWorkspaceSummaries(summaries);
@@ -273,6 +299,7 @@ export function createWorkspaceController(
     recoverActiveWorkspace,
     loadWorkspace,
     loadSystemLocations,
+    loadVolumes,
     switchWorkspace,
     refreshWorkspaceSummaries,
     revisionForWorkspace,

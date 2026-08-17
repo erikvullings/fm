@@ -81,6 +81,11 @@ const ACTIONS: readonly ActionDescriptor[] = [
     title: 'Multi-rename',
     defaultShortcuts: [{ key: 'm', ctrl: true }],
   },
+  {
+    id: 'core.showProperties',
+    title: 'Properties',
+    defaultShortcuts: [{ key: 'Enter', alt: true }],
+  },
   { id: 'core.quit', title: 'Quit', defaultShortcuts: [{ key: 'F4', alt: true }] },
   { id: 'core.showShortcutsHelp', title: 'Shortcuts', defaultShortcuts: [{ key: 'F1' }] },
   {
@@ -201,6 +206,7 @@ function makeContext(overrides: Partial<GlobalKeydownContext> = {}): GlobalKeydo
     setSort: vi.fn(),
     swapPaneTabSets: vi.fn(),
     openMultiRenameForActivePane: vi.fn(),
+    openPropertiesForActivePane: vi.fn(),
     quitApplication: vi.fn(),
     startComparison: vi.fn(),
     calculateChecksums: vi.fn(),
@@ -402,6 +408,13 @@ describe('createGlobalKeydownHandler - task 0128 shortcuts', () => {
     expect(openMultiRenameForActivePane).toHaveBeenCalled();
   });
 
+  it('Alt+Enter opens Properties for the active pane', () => {
+    const openPropertiesForActivePane = vi.fn();
+    const context = makeContext({ openPropertiesForActivePane });
+    createGlobalKeydownHandler(context)(keydown('Enter', { altKey: true }));
+    expect(openPropertiesForActivePane).toHaveBeenCalled();
+  });
+
   it('Alt+F4 quits in desktop runtime', () => {
     const quitApplication = vi.fn();
     const context = makeContext({ getKeybindingRuntime: () => 'desktop', quitApplication });
@@ -593,5 +606,45 @@ describe('createGlobalKeydownHandler - task 0128 shortcuts', () => {
     const preventDefault = vi.spyOn(event, 'preventDefault');
     createGlobalKeydownHandler(context)(event);
     expect(preventDefault).not.toHaveBeenCalled();
+  });
+
+  // task 0134: "Selected thumbnails can use F3 to see the full screen version" - F3's viewer
+  // resolution (resolveViewTarget/openViewer) reads only the cursor entry from
+  // getSelections/getDirectories, which carry no view-mode concept at all, so the same F3 handling
+  // already used for the table applies unchanged whether the active pane is showing its listing as
+  // a table or as a thumbnail grid - there is nothing grid-specific to wire up.
+  it('F3 opens the viewer for the cursor entry regardless of the active pane’s view mode', () => {
+    const openViewer = vi.fn();
+    const cursorFile: EntrySummary = {
+      id: 'photo-1' as never,
+      location: { providerId: 'local', uri: 'file:///a/b/photo.png' },
+      name: 'photo.png',
+      kind: 'file',
+      hidden: false,
+      readOnly: false,
+      metadataRevision: 0,
+    };
+    const coreViewAction: ActionDescriptor = {
+      id: 'core.view',
+      title: 'View',
+      defaultShortcuts: [{ key: 'F3' }],
+      category: 'test',
+      contextRequirements: {},
+      source: { kind: 'core' },
+    };
+    const context = makeContext({
+      getRegisteredActions: () => [...ACTIONS, coreViewAction],
+      actionsWithFavourites: () => [...ACTIONS, coreViewAction],
+      getViewer: () => undefined,
+      openViewer,
+      // A grid-mode pane's directory/selection state shapes are identical to a table-mode pane's -
+      // there is no `viewMode` field here to gate on, which is exactly the point.
+      getSelections: () =>
+        new Map([['pane-a:tab', { selectedEntryIds: [], cursorEntryId: 'photo-1' as never }]]),
+      getDirectories: () =>
+        new Map([['pane-a:tab', { entries: [cursorFile] } as unknown as PaneDirectoryView]]),
+    });
+    createGlobalKeydownHandler(context)(keydown('F3'));
+    expect(openViewer).toHaveBeenCalledWith(PANE_B, cursorFile, undefined);
   });
 });

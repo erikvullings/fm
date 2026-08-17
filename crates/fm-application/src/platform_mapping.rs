@@ -14,7 +14,7 @@ use fm_domain::{ActionId, Location};
 use fm_platform::{PlatformAdapter, PlatformCapabilities};
 use fm_transport_dto::{
     PlatformKindDto, RuntimeCapabilitiesDto, RuntimeKindDto, SystemLocationDto,
-    SystemLocationKindDto, VolumeCapacityDto,
+    SystemLocationKindDto, VolumeCapacityDto, VolumeDto,
 };
 
 use crate::error::ApplicationError;
@@ -73,6 +73,15 @@ pub(crate) fn map_file_icon_error(error: fm_platform::PlatformError) -> Applicat
     }
 }
 
+/// Maps a native-menu install failure to a user-readable application error
+/// (task 0133). Unlike [`map_file_icon_error`], `Unsupported` has no silent
+/// fallback interpretation here - the frontend only calls `setNativeMenu`
+/// after checking `runtimeCapabilities().nativeMenus`, so seeing it anyway
+/// is a genuine, surfaceable failure rather than an expected gap.
+pub(crate) fn map_native_menu_error(error: fm_platform::PlatformError) -> ApplicationError {
+    ApplicationError::PlatformOperationFailed(error.to_string())
+}
+
 /// Detects the host operating system from the compiled target (spec §21).
 pub(crate) fn detect_platform() -> PlatformKindDto {
     match std::env::consts::OS {
@@ -108,6 +117,40 @@ pub(crate) async fn discover_system_locations(
                 server: location.server,
                 share: location.share,
                 read_only: location.read_only,
+            })
+        })
+        .collect()
+}
+
+/// Discovers currently mounted local/removable/disk-image volumes (task
+/// 0144) and maps their native paths to the existing local provider,
+/// mirroring [`discover_system_locations`]. Reuses
+/// [`PlatformAdapter::mounted_volumes`] rather than adding a second
+/// discovery path. Hosts/adapters without
+/// [`PlatformCapabilities::MOUNTED_VOLUMES`] report an empty list, not an
+/// error, exactly like [`runtime_capabilities_dto`] gates other optional
+/// features.
+pub(crate) async fn discover_volumes(
+    platform: Arc<dyn PlatformAdapter>,
+) -> Result<Vec<VolumeDto>, ApplicationError> {
+    if !platform
+        .capabilities()
+        .contains(PlatformCapabilities::MOUNTED_VOLUMES)
+    {
+        return Ok(Vec::new());
+    }
+    let discovered = tokio::task::spawn_blocking(move || platform.mounted_volumes())
+        .await
+        .map_err(|_| ApplicationError::Internal)?
+        .map_err(|error| ApplicationError::PlatformOperationFailed(error.to_string()))?;
+    discovered
+        .into_iter()
+        .map(|volume| {
+            let local = Location::from_native_path(&volume.mount_point)
+                .map_err(|_| ApplicationError::Internal)?;
+            Ok(VolumeDto {
+                name: volume.name,
+                location: local.into(),
             })
         })
         .collect()

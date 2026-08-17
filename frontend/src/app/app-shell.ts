@@ -1,3 +1,4 @@
+import { Channel, invoke } from '@tauri-apps/api/core';
 import m, { type FactoryComponent } from 'mithril';
 import { IconButton, type Theme, ThemeManager, toast } from 'mithril-materialized';
 
@@ -56,6 +57,7 @@ import { DiagnosticsViewComponent } from '../features/diagnostics/diagnostics-vi
 import { type AppDialogsContext, renderAppDialogs } from '../features/dialogs/app-dialogs';
 import { createDialogUIController } from '../features/dialogs/dialog-ui-controller';
 import type { NativeIconLoader } from '../features/directory-table/native-icon-loader';
+import type { ThumbnailLoader } from '../features/directory-table/thumbnail-loader';
 import {
   createFileEditorController,
   type FileEditorController,
@@ -75,6 +77,11 @@ import {
   type GlobalKeydownContext,
 } from '../features/keybindings/global-keydown-handler';
 import { ShortcutsHelpDialog } from '../features/keybindings/shortcuts-help-dialog';
+import {
+  dispatchNativeMenuAction,
+  type NativeMenuDispatchContext,
+} from '../features/native-menu/native-menu-dispatch';
+import { buildNativeMenuSpec, type NativeMenuTab } from '../features/native-menu/native-menu-spec';
 import {
   createNavigationController,
   type NavigationController,
@@ -150,6 +157,7 @@ import type {
   DirectoryDelta,
   EntrySummary,
   Location,
+  NativeMenuSpec,
   OperationConflict,
   OperationId,
   OperationState,
@@ -162,6 +170,7 @@ import type {
   SystemLocation,
   TabId,
   TabProjection,
+  Volume,
   WorkspaceId,
   WorkspaceLayout,
   WorkspaceProjection,
@@ -282,6 +291,8 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
   let registeredActions: readonly ActionDescriptor[] = [];
   let systemLocations: readonly SystemLocation[] = [];
   let systemLocationsError: string | undefined;
+  let volumes: readonly Volume[] = [];
+  let volumesError: string | undefined;
   const unavailableLocations = new Set<string>();
   let plugins: readonly PluginDescriptor[] = [];
   let connections: readonly Connection[] = [];
@@ -320,10 +331,118 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
   function actionsWithFavourites(): readonly ActionDescriptor[] {
     return [...registeredActions, ...favouriteActions()];
   }
+
+  /** Every open tab across every pane, flattened for the native Window menu (task 0133). */
+  function nativeMenuWindowTabs(): readonly NativeMenuTab[] {
+    if (workspace === undefined) return [];
+    const tabs: NativeMenuTab[] = [];
+    for (const paneId of workspace.paneOrder) {
+      const pane = workspace.panesById[paneId];
+      if (pane === undefined) continue;
+      for (const tabId of pane.tabOrder) {
+        const projection = pane.tabsById[tabId];
+        if (projection === undefined) continue;
+        tabs.push({
+          paneId,
+          tabId,
+          tabKey: tabKey(paneId, tabId),
+          title: projection.title,
+          active: pane.activeTabId === tabId,
+        });
+      }
+    }
+    return tabs;
+  }
+
+  /** Serialized form of the last spec pushed to the native menu bar - `syncNativeMenu` diffs
+   * against this so an unchanged spec never re-triggers `set_native_menu` (the menu bar is
+   * desktop-only chrome, not app state, so a cheap `JSON.stringify` comparison is an acceptable
+   * fallback given there is no existing deep-equal utility in this codebase to reuse). */
+  let lastSentNativeMenuSpecJson: string | undefined;
+
+  /** Set once `subscribe_native_menu_actions` has actually resolved. `syncNativeMenu` must not
+   * push a spec before this: `set_native_menu` binds whatever channel is *currently* subscribed
+   * as the click callback, and installs are memoized by spec content - if the very first push
+   * raced ahead of the subscribe call, the backend would bind a no-op callback (nothing
+   * subscribed yet) and then never rebuild the menu again to pick up the real one, since nothing
+   * about the spec's content changes once subscribed. Every menu click would silently no-op. */
+  let nativeMenuChannelReady = false;
+
+  /** Pushes the full native menu bar spec to the backend whenever it might have changed. Called
+   * from the view rather than threaded through every individual mutation site (registered
+   * actions/settings/favourites/workspace tabs are each reassigned from several different
+   * closures across this file) - safe and cheap because of the diff above, and it can never miss
+   * a state change that affects the menu. */
+  function syncNativeMenu(): void {
+    if (runtimeKind !== 'tauri' || !nativeMenuChannelReady) return;
+    const spec: NativeMenuSpec = buildNativeMenuSpec({
+      actions: registeredActions,
+      favouriteActions: favouriteActions(),
+      tabs: nativeMenuWindowTabs(),
+      canOpenNewWindow: attrsClient.openWorkspaceWindow !== undefined,
+      workspaces: sortWorkspaceSummaries(workspaceSummaries),
+      currentWorkspaceId: workspace?.id,
+      volumes,
+      connections,
+      systemLocations,
+      unavailableLocations,
+    });
+    const serialized = JSON.stringify(spec);
+    if (serialized === lastSentNativeMenuSpecJson) return;
+    lastSentNativeMenuSpecJson = serialized;
+    void invoke('set_native_menu', { spec }).catch(() => {
+      // The native menu bar is cosmetic desktop chrome; a failed push shouldn't surface an error.
+    });
+  }
+
+  const nativeMenuDispatchContext: NativeMenuDispatchContext = {
+    findAction: (id) => actionsWithFavourites().find((candidate) => candidate.id === id),
+    openSettingsDialog: () => {
+      openSettingsDialog();
+    },
+    activateTabByKey: (key) => {
+      const separator = key.indexOf(':');
+      if (separator < 0) return;
+      const paneId = key.slice(0, separator);
+      const tabId = key.slice(separator + 1);
+      if (workspace?.panesById[paneId]?.activeTabId === tabId) {
+        // The Window menu lists every open tab per pane, so clicking one that's already its
+        // pane's active/displayed tab is a normal, common case: switching keyboard focus to
+        // another pane without changing what it shows - there's no equivalent single click for
+        // this in the tab bar (you'd click the pane's content area instead). Routing it through
+        // tabController.activateTab would hit its "re-click the same tab" branch, which triggers
+        // a background reload without ever updating which pane has focus and can disturb that
+        // pane's existing selection. activatePane is the lightweight, no-reload "just switch
+        // focus" operation this needs instead.
+        void activatePane(attrsClient, paneId).catch(() => undefined);
+        return;
+      }
+      tabController.activateTab(paneId, tabId);
+    },
+    activePaneId: () => activeDirectory()?.paneId,
+    setSort: (paneId, sort) => globalKeydownHandlerContext.setSort(paneId, sort),
+    invokeAction: (action) => actionCommandController.invokePaletteAction(action),
+    openNewWorkspaceWindow: () => {
+      if (workspace === undefined) return;
+      void attrsClient.openWorkspaceWindow?.(workspace.id);
+    },
+    openWorkspaceWindowById: (workspaceId) => {
+      void attrsClient.openWorkspaceWindow?.(workspaceId);
+    },
+    getVolumes: () => volumes,
+    getConnections: () => connections,
+    getSystemLocations: () => systemLocations,
+    navigateToLocation: (location) => {
+      const paneId = activeDirectory()?.paneId;
+      if (paneId === undefined) return;
+      void navigation.navigate(paneId, location);
+    },
+  };
   let installedIconThemeId: string | undefined;
   let keybindingRuntime: KeybindingRuntime = 'browser';
   let runtimeKind: RuntimeKind = 'http';
   let loadedEntryFormatSettings: EntryFormatSettings = DEFAULT_ENTRY_FORMAT_SETTINGS;
+  let currentEntryFormatSettings: EntryFormatSettings = DEFAULT_ENTRY_FORMAT_SETTINGS;
   let workspace: WorkspaceProjection | undefined;
   let workspaceError: string | undefined;
   let workspaceSummaries: readonly WorkspaceSummary[] = [];
@@ -362,6 +481,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
   const openTerminalLocations = new Set<string>();
   let openTerminalSupported = false;
   let nativeIconLoader: NativeIconLoader | undefined;
+  let thumbnailLoader: ThumbnailLoader | undefined;
   let contextMenu:
     | {
         readonly paneId: PaneId;
@@ -1173,12 +1293,22 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     setNativeIconLoader: (loader) => {
       nativeIconLoader = loader;
     },
+    setThumbnailLoader: (loader) => {
+      thumbnailLoader = loader;
+    },
     getSystemLocations: () => systemLocations,
     setSystemLocations: (locs) => {
       systemLocations = locs;
     },
     setSystemLocationsError: (msg) => {
       systemLocationsError = msg;
+    },
+    getVolumes: () => volumes,
+    setVolumes: (vols) => {
+      volumes = vols;
+    },
+    setVolumesError: (msg) => {
+      volumesError = msg;
     },
     getConnections: () => connections,
     setConnections: (conns) => {
@@ -1460,6 +1590,20 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       );
       m.redraw();
     },
+    openPropertiesForActivePane: () => {
+      const active = activeDirectory();
+      if (active === undefined) return;
+      const key = activeTabKey(active.paneId);
+      const directory = directories.get(key);
+      if (directory === undefined) return;
+      const selection = selections.get(key);
+      const entries = getSelectedEntriesOrCursor(selection, directory.entries).filter(
+        (entry) => !isParentEntry(entry.id),
+      );
+      if (entries.length === 0) return;
+      dialogs.openProperties(entries);
+      m.redraw();
+    },
     quitApplication: () => {
       if (keybindingRuntime !== 'desktop') return;
       void attrsClient.quit?.();
@@ -1585,9 +1729,12 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     getCurrentSettings: () => currentSettings,
     getSystemLocations: () => systemLocations,
     getSystemLocationsError: () => systemLocationsError,
+    getVolumes: () => volumes,
+    getVolumesError: () => volumesError,
     getConnections: () => connections,
     getUnavailableLocations: () => unavailableLocations,
     getNativeIconLoader: () => nativeIconLoader,
+    getThumbnailLoader: () => thumbnailLoader,
     getPlugins: () => plugins,
     getPlatform: () => platform,
     getKeybindingRuntime: () => keybindingRuntime,
@@ -1752,6 +1899,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       closeTabConfirmation = conf;
     },
     getDialogs: () => dialogs,
+    getFormatSettings: () => currentEntryFormatSettings,
     getFindFilesController: () => findFilesController,
     getTabController: () => tabController,
     getOpsController: () => opsController,
@@ -1839,10 +1987,14 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
           ) {
             // After `..` navigation, land the cursor back on the child directory
             // just navigated away from instead of always the listing's first entry.
+            // Landing here (a fresh tab, a `..` navigation, switching back to a tab that was
+            // never given a cursor) only positions the keyboard cursor - it must never also
+            // select the entry. Selecting is a deliberate user action (click, keyboard select),
+            // not a side effect of simply looking at a directory or switching to it.
             const preferredEntry = view.entries.find((entry) => entry.name === preferredCursorName);
             const firstEntry = preferredEntry ?? view.entries[0];
             selections.set(key, {
-              selectedEntryIds: firstEntry === undefined ? [] : [firstEntry.id],
+              selectedEntryIds: [],
               ...(firstEntry === undefined
                 ? {}
                 : { cursorEntryId: firstEntry.id, anchorEntryId: firstEntry.id }),
@@ -1864,6 +2016,27 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
           m.redraw();
         })
         .catch(() => undefined);
+      if (attrs.runtime === 'tauri') {
+        try {
+          // `new Channel()` synchronously reaches for `window.__TAURI_INTERNALS__` (unlike plain
+          // `invoke()` calls, which are async and turn a missing host into a rejected promise
+          // instead), so this needs its own guard for runtime:'tauri' test mounts with no real
+          // Tauri host behind them.
+          const nativeMenuActions = new Channel<{ id: string }>();
+          nativeMenuActions.onmessage = (event) => {
+            dispatchNativeMenuAction(nativeMenuDispatchContext, event.id);
+            m.redraw();
+          };
+          void invoke('subscribe_native_menu_actions', { channel: nativeMenuActions })
+            .then(() => {
+              nativeMenuChannelReady = true;
+              m.redraw();
+            })
+            .catch(() => undefined);
+        } catch {
+          // No Tauri host available; the native menu bar is cosmetic desktop chrome.
+        }
+      }
       void attrs.client
         .listPlugins()
         .then((listed) => {
@@ -1926,6 +2099,8 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     },
 
     view: ({ attrs }) => {
+      syncNativeMenu();
+      currentEntryFormatSettings = attrs.entryFormatSettings ?? loadedEntryFormatSettings;
       const pendingDelete = Object.values(operations.byId).find(
         (operation) =>
           operation?.kind === 'delete' && operation.state === 'waitingForConflictResolution',
@@ -2095,6 +2270,16 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
                       workspaceController.renameWorkspaceAction(workspaceId, name),
                     onDelete: (workspaceId) =>
                       workspaceController.deleteWorkspaceAction(workspaceId),
+                    ...(attrsClient.openWorkspaceWindow === undefined
+                      ? {}
+                      : {
+                          onOpenInNewWindow: (workspaceId) => {
+                            void attrsClient.openWorkspaceWindow?.(workspaceId);
+                            if (workspaceDisclosureElement !== undefined) {
+                              workspaceDisclosureElement.open = false;
+                            }
+                          },
+                        }),
                   }),
                 ]),
               ],

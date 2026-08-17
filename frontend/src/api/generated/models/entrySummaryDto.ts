@@ -3,6 +3,7 @@
  * Run `pnpm api:generate` (or `pnpm api:check`) to regenerate.
  */
 import type { EntryKindDto } from './entryKindDto.ts';
+import type { GitFileStatusDto } from './gitFileStatusDto.ts';
 import type { LocationDto } from './locationDto.ts';
 
 /**
@@ -19,6 +20,7 @@ export interface EntrySummaryDto {
      * @nullable
      */
   extension?: string | null;
+  gitStatus?: null | GitFileStatusDto;
   /** Whether the entry is hidden. */
   hidden: boolean;
   /**

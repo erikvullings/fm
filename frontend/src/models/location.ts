@@ -21,6 +21,12 @@ export interface SystemLocation {
   readonly readOnly?: boolean;
 }
 
+/** A currently mounted local/removable/disk-image volume (task 0144). */
+export interface Volume {
+  readonly name: string;
+  readonly location: Location;
+}
+
 /** Identifies an entry without its full summary, e.g. for metadata requests (spec §6). */
 export interface EntryRef {
   id: EntryId;

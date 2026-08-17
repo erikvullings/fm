@@ -679,8 +679,15 @@ impl PlatformAdapter for WindowsPlatformAdapter {
         })
     }
 
-    fn install_native_menu(&self) -> Result<(), PlatformError> {
-        self.fallback.install_native_menu()
+    fn install_native_menu(
+        &self,
+        spec: &fm_domain::NativeMenuSpec,
+        on_action: std::sync::Arc<dyn Fn(String) + Send + Sync>,
+    ) -> Result<(), PlatformError> {
+        // Windows menu content is task 0131 (still open); until that hook
+        // lands this just keeps delegating to the fallback adapter, matching
+        // every other not-yet-implemented Windows integration in this file.
+        self.fallback.install_native_menu(spec, on_action)
     }
 }
 
@@ -781,9 +788,16 @@ mod tests {
                 .unwrap_err()
                 .to_string()
         );
+        let spec = fm_domain::NativeMenuSpec::default();
         assert_eq!(
-            adapter.install_native_menu().unwrap_err().to_string(),
-            fallback.install_native_menu().unwrap_err().to_string()
+            adapter
+                .install_native_menu(&spec, std::sync::Arc::new(|_id| {}))
+                .unwrap_err()
+                .to_string(),
+            fallback
+                .install_native_menu(&spec, std::sync::Arc::new(|_id| {}))
+                .unwrap_err()
+                .to_string()
         );
     }
 

@@ -1,6 +1,12 @@
 import m, { type FactoryComponent, type VnodeDOM } from 'mithril';
 import { eyeOffIcon, linkIcon } from '../../components/tabler-icons';
-import type { EntryId, EntrySummary, LoadingState, SortDescriptor } from '../../models';
+import type {
+  EntryId,
+  EntrySummary,
+  GitFileStatus,
+  LoadingState,
+  SortDescriptor,
+} from '../../models';
 import {
   DEFAULT_ENTRY_FORMAT_SETTINGS,
   type EntryFormatSettings,
@@ -11,12 +17,20 @@ import { isParentEntry } from '../panes/parent-entry';
 import { fileAgeColumn } from '../plugin-columns/file-age-column';
 import { entryIcon } from './entry-icons';
 import type { NativeIconLoader } from './native-icon-loader';
+import type { ThumbnailLoader } from './thumbnail-loader';
 import { calculateVisibleWindow, scrollOffsetForIndex } from './windowing';
 import './directory-table.css';
 
 const DEFAULT_ROW_HEIGHT = 20;
 const DEFAULT_VIEWPORT_HEIGHT = 300;
 const DEFAULT_OVERSCAN = 1;
+const MIN_COLUMN_WIDTH = 60;
+
+/** A single column's persisted width, keyed by column id. */
+export interface ColumnWidthEntry {
+  readonly columnId: string;
+  readonly width: number;
+}
 
 /** Random-access entry collection; large mock sources need not materialize an array. */
 export interface DirectoryEntrySource {
@@ -61,6 +75,8 @@ export interface DirectoryTableAttrs {
   readonly onSortChange?: (sort: readonly SortDescriptor[]) => void;
   readonly formatSettings?: EntryFormatSettings;
   readonly nativeIconLoader?: NativeIconLoader;
+  /** Overlays a downscaled preview onto the icon column for supported files (task 0134). */
+  readonly thumbnailLoader?: ThumbnailLoader;
   /** Enabled declarative plugin columns, already validated by the host. */
   readonly pluginColumns?: readonly DirectoryColumnDescriptor[];
   readonly onCursorChange?: (index: number, modifiers?: CursorClickModifiers) => void;
@@ -77,6 +93,9 @@ export interface DirectoryTableAttrs {
   readonly onDragStart?: (index: number, event: DragEvent) => void;
   readonly onDragOver?: (index: number | undefined, event: DragEvent) => boolean;
   readonly onDrop?: (index: number | undefined, event: DragEvent) => void;
+  /** Persisted per-column widths; a column with no entry falls back to its default track. */
+  readonly columnWidths?: readonly ColumnWidthEntry[];
+  readonly onColumnWidthChange?: (columnId: string, width: number) => void;
 }
 
 function readRowHeight(element: HTMLElement): number {
@@ -127,6 +146,7 @@ export interface DirectoryColumnDescriptor {
     now?: number,
     nativeIconLoader?: NativeIconLoader,
     showFullPath?: boolean,
+    thumbnailLoader?: ThumbnailLoader,
   ): m.Children;
 }
 
@@ -157,27 +177,60 @@ function displayName(entry: EntrySummary, showFullPath = false): string {
   }
 }
 
+const GIT_STATUS_LETTERS: Record<GitFileStatus, string> = {
+  clean: '',
+  modified: 'M',
+  staged: 'S',
+  untracked: 'U',
+  ignored: 'I',
+};
+
+const GIT_STATUS_LABELS: Record<GitFileStatus, string> = {
+  clean: 'Clean',
+  modified: 'Modified',
+  staged: 'Staged',
+  untracked: 'Untracked',
+  ignored: 'Ignored',
+};
+
 const INITIAL_COLUMNS: readonly DirectoryColumnDescriptor[] = [
   {
     id: 'core.name',
     label: 'Name',
     cellClass: 'fm-directory-name',
-    render: (entry, nameMatchPrefix, _formatSettings, _now, nativeIconLoader, showFullPath) => {
+    render: (
+      entry,
+      nameMatchPrefix,
+      _formatSettings,
+      _now,
+      nativeIconLoader,
+      showFullPath,
+      thumbnailLoader,
+    ) => {
       const name = displayName(entry, showFullPath);
       const matchIndex =
         nameMatchPrefix === undefined
           ? -1
           : name.toLocaleLowerCase().indexOf(nameMatchPrefix.toLocaleLowerCase());
+      const thumbnailDataUri = thumbnailLoader?.thumbnailDataUri(entry, 'small');
       return [
-        nativeIconLoader?.iconDataUri(entry) === undefined
-          ? entryIcon(entry, { className: 'fm-entry-icon' })
-          : m('img.fm-entry-icon.fm-native-entry-icon', {
-              src: nativeIconLoader.iconDataUri(entry),
+        thumbnailDataUri !== undefined
+          ? m('img.fm-entry-icon.fm-thumbnail-entry-icon', {
+              src: thumbnailDataUri,
               width: 16,
               height: 16,
               alt: '',
               'aria-hidden': 'true',
-            }),
+            })
+          : nativeIconLoader?.iconDataUri(entry) === undefined
+            ? entryIcon(entry, { className: 'fm-entry-icon' })
+            : m('img.fm-entry-icon.fm-native-entry-icon', {
+                src: nativeIconLoader.iconDataUri(entry),
+                width: 16,
+                height: 16,
+                alt: '',
+                'aria-hidden': 'true',
+              }),
         m(
           showFullPath && !isParentEntry(entry.id)
             ? 'span.fm-entry-name.fm-entry-name--path'
@@ -224,6 +277,22 @@ const INITIAL_COLUMNS: readonly DirectoryColumnDescriptor[] = [
     cellClass: 'fm-directory-size',
     render: (entry, _nameMatchPrefix, settings = DEFAULT_ENTRY_FORMAT_SETTINGS) =>
       isParentEntry(entry.id) || entry.kind === 'symlink' ? '' : formatEntrySize(entry, settings),
+  },
+  {
+    id: 'core.gitStatus',
+    label: 'Git',
+    cellClass: 'fm-directory-git-status',
+    render: (entry) => {
+      if (isParentEntry(entry.id) || entry.gitStatus === undefined) return '';
+      const letter = GIT_STATUS_LETTERS[entry.gitStatus];
+      return letter === ''
+        ? ''
+        : m(
+            `span.fm-directory-git-status-badge.fm-directory-git-status-badge--${entry.gitStatus}`,
+            { title: GIT_STATUS_LABELS[entry.gitStatus] },
+            letter,
+          );
+    },
   },
   {
     id: 'core.modified',
@@ -301,12 +370,16 @@ function nextSort(
   ];
 }
 
-function headerView(attrs: DirectoryTableAttrs): m.Children {
-  const columns = [...INITIAL_COLUMNS, ...(attrs.pluginColumns ?? [])];
+function headerView(
+  attrs: DirectoryTableAttrs,
+  columns: readonly DirectoryColumnDescriptor[],
+  widths: ReadonlyMap<string, number> | undefined,
+  onResizeStart: (event: PointerEvent, columnId: string, currentWidth: number) => void,
+): m.Children {
   return m(
     '.fm-directory-header',
-    { role: 'row', style: { gridTemplateColumns: gridTemplate(columns.length) } },
-    columns.map((column) =>
+    { role: 'row', style: { gridTemplateColumns: gridTemplate(columns, widths) } },
+    columns.map((column, index) =>
       m(
         `button.fm-directory-cell.${column.cellClass}`,
         {
@@ -344,15 +417,47 @@ function headerView(attrs: DirectoryTableAttrs): m.Children {
                 }),
               )
             : undefined,
+          index === columns.length - 1 || attrs.onColumnWidthChange === undefined
+            ? undefined
+            : m('span.fm-directory-resize-handle', {
+                'aria-hidden': 'true',
+                onclick: (event: MouseEvent) => event.stopPropagation(),
+                onpointerdown: (event: PointerEvent) => {
+                  const button = (event.currentTarget as HTMLElement).closest('button');
+                  const currentWidth =
+                    widths?.get(column.id) ?? button?.getBoundingClientRect().width ?? 160;
+                  // Without capture, a fast/excessive drag that carries the pointer outside the
+                  // window loses the `pointermove`/`pointerup` pair entirely - the next drag's own
+                  // cleanup then discards the abandoned session with no commit, which looks like
+                  // the resize "reverted". Capturing keeps both events targeted at this element
+                  // for the rest of the gesture regardless of where the pointer physically is.
+                  (event.currentTarget as Element).setPointerCapture?.(event.pointerId);
+                  onResizeStart(event, column.id, currentWidth);
+                },
+              }),
         ],
       ),
     ),
   );
 }
 
-function gridTemplate(columnCount: number): string {
-  const core = 'minmax(12rem, 1fr) minmax(6rem, 0.25fr) minmax(6rem, 0.2fr) minmax(10rem, 0.35fr)';
-  return `${core}${' minmax(5rem, 0.2fr)'.repeat(Math.max(0, columnCount - INITIAL_COLUMNS.length))}`;
+function gridTemplate(
+  columns: readonly DirectoryColumnDescriptor[],
+  widths: ReadonlyMap<string, number> | undefined,
+): string {
+  const fallbacks = [
+    'minmax(12rem, 1fr)',
+    'minmax(6rem, 0.25fr)',
+    'minmax(6rem, 0.2fr)',
+    'minmax(2.5rem, 0.08fr)',
+    'minmax(10rem, 0.35fr)',
+  ];
+  return columns
+    .map((column, index) => {
+      const width = widths?.get(column.id);
+      return width === undefined ? (fallbacks[index] ?? 'minmax(5rem, 0.2fr)') : `${width}px`;
+    })
+    .join(' ');
 }
 
 /**
@@ -384,6 +489,66 @@ export const DirectoryTable: FactoryComponent<DirectoryTableAttrs> = () => {
   let pendingCursorIndex: number | undefined;
   let resizeObserver: ResizeObserver | undefined;
   let dragTargetIndex: number | undefined;
+  /** Live column widths shown while a resize drag is in flight, overriding `attrs.columnWidths`
+   * until the persisted value (`sourceColumnWidths`) catches up - mirrors `displayedLayout` in
+   * workspace-layout.ts for the split-pane divider. */
+  let sourceColumnWidths: readonly ColumnWidthEntry[] | undefined;
+  let displayedColumnWidths: readonly ColumnWidthEntry[] | undefined;
+  let stopColumnResize: (() => void) | undefined;
+
+  function columnWidthMap(entries: readonly ColumnWidthEntry[] | undefined): Map<string, number> {
+    return new Map((entries ?? []).map((entry) => [entry.columnId, entry.width]));
+  }
+
+  /** `attrs.columnWidths` is rebuilt with a fresh array (and fresh entry objects) on every render
+   * by `pane-content-builder.ts`, even when nothing actually changed - so comparing it against
+   * `sourceColumnWidths` by reference (as `workspace-layout.ts` does for `attrs.workspace.layout`,
+   * which *is* referentially stable) was true on almost every render, including ones triggered by
+   * this component's own `m.redraw()` mid-drag. That stomped `displayedColumnWidths` back to the
+   * stale persisted value on the very next render after every `move` handler ran, so a drag never
+   * showed any visual feedback (the final width still landed correctly on release, since that path
+   * reads the drag's own closure variable rather than `displayedColumnWidths`). Comparing by value
+   * instead makes the reconciliation only fire when the persisted width has actually changed. */
+  function columnWidthsEqual(
+    a: readonly ColumnWidthEntry[] | undefined,
+    b: readonly ColumnWidthEntry[] | undefined,
+  ): boolean {
+    if (a === b) return true;
+    if (a === undefined || b === undefined || a.length !== b.length) return false;
+    return a.every(
+      (entry, index) => entry.columnId === b[index]?.columnId && entry.width === b[index]?.width,
+    );
+  }
+
+  function beginColumnResize(
+    event: PointerEvent,
+    attrs: DirectoryTableAttrs,
+    columnId: string,
+    startWidth: number,
+  ): void {
+    event.preventDefault();
+    stopColumnResize?.();
+    const startX = event.clientX;
+    let latestWidth = startWidth;
+    const move = (moveEvent: PointerEvent): void => {
+      latestWidth = Math.max(MIN_COLUMN_WIDTH, startWidth + (moveEvent.clientX - startX));
+      const next = columnWidthMap(displayedColumnWidths ?? attrs.columnWidths);
+      next.set(columnId, latestWidth);
+      displayedColumnWidths = [...next].map(([id, width]) => ({ columnId: id, width }));
+      m.redraw();
+    };
+    const end = (): void => {
+      stopColumnResize?.();
+      attrs.onColumnWidthChange?.(columnId, latestWidth);
+    };
+    stopColumnResize = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', end);
+      stopColumnResize = undefined;
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', end);
+  }
 
   function applyScrollForCursor(attrs: DirectoryTableAttrs, cursorIndex: number): void {
     if (element === undefined || attrs.source === undefined) return;
@@ -433,9 +598,15 @@ export const DirectoryTable: FactoryComponent<DirectoryTableAttrs> = () => {
     onremove: () => {
       if (refreshTimer !== undefined) clearInterval(refreshTimer);
       resizeObserver?.disconnect();
+      stopColumnResize?.();
     },
     view: ({ attrs }) => {
       syncCursor(attrs);
+      if (!columnWidthsEqual(sourceColumnWidths, attrs.columnWidths)) {
+        sourceColumnWidths = attrs.columnWidths;
+        displayedColumnWidths = sourceColumnWidths;
+      }
+      const columnWidths = columnWidthMap(displayedColumnWidths);
       const state = stateView(attrs, rowHeight);
       const source = attrs.source;
       const cursorEntry =
@@ -512,7 +683,7 @@ export const DirectoryTable: FactoryComponent<DirectoryTableAttrs> = () => {
                 ].join(' '),
                 style: {
                   transform: `translateY(${window.offsetTop + (index - window.start) * rowHeight}px)`,
-                  gridTemplateColumns: gridTemplate(columns.length),
+                  gridTemplateColumns: gridTemplate(columns, columnWidths),
                 },
               },
               columns.map((column) =>
@@ -556,6 +727,7 @@ export const DirectoryTable: FactoryComponent<DirectoryTableAttrs> = () => {
                         now,
                         attrs.nativeIconLoader,
                         attrs.showFullPath,
+                        attrs.thumbnailLoader,
                       ),
                 ),
               ),
@@ -581,7 +753,7 @@ export const DirectoryTable: FactoryComponent<DirectoryTableAttrs> = () => {
               style: {
                 height: `${fillerHeight}px`,
                 transform: `translateY(${fillerTop}px)`,
-                gridTemplateColumns: gridTemplate(columns.length),
+                gridTemplateColumns: gridTemplate(columns, columnWidths),
               },
             }),
           );
@@ -595,7 +767,9 @@ export const DirectoryTable: FactoryComponent<DirectoryTableAttrs> = () => {
         '.fm-directory-table',
         { style: { height: attrs.viewportHeight === undefined ? '100%' : `${viewportHeight}px` } },
         [
-          headerView(attrs),
+          headerView(attrs, columns, columnWidths, (event, columnId, startWidth) =>
+            beginColumnResize(event, attrs, columnId, startWidth),
+          ),
           m(
             '.fm-directory-viewport',
             {

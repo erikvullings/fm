@@ -21,6 +21,44 @@ pub enum EntryKind {
     Symlink,
 }
 
+/// An entry's git working-tree status (task 0135), local provider only.
+///
+/// For a directory, this is the aggregate of its descendants' statuses
+/// (highest-priority state wins: [`Self::Modified`] > [`Self::Staged`] >
+/// [`Self::Untracked`] > [`Self::Ignored`] > [`Self::Clean`]), matching
+/// common IDE file-tree conventions ("contains changes").
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum GitFileStatus {
+    /// No uncommitted, staged, untracked or ignored changes.
+    Clean,
+    /// Tracked, with unstaged working-tree changes.
+    Modified,
+    /// Staged in the index, with no further unstaged working-tree changes.
+    Staged,
+    /// Not tracked by git and not ignored.
+    Untracked,
+    /// Excluded by `.gitignore` (or equivalent) rules.
+    Ignored,
+}
+
+/// One commit in a file's git history (task 0135's Alt+Space history section), local provider
+/// only. Ordered newest-first, matching `git log`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GitLogEntry {
+    /// The commit's full SHA-1 (or SHA-256, for repositories using that object format).
+    pub commit_id: String,
+    /// The commit's abbreviated id, as `git log --oneline` would show it.
+    pub short_id: String,
+    /// The commit author's display name.
+    pub author_name: String,
+    /// The commit author's email address.
+    pub author_email: String,
+    /// When the commit was authored.
+    pub committed_at: DateTime<Utc>,
+    /// The commit message's first line.
+    pub summary: String,
+}
+
 /// A compact summary of a directory entry, suitable for directory listings.
 ///
 /// Expensive metadata (permissions, checksums, media info, ...) is
@@ -56,6 +94,10 @@ pub struct EntrySummary {
     /// Monotonic revision, incremented whenever this summary is refreshed;
     /// used to reject stale metadata responses.
     pub metadata_revision: u64,
+    /// Git working-tree status, when this entry sits inside a local git
+    /// working tree. `None` outside a working tree, or on non-local
+    /// providers, which are out of scope for task 0135.
+    pub git_status: Option<GitFileStatus>,
 }
 
 /// Filesystem permission information for an entry.
@@ -107,6 +149,12 @@ pub struct ArchiveInfo {
     pub entry_count: Option<u64>,
     /// Total uncompressed size in bytes, when known.
     pub uncompressed_size: Option<u64>,
+    /// The entry's compressed size within its archive, in bytes, when known
+    /// (per-entry, not the whole container).
+    pub compressed_size: Option<u64>,
+    /// The compression method used for this entry (for example `"Deflated"`
+    /// or `"Stored"`), when known.
+    pub compression_method: Option<String>,
 }
 
 /// Detailed, non-eagerly-fetched metadata for a single entry (spec §5.2).
@@ -157,6 +205,7 @@ mod tests {
             mime_type: Some("application/pdf".to_owned()),
             icon_key: Some("pdf".to_owned()),
             metadata_revision: 0,
+            git_status: Some(GitFileStatus::Modified),
         }
     }
 
@@ -249,6 +298,8 @@ mod tests {
             archive: Some(ArchiveInfo {
                 entry_count: Some(42),
                 uncompressed_size: Some(1_048_576),
+                compressed_size: Some(524_288),
+                compression_method: Some("Deflated".to_owned()),
             }),
             plugin_fields,
         };

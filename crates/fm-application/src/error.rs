@@ -198,6 +198,9 @@ impl From<WorkspaceError> for ApplicationError {
                 Self::InvalidRequest("tab does not exist in this pane".to_owned())
             }
             WorkspaceError::InvalidCommand(message) => Self::InvalidRequest(message),
+            WorkspaceError::DuplicateName { name } => {
+                Self::InvalidRequest(format!("a workspace named {name:?} already exists"))
+            }
         }
     }
 }

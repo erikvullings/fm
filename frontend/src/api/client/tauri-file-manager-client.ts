@@ -26,6 +26,8 @@ import type {
   EntryMetadataRequest,
   FileRangeChunk,
   GenerateSyncPlanRequest,
+  GitFileHistoryRequest,
+  GitFileHistoryResult,
   HostKeyProbe,
   InvokeActionRequest,
   ListDirectoryRequest,
@@ -61,6 +63,7 @@ import type {
   Unsubscribe,
   UpdateConnectionRequest,
   VerificationReport,
+  Volume,
   WorkspaceCommand,
   WorkspaceId,
   WorkspaceProjection,
@@ -98,12 +101,20 @@ export class TauriFileManagerClient implements FileManagerClient {
     return invoke<SystemLocation[]>('get_system_locations');
   }
 
+  async getVolumes(_signal?: AbortSignal): Promise<Volume[]> {
+    return invoke<Volume[]>('get_volumes');
+  }
+
   startNativeDrag(locations: readonly Location[], _signal?: AbortSignal): Promise<void> {
     return invoke<void>('start_native_drag', { locations });
   }
 
   async quit(): Promise<void> {
     await getCurrentWindow().close();
+  }
+
+  async openWorkspaceWindow(workspaceId: WorkspaceId): Promise<void> {
+    await invoke<void>('open_workspace_window', { workspaceId });
   }
 
   subscribeNativeFileDrops(listener: (drop: NativeFileDrop) => void): Promise<Unsubscribe> {
@@ -127,6 +138,18 @@ export class TauriFileManagerClient implements FileManagerClient {
     }
   }
 
+  async getThumbnail(
+    locationUri: string,
+    size: 'small' | 'medium' | 'large',
+    _signal?: AbortSignal,
+  ): Promise<Uint8Array | undefined> {
+    try {
+      return new Uint8Array(await invoke<number[]>('get_thumbnail', { uri: locationUri, size }));
+    } catch {
+      return undefined;
+    }
+  }
+
   getSettings(_signal?: AbortSignal): Promise<Settings> {
     return invoke<Settings>('get_settings');
   }
@@ -137,6 +160,16 @@ export class TauriFileManagerClient implements FileManagerClient {
 
   listWorkspaces(_signal?: AbortSignal): Promise<WorkspaceSummary[]> {
     return invoke<WorkspaceSummary[]>('list_workspaces');
+  }
+
+  async startWorkspace(
+    workspaceId?: WorkspaceId,
+    _signal?: AbortSignal,
+  ): Promise<WorkspaceProjection> {
+    return workspaceProjectionFromDto(
+      await invoke<WorkspaceDto>('start_workspace', { workspaceId }),
+      { redirectSessionOnlyTabs: true },
+    );
   }
 
   async createWorkspace(
@@ -249,6 +282,13 @@ export class TauriFileManagerClient implements FileManagerClient {
     _signal?: AbortSignal,
   ): Promise<CalculateFolderSizeResult> {
     return invoke<CalculateFolderSizeResult>('calculate_folder_size', { request });
+  }
+
+  gitFileHistory(
+    request: GitFileHistoryRequest,
+    _signal?: AbortSignal,
+  ): Promise<GitFileHistoryResult> {
+    return invoke<GitFileHistoryResult>('get_file_git_history', { request });
   }
 
   startOperation(request: StartOperationRequest, _signal?: AbortSignal): Promise<Operation> {

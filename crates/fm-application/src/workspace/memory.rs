@@ -124,9 +124,9 @@ impl LastActiveWorkspaceStore for InMemoryWorkspaceRepository {
 #[cfg(test)]
 mod tests {
     use fm_domain::{
-        ColumnConfiguration, DirectoryViewConfiguration, Location, NavigationHistory,
-        OperationCentrePreferences, PaneId, PaneState, ProviderId, SortDescriptor, SortDirection,
-        TabId, TabState, Workspace, WorkspaceLayout,
+        ColumnConfiguration, DirectoryViewConfiguration, DirectoryViewMode, IconSize, Location,
+        NavigationHistory, OperationCentrePreferences, PaneId, PaneState, ProviderId,
+        SortDescriptor, SortDirection, TabId, TabState, Workspace, WorkspaceLayout,
     };
 
     use super::*;
@@ -147,6 +147,8 @@ mod tests {
             show_hidden: false,
             folders_first: true,
             quick_filter: None,
+            view_mode: DirectoryViewMode::Table,
+            icon_size: IconSize::Medium,
         };
         let now = Utc::now();
         Workspace {

@@ -64,6 +64,7 @@ pub use entry::{
 pub use error::{ApplicationErrorCode, ApplicationErrorDto};
 pub use files::{
     ArchiveCredentialRequestDto, CalculateFolderSizeRequestDto, CalculateFolderSizeResponseDto,
+    GetFileGitHistoryRequestDto, GetFileGitHistoryResponseDto, GitLogEntryDto,
     LoadEditableFileRequestDto, LoadEditableFileResponseDto, ReadFileRangeRequestDto,
     ReadFileRangeResponseDto, SaveEditableFileRequestDto, SaveEditableFileResponseDto,
     SearchInFileMatchDto, SearchInFileRequestDto, SearchInFileResponseDto,
@@ -91,12 +92,12 @@ pub use settings::{
     SizeFormatDto, ThemeDto,
 };
 pub use snapshot::{DirectorySnapshotDto, LoadingStateDto, VolumeCapacityDto};
-pub use system_location::{SystemLocationDto, SystemLocationKindDto};
+pub use system_location::{SystemLocationDto, SystemLocationKindDto, VolumeDto};
 pub use workspace::{
     ColumnConfigurationDto, CreateWorkspaceRequestDto, DirectoryViewConfigurationDto,
-    NavigationHistoryDto, OperationCentrePreferencesDto, PaneStateDto, PersistedFilterDto,
-    SortDescriptorDto, SortDirectionDto, SplitAxisDto, TabStateDto, WorkspaceDto,
-    WorkspaceLayoutDto, WorkspaceSummaryDto,
+    DirectoryViewModeDto, IconSizeDto, NavigationHistoryDto, OperationCentrePreferencesDto,
+    PaneStateDto, PersistedFilterDto, SortDescriptorDto, SortDirectionDto, SplitAxisDto,
+    TabStateDto, WorkspaceDto, WorkspaceLayoutDto, WorkspaceSummaryDto,
 };
 pub use workspace_command::{
     DirectoryViewPatchDto, NavigationModeDto, QuickFilterPatchDto, WorkspaceCommandDto,

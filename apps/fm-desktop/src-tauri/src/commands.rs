@@ -1,6 +1,9 @@
 //! Tauri commands: thin wrappers over `FileManagerService`, mirroring the
 //! semantic REST API rather than reproducing HTTP concepts (spec §11).
 //!
+use std::sync::Arc;
+
+use serde::Serialize;
 use tauri::ipc::Channel;
 use tauri::{AppHandle, Runtime, State, Window};
 use uuid::Uuid;
@@ -9,25 +12,62 @@ use fm_domain::OperationId;
 use fm_transport_dto::{
     AcceptSshHostKeyRequestDto, ActionDescriptorDto, ActionResultDto, ApplicationErrorDto,
     ApplySyncPlanRequestDto, ApplySyncPlanResponseDto, ArchiveCredentialRequestDto,
-    CalculateFolderSizeRequestDto, CalculateFolderSizeResponseDto, ChecksumFileDto,
-    ChecksumPageDto, ComparisonPageDto, ConnectionDto, CreateConnectionRequestDto,
-    CreateWorkspaceRequestDto, DirectorySnapshotDto, DuplicatePageDto, EntryMetadataDto,
-    EntryMetadataRequest, GenerateSyncPlanRequestDto, HostKeyProbeDto, InvokeActionRequestDto,
-    ListDirectoryRequest, LocationDto, NavigateRequest, OperationDto, PluginDescriptorDto,
-    PluginLogEntryDto, ReadFileRangeRequestDto, ReadFileRangeResponseDto,
-    RenderChecksumFileRequestDto, ResolveOperationConflictRequestDto, RuntimeCapabilitiesDto,
-    SaveChecksumFileRequestDto, SaveChecksumFileResponseDto, SearchInFileRequestDto,
-    SearchInFileResponseDto, SetPaneActivityRequest, SettingsDto, StartChecksumRequestDto,
-    StartChecksumResponseDto, StartComparisonRequestDto, StartComparisonResponseDto,
-    StartDuplicateScanRequestDto, StartDuplicateScanResponseDto, StartOperationRequestDto,
-    StartSearchRequestDto, StartSearchResponseDto, SyncPlanDto, UpdateConnectionRequestDto,
-    VerificationReportDto, VerifyChecksumFileRequestDto, WorkspaceCommandDto, WorkspaceDto,
+    CalculateFolderSizeRequestDto,
+    CalculateFolderSizeResponseDto,
+    ChecksumFileDto,
+    ChecksumPageDto,
+    ComparisonPageDto,
+    ConnectionDto,
+    CreateConnectionRequestDto,
+    CreateWorkspaceRequestDto,
+    DirectorySnapshotDto,
+    DuplicatePageDto,
+    EntryMetadataDto,
+    EntryMetadataRequest,
+    GenerateSyncPlanRequestDto,
+    GetFileGitHistoryRequestDto,
+    GetFileGitHistoryResponseDto,
+    HostKeyProbeDto,
+    InvokeActionRequestDto,
+    ListDirectoryRequest,
+    LocationDto,
+    NavigateRequest,
+    OperationDto,
+    PluginDescriptorDto,
+    PluginLogEntryDto,
+    ReadFileRangeRequestDto,
+    ReadFileRangeResponseDto,
+    RenderChecksumFileRequestDto,
+    ResolveOperationConflictRequestDto,
+    RuntimeCapabilitiesDto,
+    SaveChecksumFileRequestDto,
+    SaveChecksumFileResponseDto,
+    SearchInFileRequestDto,
+    SearchInFileResponseDto,
+    SetPaneActivityRequest,
+    SettingsDto,
+    StartChecksumRequestDto,
+    StartChecksumResponseDto,
+    StartComparisonRequestDto,
+    StartComparisonResponseDto,
+    StartDuplicateScanRequestDto,
+    StartDuplicateScanResponseDto,
+    StartOperationRequestDto,
+    StartSearchRequestDto,
+    StartSearchResponseDto,
+    SyncPlanDto,
+    UpdateConnectionRequestDto,
+    VerificationReportDto,
+    VerifyChecksumFileRequestDto,
+    WorkspaceCommandDto,
+    WorkspaceDto,
     WorkspaceSummaryDto,
 };
 
 use crate::{
     AppState,
     event_stream::EventSubscriptionRegistry,
+    native_menu::NativeMenuActionChannel,
     terminal::{TerminalError, TerminalEvent, TerminalRegistry},
 };
 
@@ -296,6 +336,18 @@ pub(crate) async fn get_system_locations(
         .map_err(|error| error.into_dto(uuid::Uuid::new_v4()))
 }
 
+/// Lists currently mounted volumes through the shared application service.
+#[tauri::command]
+pub(crate) async fn get_volumes(
+    state: State<'_, AppState>,
+) -> Result<Vec<fm_transport_dto::VolumeDto>, ApplicationErrorDto> {
+    state
+        .service
+        .volumes()
+        .await
+        .map_err(|error| error.into_dto(uuid::Uuid::new_v4()))
+}
+
 /// Returns the same native PNG bytes as `GET /api/v1/icons`.
 #[tauri::command]
 pub(crate) fn get_file_icon(
@@ -305,6 +357,21 @@ pub(crate) fn get_file_icon(
     state
         .service
         .file_icon(&uri)
+        .map_err(|error| error.into_dto(Uuid::new_v4()))
+}
+
+/// Returns the same JPEG thumbnail bytes as `GET /api/v1/thumbnails`
+/// (task 0134). `size` must be `"small"`, `"medium"` or `"large"`.
+#[tauri::command]
+pub(crate) async fn get_thumbnail(
+    state: State<'_, AppState>,
+    uri: String,
+    size: String,
+) -> Result<Vec<u8>, ApplicationErrorDto> {
+    state
+        .service
+        .thumbnail(&uri, &size)
+        .await
         .map_err(|error| error.into_dto(Uuid::new_v4()))
 }
 
@@ -459,6 +526,61 @@ pub(crate) async fn calculate_folder_size(
         .map_err(|error| error.into_dto(Uuid::new_v4()))
 }
 
+/// Fetches a file's git commit history through the same application service as Axum, for the
+/// Alt+Space metadata panel's history section (task 0135).
+#[tauri::command]
+pub(crate) async fn get_file_git_history(
+    state: State<'_, AppState>,
+    request: GetFileGitHistoryRequestDto,
+) -> Result<GetFileGitHistoryResponseDto, ApplicationErrorDto> {
+    Ok(state.service.git_file_history(request))
+}
+
+/// A fresh, unique window label for a new window on `workspace_id` (task 0143 sub-task (b)).
+/// Every call returns a different label - "Open in New Window" is meant to always open another
+/// window, even for a workspace that already has one or more windows open, so labels can't be
+/// reused as a dedup key the way an earlier version of this command did. The `workspace-<id>`
+/// prefix is still what the capability glob (`capabilities/default.json`) and
+/// [`canonical_workspace_window_label`] key off of; the `_<nonce>` suffix only exists to keep
+/// labels distinct.
+fn workspace_window_label(workspace_id: Uuid) -> String {
+    format!("workspace-{workspace_id}_{}", Uuid::new_v4())
+}
+
+/// Reduces a window label back to its stable `workspace-<id>` form, stripping the uniquifying
+/// nonce `workspace_window_label` appends. Passed to `tauri-plugin-window-state`'s `map_label` so
+/// every window opened for the same workspace shares one remembered frame (position/size) instead
+/// of each getting its own, now that windows for a workspace are no longer deduplicated by label.
+/// Labels with no nonce (`"main"`) pass through unchanged.
+pub(crate) fn canonical_workspace_window_label(label: &str) -> &str {
+    label.split('_').next().unwrap_or(label)
+}
+
+/// Opens a new OS window showing `workspace_id`. The window's frontend loads with
+/// `?workspaceId=<id>` in its URL so it calls `start_workspace` with that id explicitly on boot
+/// instead of falling back to the last-active workspace (spec §5.3.7; see
+/// `frontend/src/app/app-shell.ts`'s startup path).
+///
+/// Deliberately does not reuse the `AppState`-managed `FileManagerService` through any
+/// window-specific state: every window shares the same `Arc` already `.manage()`d once in
+/// `run()`, so no new service wiring is needed here - only window lifecycle.
+#[tauri::command]
+pub(crate) async fn open_workspace_window(
+    app: AppHandle,
+    workspace_id: Uuid,
+) -> Result<(), String> {
+    let label = workspace_window_label(workspace_id);
+    let url = tauri::WebviewUrl::App(format!("index.html?workspaceId={workspace_id}").into());
+    tauri::WebviewWindowBuilder::new(&app, &label, url)
+        .title("Procyon")
+        .inner_size(1280.0, 800.0)
+        .title_bar_style(tauri::TitleBarStyle::Overlay)
+        .hidden_title(true)
+        .build()
+        .map_err(|error| error.to_string())?;
+    Ok(())
+}
+
 /// Lists every stored workspace as a lightweight summary, identical in shape
 /// to `GET /api/v1/workspaces`.
 #[tauri::command]
@@ -468,6 +590,21 @@ pub(crate) async fn list_workspaces(
     state
         .service
         .list_workspaces()
+        .await
+        .map_err(|error| error.into_dto(Uuid::new_v4()))
+}
+
+/// Runs the workspace startup lifecycle, identical in shape to
+/// `POST /api/v1/workspaces/start`: opens `workspace_id` if given, otherwise
+/// the last-active workspace, otherwise creates a default.
+#[tauri::command]
+pub(crate) async fn start_workspace(
+    state: State<'_, AppState>,
+    workspace_id: Option<Uuid>,
+) -> Result<WorkspaceDto, ApplicationErrorDto> {
+    state
+        .service
+        .start_workspace(workspace_id)
         .await
         .map_err(|error| error.into_dto(Uuid::new_v4()))
 }
@@ -1073,9 +1210,133 @@ pub(crate) async fn accept_ssh_host_key(
         .map_err(|error| error.into_dto(Uuid::new_v4()))
 }
 
+/// One native menu bar click (task 0133), streamed to the frontend over
+/// [`subscribe_native_menu_actions`]'s channel rather than the global
+/// `emit`/`listen` event API, matching this app's existing IPC convention
+/// (see `event_stream.rs`, `open_embedded_terminal`).
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct NativeMenuActionEvent {
+    id: String,
+}
+
+/// Subscribes the frontend to native menu action clicks (task 0133). Called
+/// once at startup; a later call replaces the previous subscription.
+#[tauri::command]
+pub(crate) fn subscribe_native_menu_actions(
+    registry: State<'_, NativeMenuActionChannel>,
+    channel: Channel<NativeMenuActionEvent>,
+) {
+    registry.set(channel);
+}
+
+/// Builds the callback [`set_native_menu`] hands to
+/// `FileManagerService::install_native_menu`: forwards each click's action
+/// id over whichever channel is currently subscribed, or does nothing if
+/// the frontend hasn't subscribed yet - installing a menu before that
+/// happens still succeeds, it just has nowhere to report clicks to yet.
+fn native_menu_action_callback(
+    channel: Option<Channel<NativeMenuActionEvent>>,
+) -> Arc<dyn Fn(String) + Send + Sync> {
+    match channel {
+        Some(channel) => Arc::new(move |id: String| {
+            let _ = channel.send(NativeMenuActionEvent { id });
+        }),
+        None => Arc::new(|_id: String| {}),
+    }
+}
+
+/// Installs (or replaces) the native menu bar (task 0133) from `spec`, built
+/// by the frontend from the action registry (task 0049). Native menu APIs
+/// require the main thread, so this follows the same
+/// `run_on_main_thread`-plus-`oneshot` pattern as [`start_native_drag`].
+#[tauri::command]
+pub(crate) async fn set_native_menu<R: Runtime>(
+    state: State<'_, AppState>,
+    registry: State<'_, NativeMenuActionChannel>,
+    app: AppHandle<R>,
+    spec: fm_domain::NativeMenuSpec,
+) -> Result<(), ApplicationErrorDto> {
+    let service = Arc::clone(&state.service);
+    let on_action = native_menu_action_callback(registry.get());
+    let (sender, receiver) = tokio::sync::oneshot::channel();
+    app.run_on_main_thread(move || {
+        let result = service.install_native_menu(&spec, on_action);
+        let _ = sender.send(result);
+    })
+    .map_err(|_| fm_application::ApplicationError::Internal.into_dto(Uuid::new_v4()))?;
+    receiver
+        .await
+        .map_err(|_| fm_application::ApplicationError::Internal.into_dto(Uuid::new_v4()))?
+        .map_err(|error| error.into_dto(Uuid::new_v4()))
+}
+
 #[cfg(test)]
 mod tests {
+    use std::sync::Mutex;
+
+    use tauri::ipc::InvokeResponseBody;
+
     use super::*;
+
+    #[test]
+    fn workspace_window_label_is_unique_per_call_and_reduces_to_the_same_canonical_form() {
+        let id = Uuid::new_v4();
+        let first = workspace_window_label(id);
+        let second = workspace_window_label(id);
+
+        assert_ne!(
+            first, second,
+            "each call must open another window, never dedup"
+        );
+        assert_eq!(
+            canonical_workspace_window_label(&first),
+            canonical_workspace_window_label(&second),
+            "every window opened for the same workspace must share one remembered frame"
+        );
+        assert_eq!(
+            canonical_workspace_window_label(&first),
+            format!("workspace-{id}"),
+        );
+    }
+
+    #[test]
+    fn canonical_workspace_window_label_passes_through_a_label_with_no_nonce() {
+        assert_eq!(canonical_workspace_window_label("main"), "main");
+    }
+
+    #[test]
+    fn native_menu_action_callback_forwards_the_id_over_the_subscribed_channel() {
+        let received = Arc::new(Mutex::new(Vec::new()));
+        let received_by_channel = Arc::clone(&received);
+        let channel = Channel::new(move |body| {
+            let json = match body {
+                InvokeResponseBody::Json(json) => json,
+                InvokeResponseBody::Raw(bytes) => String::from_utf8_lossy(&bytes).into_owned(),
+            };
+            received_by_channel
+                .lock()
+                .unwrap_or_else(|error| error.into_inner())
+                .push(json);
+            Ok(())
+        });
+
+        let callback = native_menu_action_callback(Some(channel));
+        callback("core.preferences".to_owned());
+
+        assert_eq!(
+            received.lock().expect("channel lock").as_slice(),
+            [r#"{"id":"core.preferences"}"#.to_owned()]
+        );
+    }
+
+    #[test]
+    fn native_menu_action_callback_is_a_no_op_without_a_subscription() {
+        // Installing a menu before the frontend subscribes must still succeed silently rather
+        // than panicking or erroring - there is simply nowhere to report clicks to yet.
+        let callback = native_menu_action_callback(None);
+        callback("core.copy".to_owned());
+    }
 
     #[test]
     fn native_drag_paths_require_a_non_empty_selection() {

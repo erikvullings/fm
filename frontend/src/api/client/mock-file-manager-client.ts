@@ -33,6 +33,8 @@ import type {
   EntrySummary,
   FileRangeChunk,
   GenerateSyncPlanRequest,
+  GitFileHistoryRequest,
+  GitFileHistoryResult,
   HostKeyProbe,
   InvokeActionRequest,
   ListDirectoryRequest,
@@ -70,6 +72,7 @@ import type {
   UpdateConnectionRequest,
   VerificationReport,
   VerificationResult,
+  Volume,
   WorkspaceCommand,
   WorkspaceId,
   WorkspaceProjection,
@@ -95,14 +98,31 @@ const directories = directoryFixtures as Record<string, FixtureEntry[]>;
 const actions = actionFixtures as ActionDescriptor[];
 const plugins = pluginFixtures as PluginDescriptor[];
 
+/** Extensions {@link MockFileManagerClient.getThumbnail} fakes a preview for (task 0134). */
+const THUMBNAILABLE_MOCK_EXTENSIONS = new Set([
+  'jpg',
+  'jpeg',
+  'png',
+  'gif',
+  'webp',
+  'cbz',
+  'cbr',
+  'mp4',
+  'm4v',
+  'mov',
+  'pdf',
+]);
+
 export type MockClientMethod =
   | 'getRuntimeCapabilities'
   | 'getSystemLocations'
+  | 'getVolumes'
   | 'startNativeDrag'
   | 'getSettings'
   | 'updateSettings'
   | 'getWorkspace'
   | 'listWorkspaces'
+  | 'startWorkspace'
   | 'createWorkspace'
   | 'renameWorkspace'
   | 'deleteWorkspace'
@@ -113,10 +133,12 @@ export type MockClientMethod =
   | 'getEntryMetadata'
   | 'setPaneActivity'
   | 'getFileIcon'
+  | 'getThumbnail'
   | 'cacheArchivePassword'
   | 'readFileRange'
   | 'searchInFile'
   | 'calculateFolderSize'
+  | 'gitFileHistory'
   | 'startOperation'
   | 'listOperations'
   | 'cancelOperation'
@@ -662,6 +684,13 @@ export class MockFileManagerClient implements FileManagerClient {
     return this.perform('getSystemLocations', signal, () => []);
   }
 
+  getVolumes(signal?: AbortSignal): Promise<Volume[]> {
+    return this.perform('getVolumes', signal, () => [
+      { name: 'Macintosh HD', location: { providerId: 'file', uri: 'mock:///' } },
+      { name: 'Empty Drive', location: { providerId: 'file', uri: 'mock:///Empty' } },
+    ]);
+  }
+
   startNativeDrag(_locations: readonly Location[], signal?: AbortSignal): Promise<void> {
     return this.perform('startNativeDrag', signal, () => undefined);
   }
@@ -683,6 +712,23 @@ export class MockFileManagerClient implements FileManagerClient {
         : '';
       if (!this.nativeIconExtensions.has(extension)) return undefined;
       return new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+    });
+  }
+
+  getThumbnail(
+    locationUri: string,
+    _size: 'small' | 'medium' | 'large',
+    signal?: AbortSignal,
+  ): Promise<Uint8Array | undefined> {
+    return this.perform('getThumbnail', signal, () => {
+      const pathname = new URL(locationUri).pathname;
+      const name = pathname.slice(pathname.lastIndexOf('/') + 1);
+      const extension = name.includes('.')
+        ? name.slice(name.lastIndexOf('.') + 1).toLowerCase()
+        : '';
+      if (!THUMBNAILABLE_MOCK_EXTENSIONS.has(extension)) return undefined;
+      // JPEG magic bytes - just needs to look like an image, not decode as one.
+      return new Uint8Array([0xff, 0xd8, 0xff, 0xe0]);
     });
   }
 
@@ -714,6 +760,19 @@ export class MockFileManagerClient implements FileManagerClient {
         `mock-workspace-${this.workspaceSequence}`,
         request.name ?? 'Default',
       );
+      this.workspaces.set(workspace.id, workspace);
+      return structuredClone(workspace);
+    });
+  }
+
+  startWorkspace(workspaceId?: WorkspaceId, signal?: AbortSignal): Promise<WorkspaceProjection> {
+    return this.perform('startWorkspace', signal, () => {
+      const existing = workspaceId === undefined ? undefined : this.workspaces.get(workspaceId);
+      if (existing !== undefined) return structuredClone(existing);
+      const [first] = this.workspaces.values();
+      if (first !== undefined) return structuredClone(first);
+      this.workspaceSequence += 1;
+      const workspace = createMockWorkspace(`mock-workspace-${this.workspaceSequence}`, 'Default');
       this.workspaces.set(workspace.id, workspace);
       return structuredClone(workspace);
     });
@@ -1066,6 +1125,16 @@ export class MockFileManagerClient implements FileManagerClient {
       }
       return { totalBytes, fileCount };
     });
+  }
+
+  gitFileHistory(
+    request: GitFileHistoryRequest,
+    signal?: AbortSignal,
+  ): Promise<GitFileHistoryResult> {
+    // The mock fixtures have no notion of a git working tree, so every file simply has no
+    // history to show - the same outcome a real backend reports for a non-git directory.
+    void request;
+    return this.perform('gitFileHistory', signal, () => ({ commits: [] }));
   }
 
   startOperation(request: StartOperationRequest, signal?: AbortSignal): Promise<Operation> {

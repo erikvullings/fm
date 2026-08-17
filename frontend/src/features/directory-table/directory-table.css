@@ -59,10 +59,9 @@
 .fm-directory-header,
 .fm-directory-row {
   display: grid;
-  grid-template-columns: minmax(12rem, 1fr) minmax(6rem, 0.25fr) minmax(6rem, 0.2fr) minmax(
-      10rem,
-      0.35fr
-    );
+  grid-template-columns:
+    minmax(12rem, 1fr) minmax(6rem, 0.25fr) minmax(6rem, 0.2fr) minmax(2.5rem, 0.08fr)
+    minmax(10rem, 0.35fr);
   align-items: center;
   box-sizing: border-box;
 }
@@ -97,22 +96,23 @@
   text-align: start;
 }
 
-.fm-directory-header > button::after {
+.fm-directory-resize-handle {
   position: absolute;
-  top: 20%;
-  right: -3px;
-  bottom: 20%;
-  width: 6px;
+  top: 0;
+  bottom: 0;
+  right: -4px;
+  width: 8px;
   cursor: col-resize;
-  content: "";
+  touch-action: none;
+}
+
+.fm-directory-resize-handle:hover,
+.fm-directory-resize-handle:active {
+  background: var(--fm-selection);
 }
 
 .fm-directory-header > button:last-child {
   border-inline-end: 0;
-}
-
-.fm-directory-header > button:last-child::after {
-  display: none;
 }
 
 .fm-directory-header > button:hover,
@@ -225,6 +225,42 @@ img.fm-native-entry-icon {
 
 .fm-directory-size {
   text-align: end;
+  font-variant-numeric: tabular-nums;
+}
+
+.fm-directory-git-status {
+  text-align: center;
+}
+
+.fm-directory-git-status-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.1em;
+  font-weight: 700;
+  font-size: 0.9em;
+}
+
+.fm-directory-git-status-badge--modified {
+  color: var(--fm-warning);
+}
+
+.fm-directory-git-status-badge--staged {
+  color: var(--fm-success);
+}
+
+.fm-directory-git-status-badge--untracked {
+  color: var(--fm-accent);
+}
+
+.fm-directory-git-status-badge--ignored {
+  color: var(--fm-text-muted);
+}
+
+/* Keeps the app's own font rather than switching to monospace: `tabular-nums` fixes each digit
+ * to the same width within that font, so day/hour/minute line up across rows even though the
+ * formatted string's digit count varies (e.g. "Aug 6" vs "Aug 16"). */
+.fm-directory-modified {
   font-variant-numeric: tabular-nums;
 }
 

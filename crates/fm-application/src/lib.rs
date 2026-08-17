@@ -25,6 +25,7 @@ mod remote_terminal;
 mod service;
 mod settings_mapping;
 mod ssh;
+mod thumbnails;
 pub mod workspace;
 
 pub use action::{ActionRegistry, DuplicateActionId};

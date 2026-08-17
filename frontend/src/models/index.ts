@@ -7,6 +7,7 @@ export * from './entry';
 export * from './events';
 export * from './ids';
 export * from './location';
+export * from './native-menu';
 export * from './operation';
 export * from './plugin';
 export * from './requests';

@@ -3,6 +3,8 @@
  * Run `pnpm api:generate` (or `pnpm api:check`) to regenerate.
  */
 import type { ColumnConfigurationDto } from './columnConfigurationDto.ts';
+import type { DirectoryViewModeDto } from './directoryViewModeDto.ts';
+import type { IconSizeDto } from './iconSizeDto.ts';
 import type { QuickFilterPatchDto } from './quickFilterPatchDto.ts';
 import type { SortDescriptorDto } from './sortDescriptorDto.ts';
 
@@ -21,6 +23,7 @@ export interface DirectoryViewPatchDto {
      * @nullable
      */
   foldersFirst?: boolean | null;
+  iconSize?: null | IconSizeDto;
   quickFilter?: null | QuickFilterPatchDto;
   /**
      * Replace whether hidden entries are shown, if present.
@@ -32,4 +35,5 @@ export interface DirectoryViewPatchDto {
      * @nullable
      */
   sort?: SortDescriptorDto[] | null;
+  viewMode?: null | DirectoryViewModeDto;
 }

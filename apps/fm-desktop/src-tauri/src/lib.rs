@@ -7,6 +7,7 @@
 mod commands;
 mod credentials;
 mod event_stream;
+mod native_menu;
 mod platform;
 mod terminal;
 
@@ -44,6 +45,32 @@ fn build_context<R: tauri::Runtime>() -> tauri::Context<R> {
 pub fn run() {
     init_tracing();
     tauri::Builder::default()
+        // Registered first (per the plugin's own docs) so a second launch of the app is caught
+        // before any other setup runs: rather than starting a second OS process that would race
+        // this one over the same on-disk workspace store (task 0143), the second process hands its
+        // launch off to this callback and exits, and this instance just focuses its main window.
+        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.unminimize();
+                let _ = window.set_focus();
+            }
+        }))
+        // Persists and restores each window's frame (position, size, maximized state) keyed by
+        // its label, using only public Tauri/monitor APIs (task 0143 sub-task (c)). `map_label`
+        // reduces a per-workspace window's label (`open_workspace_window`, sub-task (b), gives
+        // every window a unique `workspace-<uuid>_<nonce>` label so "Open in New Window" always
+        // opens another window rather than deduplicating) back to the stable `workspace-<uuid>`
+        // form, so every window ever opened for the same workspace shares one remembered frame
+        // instead of each getting its own. `on_window_ready` fires for windows built later via
+        // `WebviewWindowBuilder` just as much as the config-declared `"main"` one. Deliberately
+        // does not restore which macOS Space/virtual-desktop a window was on: no public API
+        // exposes that (see TASKS/0143's Context for why private `CGSSpace*` APIs are out of
+        // scope here).
+        .plugin(
+            tauri_plugin_window_state::Builder::default()
+                .map_label(commands::canonical_workspace_window_label)
+                .build(),
+        )
         .manage(AppState {
             service: Arc::new(
                 FileManagerService::with_platform_adapter_and_credential_store(
@@ -61,6 +88,7 @@ pub fn run() {
         })
         .manage(event_stream::EventSubscriptionRegistry::default())
         .manage(terminal::TerminalRegistry::default())
+        .manage(native_menu::NativeMenuActionChannel::default())
         .on_window_event(|window, event| {
             if matches!(event, tauri::WindowEvent::Destroyed) {
                 window
@@ -73,9 +101,11 @@ pub fn run() {
             commands::unsubscribe_events,
             commands::get_runtime_capabilities,
             commands::get_system_locations,
+            commands::get_volumes,
             commands::start_native_drag,
             commands::native_drag_locations,
             commands::get_file_icon,
+            commands::get_thumbnail,
             commands::get_settings,
             commands::update_settings,
             commands::list_directory,
@@ -88,8 +118,11 @@ pub fn run() {
             commands::save_editable_file,
             commands::search_in_file,
             commands::calculate_folder_size,
+            commands::get_file_git_history,
             commands::cache_archive_password,
             commands::list_workspaces,
+            commands::start_workspace,
+            commands::open_workspace_window,
             commands::create_workspace,
             commands::get_workspace,
             commands::delete_workspace,
@@ -139,6 +172,8 @@ pub fn run() {
             commands::write_embedded_terminal,
             commands::resize_embedded_terminal,
             commands::set_caption_colours,
+            commands::subscribe_native_menu_actions,
+            commands::set_native_menu,
         ])
         .run(build_context())
         .expect("error while running the Tauri application");
@@ -221,14 +256,17 @@ mod tests {
                 ),
             })
             .manage(event_stream::EventSubscriptionRegistry::default())
+            .manage(native_menu::NativeMenuActionChannel::default())
             .invoke_handler(tauri::generate_handler![
                 commands::subscribe_events,
                 commands::unsubscribe_events,
                 commands::get_runtime_capabilities,
                 commands::get_system_locations,
+                commands::get_volumes,
                 commands::start_native_drag,
                 commands::native_drag_locations,
                 commands::get_file_icon,
+                commands::get_thumbnail,
                 commands::get_settings,
                 commands::update_settings,
                 commands::list_directory,
@@ -241,8 +279,10 @@ mod tests {
                 commands::save_editable_file,
                 commands::search_in_file,
                 commands::calculate_folder_size,
+                commands::get_file_git_history,
                 commands::cache_archive_password,
                 commands::list_workspaces,
+                commands::start_workspace,
                 commands::create_workspace,
                 commands::get_workspace,
                 commands::delete_workspace,
@@ -288,6 +328,8 @@ mod tests {
                 commands::test_connection,
                 commands::probe_ssh_host_key,
                 commands::accept_ssh_host_key,
+                commands::subscribe_native_menu_actions,
+                commands::set_native_menu,
             ])
             // Uses the app's real `tauri.conf.json` config (same as `run()`)
             // rather than `mock_context(noop_assets())`'s empty default config,
@@ -356,6 +398,32 @@ mod tests {
                 error: CallbackFn(1),
                 url: local_protocol_url(),
                 body: InvokeBody::Json(serde_json::json!({ "uri": "not a location" })),
+                headers: Default::default(),
+                invoke_key: INVOKE_KEY.to_string(),
+            },
+        )
+        .expect_err("invalid location must reject the command");
+
+        assert!(error.to_string().contains("invalidRequest"));
+    }
+
+    #[test]
+    fn thumbnail_command_returns_a_typed_error_for_an_invalid_location() {
+        let app = create_app(mock_builder());
+        let webview = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
+            .build()
+            .expect("failed to build mock webview");
+
+        let error = get_ipc_response(
+            &webview,
+            InvokeRequest {
+                cmd: "get_thumbnail".into(),
+                callback: CallbackFn(0),
+                error: CallbackFn(1),
+                url: local_protocol_url(),
+                body: InvokeBody::Json(
+                    serde_json::json!({ "uri": "not a location", "size": "small" }),
+                ),
                 headers: Default::default(),
                 invoke_key: INVOKE_KEY.to_string(),
             },

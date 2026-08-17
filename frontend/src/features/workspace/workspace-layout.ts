@@ -13,12 +13,18 @@ import type {
   SortDescriptor,
   SystemLocation,
   TabId,
+  Volume,
   VolumeCapacity,
   WorkspaceLayout,
   WorkspaceProjection,
 } from '../../models';
-import type { DirectoryColumnDescriptor } from '../directory-table/directory-table';
+import type { GridIconSize } from '../directory-table/directory-grid';
+import type {
+  ColumnWidthEntry,
+  DirectoryColumnDescriptor,
+} from '../directory-table/directory-table';
 import type { NativeIconLoader } from '../directory-table/native-icon-loader';
+import type { ThumbnailLoader } from '../directory-table/thumbnail-loader';
 import type { EntryFormatSettings } from '../entry-formatting/entry-formatting';
 import type {
   DirectorySummaryAttrs,
@@ -55,6 +61,7 @@ export interface WorkspacePaneContent {
   readonly formatSettings?: EntryFormatSettings;
   readonly pluginColumns?: readonly DirectoryColumnDescriptor[];
   readonly nativeIconLoader?: NativeIconLoader;
+  readonly thumbnailLoader?: ThumbnailLoader;
   readonly cursorIndex?: number;
   readonly platform: SelectionPlatform;
   readonly keybindingRuntime?: KeybindingRuntime;
@@ -66,6 +73,10 @@ export interface WorkspacePaneContent {
   readonly systemLocations?: readonly SystemLocation[];
   readonly systemLocationsError?: string;
   readonly onRetrySystemLocations?: () => void | Promise<void>;
+  /** Currently mounted local/removable/disk-image volumes (task 0144). */
+  readonly volumes?: readonly Volume[];
+  readonly volumesError?: string;
+  readonly onRetryVolumes?: () => void | Promise<void>;
   /** Saved application-managed connections shown in the `SERVERS` group (task 0103). */
   readonly connections?: readonly Connection[];
   /** Opens the connections manager (add/edit/delete/connect/disconnect/test, task 0103). */
@@ -86,6 +97,12 @@ export interface WorkspacePaneContent {
   readonly onRetry: () => void | Promise<void>;
   readonly onLoadNextPage: () => void | Promise<void>;
   readonly onSortChange: (sort: readonly SortDescriptor[]) => void;
+  /** Table vs. thumbnail grid, and grid tile size (task 0134). */
+  readonly viewMode?: 'table' | 'grid';
+  readonly iconSize?: GridIconSize;
+  readonly onViewModeChange?: (viewMode: 'table' | 'grid', iconSize: GridIconSize) => void;
+  readonly columnWidths?: readonly ColumnWidthEntry[] | undefined;
+  readonly onColumnWidthChange?: (columnId: string, width: number) => void;
   readonly onFilterQueryChange: (query: string) => void;
   readonly onFilterCommit: () => void;
   readonly onFilterClose: () => void;
@@ -480,6 +497,9 @@ export const WorkspaceLayoutView: FactoryComponent<WorkspaceLayoutViewAttrs> = (
           systemLocations: content.systemLocations,
           systemLocationsError: content.systemLocationsError,
           onRetrySystemLocations: content.onRetrySystemLocations,
+          volumes: content.volumes,
+          volumesError: content.volumesError,
+          onRetryVolumes: content.onRetryVolumes,
           connections: content.connections,
           onManageConnections: content.onManageConnections,
           onRefreshConnections: content.onRefreshConnections,
@@ -495,6 +515,12 @@ export const WorkspaceLayoutView: FactoryComponent<WorkspaceLayoutViewAttrs> = (
           formatSettings: content.formatSettings,
           pluginColumns: content.pluginColumns,
           nativeIconLoader: content.nativeIconLoader,
+          thumbnailLoader: content.thumbnailLoader,
+          viewMode: content.viewMode,
+          iconSize: content.iconSize,
+          onViewModeChange: content.onViewModeChange,
+          columnWidths: content.columnWidths,
+          onColumnWidthChange: content.onColumnWidthChange,
         } satisfies TableConfigAttrs,
         directorySummary: {
           hasMore: content.hasMore,
