@@ -1,5 +1,7 @@
 import type { CalculateFolderSizeResponseDto } from '../api/generated/models/calculateFolderSizeResponseDto';
 import type { ComparisonPageDto } from '../api/generated/models/comparisonPageDto';
+import type { GetFileGitHistoryResponseDto } from '../api/generated/models/getFileGitHistoryResponseDto';
+import type { GitLogEntryDto } from '../api/generated/models/gitLogEntryDto';
 import type { LoadEditableFileResponseDto } from '../api/generated/models/loadEditableFileResponseDto';
 import type { ReadFileRangeResponseDto } from '../api/generated/models/readFileRangeResponseDto';
 import type { SaveEditableFileResponseDto } from '../api/generated/models/saveEditableFileResponseDto';
@@ -205,6 +207,21 @@ export interface CalculateFolderSizeRequest {
 
 /** The result of a {@link CalculateFolderSizeRequest}. */
 export type CalculateFolderSizeResult = CalculateFolderSizeResponseDto;
+
+/**
+ * Requests a file's git commit history (`POST /api/v1/files/git-history`), for the Alt+Space
+ * metadata panel's history section (task 0135), mirroring
+ * `fm_transport_dto::GetFileGitHistoryRequestDto`.
+ */
+export interface GitFileHistoryRequest {
+  location: Location;
+}
+
+/** One commit touching a file, newest first. */
+export type GitLogEntry = GitLogEntryDto;
+
+/** The result of a {@link GitFileHistoryRequest}: empty when the file has no history to show. */
+export type GitFileHistoryResult = GetFileGitHistoryResponseDto;
 
 /**
  * Starts a recursive, cancellable directory comparison

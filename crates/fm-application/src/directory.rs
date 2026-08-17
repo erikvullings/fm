@@ -26,6 +26,16 @@ use uuid::Uuid;
 
 use crate::ApplicationError;
 
+/// Cap on how many matching commits `DirectoryService::git_history` returns
+/// for the Alt+Space metadata panel's history section (task 0135) - a long
+/// scrolling list stops being useful well before this.
+const GIT_HISTORY_RESULT_LIMIT: usize = 50;
+
+/// Cap on how many commits back from `HEAD` `DirectoryService::git_history`
+/// scans looking for matches, so a huge, mostly-unrelated history never
+/// turns one Alt+Space press into an unbounded walk.
+const GIT_HISTORY_SCAN_LIMIT: usize = 2000;
+
 /// A pane not currently in the foreground polls a poll-tracked location this
 /// many times less often than an active one (task 0109). Native/delta-API
 /// watches are push-based and unaffected by pane activity.
@@ -357,6 +367,22 @@ impl DirectoryService {
             )
             .await
             .map_err(Into::into)
+    }
+
+    /// Fetches a file's git commit history for the Alt+Space metadata panel's history section
+    /// (task 0135). Local provider only; returns an empty list for non-local providers, files
+    /// outside a git working tree, or files with no commits yet - never an error, since "no
+    /// history to show" is a normal, expected outcome, not a failure.
+    #[must_use]
+    pub fn git_history(&self, location: &fm_domain::Location) -> Vec<fm_domain::GitLogEntry> {
+        if location.provider_id.as_str() != "local" {
+            return Vec::new();
+        }
+        let Ok(path) = location.to_native_path() else {
+            return Vec::new();
+        };
+        self.git_status
+            .file_history(&path, GIT_HISTORY_RESULT_LIMIT, GIT_HISTORY_SCAN_LIMIT)
     }
 
     /// Marks whether a pane is currently in the foreground, so a
@@ -1900,5 +1926,47 @@ mod tests {
             .find(|entry| entry.name == "tracked.txt")
             .expect("tracked entry present after refresh");
         assert_eq!(tracked.git_status, Some(fm_domain::GitFileStatus::Modified));
+    }
+
+    #[test]
+    fn git_history_returns_commits_touching_a_tracked_file() {
+        let root = tempfile::tempdir().expect("temporary directory");
+        std::fs::write(root.path().join("tracked.txt"), b"a").expect("write tracked file");
+        init_git_repo(root.path());
+
+        let mut providers = ProviderRegistry::new();
+        providers.register(Arc::new(fm_vfs_local::LocalFileSystemProvider));
+        let service = DirectoryService::new(providers);
+        let location =
+            Location::from_native_path(&root.path().join("tracked.txt")).expect("local location");
+
+        let history = service.git_history(&location);
+
+        assert_eq!(history.len(), 1);
+        assert_eq!(history[0].summary, "initial");
+        assert_eq!(history[0].author_name, "Test");
+    }
+
+    #[test]
+    fn git_history_of_a_non_git_file_is_empty() {
+        let root = tempfile::tempdir().expect("temporary directory");
+        std::fs::write(root.path().join("plain.txt"), b"a").expect("write plain file");
+
+        let mut providers = ProviderRegistry::new();
+        providers.register(Arc::new(fm_vfs_local::LocalFileSystemProvider));
+        let service = DirectoryService::new(providers);
+        let location =
+            Location::from_native_path(&root.path().join("plain.txt")).expect("local location");
+
+        assert!(service.git_history(&location).is_empty());
+    }
+
+    #[test]
+    fn git_history_of_a_non_local_provider_is_empty() {
+        let providers = ProviderRegistry::new();
+        let service = DirectoryService::new(providers);
+        let location = Location::new(ProviderId::new("sftp"), "sftp://host/tracked.txt");
+
+        assert!(service.git_history(&location).is_empty());
     }
 }

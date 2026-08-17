@@ -1,5 +1,5 @@
 import type { FileManagerClient } from '../../api/client/file-manager-client';
-import type { EntrySummary, Location, SearchInFileMatch } from '../../models';
+import type { EntrySummary, GitLogEntry, Location, SearchInFileMatch } from '../../models';
 import { IMAGE_EXTENSIONS } from '../directory-table/entry-icons';
 import { editableLanguageForExtension } from '../editor/editor-language';
 import { archiveEntryLocation, archiveRootForEntry } from '../navigation/archive-location';
@@ -25,7 +25,7 @@ import { loadPdfDocument, type PDFDocumentProxy } from './pdf-preview';
  * used for comic (.cbz/.cbr) page listing. */
 export type FileViewerClient = Pick<
   FileManagerClient,
-  'readFileRange' | 'searchInFile' | 'listDirectory'
+  'readFileRange' | 'searchInFile' | 'listDirectory' | 'gitFileHistory'
 >;
 
 /** Bytes fetched per text window load (initial load and each "load more" append). */
@@ -160,6 +160,11 @@ export type FileViewerState =
       /** `'loading'` while EXIF/dimensions are being parsed for an image; absent for content kinds
        * with no metadata view (audio) until/unless one is added. */
       readonly metadata?: FileViewerMetadata | 'loading';
+      /** The Alt+Space panel's git history section (task 0135): commits touching this file,
+       * newest first. `'loading'` while the request is in flight; an empty array once resolved
+       * means the file has no history to show (outside a git working tree, on a non-local
+       * provider, or not yet committed) - the section is hidden in that case, not shown empty. */
+      readonly gitHistory?: readonly GitLogEntry[] | 'loading';
     };
 
 export interface FileViewerControllerOptions {
@@ -522,7 +527,10 @@ export function createFileViewerController(
       } else {
         publish({ status: 'unsupported', entry });
       }
-      if (initialMetadataOpen && current.status === 'ready') void computeMetadata();
+      if (initialMetadataOpen && current.status === 'ready') {
+        void computeMetadata();
+        void computeGitHistory();
+      }
     } catch (error: unknown) {
       if (isCurrent(controller)) {
         publish({ status: 'error', entry, message: errorMessage(error) });
@@ -812,12 +820,31 @@ export function createFileViewerController(
     });
   }
 
+  /** Fetches the info panel's git history section (task 0135). Never throws to the caller - a
+   * failed request (e.g. an unreachable backend) resolves to no history, same as a file that
+   * genuinely has none, since there is nothing actionable a user could do with a git-history
+   * fetch error here. */
+  async function computeGitHistory(): Promise<void> {
+    if (current.status !== 'ready') return;
+    const ready = current as Extract<FileViewerState, { status: 'ready' }>;
+    publish({ ...ready, gitHistory: 'loading' });
+    let commits: readonly GitLogEntry[] = [];
+    try {
+      commits = (await client.gitFileHistory({ location: entry.location })).commits;
+    } catch {
+      commits = [];
+    }
+    if (current.status !== 'ready') return;
+    publish({ ...(current as Extract<FileViewerState, { status: 'ready' }>), gitHistory: commits });
+  }
+
   function toggleMetadataPanel(): void {
     if (current.status !== 'ready') return;
     const ready = current as Extract<FileViewerState, { status: 'ready' }>;
     const open = !(ready.metadataPanelOpen ?? false);
     publish({ ...ready, metadataPanelOpen: open });
     if (open && ready.metadata === undefined) void computeMetadata();
+    if (open && ready.gitHistory === undefined) void computeGitHistory();
   }
 
   function nextPage(): void {

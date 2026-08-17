@@ -2,11 +2,13 @@ import m, { type FactoryComponent } from 'mithril';
 import { toast } from 'mithril-materialized';
 import { closeIcon, copyIcon, infoCircleIcon } from '../../components/tabler-icons';
 import { tooltip } from '../../components/tooltip';
+import type { GitLogEntry } from '../../models';
 import { CodeMirrorEditor } from '../editor/code-mirror-editor';
 import { editableLanguageForExtension, languageExtension } from '../editor/editor-language';
 import { safeMarkdownHtml } from '../editor/markdown-preview';
 import {
   DEFAULT_ENTRY_FORMAT_SETTINGS,
+  formatEntryModifiedAt,
   formatEntrySize,
 } from '../entry-formatting/entry-formatting';
 import { copyText } from './clipboard';
@@ -165,6 +167,35 @@ function renderMetadataPanel(metadata: FileViewerMetadata | 'loading' | undefine
     fields.push(metadataField('Language', metadata.language));
   }
   return m('.fm-file-viewer-metadata', m('dl', fields));
+}
+
+/** Renders the info panel's git history section (task 0135): commits touching this file, newest
+ * first. Renders nothing while `gitHistory` is unset (panel closed, or the fetch hasn't started
+ * yet) and nothing once resolved empty (the file has no history to show) - only a loading state
+ * and a populated list are visible, so a plain file never grows an empty "History" heading. */
+function renderGitHistorySection(
+  gitHistory: readonly GitLogEntry[] | 'loading' | undefined,
+): m.Children {
+  if (gitHistory === undefined) return undefined;
+  if (gitHistory === 'loading') {
+    return m('.fm-file-viewer-git-history', m('span', 'Loading history…'));
+  }
+  if (gitHistory.length === 0) return undefined;
+  return m('.fm-file-viewer-git-history', [
+    m('h4.fm-file-viewer-git-history-heading', 'History'),
+    m(
+      'ul.fm-file-viewer-git-history-list',
+      gitHistory.map((commit) =>
+        m('li.fm-file-viewer-git-history-entry', { key: commit.commitId }, [
+          m('span.fm-file-viewer-git-history-summary', commit.summary),
+          m(
+            'span.fm-file-viewer-git-history-meta',
+            `${commit.authorName} · ${formatEntryModifiedAt(commit.committedAt)} · ${commit.shortId}`,
+          ),
+        ]),
+      ),
+    ),
+  ]);
 }
 
 function renderSearchBar(
@@ -623,7 +654,10 @@ export const FileViewer: FactoryComponent<FileViewerAttrs> = () => {
                         ? renderEpubBody(state)
                         : renderImageBody(attrs, state),
         state.status === 'ready' && state.metadataPanelOpen === true
-          ? renderMetadataPanel(state.metadata)
+          ? m('.fm-file-viewer-info-panel', [
+              renderMetadataPanel(state.metadata),
+              renderGitHistorySection(state.gitHistory),
+            ])
           : undefined,
       ]);
     },

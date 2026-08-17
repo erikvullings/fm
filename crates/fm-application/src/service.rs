@@ -26,7 +26,8 @@ use fm_settings::{Settings, SettingsStore};
 use fm_transport_dto::{
     ActionDescriptorDto, ActionResultDto, ApplySyncPlanRequestDto, ApplySyncPlanResponseDto,
     ComparisonPageDto, ConflictResolutionDto, ConnectionDto, CreateConnectionRequestDto,
-    DirectorySnapshotDto, EntryMetadataRequest, GenerateSyncPlanRequestDto, InvokeActionRequestDto,
+    DirectorySnapshotDto, EntryMetadataRequest, GenerateSyncPlanRequestDto,
+    GetFileGitHistoryRequestDto, GetFileGitHistoryResponseDto, InvokeActionRequestDto,
     ListDirectoryRequest, NavigateRequest, OperationConflictPolicyDto, OperationDto,
     PluginDescriptorDto, PluginLogEntryDto, ReadFileRangeRequestDto, ReadFileRangeResponseDto,
     ResolveOperationConflictRequestDto, RuntimeCapabilitiesDto, RuntimeKindDto,
@@ -859,6 +860,23 @@ impl FileManagerService {
         request: fm_transport_dto::CalculateFolderSizeRequestDto,
     ) -> Result<fm_transport_dto::CalculateFolderSizeResponseDto, ApplicationError> {
         crate::folder_size::calculate_folder_size(&self.providers, request.location.into()).await
+    }
+
+    /// Fetches a file's git commit history for the Alt+Space metadata panel's history section
+    /// (task 0135). Never errors: an empty commit list means the file has no history to show
+    /// (non-local provider, outside a git working tree, or not yet committed).
+    pub fn git_file_history(
+        &self,
+        request: GetFileGitHistoryRequestDto,
+    ) -> GetFileGitHistoryResponseDto {
+        let location: Location = request.location.into();
+        let commits = self
+            .directories
+            .git_history(&location)
+            .into_iter()
+            .map(Into::into)
+            .collect();
+        GetFileGitHistoryResponseDto { commits }
     }
 
     /// Starts a cancellable recursive filename search over one or more

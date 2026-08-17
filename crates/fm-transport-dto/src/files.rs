@@ -185,6 +185,67 @@ pub struct CalculateFolderSizeResponseDto {
     pub file_count: u64,
 }
 
+/// Requests a file's git commit history (`POST /api/v1/files/git-history`), for the Alt+Space
+/// metadata panel's history section (task 0135).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(example = json!({
+    "location": {"providerId": "local", "uri": "file:///Users/erik/report.txt"}
+}))]
+pub struct GetFileGitHistoryRequestDto {
+    /// The file to look up history for.
+    pub location: LocationDto,
+}
+
+/// One commit touching the requested file, newest first.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(example = json!({
+    "commitId": "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0",
+    "shortId": "a1b2c3d",
+    "authorName": "Ada Lovelace",
+    "authorEmail": "ada@example.com",
+    "committedAt": "2026-01-15T09:30:00Z",
+    "summary": "fix(app): handle empty selection"
+}))]
+pub struct GitLogEntryDto {
+    /// The commit's full SHA.
+    pub commit_id: String,
+    /// The commit's abbreviated id, as `git log --oneline` would show it.
+    pub short_id: String,
+    /// The commit author's display name.
+    pub author_name: String,
+    /// The commit author's email address.
+    pub author_email: String,
+    /// When the commit was authored.
+    pub committed_at: chrono::DateTime<chrono::Utc>,
+    /// The commit message's first line.
+    pub summary: String,
+}
+
+/// A file's git history: empty when the file is outside a git working tree, on a non-local
+/// provider, or not yet tracked by any commit.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(example = json!({"commits": []}))]
+pub struct GetFileGitHistoryResponseDto {
+    /// Commits touching the file, newest first, up to a server-side cap.
+    pub commits: Vec<GitLogEntryDto>,
+}
+
+impl From<fm_domain::GitLogEntry> for GitLogEntryDto {
+    fn from(entry: fm_domain::GitLogEntry) -> Self {
+        Self {
+            commit_id: entry.commit_id,
+            short_id: entry.short_id,
+            author_name: entry.author_name,
+            author_email: entry.author_email,
+            committed_at: entry.committed_at,
+            summary: entry.summary,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -316,6 +377,41 @@ mod tests {
         assert!(json.contains("\"lineNumber\""));
         assert!(json.contains("\"truncated\""));
         let parsed: SearchInFileResponseDto =
+            serde_json::from_str(&json).expect("deserialization must succeed");
+        assert_eq!(response, parsed);
+    }
+
+    #[test]
+    fn get_file_git_history_request_round_trips_and_uses_camel_case_field_names() {
+        let request = GetFileGitHistoryRequestDto {
+            location: sample_location(),
+        };
+        let json = serde_json::to_string(&request).expect("serialization must succeed");
+        assert!(json.contains("\"location\""));
+        let parsed: GetFileGitHistoryRequestDto =
+            serde_json::from_str(&json).expect("deserialization must succeed");
+        assert_eq!(request, parsed);
+    }
+
+    #[test]
+    fn get_file_git_history_response_round_trips_and_uses_camel_case_field_names() {
+        let response = GetFileGitHistoryResponseDto {
+            commits: vec![GitLogEntryDto {
+                commit_id: "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0".to_owned(),
+                short_id: "a1b2c3d".to_owned(),
+                author_name: "Ada Lovelace".to_owned(),
+                author_email: "ada@example.com".to_owned(),
+                committed_at: "2026-01-15T09:30:00Z".parse().expect("valid timestamp"),
+                summary: "fix(app): handle empty selection".to_owned(),
+            }],
+        };
+        let json = serde_json::to_string(&response).expect("serialization must succeed");
+        assert!(json.contains("\"commitId\""));
+        assert!(json.contains("\"shortId\""));
+        assert!(json.contains("\"authorName\""));
+        assert!(json.contains("\"authorEmail\""));
+        assert!(json.contains("\"committedAt\""));
+        let parsed: GetFileGitHistoryResponseDto =
             serde_json::from_str(&json).expect("deserialization must succeed");
         assert_eq!(response, parsed);
     }

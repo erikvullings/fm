@@ -120,6 +120,32 @@ impl GitStatusService {
         computed
     }
 
+    /// Returns `path`'s commit history (newest first, matching `git log`) within its git working
+    /// tree, or an empty vector when `path` is not in a git working tree, is unborn (no commits
+    /// touch it yet), or the repository can't be opened. Scans at most `scan_limit` commits from
+    /// `HEAD` looking for ones that touch `path`, and stops once `result_limit` matches are found,
+    /// whichever comes first, so a huge, mostly-unrelated history never turns one Alt+Space press
+    /// into an unbounded walk.
+    #[must_use]
+    pub fn file_history(
+        &self,
+        path: &Path,
+        result_limit: usize,
+        scan_limit: usize,
+    ) -> Vec<fm_domain::GitLogEntry> {
+        let path = canonical(path);
+        let Some(parent) = path.parent() else {
+            return Vec::new();
+        };
+        let Some(repo_root) = self.repo_root_for(parent) else {
+            return Vec::new();
+        };
+        let Ok(rel_path) = path.strip_prefix(&repo_root) else {
+            return Vec::new();
+        };
+        compute_file_history(&repo_root, rel_path, result_limit, scan_limit).unwrap_or_default()
+    }
+
     #[cfg(test)]
     fn repo_root_is_cached(&self, dir: &Path) -> bool {
         self.inner
@@ -183,6 +209,87 @@ fn compute_repo_status(repo_root: &Path) -> Option<RepoStatus> {
     }
 
     Some(RepoStatus { files, dirs })
+}
+
+/// Walks commits reachable from `HEAD`, newest first, collecting the ones whose tree-diff against
+/// each parent (or, for a root commit, against the empty tree) touches `rel_path`.
+fn compute_file_history(
+    repo_root: &Path,
+    rel_path: &Path,
+    result_limit: usize,
+    scan_limit: usize,
+) -> Option<Vec<fm_domain::GitLogEntry>> {
+    let repo = git2::Repository::open(repo_root).ok()?;
+    let mut revwalk = repo.revwalk().ok()?;
+    revwalk.push_head().ok()?;
+    // TOPOLOGICAL keeps parents after children even when several commits share the same
+    // second-resolution author time (common in fast test fixtures and squashed history).
+    revwalk
+        .set_sorting(git2::Sort::TOPOLOGICAL | git2::Sort::TIME)
+        .ok()?;
+
+    let mut entries = Vec::new();
+    for oid in revwalk.take(scan_limit) {
+        if entries.len() >= result_limit {
+            break;
+        }
+        let oid = oid.ok()?;
+        let commit = repo.find_commit(oid).ok()?;
+        if !commit_touches_path(&repo, &commit, rel_path) {
+            continue;
+        }
+        let author = commit.author();
+        let Some(committed_at) = chrono::DateTime::from_timestamp(commit.time().seconds(), 0)
+        else {
+            continue;
+        };
+        entries.push(fm_domain::GitLogEntry {
+            commit_id: oid.to_string(),
+            short_id: commit
+                .as_object()
+                .short_id()
+                .ok()
+                .and_then(|buf| buf.as_str().map(str::to_owned))
+                .unwrap_or_else(|| oid.to_string()),
+            author_name: author.name().unwrap_or("").to_owned(),
+            author_email: author.email().unwrap_or("").to_owned(),
+            committed_at,
+            summary: commit.summary().unwrap_or("").to_owned(),
+        });
+    }
+    Some(entries)
+}
+
+/// Whether `commit`'s tree differs from every parent's tree (or, for a root commit, the empty
+/// tree) at `rel_path`. Uses a pathspec-scoped diff so only the one path's delta is computed,
+/// not the whole tree.
+fn commit_touches_path(repo: &git2::Repository, commit: &git2::Commit, rel_path: &Path) -> bool {
+    let Ok(tree) = commit.tree() else {
+        return false;
+    };
+    let mut diff_options = git2::DiffOptions::new();
+    diff_options.pathspec(rel_path.to_string_lossy().as_ref());
+
+    if commit.parent_count() == 0 {
+        return repo
+            .diff_tree_to_tree(None, Some(&tree), Some(&mut diff_options))
+            .is_ok_and(|diff| diff.deltas().len() > 0);
+    }
+    for parent_index in 0..commit.parent_count() {
+        let Ok(parent) = commit.parent(parent_index) else {
+            continue;
+        };
+        let Ok(parent_tree) = parent.tree() else {
+            continue;
+        };
+        let touched = repo
+            .diff_tree_to_tree(Some(&parent_tree), Some(&tree), Some(&mut diff_options))
+            .is_ok_and(|diff| diff.deltas().len() > 0);
+        if touched {
+            return true;
+        }
+    }
+    false
 }
 
 /// Maps `git2`'s bitflags onto the single status the column shows,
@@ -462,5 +569,90 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         let service = GitStatusService::new();
         service.invalidate(dir.path());
+    }
+
+    #[test]
+    fn file_history_returns_commits_touching_the_file_newest_first() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let file = dir.path().join("a.txt");
+        fs::write(&file, b"one").expect("write v1");
+        let repo = init_repo(dir.path());
+        commit_all(&repo, "first");
+        fs::write(&file, b"two").expect("write v2");
+        commit_all(&repo, "second");
+
+        let service = GitStatusService::new();
+        let history = service.file_history(&file, 10, 100);
+
+        assert_eq!(history.len(), 2);
+        assert_eq!(history[0].summary, "second");
+        assert_eq!(history[1].summary, "first");
+        assert_eq!(history[0].commit_id.len(), 40);
+        assert!(!history[0].short_id.is_empty());
+        assert_eq!(history[0].author_name, "Test");
+        assert_eq!(history[0].author_email, "test@example.com");
+    }
+
+    #[test]
+    fn file_history_excludes_commits_that_did_not_touch_the_file() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let target = dir.path().join("target.txt");
+        let other = dir.path().join("other.txt");
+        fs::write(&target, b"a").expect("write target");
+        fs::write(&other, b"b").expect("write other");
+        let repo = init_repo(dir.path());
+        commit_all(&repo, "initial");
+        fs::write(&other, b"changed").expect("modify other only");
+        commit_all(&repo, "unrelated change");
+
+        let service = GitStatusService::new();
+        let history = service.file_history(&target, 10, 100);
+
+        assert_eq!(history.len(), 1);
+        assert_eq!(history[0].summary, "initial");
+    }
+
+    #[test]
+    fn file_history_of_an_untracked_file_is_empty() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let repo = init_repo(dir.path());
+        commit_all(&repo, "empty");
+        let file = dir.path().join("new.txt");
+        fs::write(&file, b"new").expect("write file");
+
+        let service = GitStatusService::new();
+        let history = service.file_history(&file, 10, 100);
+
+        assert!(history.is_empty());
+    }
+
+    #[test]
+    fn file_history_of_a_non_git_directory_is_empty() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let file = dir.path().join("plain.txt");
+        fs::write(&file, b"hello").expect("write file");
+
+        let service = GitStatusService::new();
+        let history = service.file_history(&file, 10, 100);
+
+        assert!(history.is_empty());
+    }
+
+    #[test]
+    fn file_history_respects_result_limit() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let file = dir.path().join("a.txt");
+        let repo = init_repo(dir.path());
+        for revision in 0..5 {
+            fs::write(&file, format!("v{revision}")).expect("write revision");
+            commit_all(&repo, &format!("revision {revision}"));
+        }
+
+        let service = GitStatusService::new();
+        let history = service.file_history(&file, 2, 100);
+
+        assert_eq!(history.len(), 2);
+        assert_eq!(history[0].summary, "revision 4");
+        assert_eq!(history[1].summary, "revision 3");
     }
 }

@@ -63,6 +63,7 @@ fn api_router() -> OpenApiRouter<AppState> {
         .routes(utoipa_axum::routes!(routes::files::save_editable_file))
         .routes(utoipa_axum::routes!(routes::files::search_in_file))
         .routes(utoipa_axum::routes!(routes::files::calculate_folder_size))
+        .routes(utoipa_axum::routes!(routes::files::get_file_git_history))
         .routes(utoipa_axum::routes!(routes::files::cache_archive_password))
         .routes(utoipa_axum::routes!(routes::icons::get_file_icon))
         .routes(utoipa_axum::routes!(routes::thumbnails::get_thumbnail))
