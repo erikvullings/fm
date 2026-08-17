@@ -14,6 +14,7 @@ specification and [TASKS/README.md](TASKS/README.md) for the implementation task
 | Node.js | **22 LTS** | Managed by [nvs](https://github.com/jasongin/nvs) or nvm. |
 | pnpm | **11** | `npm install -g pnpm` or `corepack enable`. |
 | cargo-watch | latest | `cargo install cargo-watch` — used in the recommended dev flow. |
+| cargo-nextest | latest | `cargo install cargo-nextest --locked` — used by `pnpm run test:rust` (and CI) to run the Rust test suite; doctests still run separately via `cargo test --doc`, since nextest doesn't execute those. |
 
 **Tauri prerequisites (desktop builds only):**
 
@@ -59,6 +60,7 @@ crates/
   fm-metadata/          file metadata helpers; pure-Rust thumbnail generation + disk cache
   fm-archive/           archive VFS provider (zip, tar, …)
   fm-comparison/        directory comparison and sync-plan generation
+  fm-vcs-status/        per-directory git working-tree status (git2-backed, cached)
   fm-test-support/      shared test fixtures and helpers
 frontend/
   src/                  Mithril/TypeScript sources
@@ -86,7 +88,7 @@ root (`dev`, `test`, `lint`, `build`, ...) — see the root `package.json` for t
 | `pnpm dev:server` | Start `fm-server` on port 8787 with auth disabled, auto-rebuilding on file change (Terminal 1). |
 | `pnpm dev:tauri` | Launch the **Tauri desktop** app in dev mode (`VITE_RUNTIME=tauri`). |
 | `pnpm test` | Run Rust tests + frontend tests + script tests. |
-| `pnpm test:rust` | `cargo test --workspace` |
+| `pnpm test:rust` | `cargo nextest run --workspace` + `cargo test --doc --workspace` (nextest doesn't run doctests) |
 | `pnpm test:frontend` | Vitest (frontend unit tests) |
 | `pnpm lint` | Rust + Biome linting/formatting checks |
 | `pnpm api:export` | Export `frontend/openapi/openapi.json` from the running server |
@@ -291,6 +293,7 @@ even if Mission Control's own gesture isn't visibly triggered.
 | Show All Files (clear filter) | Ctrl+F10 | Cmd+F10 | |
 | Sort by Name / Extension / Date / Size / Unsorted | Ctrl+F3 / F4 / F5 / F6 / F7 | Cmd+F3 / F4 / F5 / F6 / F7 | Literal Ctrl+F3…F7 on macOS is now a safe no-op (previously misfired as View/Edit/Copy/Move/New Folder). |
 | Multi-Rename Tool | Ctrl+M | Cmd+M | Also opens automatically on F2 with 2+ entries selected. Not independently verified against a native window menu; flag if Cmd+M ever minimizes the window instead. |
+| Properties | Alt+Enter | Option+Return | Shows byte-precise size, timestamps, permissions and provider-specific metadata for the selection; an aggregate (total size, item count, folder/file breakdown) for a multi-selection. |
 | Quit | Alt+F4 | Option+F4 | Desktop only. Not independently verified against the OS's own window-close/minimize handling on either platform; macOS users more conventionally expect Cmd+Q, which is not implemented. |
 | Keyboard Shortcuts help | F1 | F1 | |
 | Toggle selection, advance cursor | Insert | Insert | |
@@ -318,6 +321,12 @@ size, and sort status counters.
 Name, extension, size, and modified headers sort the loaded page in either direction, using stable
 natural name ordering and raw metadata values; large sorts yield cooperatively to keep the UI
 responsive. Folder grouping comes from the persisted tab view rather than the table component.
+A single-letter git status column sits before Modified, always present, populated only for local
+directories inside a git working tree (M/S/U/I for modified/staged/untracked/ignored, blank for
+clean or non-git entries); a directory's letter is the highest-priority status among its
+descendants. `fm-vcs-status` computes it with one `git2` status walk per repository, caches the
+result per working-tree root, and invalidates it on the same filesystem-watch-triggered relists
+that already refresh the rest of a listing.
 The cursor also drives a cancellable lazy metadata summary, while typed size/date presentation
 settings keep table and summary formatting consistent.
 Per-pane selection is keyed by stable entry IDs and remains independent of the keyboard cursor.
@@ -510,15 +519,59 @@ aborted and responses are correlated by request ID before they may replace the v
 `.github/workflows/ci.yml` runs on every push to `main` and every pull request:
 
 - **rust** (matrix: ubuntu-latest, macos-latest, windows-latest): `cargo fmt --all --check`,
-  `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`. Cargo
-  registry/target caching via `Swatinem/rust-cache`.
+  `cargo clippy --workspace --all-targets -- -D warnings`, `cargo nextest run --workspace`,
+  `cargo test --doc --workspace`. Cargo registry/target caching via `Swatinem/rust-cache`, plus
+  compiler-output caching via `mozilla-actions/sccache-action` (`RUSTC_WRAPPER=sccache`,
+  GitHub Actions cache backend).
 - **frontend** (ubuntu-latest): Biome format check, `tsc --noEmit`, Vitest, production build.
   pnpm store caching via `actions/setup-node`'s built-in pnpm cache.
+- **desktop** (macos-latest, windows-latest): packaged Tauri build + smoke test, also sccache-backed.
 - **audit** (ubuntu-latest, advisory-only — never blocks the workflow): `cargo audit` and
   `pnpm audit`, reporting findings without failing the run.
 
 Pull-request builds never perform code signing or notarization; that is reserved for protected
 release workflows (tracked separately).
+
+### Git hooks
+
+`pre-commit` (via husky) formats/lints only the files staged in that commit (`rustfmt`, `clippy`
+on the owning crate, `biome`) — fast, since it never touches the full workspace. `pre-push` runs
+the same lint checks workspace-wide (`pnpm run lint`: `cargo fmt --all --check`, `cargo clippy
+--workspace --all-targets`, `biome check .`) but deliberately does **not** run the test suite —
+CI already runs the full suite on every push, so duplicating it locally only doubled the wait
+without adding safety. Run `pnpm test` yourself before pushing if you want that assurance locally
+too.
+
+### Speeding up local Rust builds across multiple worktrees
+
+If you work out of several `git worktree` checkouts of this repo (as the `.claude/worktrees/`
+convention does), each one builds Rust into its own `target/` directory from scratch by default,
+which is slow. [`sccache`](https://github.com/mozilla/sccache) caches compiler invocations by
+their inputs, so a second worktree building the same dependency versions hits cache instead of
+recompiling — without the lock contention a single shared `CARGO_TARGET_DIR` would cause between
+concurrent builds in different worktrees. To opt in locally:
+
+```bash
+brew install sccache   # or see the sccache README for other platforms
+```
+
+then add to `~/.cargo/config.toml` (user-level, not this repo's checked-in `.cargo/config.toml`,
+so it doesn't force every contributor/CI runner to have `sccache` installed):
+
+```toml
+[build]
+rustc-wrapper = "sccache"
+
+# sccache can't cache incremental-compilation artifacts, so leave incremental builds off -
+# otherwise most compiles fall back to a normal (uncached) build and sccache barely helps.
+# Must be `build.incremental` here, not `[env] CARGO_INCREMENTAL` - the `[env]` table only
+# sets variables for compiled binaries/build scripts, not for Cargo's own behavior.
+incremental = false
+```
+
+Check `sccache --show-stats` after a couple of builds — you should see cache hits climb and the
+`incremental` line under "Non-cacheable reasons" disappear; if `incremental` is still there, the
+setting above isn't taking effect.
 
 ## Desktop releases
 

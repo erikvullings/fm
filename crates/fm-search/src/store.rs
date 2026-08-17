@@ -135,6 +135,7 @@ mod tests {
             mime_type: None,
             icon_key: None,
             metadata_revision: 0,
+            git_status: None,
         }
     }
 

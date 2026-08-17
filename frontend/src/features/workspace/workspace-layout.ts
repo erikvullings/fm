@@ -13,6 +13,7 @@ import type {
   SortDescriptor,
   SystemLocation,
   TabId,
+  Volume,
   VolumeCapacity,
   WorkspaceLayout,
   WorkspaceProjection,
@@ -74,6 +75,10 @@ export interface WorkspacePaneContent {
   readonly systemLocations?: readonly SystemLocation[];
   readonly systemLocationsError?: string;
   readonly onRetrySystemLocations?: () => void | Promise<void>;
+  /** Currently mounted local/removable/disk-image volumes (task 0144). */
+  readonly volumes?: readonly Volume[];
+  readonly volumesError?: string;
+  readonly onRetryVolumes?: () => void | Promise<void>;
   /** Saved application-managed connections shown in the `SERVERS` group (task 0103). */
   readonly connections?: readonly Connection[];
   /** Opens the connections manager (add/edit/delete/connect/disconnect/test, task 0103). */
@@ -494,6 +499,9 @@ export const WorkspaceLayoutView: FactoryComponent<WorkspaceLayoutViewAttrs> = (
           systemLocations: content.systemLocations,
           systemLocationsError: content.systemLocationsError,
           onRetrySystemLocations: content.onRetrySystemLocations,
+          volumes: content.volumes,
+          volumesError: content.volumesError,
+          onRetryVolumes: content.onRetryVolumes,
           connections: content.connections,
           onManageConnections: content.onManageConnections,
           onRefreshConnections: content.onRefreshConnections,

@@ -247,9 +247,39 @@ describe('DirectoryTable rows', () => {
       pluginColumns: [SAMPLE_FILE_AGE_COLUMN],
     });
 
-    expect(root.querySelector('[role="grid"]')?.getAttribute('aria-colcount')).toBe('5');
+    expect(root.querySelector('[role="grid"]')?.getAttribute('aria-colcount')).toBe('6');
     expect(root.querySelector('[data-column-id="sample.fileAge"]')?.textContent).toContain('Age');
     expect(root.querySelectorAll('.fm-directory-file-age').item(1)?.textContent).toBe('1h');
+  });
+
+  it('renders a single-letter git status badge before the Modified column, blank outside a working tree', () => {
+    mount({
+      state: { type: 'loaded' },
+      source: entryArraySource([
+        entry({ id: 'entry-1', name: 'modified.txt', gitStatus: 'modified' }),
+        entry({ id: 'entry-2', name: 'staged.txt', gitStatus: 'staged' }),
+        entry({ id: 'entry-3', name: 'untracked.txt', gitStatus: 'untracked' }),
+        entry({ id: 'entry-4', name: 'ignored.txt', gitStatus: 'ignored' }),
+        entry({ id: 'entry-5', name: 'clean.txt', gitStatus: 'clean' }),
+        entry({ id: 'entry-6', name: 'outside.txt' }),
+      ]),
+    });
+
+    const headers = Array.from(root.querySelectorAll('[role="columnheader"]'));
+    const gitHeaderIndex = headers.findIndex(
+      (header) => header.getAttribute('data-column-id') === 'core.gitStatus',
+    );
+    const modifiedHeaderIndex = headers.findIndex(
+      (header) => header.getAttribute('data-column-id') === 'core.modified',
+    );
+    expect(gitHeaderIndex).toBeGreaterThanOrEqual(0);
+    expect(gitHeaderIndex).toBeLessThan(modifiedHeaderIndex);
+
+    const badges = root.querySelectorAll('.fm-directory-git-status-badge');
+    expect(Array.from(badges).map((badge) => badge.textContent)).toEqual(['M', 'S', 'U', 'I']);
+    const cells = root.querySelectorAll('[role="gridcell"].fm-directory-git-status');
+    expect(cells.item(4)?.textContent).toBe('');
+    expect(cells.item(5)?.textContent).toBe('');
   });
 
   it('activates sortable headers by click and keyboard and indicates the active direction', () => {
@@ -472,8 +502,8 @@ describe('DirectoryTable rows', () => {
     });
 
     const grid = root.querySelector('[role="grid"]');
-    expect(grid?.getAttribute('aria-colcount')).toBe('4');
-    expect(root.querySelectorAll('[role="columnheader"]')).toHaveLength(4);
+    expect(grid?.getAttribute('aria-colcount')).toBe('5');
+    expect(root.querySelectorAll('[role="columnheader"]')).toHaveLength(5);
     expect(root.querySelectorAll('[role="row"]')).toHaveLength(3);
     expect(root.querySelector('[aria-label="Hidden entry"]')).not.toBeNull();
     expect(root.querySelector('[aria-label="Link entry"]')).not.toBeNull();

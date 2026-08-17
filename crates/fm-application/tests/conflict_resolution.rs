@@ -49,13 +49,21 @@ fn start_copy(
         .unwrap()
 }
 
+/// How long to tolerate *no progress at all* before giving up. A fixed wall-clock budget for the
+/// whole wait was flaky under CPU contention (a 2,000-item operation genuinely still advancing,
+/// just slower than usual, would get killed by an unrelated timer) - this only fails when the
+/// operation has truly stalled, so it stays fast in the common case and robust under load.
+const STALL_TIMEOUT: Duration = Duration::from_secs(20);
+
 async fn wait_for_state(
     service: &FileManagerService,
     id: uuid::Uuid,
     expected: OperationStateDto,
 ) -> fm_transport_dto::OperationDto {
-    let mut last = None;
-    for _ in 0..2000 {
+    let mut last;
+    let mut last_progress = None;
+    let mut last_progress_change = tokio::time::Instant::now();
+    loop {
         let operation = service.get_operation(id.into()).unwrap();
         if operation.state == expected {
             return operation;
@@ -67,8 +75,16 @@ async fn wait_for_state(
                 | OperationStateDto::Failed
                 | OperationStateDto::Cancelled
         );
+        let progress = (
+            operation.progress.completed_items,
+            operation.progress.completed_bytes,
+        );
+        if last_progress != Some(progress) {
+            last_progress = Some(progress);
+            last_progress_change = tokio::time::Instant::now();
+        }
         last = Some(operation);
-        if reached_other_terminal_state {
+        if reached_other_terminal_state || last_progress_change.elapsed() > STALL_TIMEOUT {
             break;
         }
         tokio::time::sleep(Duration::from_millis(10)).await;

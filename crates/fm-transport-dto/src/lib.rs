@@ -56,6 +56,7 @@ pub use entry::{
 pub use error::{ApplicationErrorCode, ApplicationErrorDto};
 pub use files::{
     ArchiveCredentialRequestDto, CalculateFolderSizeRequestDto, CalculateFolderSizeResponseDto,
+    GetFileGitHistoryRequestDto, GetFileGitHistoryResponseDto, GitLogEntryDto,
     LoadEditableFileRequestDto, LoadEditableFileResponseDto, ReadFileRangeRequestDto,
     ReadFileRangeResponseDto, SaveEditableFileRequestDto, SaveEditableFileResponseDto,
     SearchInFileMatchDto, SearchInFileRequestDto, SearchInFileResponseDto,
@@ -84,7 +85,7 @@ pub use settings::{
     SizeFormatDto, ThemeDto,
 };
 pub use snapshot::{DirectorySnapshotDto, LoadingStateDto, VolumeCapacityDto};
-pub use system_location::{SystemLocationDto, SystemLocationKindDto};
+pub use system_location::{SystemLocationDto, SystemLocationKindDto, VolumeDto};
 pub use workspace::{
     ColumnConfigurationDto, CreateWorkspaceRequestDto, DirectoryViewConfigurationDto,
     DirectoryViewModeDto, IconSizeDto, NavigationHistoryDto, OperationCentrePreferencesDto,

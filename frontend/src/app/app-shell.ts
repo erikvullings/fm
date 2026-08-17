@@ -156,6 +156,7 @@ import type {
   SystemLocation,
   TabId,
   TabProjection,
+  Volume,
   WorkspaceId,
   WorkspaceLayout,
   WorkspaceProjection,
@@ -276,6 +277,8 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
   let registeredActions: readonly ActionDescriptor[] = [];
   let systemLocations: readonly SystemLocation[] = [];
   let systemLocationsError: string | undefined;
+  let volumes: readonly Volume[] = [];
+  let volumesError: string | undefined;
   const unavailableLocations = new Set<string>();
   let plugins: readonly PluginDescriptor[] = [];
   let connections: readonly Connection[] = [];
@@ -365,6 +368,10 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       canOpenNewWindow: attrsClient.openWorkspaceWindow !== undefined,
       workspaces: sortWorkspaceSummaries(workspaceSummaries),
       currentWorkspaceId: workspace?.id,
+      volumes,
+      connections,
+      systemLocations,
+      unavailableLocations,
     });
     const serialized = JSON.stringify(spec);
     if (serialized === lastSentNativeMenuSpecJson) return;
@@ -408,11 +415,20 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     openWorkspaceWindowById: (workspaceId) => {
       void attrsClient.openWorkspaceWindow?.(workspaceId);
     },
+    getVolumes: () => volumes,
+    getConnections: () => connections,
+    getSystemLocations: () => systemLocations,
+    navigateToLocation: (location) => {
+      const paneId = activeDirectory()?.paneId;
+      if (paneId === undefined) return;
+      void navigation.navigate(paneId, location);
+    },
   };
   let installedIconThemeId: string | undefined;
   let keybindingRuntime: KeybindingRuntime = 'browser';
   let runtimeKind: RuntimeKind = 'http';
   let loadedEntryFormatSettings: EntryFormatSettings = DEFAULT_ENTRY_FORMAT_SETTINGS;
+  let currentEntryFormatSettings: EntryFormatSettings = DEFAULT_ENTRY_FORMAT_SETTINGS;
   let workspace: WorkspaceProjection | undefined;
   let workspaceError: string | undefined;
   let workspaceSummaries: readonly WorkspaceSummary[] = [];
@@ -1265,6 +1281,13 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     setSystemLocationsError: (msg) => {
       systemLocationsError = msg;
     },
+    getVolumes: () => volumes,
+    setVolumes: (vols) => {
+      volumes = vols;
+    },
+    setVolumesError: (msg) => {
+      volumesError = msg;
+    },
     getConnections: () => connections,
     setConnections: (conns) => {
       connections = conns;
@@ -1545,6 +1568,20 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       );
       m.redraw();
     },
+    openPropertiesForActivePane: () => {
+      const active = activeDirectory();
+      if (active === undefined) return;
+      const key = activeTabKey(active.paneId);
+      const directory = directories.get(key);
+      if (directory === undefined) return;
+      const selection = selections.get(key);
+      const entries = getSelectedEntriesOrCursor(selection, directory.entries).filter(
+        (entry) => !isParentEntry(entry.id),
+      );
+      if (entries.length === 0) return;
+      dialogs.openProperties(entries);
+      m.redraw();
+    },
     quitApplication: () => {
       if (keybindingRuntime !== 'desktop') return;
       void attrsClient.quit?.();
@@ -1638,6 +1675,8 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     getCurrentSettings: () => currentSettings,
     getSystemLocations: () => systemLocations,
     getSystemLocationsError: () => systemLocationsError,
+    getVolumes: () => volumes,
+    getVolumesError: () => volumesError,
     getConnections: () => connections,
     getUnavailableLocations: () => unavailableLocations,
     getNativeIconLoader: () => nativeIconLoader,
@@ -1807,6 +1846,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       closeTabConfirmation = conf;
     },
     getDialogs: () => dialogs,
+    getFormatSettings: () => currentEntryFormatSettings,
     getFindFilesController: () => findFilesController,
     getTabController: () => tabController,
     getOpsController: () => opsController,
@@ -2007,6 +2047,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
 
     view: ({ attrs }) => {
       syncNativeMenu();
+      currentEntryFormatSettings = attrs.entryFormatSettings ?? loadedEntryFormatSettings;
       const pendingDelete = Object.values(operations.byId).find(
         (operation) =>
           operation?.kind === 'delete' && operation.state === 'waitingForConflictResolution',

@@ -4,6 +4,7 @@ import { ApiError } from '../fetch-mutator';
 
 const getRuntimeCapabilities = vi.fn();
 const getSystemLocations = vi.fn();
+const getVolumes = vi.fn();
 const listDirectory = vi.fn();
 const navigatePane = vi.fn();
 const getEntryMetadata = vi.fn();
@@ -37,6 +38,7 @@ const requestGetFileIcon = vi.fn();
 vi.mock('../generated/file-manager-api', () => ({
   getRuntimeCapabilities: (...args: unknown[]) => getRuntimeCapabilities(...args),
   getSystemLocations: (...args: unknown[]) => getSystemLocations(...args),
+  getVolumes: (...args: unknown[]) => getVolumes(...args),
   listDirectory: (...args: unknown[]) => listDirectory(...args),
   navigatePane: (...args: unknown[]) => navigatePane(...args),
   getEntryMetadata: (...args: unknown[]) => getEntryMetadata(...args),
@@ -242,6 +244,24 @@ describe('HttpFileManagerClient', () => {
         },
       ]);
       expect(getSystemLocations).toHaveBeenCalledWith(
+        expect.objectContaining({ signal: controller.signal }),
+      );
+    });
+  });
+
+  describe('getVolumes', () => {
+    it('maps discovered volumes and forwards cancellation', async () => {
+      getVolumes.mockResolvedValue({
+        status: 200,
+        data: [{ name: 'Macintosh HD', location: { providerId: 'local', uri: 'file:///' } }],
+        headers: new Headers(),
+      });
+      const controller = new AbortController();
+
+      await expect(new HttpFileManagerClient().getVolumes(controller.signal)).resolves.toEqual([
+        { name: 'Macintosh HD', location: { providerId: 'local', uri: 'file:///' } },
+      ]);
+      expect(getVolumes).toHaveBeenCalledWith(
         expect.objectContaining({ signal: controller.signal }),
       );
     });

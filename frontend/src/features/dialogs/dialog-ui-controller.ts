@@ -32,6 +32,8 @@ export interface DialogUIState {
   multiRenameEntries: readonly EntrySummary[];
   multiRenameLocation: Location | undefined;
   multiRenameExistingNames: ReadonlySet<string>;
+  propertiesOpen: boolean;
+  propertiesEntries: readonly EntrySummary[];
   pendingArchiveCredential: PendingArchiveCredential | undefined;
   archiveCredentialError: string | undefined;
   pendingCreatedLocation: string | undefined;
@@ -63,6 +65,8 @@ export interface DialogUIController {
     existingNames: ReadonlySet<string>,
   ): void;
   cancelMultiRename(): void;
+  openProperties(entries: readonly EntrySummary[]): void;
+  cancelProperties(): void;
   setPendingArchiveCredential(credential: PendingArchiveCredential | undefined): void;
   setArchiveCredentialError(error: string | undefined): void;
   clearArchiveCredential(): void;
@@ -84,6 +88,8 @@ export function createDialogUIController(): DialogUIController {
     multiRenameEntries: [],
     multiRenameLocation: undefined,
     multiRenameExistingNames: new Set(),
+    propertiesOpen: false,
+    propertiesEntries: [],
     pendingArchiveCredential: undefined,
     archiveCredentialError: undefined,
     pendingCreatedLocation: undefined,
@@ -158,6 +164,16 @@ export function createDialogUIController(): DialogUIController {
       state.multiRenameEntries = [];
       state.multiRenameLocation = undefined;
       state.multiRenameExistingNames = new Set();
+    },
+
+    openProperties(entries): void {
+      state.propertiesOpen = true;
+      state.propertiesEntries = entries;
+    },
+
+    cancelProperties(): void {
+      state.propertiesOpen = false;
+      state.propertiesEntries = [];
     },
 
     setPendingArchiveCredential(credential): void {

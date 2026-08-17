@@ -1,4 +1,14 @@
-import type { ActionDescriptor, PaneId, SortDescriptor, WorkspaceId } from '../../models';
+import type {
+  ActionDescriptor,
+  Connection,
+  Location,
+  PaneId,
+  SortDescriptor,
+  SystemLocation,
+  Volume,
+  WorkspaceId,
+} from '../../models';
+import { isBrowsable, remoteRootLocation } from '../connections/connections-model';
 import { SORT_SHORTCUT_DESCRIPTORS } from '../keybindings/global-keydown-handler';
 
 /** Frontend-local id for the App menu's Preferences item; never an action-registry id (there is
@@ -17,6 +27,21 @@ export const NEW_WORKSPACE_WINDOW_MENU_ID = 'ui.newWorkspaceWindow';
  * workspace's id - opens that workspace in its own OS window, mirroring the workspace switcher's
  * "open in new window" button (task 0143 follow-up). */
 export const WINDOW_OPEN_WORKSPACE_MENU_ID_PREFIX = 'ui.window.openWorkspace.';
+
+/** Prefix for a Go-menu Volumes-group item id, followed by the item's index into the `volumes`
+ * array passed to `native-menu-spec.ts`'s `NativeMenuInputs` (task 0144), mirroring
+ * `core.favourite.<index>`. */
+export const GO_MENU_VOLUME_ID_PREFIX = 'ui.goMenu.volume.';
+
+/** Prefix for a Go-menu Servers-group item id, followed by the target connection's id (task
+ * 0144). */
+export const GO_MENU_CONNECTION_ID_PREFIX = 'ui.goMenu.connection.';
+
+/** Prefix for a Go-menu Cloud/Network-group item id, followed by the item's index into the
+ * `systemLocations` array passed to `NativeMenuInputs` (task 0144). Cloud and Network share one
+ * prefix because they share one source array, indexed the same way the dropdown's Cloud/Network
+ * sections filter it. */
+export const GO_MENU_SYSTEM_LOCATION_ID_PREFIX = 'ui.goMenu.systemLocation.';
 
 /** Context the click router needs; kept minimal so it's independently testable from app-shell.ts's
  * closures rather than left inline and untestable. */
@@ -52,6 +77,17 @@ export interface NativeMenuDispatchContext {
    * backs the Window menu's "Open Workspace" submenu. Same desktop-only absence rule as
    * `openNewWorkspaceWindow`. */
   readonly openWorkspaceWindowById?: (workspaceId: WorkspaceId) => void;
+  /** The same `volumes`/`connections`/`systemLocations` arrays passed to
+   * `native-menu-spec.ts`'s `NativeMenuInputs` (task 0144), so a Go-menu click's synthetic id can
+   * be resolved back to the location it names. Read live via getters, like `activePaneId` above,
+   * since this context object is built once while the underlying arrays are reassigned as they
+   * reload. */
+  readonly getVolumes: () => readonly Volume[];
+  readonly getConnections: () => readonly Connection[];
+  readonly getSystemLocations: () => readonly SystemLocation[];
+  /** Navigates the active pane to `location` - the same navigation path `pane.ts`'s
+   * `navigateFavourite` uses (task 0144), shared here rather than duplicated. */
+  readonly navigateToLocation: (location: Location) => void;
 }
 
 /**
@@ -75,6 +111,25 @@ export function dispatchNativeMenuAction(context: NativeMenuDispatchContext, id:
     context.openWorkspaceWindowById?.(
       id.slice(WINDOW_OPEN_WORKSPACE_MENU_ID_PREFIX.length) as WorkspaceId,
     );
+    return;
+  }
+  if (id.startsWith(GO_MENU_VOLUME_ID_PREFIX)) {
+    const volume = context.getVolumes()[Number(id.slice(GO_MENU_VOLUME_ID_PREFIX.length))];
+    if (volume !== undefined) context.navigateToLocation(volume.location);
+    return;
+  }
+  if (id.startsWith(GO_MENU_CONNECTION_ID_PREFIX)) {
+    const connectionId = id.slice(GO_MENU_CONNECTION_ID_PREFIX.length);
+    const connection = context.getConnections().find((candidate) => candidate.id === connectionId);
+    if (connection !== undefined && isBrowsable(connection)) {
+      context.navigateToLocation(remoteRootLocation(connection));
+    }
+    return;
+  }
+  if (id.startsWith(GO_MENU_SYSTEM_LOCATION_ID_PREFIX)) {
+    const systemLocation =
+      context.getSystemLocations()[Number(id.slice(GO_MENU_SYSTEM_LOCATION_ID_PREFIX.length))];
+    if (systemLocation !== undefined) context.navigateToLocation(systemLocation.location);
     return;
   }
   if (id in SORT_SHORTCUT_DESCRIPTORS) {

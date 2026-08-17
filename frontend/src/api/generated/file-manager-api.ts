@@ -23,6 +23,8 @@ import type {
   EntryMetadataRequest,
   GenerateSyncPlanRequestDto,
   GetComparisonParams,
+  GetFileGitHistoryRequestDto,
+  GetFileGitHistoryResponseDto,
   GetFileIconParams,
   GetPluginIconThemeAssetParams,
   GetThumbnailParams,
@@ -57,6 +59,7 @@ import type {
   SyncPlanDto,
   SystemLocationDto,
   UpdateConnectionRequestDto,
+  VolumeDto,
   WorkspaceCommandDto,
   WorkspaceDto,
   WorkspaceSummaryDto
@@ -1282,6 +1285,51 @@ export const saveEditableFile = async (saveEditableFileRequestDto: SaveEditableF
 
 
 
+export type getFileGitHistoryResponse200 = {
+  data: GetFileGitHistoryResponseDto
+  status: 200
+}
+
+export type getFileGitHistoryResponse400 = {
+  data: ApplicationErrorDto
+  status: 400
+}
+
+export type getFileGitHistoryResponseSuccess = (getFileGitHistoryResponse200) & {
+  headers: Headers;
+};
+export type getFileGitHistoryResponseError = (getFileGitHistoryResponse400) & {
+  headers: Headers;
+};
+
+export type getFileGitHistoryResponse = (getFileGitHistoryResponseSuccess | getFileGitHistoryResponseError)
+
+export const getGetFileGitHistoryUrl = () => {
+
+
+
+
+  return `/api/v1/files/git-history`
+}
+
+/**
+ * @summary Fetches a file's git commit history, for the Alt+Space metadata panel's history section
+(task 0135). Local provider only; returns an empty commit list (never an error) when the
+file is outside a git working tree, on a non-local provider, or not yet committed.
+ */
+export const getFileGitHistory = async (getFileGitHistoryRequestDto: GetFileGitHistoryRequestDto, options?: Parameters<typeof fetchMutator>[1]): Promise<getFileGitHistoryResponse> => {
+
+  return fetchMutator<getFileGitHistoryResponse>(getGetFileGitHistoryUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(getFileGitHistoryRequestDto)
+  }
+);}
+
+
+
 export type readFileRangeResponse200 = {
   data: ReadFileRangeResponseDto
   status: 200
@@ -2332,6 +2380,49 @@ entry, if supported.
 export const getThumbnail = async (params: GetThumbnailParams, options?: Parameters<typeof fetchMutator>[1]): Promise<getThumbnailResponse> => {
 
   return fetchMutator<getThumbnailResponse>(getGetThumbnailUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+export type getVolumesResponse200 = {
+  data: VolumeDto[]
+  status: 200
+}
+
+export type getVolumesResponse502 = {
+  data: ApplicationErrorDto
+  status: 502
+}
+
+export type getVolumesResponseSuccess = (getVolumesResponse200) & {
+  headers: Headers;
+};
+export type getVolumesResponseError = (getVolumesResponse502) & {
+  headers: Headers;
+};
+
+export type getVolumesResponse = (getVolumesResponseSuccess | getVolumesResponseError)
+
+export const getGetVolumesUrl = () => {
+
+
+
+
+  return `/api/v1/volumes`
+}
+
+/**
+ * @summary Lists currently mounted local/removable/disk-image volumes.
+ */
+export const getVolumes = async ( options?: Parameters<typeof fetchMutator>[1]): Promise<getVolumesResponse> => {
+
+  return fetchMutator<getVolumesResponse>(getGetVolumesUrl(),
   {
     ...options,
     method: 'GET'

@@ -14,7 +14,7 @@ use fm_domain::{ActionId, Location};
 use fm_platform::{FinderTag, FinderTagColor, PlatformAdapter, PlatformCapabilities};
 use fm_transport_dto::{
     FinderTagColorDto, FinderTagDto, PlatformKindDto, RuntimeCapabilitiesDto, RuntimeKindDto,
-    SystemLocationDto, SystemLocationKindDto, VolumeCapacityDto,
+    SystemLocationDto, SystemLocationKindDto, VolumeCapacityDto, VolumeDto,
 };
 
 use crate::error::ApplicationError;
@@ -189,6 +189,40 @@ pub(crate) async fn discover_system_locations(
                 server: location.server,
                 share: location.share,
                 read_only: location.read_only,
+            })
+        })
+        .collect()
+}
+
+/// Discovers currently mounted local/removable/disk-image volumes (task
+/// 0144) and maps their native paths to the existing local provider,
+/// mirroring [`discover_system_locations`]. Reuses
+/// [`PlatformAdapter::mounted_volumes`] rather than adding a second
+/// discovery path. Hosts/adapters without
+/// [`PlatformCapabilities::MOUNTED_VOLUMES`] report an empty list, not an
+/// error, exactly like [`runtime_capabilities_dto`] gates other optional
+/// features.
+pub(crate) async fn discover_volumes(
+    platform: Arc<dyn PlatformAdapter>,
+) -> Result<Vec<VolumeDto>, ApplicationError> {
+    if !platform
+        .capabilities()
+        .contains(PlatformCapabilities::MOUNTED_VOLUMES)
+    {
+        return Ok(Vec::new());
+    }
+    let discovered = tokio::task::spawn_blocking(move || platform.mounted_volumes())
+        .await
+        .map_err(|_| ApplicationError::Internal)?
+        .map_err(|error| ApplicationError::PlatformOperationFailed(error.to_string()))?;
+    discovered
+        .into_iter()
+        .map(|volume| {
+            let local = Location::from_native_path(&volume.mount_point)
+                .map_err(|_| ApplicationError::Internal)?;
+            Ok(VolumeDto {
+                name: volume.name,
+                location: local.into(),
             })
         })
         .collect()

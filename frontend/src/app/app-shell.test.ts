@@ -2038,6 +2038,29 @@ describe('AppShell', () => {
     expect(invokeAction).not.toHaveBeenCalled();
   });
 
+  it('loads discovered volumes on startup and shows them in the favourites dropdown (task 0144)', async () => {
+    const client = new MockFileManagerClient();
+    const location = { providerId: 'file', uri: 'mock:///' } as const;
+    const getVolumes = vi
+      .spyOn(client, 'getVolumes')
+      .mockResolvedValue([{ name: 'Macintosh HD', location }]);
+    const navigatePane = vi.spyOn(client, 'navigatePane');
+    m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
+    await vi.waitFor(() => expect(getVolumes).toHaveBeenCalled());
+
+    root.querySelector<HTMLButtonElement>('.fm-pane-tab-favourites')?.click();
+    m.redraw.sync();
+    expect(root.querySelector('.fm-volumes-locations strong')?.textContent).toBe('Volumes');
+    root.querySelector<HTMLButtonElement>('.fm-volumes-locations [role="menuitem"]')?.click();
+
+    await vi.waitFor(() =>
+      expect(navigatePane).toHaveBeenCalledWith(
+        expect.objectContaining({ location }),
+        expect.anything(),
+      ),
+    );
+  });
+
   it('shows filename-search results as a virtual directory and opens a result in its folder', async () => {
     const client = new MockFileManagerClient();
     const navigatePane = vi.spyOn(client, 'navigatePane');

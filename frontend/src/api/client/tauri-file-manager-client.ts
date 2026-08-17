@@ -23,6 +23,8 @@ import type {
   FileRangeChunk,
   FinderTags,
   GenerateSyncPlanRequest,
+  GitFileHistoryRequest,
+  GitFileHistoryResult,
   HostKeyProbe,
   InvokeActionRequest,
   ListDirectoryRequest,
@@ -52,6 +54,7 @@ import type {
   SystemLocation,
   Unsubscribe,
   UpdateConnectionRequest,
+  Volume,
   WorkspaceCommand,
   WorkspaceId,
   WorkspaceProjection,
@@ -87,6 +90,10 @@ export class TauriFileManagerClient implements FileManagerClient {
 
   async getSystemLocations(_signal?: AbortSignal): Promise<SystemLocation[]> {
     return invoke<SystemLocation[]>('get_system_locations');
+  }
+
+  async getVolumes(_signal?: AbortSignal): Promise<Volume[]> {
+    return invoke<Volume[]>('get_volumes');
   }
 
   startNativeDrag(locations: readonly Location[], _signal?: AbortSignal): Promise<void> {
@@ -300,6 +307,13 @@ export class TauriFileManagerClient implements FileManagerClient {
     _signal?: AbortSignal,
   ): Promise<CalculateFolderSizeResult> {
     return invoke<CalculateFolderSizeResult>('calculate_folder_size', { request });
+  }
+
+  gitFileHistory(
+    request: GitFileHistoryRequest,
+    _signal?: AbortSignal,
+  ): Promise<GitFileHistoryResult> {
+    return invoke<GitFileHistoryResult>('get_file_git_history', { request });
   }
 
   startOperation(request: StartOperationRequest, _signal?: AbortSignal): Promise<Operation> {

@@ -1,4 +1,12 @@
-import type { EntrySummary } from '../../models';
+import type { EntryId, EntrySummary } from '../../models';
+
+/** Mirrors `panes/parent-entry.ts::isParentEntry` (not imported directly to avoid a
+ * directory-table -> panes dependency edge). */
+const PARENT_ENTRY_PREFIX = 'fm:parent:';
+
+function isParentEntryId(id: EntryId | undefined): boolean {
+  return id?.startsWith(PARENT_ENTRY_PREFIX) ?? false;
+}
 
 /** A contiguous run of entries sharing the same calendar day (task 0134's "photo app mode"). Runs
  * are contiguous in the *given* order, not re-sorted here - the grid still renders entries in
@@ -43,18 +51,31 @@ export type GridLine =
   | { readonly kind: 'header'; readonly label: string }
   | { readonly kind: 'row'; readonly startIndex: number; readonly count: number };
 
-/** Expands day groups into the header/row line sequence a virtualized grid can window over. */
+/** Expands day groups into the header/row line sequence a virtualized grid can window over. The
+ * presentation-only parent-directory row (`..`) is rendered ungrouped, ahead of any day header -
+ * it isn't a real file and grouping it under "Unknown date" reads as a bogus title. */
 export function layoutPhotoLines(
   entries: readonly EntrySummary[],
   columnsPerRow: number,
 ): GridLine[] {
   const lines: GridLine[] = [];
-  for (const group of groupEntriesByDay(entries)) {
+  let parentCount = 0;
+  while (parentCount < entries.length && isParentEntryId(entries[parentCount]?.id)) {
+    parentCount += 1;
+  }
+  for (let offset = 0; offset < parentCount; offset += columnsPerRow) {
+    lines.push({
+      kind: 'row',
+      startIndex: offset,
+      count: Math.min(columnsPerRow, parentCount - offset),
+    });
+  }
+  for (const group of groupEntriesByDay(entries.slice(parentCount))) {
     lines.push({ kind: 'header', label: group.label });
     for (let offset = 0; offset < group.count; offset += columnsPerRow) {
       lines.push({
         kind: 'row',
-        startIndex: group.startIndex + offset,
+        startIndex: parentCount + group.startIndex + offset,
         count: Math.min(columnsPerRow, group.count - offset),
       });
     }

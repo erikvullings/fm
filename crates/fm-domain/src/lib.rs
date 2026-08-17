@@ -18,8 +18,8 @@ pub use action::{
     ActionContextRequirements, ActionDescriptor, ActionInvocationContext, ActionSource, KeyChord,
 };
 pub use entry::{
-    ArchiveInfo, EntryKind, EntryMetadata, EntrySummary, ImageDimensions, MediaMetadata,
-    OwnershipInfo, PermissionsInfo,
+    ArchiveInfo, EntryKind, EntryMetadata, EntrySummary, GitFileStatus, GitLogEntry,
+    ImageDimensions, MediaMetadata, OwnershipInfo, PermissionsInfo,
 };
 pub use ids::{
     ActionId, EntryId, IdParseError, OperationId, PaneId, PluginId, ProviderId, TabId, WorkspaceId,

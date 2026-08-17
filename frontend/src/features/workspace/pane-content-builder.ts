@@ -16,6 +16,7 @@ import type {
   SystemLocation,
   TabId,
   TabProjection,
+  Volume,
   WorkspaceProjection,
 } from '../../models';
 import {
@@ -71,6 +72,8 @@ export interface PaneContentContext {
   getCurrentSettings(): Settings | undefined;
   getSystemLocations(): readonly SystemLocation[];
   getSystemLocationsError(): string | undefined;
+  getVolumes(): readonly Volume[];
+  getVolumesError(): string | undefined;
   getConnections(): readonly Connection[];
   getUnavailableLocations(): ReadonlySet<string>;
   getNativeIconLoader(): NativeIconLoader | undefined;
@@ -274,6 +277,7 @@ export function createPaneContentBuilder(
         : entries.length;
     const currentSettings = context.getCurrentSettings();
     const systemLocationsError = context.getSystemLocationsError();
+    const volumesError = context.getVolumesError();
     const nativeIconLoader = context.getNativeIconLoader();
     const thumbnailLoader = context.getThumbnailLoader();
     const finderTagsLoader = context.getFinderTagsLoader();
@@ -295,6 +299,9 @@ export function createPaneContentBuilder(
       systemLocations: context.getSystemLocations(),
       ...(systemLocationsError === undefined ? {} : { systemLocationsError }),
       onRetrySystemLocations: () => context.getWorkspaceController().loadSystemLocations(),
+      volumes: context.getVolumes(),
+      ...(volumesError === undefined ? {} : { volumesError }),
+      onRetryVolumes: () => context.getWorkspaceController().loadVolumes(),
       connections: context.getConnections(),
       onManageConnections: () => {
         context.setConnectionsManagerOpen(true);

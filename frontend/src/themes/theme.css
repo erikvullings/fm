@@ -1401,6 +1401,44 @@ input[type="text"].fm-command-palette-input {
   word-break: break-all;
 }
 
+/* Properties dialog (task 0140): a label/value table per section (general, permissions,
+ * provider-specific), mirroring `.fm-sync-plan-table` above. */
+.fm-properties-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.fm-properties-body h5 {
+  margin: 0;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.fm-properties-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 0.85rem;
+}
+
+.fm-properties-table th {
+  width: 40%;
+  text-align: left;
+  font-weight: 600;
+  color: var(--fm-text-secondary, inherit);
+  padding: 0.25rem 0.5rem 0.25rem 0;
+  vertical-align: top;
+}
+
+.fm-properties-table td {
+  text-align: left;
+  padding: 0.25rem 0;
+  word-break: break-all;
+}
+
 /* Uses the same input-styling approach as `.fm-create-directory-field` above. */
 .fm-archive-password-field {
   display: flex;

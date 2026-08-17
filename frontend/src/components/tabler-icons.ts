@@ -113,6 +113,35 @@ export const layoutGridIcon = trustedStrokeIcon(
   'fm-icon-layout-grid',
 );
 
+/** "arrows-sort" — the grid view's sort menu toggle (task 0134). */
+export const arrowsSortIcon = trustedStrokeIcon(
+  '<path d="M3 9l4 -4l4 4" /><path d="M7 5l0 14" /><path d="M13 15l4 4l4 -4" /><path d="M17 19l0 -14" />',
+  'fm-icon-arrows-sort',
+);
+/** "photo" — the grid view's photo-mode (day grouping) toggle (task 0134). */
+export const photoIcon = trustedStrokeIcon(
+  '<path d="M15 8h.01" />' +
+    '<path d="M3 6a3 3 0 0 1 3 -3h12a3 3 0 0 1 3 3v12a3 3 0 0 1 -3 3h-12a3 3 0 0 1 -3 -3v-12z" />' +
+    '<path d="M3 16l5 -5c.928 -.893 2.072 -.893 3 0l5 5" />' +
+    '<path d="M14 14l1 -1c.928 -.893 2.072 -.893 3 0l3 3" />',
+  'fm-icon-photo',
+);
+
+/** "grid-dots" — the pane's View toggle when in grid mode; kept visually distinct from
+ * `layoutGridIcon` (used by the unrelated workspace switcher button) so the two aren't confused. */
+export const gridDotsIcon = trustedStrokeIcon(
+  '<path d="M5 8m-1 0a1 1 0 1 0 2 0a1 1 0 1 0 -2 0" />' +
+    '<path d="M12 8m-1 0a1 1 0 1 0 2 0a1 1 0 1 0 -2 0" />' +
+    '<path d="M19 8m-1 0a1 1 0 1 0 2 0a1 1 0 1 0 -2 0" />' +
+    '<path d="M5 12m-1 0a1 1 0 1 0 2 0a1 1 0 1 0 -2 0" />' +
+    '<path d="M12 12m-1 0a1 1 0 1 0 2 0a1 1 0 1 0 -2 0" />' +
+    '<path d="M19 12m-1 0a1 1 0 1 0 2 0a1 1 0 1 0 -2 0" />' +
+    '<path d="M5 16m-1 0a1 1 0 1 0 2 0a1 1 0 1 0 -2 0" />' +
+    '<path d="M12 16m-1 0a1 1 0 1 0 2 0a1 1 0 1 0 -2 0" />' +
+    '<path d="M19 16m-1 0a1 1 0 1 0 2 0a1 1 0 1 0 -2 0" />',
+  'fm-icon-grid-dots',
+);
+
 /** "x" — close a dialog/disclosure panel. */
 export const closeIcon = trustedStrokeIcon(
   '<path d="M18 6l-12 12" /><path d="M6 6l12 12" />',

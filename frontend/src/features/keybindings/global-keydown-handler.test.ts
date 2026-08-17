@@ -71,6 +71,11 @@ const ACTIONS: readonly ActionDescriptor[] = [
     title: 'Multi-rename',
     defaultShortcuts: [{ key: 'm', ctrl: true }],
   },
+  {
+    id: 'core.showProperties',
+    title: 'Properties',
+    defaultShortcuts: [{ key: 'Enter', alt: true }],
+  },
   { id: 'core.quit', title: 'Quit', defaultShortcuts: [{ key: 'F4', alt: true }] },
   { id: 'core.showShortcutsHelp', title: 'Shortcuts', defaultShortcuts: [{ key: 'F1' }] },
   {
@@ -191,6 +196,7 @@ function makeContext(overrides: Partial<GlobalKeydownContext> = {}): GlobalKeydo
     setSort: vi.fn(),
     swapPaneTabSets: vi.fn(),
     openMultiRenameForActivePane: vi.fn(),
+    openPropertiesForActivePane: vi.fn(),
     quitApplication: vi.fn(),
     startComparison: vi.fn(),
   };
@@ -388,6 +394,13 @@ describe('createGlobalKeydownHandler - task 0128 shortcuts', () => {
     const context = makeContext({ openMultiRenameForActivePane });
     createGlobalKeydownHandler(context)(keydown('m', { ctrlKey: true }));
     expect(openMultiRenameForActivePane).toHaveBeenCalled();
+  });
+
+  it('Alt+Enter opens Properties for the active pane', () => {
+    const openPropertiesForActivePane = vi.fn();
+    const context = makeContext({ openPropertiesForActivePane });
+    createGlobalKeydownHandler(context)(keydown('Enter', { altKey: true }));
+    expect(openPropertiesForActivePane).toHaveBeenCalled();
   });
 
   it('Alt+F4 quits in desktop runtime', () => {

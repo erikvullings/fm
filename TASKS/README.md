@@ -259,10 +259,11 @@ Features not yet implemented.
 - [ ] 0137 Services menu (macOS) / "Send to" (Windows) integration
 - [ ] 0138 OS-level "Mount share…" action *(needs 0102; low priority — only if OS-native mounting causes friction)*
 - [ ] 0139 Directory tree dialog / sidebar tree view *(split out of 0129)*
-- [ ] 0140 File/folder Properties dialog *(split out of 0129)*
+- [x] 0140 File/folder Properties dialog *(split out of 0129)*
 - [ ] 0141 Archive summary preview *(split out of 0071)*
 - [ ] 0142 Plugin-contributed preview renderers *(split out of 0071)*
 - [x] 0143 Workspace last-active restore and per-window desktop placement *(wire up unused `WorkspaceService::start`; multi-window support; per-workspace window-frame restore via tauri-plugin-window-state; macOS Space placement explicitly out of scope, no public API)*
+- [ ] 0144 Volumes in Favourites/Go menu, plus Go menu Servers/Cloud/Network sections
 
 ## Architecture deepening — backend
 

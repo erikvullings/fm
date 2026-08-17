@@ -20,6 +20,8 @@ import type {
   FileRangeChunk,
   FinderTags,
   GenerateSyncPlanRequest,
+  GitFileHistoryRequest,
+  GitFileHistoryResult,
   HostKeyProbe,
   InvokeActionRequest,
   ListDirectoryRequest,
@@ -49,6 +51,7 @@ import type {
   SystemLocation,
   Unsubscribe,
   UpdateConnectionRequest,
+  Volume,
   WorkspaceCommand,
   WorkspaceId,
   WorkspaceProjection,
@@ -84,6 +87,7 @@ export interface FileManagerClient {
   readonly connection: EventStreamStatusObservable;
   getRuntimeCapabilities(signal?: AbortSignal): Promise<RuntimeCapabilities>;
   getSystemLocations(signal?: AbortSignal): Promise<SystemLocation[]>;
+  getVolumes(signal?: AbortSignal): Promise<Volume[]>;
 
   /** Starts an OS file-reference drag from the desktop host. */
   startNativeDrag(locations: readonly Location[], signal?: AbortSignal): Promise<void>;
@@ -198,6 +202,14 @@ export interface FileManagerClient {
     request: CalculateFolderSizeRequest,
     signal?: AbortSignal,
   ): Promise<CalculateFolderSizeResult>;
+
+  /** Fetches a file's git commit history, for the Alt+Space metadata panel's history section
+   * (task 0135). Resolves to an empty commit list (never rejects) when the file has no history
+   * to show: outside a git working tree, on a non-local provider, or not yet committed. */
+  gitFileHistory(
+    request: GitFileHistoryRequest,
+    signal?: AbortSignal,
+  ): Promise<GitFileHistoryResult>;
 
   startOperation(request: StartOperationRequest, signal?: AbortSignal): Promise<Operation>;
 

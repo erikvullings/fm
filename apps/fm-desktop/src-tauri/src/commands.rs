@@ -15,13 +15,14 @@ use fm_transport_dto::{
     CalculateFolderSizeRequestDto, CalculateFolderSizeResponseDto, ComparisonPageDto,
     ConnectionDto, CreateConnectionRequestDto, CreateWorkspaceRequestDto, DirectorySnapshotDto,
     EntryMetadataDto, EntryMetadataRequest, FinderTagsDto, GenerateSyncPlanRequestDto,
-    HostKeyProbeDto, InvokeActionRequestDto, ListDirectoryRequest, LocationDto, NavigateRequest,
-    OperationDto, PluginDescriptorDto, PluginLogEntryDto, ReadFileRangeRequestDto,
-    ReadFileRangeResponseDto, ResolveOperationConflictRequestDto, RuntimeCapabilitiesDto,
-    SearchInFileRequestDto, SearchInFileResponseDto, SetPaneActivityRequest, SettingsDto,
-    SpotlightCommentDto, StartComparisonRequestDto, StartComparisonResponseDto,
-    StartOperationRequestDto, StartSearchRequestDto, StartSearchResponseDto, SyncPlanDto,
-    UpdateConnectionRequestDto, WorkspaceCommandDto, WorkspaceDto, WorkspaceSummaryDto,
+    GetFileGitHistoryRequestDto, GetFileGitHistoryResponseDto, HostKeyProbeDto,
+    InvokeActionRequestDto, ListDirectoryRequest, LocationDto, NavigateRequest, OperationDto,
+    PluginDescriptorDto, PluginLogEntryDto, ReadFileRangeRequestDto, ReadFileRangeResponseDto,
+    ResolveOperationConflictRequestDto, RuntimeCapabilitiesDto, SearchInFileRequestDto,
+    SearchInFileResponseDto, SetPaneActivityRequest, SettingsDto, SpotlightCommentDto,
+    StartComparisonRequestDto, StartComparisonResponseDto, StartOperationRequestDto,
+    StartSearchRequestDto, StartSearchResponseDto, SyncPlanDto, UpdateConnectionRequestDto,
+    WorkspaceCommandDto, WorkspaceDto, WorkspaceSummaryDto,
 };
 
 use crate::{
@@ -296,6 +297,18 @@ pub(crate) async fn get_system_locations(
         .map_err(|error| error.into_dto(uuid::Uuid::new_v4()))
 }
 
+/// Lists currently mounted volumes through the shared application service.
+#[tauri::command]
+pub(crate) async fn get_volumes(
+    state: State<'_, AppState>,
+) -> Result<Vec<fm_transport_dto::VolumeDto>, ApplicationErrorDto> {
+    state
+        .service
+        .volumes()
+        .await
+        .map_err(|error| error.into_dto(uuid::Uuid::new_v4()))
+}
+
 /// Returns the same native PNG bytes as `GET /api/v1/icons`.
 #[tauri::command]
 pub(crate) fn get_file_icon(
@@ -524,6 +537,16 @@ pub(crate) async fn calculate_folder_size(
         .calculate_folder_size(request)
         .await
         .map_err(|error| error.into_dto(Uuid::new_v4()))
+}
+
+/// Fetches a file's git commit history through the same application service as Axum, for the
+/// Alt+Space metadata panel's history section (task 0135).
+#[tauri::command]
+pub(crate) async fn get_file_git_history(
+    state: State<'_, AppState>,
+    request: GetFileGitHistoryRequestDto,
+) -> Result<GetFileGitHistoryResponseDto, ApplicationErrorDto> {
+    Ok(state.service.git_file_history(request))
 }
 
 /// A fresh, unique window label for a new window on `workspace_id` (task 0143 sub-task (b)).

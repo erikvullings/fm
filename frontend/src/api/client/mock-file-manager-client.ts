@@ -28,6 +28,8 @@ import type {
   FileRangeChunk,
   FinderTags,
   GenerateSyncPlanRequest,
+  GitFileHistoryRequest,
+  GitFileHistoryResult,
   HostKeyProbe,
   InvokeActionRequest,
   ListDirectoryRequest,
@@ -58,6 +60,7 @@ import type {
   SystemLocation,
   Unsubscribe,
   UpdateConnectionRequest,
+  Volume,
   WorkspaceCommand,
   WorkspaceId,
   WorkspaceProjection,
@@ -101,6 +104,7 @@ const THUMBNAILABLE_MOCK_EXTENSIONS = new Set([
 export type MockClientMethod =
   | 'getRuntimeCapabilities'
   | 'getSystemLocations'
+  | 'getVolumes'
   | 'startNativeDrag'
   | 'getSettings'
   | 'updateSettings'
@@ -126,6 +130,7 @@ export type MockClientMethod =
   | 'readFileRange'
   | 'searchInFile'
   | 'calculateFolderSize'
+  | 'gitFileHistory'
   | 'startOperation'
   | 'listOperations'
   | 'cancelOperation'
@@ -583,6 +588,13 @@ export class MockFileManagerClient implements FileManagerClient {
 
   getSystemLocations(signal?: AbortSignal): Promise<SystemLocation[]> {
     return this.perform('getSystemLocations', signal, () => []);
+  }
+
+  getVolumes(signal?: AbortSignal): Promise<Volume[]> {
+    return this.perform('getVolumes', signal, () => [
+      { name: 'Macintosh HD', location: { providerId: 'file', uri: 'mock:///' } },
+      { name: 'Empty Drive', location: { providerId: 'file', uri: 'mock:///Empty' } },
+    ]);
   }
 
   startNativeDrag(_locations: readonly Location[], signal?: AbortSignal): Promise<void> {
@@ -1058,6 +1070,16 @@ export class MockFileManagerClient implements FileManagerClient {
       }
       return { totalBytes, fileCount };
     });
+  }
+
+  gitFileHistory(
+    request: GitFileHistoryRequest,
+    signal?: AbortSignal,
+  ): Promise<GitFileHistoryResult> {
+    // The mock fixtures have no notion of a git working tree, so every file simply has no
+    // history to show - the same outcome a real backend reports for a non-git directory.
+    void request;
+    return this.perform('gitFileHistory', signal, () => ({ commits: [] }));
   }
 
   startOperation(request: StartOperationRequest, signal?: AbortSignal): Promise<Operation> {

@@ -385,6 +385,68 @@ async fn zip_entry_can_be_streamed_through_the_provider_interface() {
 }
 
 #[tokio::test]
+async fn metadata_reports_compressed_size_and_compression_method_for_a_zip_entry() {
+    let root = tempdir().expect("temporary root");
+    let archive_path = root.path().join("sample.zip");
+    let file = std::fs::File::create(&archive_path).expect("create fixture");
+    let mut writer = ZipWriter::new(file);
+    writer
+        .start_file(
+            "report.txt",
+            SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated),
+        )
+        .expect("start fixture entry");
+    // Compressible content, so the deflated size is meaningfully smaller than the source.
+    let content = b"quarterly report ".repeat(64);
+    writer.write_all(&content).expect("write fixture");
+    writer.finish().expect("finish fixture");
+
+    let location = zip_location(&archive_path)
+        .join("report.txt")
+        .expect("entry location");
+    let entry = fm_vfs::EntryRef {
+        id: fm_domain::EntryId::new(),
+        location,
+    };
+    let metadata = ArchiveFileSystemProvider::new()
+        .metadata(&entry, CancellationToken::new())
+        .await
+        .expect("fetch archive entry metadata");
+
+    let archive = metadata.archive.expect("archive metadata is populated");
+    assert_eq!(archive.uncompressed_size, Some(content.len() as u64));
+    let compressed_size = archive.compressed_size.expect("compressed size is known");
+    assert!(compressed_size > 0 && compressed_size < content.len() as u64);
+    assert_eq!(archive.compression_method.as_deref(), Some("Deflated"));
+}
+
+#[tokio::test]
+async fn metadata_reports_no_archive_info_for_a_directory_entry() {
+    let root = tempdir().expect("temporary root");
+    let archive_path = root.path().join("sample.zip");
+    let file = std::fs::File::create(&archive_path).expect("create fixture");
+    let mut writer = ZipWriter::new(file);
+    writer
+        .add_directory("photos/", SimpleFileOptions::default())
+        .expect("start fixture directory");
+    writer.finish().expect("finish fixture");
+
+    let location = zip_location(&archive_path)
+        .join("photos")
+        .expect("entry location");
+    let entry = fm_vfs::EntryRef {
+        id: fm_domain::EntryId::new(),
+        location,
+    };
+    let metadata = ArchiveFileSystemProvider::new()
+        .metadata(&entry, CancellationToken::new())
+        .await
+        .expect("fetch archive entry metadata");
+
+    assert!(metadata.archive.is_none());
+}
+
+#[tokio::test]
 async fn encrypted_zip_distinguishes_missing_wrong_and_cached_correct_passwords() {
     let root = tempdir().expect("temporary root");
     let archive_path = root.path().join("encrypted.zip");

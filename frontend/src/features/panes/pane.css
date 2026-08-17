@@ -183,7 +183,10 @@
   cursor: pointer;
 }
 
-.fm-pane-tab-new .fm-icon {
+.fm-pane-tab-new .fm-icon,
+.fm-pane-view-mode .fm-icon,
+.fm-pane-grid-sort .fm-icon,
+.fm-pane-photo-mode .fm-icon {
   display: block;
   transform: translateY(-1px);
 }
@@ -193,7 +196,9 @@
   align-items: stretch;
   min-width: 0;
   height: var(--fm-row-height);
-  overflow: hidden;
+  /* Not `overflow: hidden` - the view/sort/favourites dropdown menus are positioned absolute
+   * inside this row and extend below it; the breadcrumb text itself is already clipped by
+   * `.fm-breadcrumb-segments`'s own `overflow: hidden`, so this row doesn't need to clip too. */
   border-bottom: 1px solid var(--fm-border);
   /* Painted here (not per-child) so the new-tab/favourites buttons share the same background as
    * the breadcrumb/path-editor/quick-filter segment beside them, instead of falling through to
@@ -270,29 +275,24 @@
   position: relative;
 }
 
+.fm-pane-view-mode,
 .fm-pane-grid-sort,
-.fm-pane-photo-mode {
-  flex: 0 0 auto;
-  height: var(--fm-row-height);
-  min-width: var(--fm-row-height);
-  padding: 0 0.6rem;
-  border: 0;
-  background: transparent;
-  color: var(--fm-text-muted);
-  font: inherit;
-  font-size: 0.85em;
-  line-height: 1;
-  cursor: pointer;
+.fm-pane-photo-mode,
+.fm-pane-tab-favourites {
+  /* Both the trigger button and the full-viewport backdrop (z-index 4) are siblings inside this
+   * wrapper - without this the backdrop paints over the button once the menu is open, so a
+   * repeat click on the button is swallowed by the backdrop instead of toggling the menu closed. */
+  position: relative;
+  z-index: 5;
 }
 
-.fm-pane-grid-sort:hover,
-.fm-pane-photo-mode:hover {
-  background: var(--fm-hover);
+.fm-pane-grid-sort,
+.fm-pane-photo-mode {
+  margin-right: 0.25rem;
 }
 
 .fm-pane-photo-mode[aria-pressed="true"] {
   color: var(--fm-accent);
-  font-weight: 600;
 }
 
 .fm-view-mode-menu-backdrop {
@@ -313,6 +313,9 @@
   border-radius: 0.25rem;
   background: var(--fm-surface-elevated);
   box-shadow: 0 0.5rem 1.5rem rgb(0 0 0 / 25%);
+  /* Otherwise falls back to mithril-materialized's default font stack/size instead of the app's. */
+  font-family: var(--fm-font-family);
+  font-size: 0.92em;
 }
 
 .fm-view-mode-menu-item {
@@ -324,7 +327,9 @@
   background: transparent;
   color: var(--fm-text);
   text-align: left;
-  font-size: inherit;
+  /* Otherwise mithril-materialized's `button { font-family: ... }` wins over the inherited
+   * app font, since it targets this `<button>` element directly. */
+  font: inherit;
 }
 
 .fm-view-mode-menu-item:hover {
@@ -345,7 +350,10 @@
 .fm-favourites-menu {
   position: absolute;
   z-index: 5;
-  top: calc(var(--fm-row-height) + 0.25rem);
+  /* Positioned relative to `.fm-pane`, not the breadcrumb row, so it must clear both the tab
+     strip row above it and the breadcrumb row the trigger button lives in - one row-height left
+     it overlapping the trigger button itself, swallowing clicks meant to close the menu. */
+  top: calc(var(--fm-row-height) * 2 + 0.25rem);
   right: 0.25rem;
   isolation: isolate;
   display: grid;
@@ -356,6 +364,9 @@
   border-radius: 0.25rem;
   background: var(--fm-surface-elevated);
   box-shadow: 0 0.5rem 1.5rem rgb(0 0 0 / 25%);
+  /* Otherwise falls back to mithril-materialized's default font stack/size instead of the app's. */
+  font-family: var(--fm-font-family);
+  font-size: 0.92em;
 }
 
 .fm-favourites-close {

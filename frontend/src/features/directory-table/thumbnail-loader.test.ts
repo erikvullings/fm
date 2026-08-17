@@ -19,13 +19,17 @@ function entry(name: string, extension: string, kind: EntrySummary['kind'] = 'fi
   };
 }
 
+function noopReadFileRange(): ReturnType<FileManagerClient['readFileRange']> {
+  return Promise.reject(new Error('readFileRange not stubbed for this test'));
+}
+
 describe('ThumbnailLoader', () => {
   it('loads lazily and caches interleaved entries by uri and size', async () => {
     const getThumbnail = vi
       .fn<FileManagerClient['getThumbnail']>()
       .mockResolvedValue(new Uint8Array([0xff, 0xd8, 0xff, 0xe0]));
     const redraw = vi.fn();
-    const loader = new ThumbnailLoader({ getThumbnail }, redraw);
+    const loader = new ThumbnailLoader({ getThumbnail, readFileRange: noopReadFileRange }, redraw);
 
     expect(loader.thumbnailDataUri(entry('first.png', 'png'), 'small')).toBeUndefined();
     expect(loader.thumbnailDataUri(entry('second.jpg', 'jpg'), 'small')).toBeUndefined();
@@ -47,7 +51,7 @@ describe('ThumbnailLoader', () => {
     const getThumbnail = vi
       .fn<FileManagerClient['getThumbnail']>()
       .mockResolvedValue(new Uint8Array([1, 2, 3, 4]));
-    const loader = new ThumbnailLoader({ getThumbnail }, vi.fn());
+    const loader = new ThumbnailLoader({ getThumbnail, readFileRange: noopReadFileRange }, vi.fn());
     const file = entry('photo.png', 'png');
 
     loader.thumbnailDataUri(file, 'small');
@@ -62,7 +66,7 @@ describe('ThumbnailLoader', () => {
 
   it('does not fetch for a directory or an unsupported extension', () => {
     const getThumbnail = vi.fn<FileManagerClient['getThumbnail']>();
-    const loader = new ThumbnailLoader({ getThumbnail }, vi.fn());
+    const loader = new ThumbnailLoader({ getThumbnail, readFileRange: noopReadFileRange }, vi.fn());
 
     expect(loader.thumbnailDataUri(entry('folder', '', 'directory'), 'small')).toBeUndefined();
     expect(loader.thumbnailDataUri(entry('notes.txt', 'txt'), 'small')).toBeUndefined();
@@ -71,7 +75,7 @@ describe('ThumbnailLoader', () => {
 
   it('caches an unavailable thumbnail and keeps returning the icon fallback path', async () => {
     const getThumbnail = vi.fn<FileManagerClient['getThumbnail']>().mockResolvedValue(undefined);
-    const loader = new ThumbnailLoader({ getThumbnail }, vi.fn());
+    const loader = new ThumbnailLoader({ getThumbnail, readFileRange: noopReadFileRange }, vi.fn());
     const file = entry('broken.png', 'png');
 
     expect(loader.thumbnailDataUri(file, 'small')).toBeUndefined();
@@ -85,7 +89,7 @@ describe('ThumbnailLoader', () => {
     const getThumbnail = vi
       .fn<FileManagerClient['getThumbnail']>()
       .mockRejectedValue(new Error('boom'));
-    const loader = new ThumbnailLoader({ getThumbnail }, vi.fn());
+    const loader = new ThumbnailLoader({ getThumbnail, readFileRange: noopReadFileRange }, vi.fn());
     const file = entry('flaky.png', 'png');
 
     expect(loader.thumbnailDataUri(file, 'small')).toBeUndefined();
@@ -96,7 +100,7 @@ describe('ThumbnailLoader', () => {
 
   it('treats cbz and cbr archives as thumbnailable', () => {
     const getThumbnail = vi.fn<FileManagerClient['getThumbnail']>().mockResolvedValue(undefined);
-    const loader = new ThumbnailLoader({ getThumbnail }, vi.fn());
+    const loader = new ThumbnailLoader({ getThumbnail, readFileRange: noopReadFileRange }, vi.fn());
 
     loader.thumbnailDataUri(entry('issue.cbz', 'cbz'), 'medium');
     loader.thumbnailDataUri(entry('issue.cbr', 'cbr'), 'medium');
@@ -106,7 +110,7 @@ describe('ThumbnailLoader', () => {
 
   it('treats mp4/m4v/mov video and pdf as thumbnailable', () => {
     const getThumbnail = vi.fn<FileManagerClient['getThumbnail']>().mockResolvedValue(undefined);
-    const loader = new ThumbnailLoader({ getThumbnail }, vi.fn());
+    const loader = new ThumbnailLoader({ getThumbnail, readFileRange: noopReadFileRange }, vi.fn());
 
     loader.thumbnailDataUri(entry('clip.mp4', 'mp4'), 'medium');
     loader.thumbnailDataUri(entry('clip.m4v', 'm4v'), 'medium');
@@ -114,5 +118,56 @@ describe('ThumbnailLoader', () => {
     loader.thumbnailDataUri(entry('document.pdf', 'pdf'), 'medium');
 
     expect(getThumbnail).toHaveBeenCalledTimes(4);
+  });
+
+  it('renders an svg by reading its raw markup, never through the JPEG thumbnail endpoint', async () => {
+    const getThumbnail = vi.fn<FileManagerClient['getThumbnail']>();
+    const readFileRange = vi.fn<FileManagerClient['readFileRange']>().mockResolvedValue({
+      data: [60, 115, 118, 103, 62, 60, 47, 115, 118, 103, 62], // "<svg></svg>"
+      eof: true,
+      length: 11,
+      offset: 0,
+    });
+    const redraw = vi.fn();
+    const loader = new ThumbnailLoader({ getThumbnail, readFileRange }, redraw);
+    const file = entry('icon.svg', 'svg');
+
+    expect(loader.thumbnailDataUri(file, 'small')).toBeUndefined();
+    await vi.waitFor(() => expect(redraw).toHaveBeenCalledTimes(1));
+
+    expect(getThumbnail).not.toHaveBeenCalled();
+    expect(readFileRange).toHaveBeenCalledTimes(1);
+    expect(readFileRange).toHaveBeenCalledWith({
+      location: file.location,
+      offset: 0,
+      length: 512 * 1024,
+    });
+    expect(loader.thumbnailDataUri(file, 'small')).toBe(
+      'data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=',
+    );
+    // A different requested size reuses the same cached svg content instead of refetching.
+    expect(loader.thumbnailDataUri(file, 'large')).toBe(
+      'data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=',
+    );
+    expect(readFileRange).toHaveBeenCalledTimes(1);
+  });
+
+  it('skips an svg thumbnail when the file is over the size limit or the read is truncated', async () => {
+    const getThumbnail = vi.fn<FileManagerClient['getThumbnail']>();
+    const readFileRange = vi
+      .fn<FileManagerClient['readFileRange']>()
+      .mockResolvedValue({ data: [], eof: false, length: 512 * 1024, offset: 0 });
+    const loader = new ThumbnailLoader({ getThumbnail, readFileRange }, vi.fn());
+
+    const oversized = entry('huge.svg', 'svg');
+    oversized.size = 512 * 1024 + 1;
+    expect(loader.thumbnailDataUri(oversized, 'small')).toBeUndefined();
+    expect(readFileRange).not.toHaveBeenCalled();
+
+    const truncated = entry('truncated.svg', 'svg');
+    expect(loader.thumbnailDataUri(truncated, 'small')).toBeUndefined();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(loader.thumbnailDataUri(truncated, 'small')).toBeUndefined();
   });
 });
