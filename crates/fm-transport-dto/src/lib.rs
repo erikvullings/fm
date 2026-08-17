@@ -82,7 +82,7 @@ pub use settings::{
     SizeFormatDto, ThemeDto,
 };
 pub use snapshot::{DirectorySnapshotDto, LoadingStateDto, VolumeCapacityDto};
-pub use system_location::{SystemLocationDto, SystemLocationKindDto};
+pub use system_location::{SystemLocationDto, SystemLocationKindDto, VolumeDto};
 pub use workspace::{
     ColumnConfigurationDto, CreateWorkspaceRequestDto, DirectoryViewConfigurationDto,
     DirectoryViewModeDto, IconSizeDto, NavigationHistoryDto, OperationCentrePreferencesDto,

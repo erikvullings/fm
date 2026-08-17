@@ -37,9 +37,21 @@ pub struct SystemLocationDto {
     pub read_only: Option<bool>,
 }
 
+/// A currently mounted local/removable/disk-image volume (task 0144),
+/// mirroring Marta's Go-menu "Volumes" list. Distinct from
+/// [`SystemLocationDto`]: volumes carry no protocol/server/share metadata.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct VolumeDto {
+    /// Human-readable volume/drive name.
+    pub name: String,
+    /// Existing provider-neutral local location.
+    pub location: LocationDto,
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{SystemLocationDto, SystemLocationKindDto};
+    use super::{SystemLocationDto, SystemLocationKindDto, VolumeDto};
     use crate::LocationDto;
 
     #[test]
@@ -64,5 +76,23 @@ mod tests {
         assert_eq!(value["server"], "files.example.test");
         assert_eq!(value["share"], "team");
         assert_eq!(value["readOnly"], true);
+    }
+
+    #[test]
+    fn volume_dto_round_trips_and_uses_camel_case() {
+        let dto = VolumeDto {
+            name: "Macintosh HD".to_owned(),
+            location: LocationDto {
+                provider_id: "local".to_owned(),
+                uri: "file:///".to_owned(),
+            },
+        };
+
+        let value = serde_json::to_value(&dto).expect("serializable DTO");
+        assert_eq!(value["name"], "Macintosh HD");
+        assert_eq!(value["location"]["providerId"], "local");
+
+        let round_tripped: VolumeDto = serde_json::from_value(value).expect("deserializable DTO");
+        assert_eq!(round_tripped, dto);
     }
 }

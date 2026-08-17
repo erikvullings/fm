@@ -137,6 +137,18 @@ describe('TauriFileManagerClient', () => {
     });
   });
 
+  describe('getVolumes', () => {
+    it('invokes the matching Tauri command', async () => {
+      const volumes = [
+        { name: 'Macintosh HD', location: { providerId: 'local', uri: 'file:///' } },
+      ] as const;
+      invoke.mockResolvedValue(volumes);
+
+      await expect(new TauriFileManagerClient().getVolumes()).resolves.toEqual(volumes);
+      expect(invoke).toHaveBeenCalledWith('get_volumes');
+    });
+  });
+
   describe('directory methods', () => {
     it('invokes navigate_pane with the request wrapper expected by Tauri', async () => {
       const snapshot = {

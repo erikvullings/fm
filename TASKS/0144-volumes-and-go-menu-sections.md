@@ -1,9 +1,9 @@
 # 0144 Volumes in Favourites/Go menu, plus Go menu Servers/Cloud/Network sections
 
-Status: open
+Status: done
 Priority: medium
 Owner: unassigned
-Agent: unassigned
+Agent: claude
 Area: cross-cutting
 Depends on: 0070, 0096, 0102, 0133
 
@@ -111,3 +111,62 @@ no frontend client method, no model type. This task is the "expose it" follow-up
   `core.revealInSystemFileManager` — all pre-existing registered actions, so it required no
   backend or dispatch changes. Not part of this task's scope; noted here only so this task's Go
   menu changes don't reintroduce/duplicate a Tools section.
+- 2026-08-17: Implemented end to end, reusing `PlatformAdapter::mounted_volumes()` throughout (no
+  second discovery path added).
+  - Backend: added `VolumeDto` (`{ name, location }`, a plain third variant rather than extending
+    `SystemLocationDto`/`SystemLocationKindDto`, per the task's own suggestion) to
+    `fm-transport-dto`; `platform_mapping::discover_volumes` (mirrors `discover_system_locations`,
+    gated on `PlatformCapabilities::MOUNTED_VOLUMES` returning an empty list rather than an error
+    when unsupported, matching `runtime_capabilities_dto`'s gating style); `FileManagerService::
+    volumes()`; `GET /api/v1/volumes` (`apps/fm-server/src/routes/volume.rs`) and the Tauri
+    `get_volumes` command, both registered alongside the existing system-locations route/command.
+    Regenerated `frontend/openapi/openapi.json` and the Orval client via `pnpm api:export` /
+    `pnpm api:generate` (not hand-edited).
+  - Frontend: `Volume` model type; `getVolumes` on all three `FileManagerClient` implementations
+    (the mock client returns two synthetic volumes — a root "Macintosh HD" and a navigable "Empty
+    Drive" fixture); `volumes`/`loadVolumes`/`volumesError` wired through `workspace-controller.ts`
+    and `pane-content-builder.ts` following the exact `systemLocations`/`loadSystemLocations`
+    pattern, including a retry banner; `pane.ts` renders a `.fm-volumes-locations` "Volumes"
+    section directly under Favourites and above Servers, not persisted into
+    `settingsDto.favouriteLocations` (same as Cloud/Network).
+  - Native Go menu: `NativeMenuInputs` gained `volumes`/`connections`/`systemLocations`/
+    `unavailableLocations`; `goMenu()` appends Volumes, Servers, Cloud, Network groups after the
+    favourite items, each behind its own leading separator (including the first, for visual
+    grouping against the favourites above it) — Recent is omitted, as it already was. New
+    synthetic ids `ui.goMenu.volume.<index>`, `ui.goMenu.connection.<connectionId>`,
+    `ui.goMenu.systemLocation.<index>` (shared between the Cloud and Network groups, since both
+    read the same `systemLocations` array). Unavailable volumes/system-locations get an
+    `(unavailable)` suffix and network read-only locations get `(read-only)`, matching the
+    dropdown; non-browsable connection kinds are disabled (`enabled: false`) and every
+    non-connected connection gets its status folded into the title text (the dropdown shows this
+    via a separate glyph the native menu has no room for). `NativeMenuDispatchContext` gained a
+    shared `navigateToLocation(location)` callback (wired in `app-shell.ts` to the same
+    active-pane navigation `pane.ts`'s `navigateFavourite` uses) plus `getVolumes`/
+    `getConnections`/`getSystemLocations` getters — getters rather than plain array properties,
+    since `nativeMenuDispatchContext` is built once but the underlying arrays are reassigned on
+    every reload.
+  - Tests: `VolumeDto` round-trip/camelCase test; `FileManagerService::volumes()` unit tests
+    (surfaced when supported, empty when the adapter lacks the capability); 4 new
+    `apps/fm-server/tests/volume_routes.rs` route tests (discovery, capability-gated empty list,
+    fallback adapter, recoverable failure); frontend `getVolumes` tests for the HTTP and Tauri
+    clients; `pane.test.ts` Volumes-section tests (renders/navigates, omitted when empty, labels
+    unavailable, recoverable error state); `native-menu-spec.test.ts` coverage for the four new Go
+    groups (ordering/separators, unavailable/read-only labelling, disabled non-browsable
+    connections, empty-groups omission); `native-menu-dispatch.test.ts` coverage for the three new
+    synthetic-id branches including out-of-range/unbrowsable no-ops; an `app-shell.test.ts` test
+    wiring `MockFileManagerClient.getVolumes` end to end through the dropdown and into
+    `navigatePane`.
+  - Verified: `cargo test -p fm-transport-dto -p fm-application -p fm-server` (--no-fail-fast) all
+    green for every target this task touched; `cargo clippy` across the touched crates and
+    `cargo fmt --check` both clean; frontend `tsc --noEmit` clean; 286 frontend tests passed across
+    the six touched/added test files (`native-menu-spec.test.ts`, `native-menu-dispatch.test.ts`,
+    `http-file-manager-client.test.ts`, `tauri-file-manager-client.test.ts`, `pane.test.ts`,
+    `app-shell.test.ts`). Two pre-existing, timing-sensitive integration tests
+    (`conflict_resolution::a_destination_appearing_after_planning_is_resolved_like_an_initial_conflict`
+    and `copy_directory_operation::plans_and_copies_ten_thousand_small_files`) failed only when run
+    alongside dozens of other concurrent `cargo` builds on this shared machine (load average over
+    800); the first passed cleanly re-run in isolation, and neither touches any file this task
+    changed, so both are environment flakiness, not regressions.
+  - No README/AGENTS.md/CLAUDE.md updates: the sibling system-locations feature this task mirrors
+    isn't documented at that level of detail there either, so there was no existing pattern to
+    extend.

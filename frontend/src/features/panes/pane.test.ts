@@ -12,6 +12,7 @@ import type {
   SortDescriptor,
   SystemLocation,
   TabId,
+  Volume,
   VolumeCapacity,
 } from '../../models';
 import type { GridIconSize } from '../directory-table/directory-grid';
@@ -162,6 +163,9 @@ type FlatAttrsInput = Partial<{
   location: Location;
   favouriteLocations: readonly FavouriteLocation[];
   recentLocations: readonly Location[];
+  volumes: readonly Volume[];
+  volumesError: string;
+  onRetryVolumes: () => void | Promise<void>;
   systemLocations: readonly SystemLocation[];
   systemLocationsError: string;
   onRetrySystemLocations: () => void | Promise<void>;
@@ -248,6 +252,9 @@ function attrs(input: FlatAttrsInput = {}): PaneAttrs {
       location: input.location,
       favouriteLocations: input.favouriteLocations,
       recentLocations: input.recentLocations,
+      volumes: input.volumes,
+      volumesError: input.volumesError,
+      onRetryVolumes: input.onRetryVolumes,
       systemLocations: input.systemLocations,
       systemLocationsError: input.systemLocationsError,
       onRetrySystemLocations: input.onRetrySystemLocations,
@@ -1714,6 +1721,56 @@ describe('Pane tab strip', () => {
     const share = root.querySelector<HTMLButtonElement>('.fm-network-locations [role="menuitem"]');
     expect(share?.textContent).toContain('Team Files (unavailable)');
     expect(share?.disabled).toBe(false);
+  });
+
+  it('shows discovered volumes above Servers/Cloud/Network and navigates on click', async () => {
+    const onNavigateLocation = vi.fn();
+    const location = { providerId: 'local', uri: 'file:///' };
+    mount(
+      attrs({
+        volumes: [{ name: 'Macintosh HD', location }],
+        onNavigateLocation,
+      }),
+    );
+
+    root.querySelector<HTMLButtonElement>('.fm-pane-tab-favourites')?.click();
+    m.redraw.sync();
+    expect(root.querySelector('.fm-volumes-locations strong')?.textContent).toBe('Volumes');
+    root.querySelector<HTMLButtonElement>('.fm-volumes-locations [role="menuitem"]')?.click();
+    await Promise.resolve();
+
+    expect(onNavigateLocation).toHaveBeenCalledWith(location);
+  });
+
+  it('omits the Volumes section when there are no discovered volumes', () => {
+    mount(attrs({ volumes: [] }));
+    root.querySelector<HTMLButtonElement>('.fm-pane-tab-favourites')?.click();
+    m.redraw.sync();
+    expect(root.querySelector('.fm-volumes-locations')).toBeNull();
+  });
+
+  it('labels an unavailable volume without omitting it', () => {
+    const location = { providerId: 'local', uri: 'file:///Volumes/Backup' };
+    mount(
+      attrs({
+        volumes: [{ name: 'Backup Drive', location }],
+        unavailableLocations: new Set(['local:file:///Volumes/Backup']),
+      }),
+    );
+
+    root.querySelector<HTMLButtonElement>('.fm-pane-tab-favourites')?.click();
+    m.redraw.sync();
+    const item = root.querySelector<HTMLButtonElement>('.fm-volumes-locations [role="menuitem"]');
+    expect(item?.textContent).toBe('Backup Drive (unavailable)');
+  });
+
+  it('shows a recoverable volumes discovery state', () => {
+    const onRetryVolumes = vi.fn();
+    mount(attrs({ volumesError: 'offline', onRetryVolumes }));
+    root.querySelector<HTMLButtonElement>('.fm-pane-tab-favourites')?.click();
+    m.redraw.sync();
+    root.querySelector<HTMLButtonElement>('.fm-volumes-locations-error button')?.click();
+    expect(onRetryVolumes).toHaveBeenCalledOnce();
   });
 
   it('shows a recoverable cloud discovery state', () => {

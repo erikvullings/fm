@@ -4272,6 +4272,24 @@
         ],
         "type": "object"
       },
+      "VolumeDto": {
+        "description": "A currently mounted local/removable/disk-image volume (task 0144),\nmirroring Marta's Go-menu \"Volumes\" list. Distinct from\n[`SystemLocationDto`]: volumes carry no protocol/server/share metadata.",
+        "properties": {
+          "location": {
+            "$ref": "#/components/schemas/LocationDto",
+            "description": "Existing provider-neutral local location."
+          },
+          "name": {
+            "description": "Human-readable volume/drive name.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "location"
+        ],
+        "type": "object"
+      },
       "WebDavConnectionConfigurationDto": {
         "description": "Minimal WebDAV configuration stub.",
         "properties": {
@@ -6890,6 +6908,37 @@
           }
         },
         "summary": "Returns JPEG thumbnail bytes for an image or CBZ/CBR comic archive\nentry, if supported."
+      }
+    },
+    "/api/v1/volumes": {
+      "get": {
+        "operationId": "getVolumes",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/VolumeDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Discovered mounted volumes"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationErrorDto"
+                }
+              }
+            },
+            "description": "Platform discovery failed"
+          }
+        },
+        "summary": "Lists currently mounted local/removable/disk-image volumes."
       }
     },
     "/api/v1/workspaces": {

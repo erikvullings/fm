@@ -47,6 +47,7 @@ import type {
   SystemLocation,
   Unsubscribe,
   UpdateConnectionRequest,
+  Volume,
   WorkspaceCommand,
   WorkspaceId,
   WorkspaceProjection,
@@ -82,6 +83,7 @@ export interface FileManagerClient {
   readonly connection: EventStreamStatusObservable;
   getRuntimeCapabilities(signal?: AbortSignal): Promise<RuntimeCapabilities>;
   getSystemLocations(signal?: AbortSignal): Promise<SystemLocation[]>;
+  getVolumes(signal?: AbortSignal): Promise<Volume[]>;
 
   /** Starts an OS file-reference drag from the desktop host. */
   startNativeDrag(locations: readonly Location[], signal?: AbortSignal): Promise<void>;

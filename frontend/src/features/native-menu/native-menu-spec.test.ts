@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
-import type { ActionDescriptor, KeyChord, WorkspaceSummary } from '../../models';
+import type {
+  ActionDescriptor,
+  Connection,
+  KeyChord,
+  SystemLocation,
+  Volume,
+  WorkspaceSummary,
+} from '../../models';
 import { buildNativeMenuSpec, type NativeMenuInputs, type NativeMenuTab } from './native-menu-spec';
 
 function action(
@@ -48,6 +55,33 @@ function inputs(overrides: Partial<NativeMenuInputs> = {}): NativeMenuInputs {
     canOpenNewWindow: false,
     workspaces: [],
     currentWorkspaceId: undefined,
+    volumes: [],
+    connections: [],
+    systemLocations: [],
+    unavailableLocations: new Set(),
+    ...overrides,
+  };
+}
+
+function connection(overrides: Partial<Connection> = {}): Connection {
+  return {
+    id: 'connection-1',
+    name: 'Home Server',
+    kind: 'ssh',
+    configuration: {
+      kind: 'ssh',
+      host: 'example.test',
+      port: 22,
+      username: 'erik',
+      startPath: null,
+      authentication: 'password',
+      hostKeyPolicy: 'promptOnFirstUse',
+      keepaliveSeconds: null,
+    },
+    hasCredential: true,
+    status: 'disconnected',
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
     ...overrides,
   };
 }
@@ -244,6 +278,146 @@ describe('buildNativeMenuSpec', () => {
     const goMenu = buildNativeMenuSpec(inputs({ favouriteActions })).menus.find(
       (menu) => menu.title === 'Go',
     );
+    expect(goMenu?.items).toEqual([]);
+  });
+
+  it('adds Volumes/Servers/Cloud/Network groups after the favourites, each behind its own separator', () => {
+    const favouriteActions = [
+      action('core.favourite.0', 'Open favourite: Downloads', [{ key: '1', ctrl: true }]),
+    ];
+    const volumes: Volume[] = [
+      { name: 'Macintosh HD', location: { providerId: 'local', uri: 'file:///' } },
+    ];
+    const connections: Connection[] = [connection({ id: 'connection-1', name: 'Spark' })];
+    const systemLocations: SystemLocation[] = [
+      {
+        name: 'iCloud Drive',
+        kind: 'cloud',
+        location: { providerId: 'local', uri: 'file:///iCloud' },
+      },
+      {
+        name: 'Team Files',
+        kind: 'network',
+        location: { providerId: 'local', uri: 'file:///Volumes/Team' },
+      },
+    ];
+    const goMenu = buildNativeMenuSpec(
+      inputs({ favouriteActions, volumes, connections, systemLocations }),
+    ).menus.find((menu) => menu.title === 'Go');
+    expect(goMenu?.items).toEqual([
+      {
+        kind: 'action',
+        id: 'core.favourite.0',
+        title: 'Open favourite: Downloads',
+        shortcut: { key: '1', ctrl: true },
+        enabled: true,
+        checked: false,
+      },
+      { kind: 'separator' },
+      {
+        kind: 'action',
+        id: 'ui.goMenu.volume.0',
+        title: 'Macintosh HD',
+        enabled: true,
+        checked: false,
+      },
+      { kind: 'separator' },
+      {
+        kind: 'action',
+        id: 'ui.goMenu.connection.connection-1',
+        title: 'Spark (Disconnected)',
+        enabled: true,
+        checked: false,
+      },
+      { kind: 'separator' },
+      {
+        kind: 'action',
+        id: 'ui.goMenu.systemLocation.0',
+        title: 'iCloud Drive',
+        enabled: true,
+        checked: false,
+      },
+      { kind: 'separator' },
+      {
+        kind: 'action',
+        id: 'ui.goMenu.systemLocation.1',
+        title: 'Team Files',
+        enabled: true,
+        checked: false,
+      },
+    ]);
+  });
+
+  it('labels an unavailable volume and system location, and a disconnected browsable server', () => {
+    const volumes: Volume[] = [
+      { name: 'Backup Drive', location: { providerId: 'local', uri: 'file:///Volumes/Backup' } },
+    ];
+    const connections: Connection[] = [
+      connection({ id: 'connection-1', name: 'Spark', kind: 'ssh', status: 'disconnected' }),
+    ];
+    const systemLocations: SystemLocation[] = [
+      {
+        name: 'Team Files',
+        kind: 'network',
+        location: { providerId: 'local', uri: 'file:///Volumes/Team' },
+        readOnly: true,
+      },
+    ];
+    const goMenu = buildNativeMenuSpec(
+      inputs({
+        volumes,
+        connections,
+        systemLocations,
+        unavailableLocations: new Set(['local:file:///Volumes/Backup']),
+      }),
+    ).menus.find((menu) => menu.title === 'Go');
+    const volumeItem = goMenu?.items.find(
+      (item) => item.kind === 'action' && item.id === 'ui.goMenu.volume.0',
+    );
+    const connectionItem = goMenu?.items.find(
+      (item) => item.kind === 'action' && item.id === 'ui.goMenu.connection.connection-1',
+    );
+    const systemLocationItem = goMenu?.items.find(
+      (item) => item.kind === 'action' && item.id === 'ui.goMenu.systemLocation.0',
+    );
+    expect(volumeItem).toMatchObject({ title: 'Backup Drive (unavailable)' });
+    // Disconnected but browsable (SSH): still enabled, but labelled with its status.
+    expect(connectionItem).toMatchObject({ title: 'Spark (Disconnected)', enabled: true });
+    expect(systemLocationItem).toMatchObject({ title: 'Team Files (read-only)' });
+  });
+
+  it('disables a non-browsable connection kind in the Go-menu Servers group', () => {
+    const connections: Connection[] = [
+      connection({
+        id: 'connection-1',
+        name: 'S3 bucket',
+        kind: 's3',
+        status: 'disconnected',
+        configuration: {
+          kind: 's3',
+          bucket: 'example-bucket',
+          region: 'us-east-1',
+          endpoint: null,
+        },
+      }),
+    ];
+    const goMenu = buildNativeMenuSpec(inputs({ connections })).menus.find(
+      (menu) => menu.title === 'Go',
+    );
+    expect(goMenu?.items).toEqual([
+      { kind: 'separator' },
+      {
+        kind: 'action',
+        id: 'ui.goMenu.connection.connection-1',
+        title: 'S3 bucket (Disconnected)',
+        enabled: false,
+        checked: false,
+      },
+    ]);
+  });
+
+  it('omits the Volumes/Servers/Cloud/Network groups entirely when they are empty', () => {
+    const goMenu = buildNativeMenuSpec(inputs()).menus.find((menu) => menu.title === 'Go');
     expect(goMenu?.items).toEqual([]);
   });
 

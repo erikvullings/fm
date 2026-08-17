@@ -51,6 +51,7 @@ fn api_router() -> OpenApiRouter<AppState> {
         .routes(utoipa_axum::routes!(
             routes::system_location::get_system_locations
         ))
+        .routes(utoipa_axum::routes!(routes::volume::get_volumes))
         .routes(utoipa_axum::routes!(routes::settings::update_settings))
         .routes(utoipa_axum::routes!(routes::directory::list_directory))
         .routes(utoipa_axum::routes!(routes::directory::refresh_directory))
