@@ -157,6 +157,65 @@ describe('AppShell', () => {
     expect(activePane?.querySelector('.fm-cursor-row')?.textContent).toContain('report.pdf');
   });
 
+  it('keeps the directory-tree sidebar in sync when the active pane navigates by other means (table Enter)', async () => {
+    mountShell('mock');
+    await vi.waitFor(() => expect(root.textContent).toContain('Documents'));
+
+    root.dispatchEvent(new KeyboardEvent('keydown', { key: 'F10', altKey: true, bubbles: true }));
+    m.redraw.sync();
+    await vi.waitFor(() => expect(root.querySelector('.fm-directory-tree')).not.toBeNull());
+
+    const documents = [...root.querySelectorAll<HTMLElement>('.fm-directory-row')].find((rowEl) =>
+      rowEl.textContent?.includes('Documents'),
+    );
+    documents?.click();
+    m.redraw.sync();
+    documents
+      ?.closest<HTMLElement>('.fm-pane')
+      ?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+
+    // The tree, driven purely by table navigation (not by clicking the tree itself), expands to
+    // reveal and select the new active location without the user ever touching the sidebar.
+    await vi.waitFor(() => {
+      const selected = root.querySelector('.fm-directory-tree .fm-tree-row-selected');
+      expect(selected?.textContent).toContain('Documents');
+    });
+  });
+
+  it('Alt+F10 toggles the directory-tree sidebar, which navigates the active pane on activation', async () => {
+    mountShell('mock');
+    await vi.waitFor(() => expect(root.textContent).toContain('Documents'));
+
+    expect(root.querySelector('.fm-directory-tree')).toBeNull();
+    root.dispatchEvent(new KeyboardEvent('keydown', { key: 'F10', altKey: true, bubbles: true }));
+    m.redraw.sync();
+
+    await vi.waitFor(() => {
+      expect(root.querySelector('.fm-directory-tree')).not.toBeNull();
+    });
+    // The active pane's current location (mock:///) is the tree's root itself here, so only the
+    // root row is shown until it is expanded (lazy expansion) - it must be selected, though.
+    expect(root.querySelector('.fm-directory-tree .fm-tree-row-selected')).not.toBeNull();
+
+    root.querySelector<HTMLButtonElement>('.fm-tree-expand-toggle')?.click();
+    await vi.waitFor(() => {
+      expect(root.querySelector('.fm-directory-tree')?.textContent).toContain('Documents');
+    });
+
+    const documentsRow = [...root.querySelectorAll<HTMLElement>('.fm-tree-row')].find((rowEl) =>
+      rowEl.textContent?.includes('Documents'),
+    );
+    documentsRow?.click();
+    m.redraw.sync();
+
+    const activePane = root.querySelector<HTMLElement>('[data-pane-id="left"] > .fm-pane');
+    await vi.waitFor(() => expect(activePane?.textContent).toContain('Projects'));
+
+    root.dispatchEvent(new KeyboardEvent('keydown', { key: 'F10', altKey: true, bubbles: true }));
+    m.redraw.sync();
+    expect(root.querySelector('.fm-directory-tree')).toBeNull();
+  });
+
   it('keeps keyboard focus and the active pane together after Tab', async () => {
     mountShell('mock');
     await vi.waitFor(() => expect(root.querySelectorAll('.fm-workspace-pane')).toHaveLength(2));

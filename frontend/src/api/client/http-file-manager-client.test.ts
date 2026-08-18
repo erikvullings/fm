@@ -6,6 +6,7 @@ const getRuntimeCapabilities = vi.fn();
 const getSystemLocations = vi.fn();
 const getVolumes = vi.fn();
 const listDirectory = vi.fn();
+const listDirectoryChildren = vi.fn();
 const navigatePane = vi.fn();
 const getEntryMetadata = vi.fn();
 const listWorkspaces = vi.fn();
@@ -40,6 +41,7 @@ vi.mock('../generated/file-manager-api', () => ({
   getSystemLocations: (...args: unknown[]) => getSystemLocations(...args),
   getVolumes: (...args: unknown[]) => getVolumes(...args),
   listDirectory: (...args: unknown[]) => listDirectory(...args),
+  listDirectoryChildren: (...args: unknown[]) => listDirectoryChildren(...args),
   navigatePane: (...args: unknown[]) => navigatePane(...args),
   getEntryMetadata: (...args: unknown[]) => getEntryMetadata(...args),
   listWorkspaces: (...args: unknown[]) => listWorkspaces(...args),
@@ -103,6 +105,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
   getRuntimeCapabilities.mockReset();
   listDirectory.mockReset();
+  listDirectoryChildren.mockReset();
   navigatePane.mockReset();
   getEntryMetadata.mockReset();
   listWorkspaces.mockReset();
@@ -304,6 +307,42 @@ describe('HttpFileManagerClient', () => {
       await expect(client.listDirectory(request, controller.signal)).resolves.toEqual(snapshot);
       expect(listDirectory).toHaveBeenCalledWith(
         request,
+        expect.objectContaining({ signal: controller.signal }),
+      );
+    });
+
+    it('calls the generated children endpoint and normalizes the returned entries', async () => {
+      const dto = [
+        {
+          id: 'entry-1',
+          location: { providerId: 'local', uri: 'file:///child' },
+          name: 'child',
+          kind: 'directory',
+          hidden: false,
+          readOnly: false,
+          metadataRevision: 1,
+        },
+      ];
+      listDirectoryChildren.mockResolvedValue({ status: 200, data: dto, headers: new Headers() });
+      const client = new HttpFileManagerClient();
+      const controller = new AbortController();
+      const location = { providerId: 'local', uri: 'file:///' };
+
+      const children = await client.listDirectoryChildren(location, false, controller.signal);
+
+      expect(children).toEqual([
+        {
+          id: 'entry-1',
+          location: { providerId: 'local', uri: 'file:///child' },
+          name: 'child',
+          kind: 'directory',
+          hidden: false,
+          readOnly: false,
+          metadataRevision: 1,
+        },
+      ]);
+      expect(listDirectoryChildren).toHaveBeenCalledWith(
+        { location, showHidden: false },
         expect.objectContaining({ signal: controller.signal }),
       );
     });

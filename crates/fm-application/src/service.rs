@@ -805,6 +805,20 @@ impl FileManagerService {
         Ok(self.enrich_snapshot(snapshot).await)
     }
 
+    /// Lists the immediate child directories of a location, for the directory-tree sidebar (task
+    /// 0139). Not bound to a pane, unlike [`list_directory`](Self::list_directory).
+    pub async fn list_directory_children(
+        &self,
+        request: fm_transport_dto::ListDirectoryChildrenRequest,
+    ) -> Result<Vec<fm_transport_dto::EntrySummaryDto>, ApplicationError> {
+        let location = request.location.into();
+        let entries = self
+            .directories
+            .list_children(&location, request.show_hidden)
+            .await?;
+        Ok(entries.into_iter().map(Into::into).collect())
+    }
+
     /// Refreshes a directory using the same options as a listing.
     pub async fn refresh_directory(
         &self,
@@ -2761,6 +2775,32 @@ mod tests {
         let capacity = volume_capacity(&service.platform, &location).await;
 
         assert!(capacity.is_none());
+    }
+
+    #[tokio::test]
+    async fn list_directory_children_returns_only_directories() {
+        let dir = tempfile::tempdir().expect("must create a temp dir");
+        let content_root = dir.path().join("content");
+        std::fs::create_dir(&content_root).expect("create content root");
+        std::fs::create_dir(content_root.join("child")).expect("create child dir");
+        std::fs::write(content_root.join("file.txt"), b"contents").expect("create file");
+        let service = FileManagerService::new(
+            RuntimeKindDto::BrowserServer,
+            dir.path().join("workspaces"),
+            dir.path().join("settings"),
+        );
+        let location = Location::from_native_path(&content_root).expect("native path location");
+
+        let children = service
+            .list_directory_children(fm_transport_dto::ListDirectoryChildrenRequest {
+                location: location.into(),
+                show_hidden: false,
+            })
+            .await
+            .expect("list directory children");
+
+        assert_eq!(children.len(), 1);
+        assert_eq!(children[0].name, "child");
     }
 
     /// A platform adapter test double reporting a fixed set of mounted

@@ -18,6 +18,9 @@ specification and [TASKS/README.md](TASKS/README.md) for the implementation task
 - Type-to-select quick filter, recursive filename search and content search across files
 - Favourites/bookmarks and recent locations; cloud-synced folders (iCloud/OneDrive conventions) and
   mounted network volumes surfaced automatically under `CLOUD`/`NETWORK`
+- Toggleable directory-tree sidebar (Alt+F10) for hierarchical navigation, with lazy per-node
+  expansion, full keyboard support and two-way sync with the active pane's current location, across
+  every VFS provider (local, SFTP, FTP, archive, ...)
 - Keyboard-first navigation (arrow/page/edge/range/toggle/select-all/pane-switch) with Total
   Commander-parity shortcuts (see [Keyboard shortcuts](#keyboard-shortcuts) below) and selection
   toggles (invert, select/deselect by glob mask)
@@ -353,6 +356,7 @@ even if Mission Control's own gesture isn't visibly triggered.
 | Focus Location bar | Ctrl+L | Cmd+L | |
 | Quick Filter | Ctrl+F | Cmd+F | |
 | Find Files | Alt+F7 | Option+F7 | |
+| Directory Tree sidebar | Alt+F10 | Option+F10 | Toggles a lazily-expanding tree of the active pane's provider, kept in sync with its current location in both directions. |
 | New Tab | Ctrl+T | Cmd+T | Unavailable in browser runtime (browser reserves it). |
 | Close Tab | Ctrl+W | Cmd+W | Unavailable in browser runtime (browser reserves it). |
 | Close All Tabs | Ctrl+Shift+W | Cmd+Shift+W | |

@@ -252,6 +252,18 @@ textarea {
 
 main.fm-workspace {
   grid-row: 3;
+  display: flex;
+  min-height: 0;
+}
+
+/* Directory-tree sidebar (task 0139): a fixed-width column beside the pane split, sized so
+ * `.fm-workspace-layout` (flex: 1 1 auto) fills the remaining width the same way it filled the
+ * whole row before the sidebar existed. */
+.fm-directory-tree-sidebar {
+  flex: 0 0 auto;
+  width: 220px;
+  min-width: 0;
+  height: 100%;
 }
 
 .fm-operation-centre {

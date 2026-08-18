@@ -32,6 +32,29 @@ describe('MockFileManagerClient directories', () => {
     expect(nested.entries.map((entry) => entry.name)).toEqual(['Projects', 'report.pdf']);
   });
 
+  it('listDirectoryChildren returns only the directory-kind fixture entries', async () => {
+    const client = new MockFileManagerClient();
+
+    const children = await client.listDirectoryChildren(
+      { providerId: 'file', uri: 'mock:///' },
+      false,
+    );
+
+    expect(children.map((entry) => entry.name)).toEqual(['Documents', 'Empty', 'Unreadable']);
+    expect(children.every((entry) => entry.kind === 'directory')).toBe(true);
+  });
+
+  it('listDirectoryChildren returns an empty list for a location with no fixture', async () => {
+    const client = new MockFileManagerClient();
+
+    const children = await client.listDirectoryChildren(
+      { providerId: 'file', uri: 'mock:///Empty' },
+      false,
+    );
+
+    expect(children).toEqual([]);
+  });
+
   it('reports accurate size/file-count totals for the full directory, not just the loaded page', async () => {
     const client = new MockFileManagerClient();
 

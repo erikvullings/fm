@@ -21,6 +21,7 @@ import type {
   EditableFileSave,
   EntryMetadata,
   EntryMetadataRequest,
+  EntrySummary,
   Location as FileLocation,
   FileRangeChunk,
   FinderTags,
@@ -75,7 +76,7 @@ import {
   verificationReportFromDto,
 } from '../../models/checksum';
 import { syncPlanItemToDto } from '../../models/comparison';
-import { entryMetadataFromDto } from '../../models/entry';
+import { entryMetadataFromDto, entrySummaryFromDto } from '../../models/entry';
 import { comparisonPageFromDto, syncPlanFromDto } from '../../models/requests';
 import { directorySnapshotFromDto } from '../../models/snapshot';
 import { workspaceProjectionFromDto } from '../../models/workspace';
@@ -103,6 +104,7 @@ import {
   testConnection as requestConnectionTest,
   updateConnection as requestConnectionUpdate,
   listDirectory as requestDirectory,
+  listDirectoryChildren as requestDirectoryChildren,
   cancelDuplicateScan as requestDuplicateScanCancel,
   getDuplicateScan as requestDuplicateScanGet,
   startDuplicateScan as requestDuplicateScanStart,
@@ -461,6 +463,21 @@ export class HttpFileManagerClient implements FileManagerClient {
       throw new Error(message);
     }
     return directorySnapshotFromDto(response.data);
+  }
+
+  async listDirectoryChildren(
+    location: FileLocation,
+    showHidden: boolean,
+    signal?: AbortSignal,
+  ): Promise<readonly EntrySummary[]> {
+    const response = await requestDirectoryChildren(
+      { location, showHidden },
+      signal !== undefined ? { signal } : undefined,
+    );
+    if (response.status !== 200) {
+      throw new Error(`Unexpected listDirectoryChildren response status: ${response.status}`);
+    }
+    return response.data.map(entrySummaryFromDto);
   }
 
   async getEntryMetadata(

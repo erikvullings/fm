@@ -1,9 +1,9 @@
 # 0139 Directory tree dialog / sidebar tree view
 
-Status: open
+Status: done
 Priority: medium
 Owner: unassigned
-Agent: unassigned
+Agent: claude
 Area: frontend
 Depends on: 0129
 
@@ -46,4 +46,102 @@ Meaningfully sized (a new component, not a shortcut binding), and a commonly-exp
   vs. a self-contained modal.
 
 ## Agent Notes
-- (none yet)
+- 2026-08-18 claude: Implemented as a persistent sidebar (chose sidebar over dialog per the
+  acceptance criteria's own steer — more discoverable, more consistent with Finder/Explorer — and
+  because 0134 already established a per-pane toggle-button precedent in the breadcrumb row, not a
+  modal). Built end-to-end via TDD.
+
+  **Backend**: `DirectoryService::list_children` (`crates/fm-application/src/directory.rs`) is a
+  new, deliberately *pane-unbound* listing method, reusing the same `list_all`/`ProviderRegistry`
+  primitives as `DirectoryService::list` but keeping none of `list`'s per-`PaneId`
+  cancellation/revision/watch state. This was a necessary deviation from a literal reading of "reuse
+  the existing `DirectoryService` listing path": `list()`/`navigate()`/`refresh()` are all keyed by
+  `PaneId` and *cancel the previous in-flight request for that pane* on every call — calling them
+  with a tree node's location under a synthetic or reused `PaneId` would race with or cancel a
+  pane's own active listing. `list_children` reuses the underlying provider-listing primitives
+  instead, which is the part of "the existing listing path" that actually generalizes; a regression
+  test (`list_children_does_not_disturb_a_pane_s_own_in_flight_listing` in
+  `crates/fm-application/tests/directory_tree.rs`) locks this in. New `ListDirectoryChildrenRequest`
+  DTO (`crates/fm-transport-dto`, no `paneId`/`workspaceId`), `FileManagerService::
+  list_directory_children` wrapper (returns `Vec<EntrySummaryDto>`, reusing the existing entry DTO
+  rather than inventing a leaner one, to avoid a second entry-shape/conversion path), new route
+  `POST /api/v1/directories/children` (`apps/fm-server/src/routes/directory.rs`, same
+  `require_within_roots` guard as the sibling directory routes) and Tauri command
+  `list_directory_children` (registered in both `invoke_handler` blocks in
+  `apps/fm-desktop/src-tauri/src/lib.rs`). OpenAPI document and generated TS client regenerated via
+  `pnpm run api:export && pnpm run api:generate`.
+
+  **Frontend**: `FileManagerClient.listDirectoryChildren(location, showHidden, signal?)` added to
+  all three adapters (http/tauri/mock — the mock adapter reads the same `directories.json` fixture
+  used by `listDirectory`, filtered to directory-kind entries). New `frontend/src/features/
+  directory-tree/` module:
+  - `directory-tree-state.ts` — pure logic: `TreeChildrenState` (expanded set + children cache +
+    loading/error maps, held as an ordinary immutable value, the same pattern as `terminal-state.ts`'s
+    open-drawer set — not routed through the central meiosis/mergerino store, since it's UI-local
+    and ephemeral), `flattenVisibleTree` (recursively flattens only *cached and expanded* nodes into
+    a linear row list — nothing beyond a collapsed/unfetched node is ever computed, which is what
+    makes lazy expansion lazy), and `ancestorChain` (root-to-target directory chain for the
+    active-pane sync, built on the existing `parentLocation` from `navigation.ts`).
+  - `tree-keybindings.ts` — `interpretTreeKey`, a DOM-free pure interpreter mirroring `selection/
+    keybindings.ts`'s `interpretSelectionKey` shape, implementing the standard WAI-ARIA `role="tree"`
+    keyboard pattern (Right expands/descends, Left collapses/ascends, Up/Down/Home/End move focus,
+    Enter/Space activate).
+  - `directory-tree.ts` — the `DirectoryTree` Mithril component (`role="tree"`/`"treeitem"`,
+    `aria-expanded`/`aria-selected`/`aria-level`/`aria-activedescendant`, roving virtual focus).
+    Presentational only (state and fetching live in the caller, mirroring how `DirectoryTable`
+    delegates to `Pane`). Reuses `directory-table/windowing.ts`'s `calculateVisibleWindow`/
+    `scrollOffsetForIndex` over the flattened row list exactly as the Implementation Notes suggested,
+    rather than a bespoke tree renderer — verified with a 500-node windowing test asserting only a
+    bounded subset of rows is actually mounted.
+  - Wired into `app-shell.ts`: `treeState`/`treeSidebarOpen`/`treeRootLocation` as ordinary closure
+    state (same shape as the existing `openTerminalLocations` pattern), mounted as a `.fm-directory-
+    tree-sidebar` flex column beside `WorkspaceLayoutView` inside `main.fm-workspace` (`main.fm-
+    workspace` gained `display: flex`, `.fm-workspace-layout` gained `flex: 1 1 auto` so it still
+    fills the remaining width - no change to the pane-split/`WorkspaceLayout` model itself).
+    Root computed via the existing `rootLocationFor` (task 0128) rather than a new helper, accepting
+    its documented "not fully provider-aware for a remote provider's configured start path" caveat
+    as a known limitation rather than solving it here (also true of `rootLocationFor`'s existing
+    Ctrl+Backspace caller). Two-way sync is driven by `syncDirectoryTreeToActiveLocation()`, called
+    once per render (a single string comparison against the last-synced location URI when nothing
+    changed) rather than hooked into `navigate()`'s `onLocationVisited` callback specifically -
+    deliberate, since a tab switch or pane switch changes the active location without going through
+    `navigate()` at all, and the render-time diff catches every path uniformly. Toggle is Alt+F10
+    (Total Commander parity; Ctrl+F10 was already taken by `core.clearQuickFilter`), added as a new
+    `GlobalKeydownContext.toggleDirectoryTree()` special-cased in `global-keydown-handler.ts` the
+    same way the embedded-terminal toggle already is (a pure UI toggle, not routed through the
+    backend action registry).
+
+  **Verified**: `cargo test --workspace`, `cargo clippy --workspace --all-targets` (zero warnings),
+  `cargo fmt --all --check` all clean from the repo root. New backend tests, verified by running
+  exactly these targets: 4 in `crates/fm-application/tests/directory_tree.rs` (directories-only
+  filtering + sort, hidden-file filtering, the pane-non-interference regression above, and archive-
+  provider parity using a real in-memory-built zip fixture, not just the local provider), 1 in
+  `fm-application/src/service.rs` (`list_directory_children` wrapper), 1 new in `apps/fm-server/
+  tests/directory_routes.rs` (the new route's happy path) plus that file's existing
+  stable-operation-id contract test extended to cover it. Frontend: `pnpm exec tsc --noEmit` clean;
+  `biome check .` clean (the same 3
+  pre-existing `noDescendingSpecificity` warnings noted in earlier tasks, none in files this task
+  touched). New/changed frontend tests, verified by running exactly these files: 14 in `directory-
+  tree-state.test.ts`, 12 in `tree-keybindings.test.ts`, 10 in `directory-tree.test.ts`, 1 new in
+  `http-file-manager-client.test.ts`, 2 new in `mock-file-manager-client.test.ts`, 1 new in
+  `global-keydown-handler.test.ts` (plus the existing suite's mock-context update), 2 new in
+  `app-shell.test.ts` (Alt+F10 toggle + click-to-navigate, and reverse sync from a table `Enter`
+  navigation). Full `pnpm exec vitest run`: 1339/1339 passing,
+  zero flakes. Manual browser verification (mock runtime) was attempted but blocked by an unrelated
+  dev server already holding the configured port in this environment (not something safe to resolve
+  by killing another session's process); relied instead on `app-shell.test.ts`'s full-DOM,
+  real-`AppShell`-mounted integration tests (keyboard dispatch, click, and `vi.waitFor` assertions
+  against actual rendered ARIA state) for end-to-end confidence, which is a materially stronger
+  signal than a shallow component test but is not the same as eyes-on-screen confirmation - flagged
+  here honestly rather than claimed as done.
+
+  **Known gaps / explicitly deferred**: tree root for remote providers uses `rootLocationFor`'s
+  URI-prefix heuristic rather than the connection-aware `remoteRootLocation` (a configured non-`/`
+  start path lands one level higher than intended) - matches an existing, already-accepted
+  limitation elsewhere in the codebase, not a new one. No dedicated SFTP/FTP-over-the-wire test (the
+  provider-parity test uses the archive provider, which - like SFTP/FTP - is a real non-local
+  `FileSystemProvider` exercising the same `ProviderRegistry` dispatch, but isn't network I/O);
+  reusing `crates/fm-application`'s existing `ssh_sftp_operations.rs`-style live-server test fixture
+  for `list_children` specifically would be a reasonable follow-up. Type-ahead-select within the tree
+  was not added (only arrow/expand/collapse/activate navigation, per the acceptance criteria's
+  explicit list) - a plausible small follow-up mirroring `TypeaheadController` if wanted later.

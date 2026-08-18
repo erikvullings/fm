@@ -5,7 +5,8 @@ use axum::extract::{Extension, State};
 use axum::http::StatusCode;
 use fm_transport_dto::{
     ApplicationErrorDto, DirectorySnapshotDto, EntryMetadataDto, EntryMetadataRequest,
-    ListDirectoryRequest, NavigateRequest, SetPaneActivityRequest,
+    EntrySummaryDto, ListDirectoryChildrenRequest, ListDirectoryRequest, NavigateRequest,
+    SetPaneActivityRequest,
 };
 use std::time::Instant;
 use tower_http::request_id::RequestId;
@@ -111,6 +112,55 @@ pub(crate) async fn refresh_directory(
                 elapsed_ms = started.elapsed().as_millis(),
                 error = ?error,
                 "refresh_directory failed"
+            );
+            Err(ApiError::new(error, request_id))
+        }
+    }
+}
+
+/// Lists the immediate child directories of a location, for the directory-tree sidebar (task
+/// 0139). Not bound to a pane or workspace, unlike `list_directory`.
+#[utoipa::path(
+    post,
+    path = "/api/v1/directories/children",
+    operation_id = "listDirectoryChildren",
+    request_body = ListDirectoryChildrenRequest,
+    responses(
+        (status = 200, description = "The location's immediate child directories", body = Vec<EntrySummaryDto>),
+        (status = 400, description = "The request was invalid", body = ApplicationErrorDto),
+        (status = 403, description = "The directory is unreadable", body = ApplicationErrorDto),
+        (status = 404, description = "The directory does not exist", body = ApplicationErrorDto),
+    )
+)]
+pub(crate) async fn list_directory_children(
+    State(state): State<AppState>,
+    Extension(request_id): Extension<RequestId>,
+    Json(request): Json<ListDirectoryChildrenRequest>,
+) -> Result<Json<Vec<EntrySummaryDto>>, ApiError> {
+    let request_id = extract_request_id(&request_id);
+    crate::error::require_within_roots(&request.location, &state.accessible_roots, request_id)?;
+    let started = Instant::now();
+    info!(
+        request_id = %request_id,
+        provider_id = %request.location.provider_id,
+        uri = %request.location.uri,
+        "list_directory_children received"
+    );
+    match state.service.list_directory_children(request).await {
+        Ok(children) => {
+            info!(
+                request_id = %request_id,
+                elapsed_ms = started.elapsed().as_millis(),
+                "list_directory_children honored"
+            );
+            Ok(Json(children))
+        }
+        Err(error) => {
+            warn!(
+                request_id = %request_id,
+                elapsed_ms = started.elapsed().as_millis(),
+                error = ?error,
+                "list_directory_children failed"
             );
             Err(ApiError::new(error, request_id))
         }

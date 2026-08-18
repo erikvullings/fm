@@ -203,6 +203,7 @@ function makeContext(overrides: Partial<GlobalKeydownContext> = {}): GlobalKeydo
     focusPane: vi.fn(),
     redraw: vi.fn(),
     toggleTerminal: vi.fn(),
+    toggleDirectoryTree: vi.fn(),
     setSort: vi.fn(),
     swapPaneTabSets: vi.fn(),
     openMultiRenameForActivePane: vi.fn(),
@@ -371,6 +372,15 @@ describe('createGlobalKeydownHandler - task 0128 shortcuts', () => {
     const context = makeContext({ setActiveTabQuickFilter });
     createGlobalKeydownHandler(context)(keydown('F10', { ctrlKey: true }));
     expect(setActiveTabQuickFilter).toHaveBeenCalledWith(PANE_A, undefined);
+  });
+
+  it('Alt+F10 toggles the directory-tree sidebar without also clearing the Quick Filter', () => {
+    const toggleDirectoryTree = vi.fn();
+    const setActiveTabQuickFilter = vi.fn();
+    const context = makeContext({ toggleDirectoryTree, setActiveTabQuickFilter });
+    createGlobalKeydownHandler(context)(keydown('F10', { altKey: true }));
+    expect(toggleDirectoryTree).toHaveBeenCalledTimes(1);
+    expect(setActiveTabQuickFilter).not.toHaveBeenCalled();
   });
 
   it('Ctrl+F3 sorts the active pane by name', () => {

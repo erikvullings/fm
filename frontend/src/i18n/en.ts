@@ -269,6 +269,12 @@ export const en = {
     directoryContents: 'Directory contents',
     focusedEntry: 'Focused {name}',
   },
+  tree: {
+    directoryTree: 'Directory tree',
+    toggleSidebar: 'Toggle directory tree',
+    expand: 'Expand {name}',
+    collapse: 'Collapse {name}',
+  },
 } as const satisfies CatalogueShape;
 
 /** Canonical translation groups and keys. Values remain locale-specific. */

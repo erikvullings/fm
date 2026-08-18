@@ -55,6 +55,9 @@ fn api_router() -> OpenApiRouter<AppState> {
         .routes(utoipa_axum::routes!(routes::settings::update_settings))
         .routes(utoipa_axum::routes!(routes::directory::list_directory))
         .routes(utoipa_axum::routes!(routes::directory::refresh_directory))
+        .routes(utoipa_axum::routes!(
+            routes::directory::list_directory_children
+        ))
         .routes(utoipa_axum::routes!(routes::directory::navigate_pane))
         .routes(utoipa_axum::routes!(routes::directory::get_entry_metadata))
         .routes(utoipa_axum::routes!(routes::directory::set_pane_activity))

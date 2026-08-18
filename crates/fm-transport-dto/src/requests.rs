@@ -44,6 +44,24 @@ pub struct ListDirectoryRequest {
     pub folders_first: bool,
 }
 
+/// Requests the immediate child directories of a location, for the directory-tree sidebar
+/// (`POST /api/v1/directories/children`, task 0139). Unlike [`ListDirectoryRequest`], this is not
+/// bound to a pane or workspace: expanding a tree node is independent of any pane's own listing
+/// session.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(example = json!({
+    "location": {"providerId": "local", "uri": "file:///Users/erik"},
+    "showHidden": false
+}))]
+pub struct ListDirectoryChildrenRequest {
+    /// The location whose immediate child directories should be listed.
+    pub location: LocationDto,
+    /// Whether hidden directories should be included.
+    #[serde(default)]
+    pub show_hidden: bool,
+}
+
 /// Requests navigation to a new location (`POST /api/v1/navigation/open`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]

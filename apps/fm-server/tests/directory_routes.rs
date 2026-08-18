@@ -77,6 +77,32 @@ async fn directory_endpoints_list_refresh_navigate_and_fetch_metadata() {
 }
 
 #[tokio::test]
+async fn directory_children_endpoint_lists_only_directories() {
+    let root = tempfile::tempdir().expect("must create a temp directory");
+    std::fs::create_dir(root.path().join("child")).expect("create child dir");
+    std::fs::write(root.path().join("file.txt"), b"contents").expect("create file");
+    let server = TestServer::spawn().await;
+    let client = reqwest::Client::new();
+
+    let response = client
+        .post(format!("{}/api/v1/directories/children", server.base_url))
+        .json(&json!({
+            "location": location_json(root.path()),
+            "showHidden": false,
+        }))
+        .send()
+        .await
+        .expect("request must succeed");
+
+    assert_eq!(response.status(), reqwest::StatusCode::OK);
+    let body: Value = response.json().await.expect("body must be JSON");
+    let children = body.as_array().expect("body must be a JSON array");
+    assert_eq!(children.len(), 1);
+    assert_eq!(children[0]["name"], "child");
+    assert_eq!(children[0]["kind"], "directory");
+}
+
+#[tokio::test]
 async fn directory_errors_use_stable_sanitized_application_error_dtos() {
     let root = tempfile::tempdir().expect("must create a temp directory");
     let server = TestServer::spawn().await;
@@ -150,6 +176,7 @@ fn directory_openapi_uses_the_required_stable_operation_ids() {
     let expected = [
         ("/api/v1/directories/list", "listDirectory"),
         ("/api/v1/directories/refresh", "refreshDirectory"),
+        ("/api/v1/directories/children", "listDirectoryChildren"),
         ("/api/v1/navigation/open", "navigatePane"),
         ("/api/v1/entries/metadata", "getEntryMetadata"),
         ("/api/v1/directories/activity", "setPaneActivity"),

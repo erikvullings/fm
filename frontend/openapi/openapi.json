@@ -2457,6 +2457,30 @@
         ],
         "type": "string"
       },
+      "ListDirectoryChildrenRequest": {
+        "description": "Requests the immediate child directories of a location, for the directory-tree sidebar\n(`POST /api/v1/directories/children`, task 0139). Unlike [`ListDirectoryRequest`], this is not\nbound to a pane or workspace: expanding a tree node is independent of any pane's own listing\nsession.",
+        "example": {
+          "location": {
+            "providerId": "local",
+            "uri": "file:///Users/erik"
+          },
+          "showHidden": false
+        },
+        "properties": {
+          "location": {
+            "$ref": "#/components/schemas/LocationDto",
+            "description": "The location whose immediate child directories should be listed."
+          },
+          "showHidden": {
+            "description": "Whether hidden directories should be included.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "location"
+        ],
+        "type": "object"
+      },
       "ListDirectoryRequest": {
         "description": "Requests the entries of a directory (`POST /api/v1/directories/list`).",
         "example": {
@@ -5637,8 +5661,8 @@
   "info": {
     "description": "Axum host exposing the file manager over REST and Server-Sent Events.",
     "license": {
-      "identifier": "MIT OR Apache-2.0",
-      "name": "MIT OR Apache-2.0"
+      "identifier": "MIT",
+      "name": "MIT"
     },
     "title": "File Manager API",
     "version": "1.0.0"
@@ -6755,6 +6779,67 @@
           }
         },
         "summary": "Marks whether a pane is currently in the foreground, so a poll-tracked\ndirectory watch (SFTP, FTP, ...) can poll less often while backgrounded\n(task 0109)."
+      }
+    },
+    "/api/v1/directories/children": {
+      "post": {
+        "operationId": "listDirectoryChildren",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ListDirectoryChildrenRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/EntrySummaryDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "The location's immediate child directories"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationErrorDto"
+                }
+              }
+            },
+            "description": "The request was invalid"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationErrorDto"
+                }
+              }
+            },
+            "description": "The directory is unreadable"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationErrorDto"
+                }
+              }
+            },
+            "description": "The directory does not exist"
+          }
+        },
+        "summary": "Lists the immediate child directories of a location, for the directory-tree sidebar (task\n0139). Not bound to a pane or workspace, unlike `list_directory`."
       }
     },
     "/api/v1/directories/list": {

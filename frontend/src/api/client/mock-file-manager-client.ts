@@ -132,6 +132,7 @@ export type MockClientMethod =
   | 'dispatchWorkspaceCommand'
   | 'navigatePane'
   | 'listDirectory'
+  | 'listDirectoryChildren'
   | 'getEntryMetadata'
   | 'setPaneActivity'
   | 'getFileIcon'
@@ -1053,6 +1054,19 @@ export class MockFileManagerClient implements FileManagerClient {
 
   listDirectory(request: ListDirectoryRequest, signal?: AbortSignal): Promise<DirectorySnapshot> {
     return this.directorySnapshot(request, signal, 'listDirectory');
+  }
+
+  listDirectoryChildren(
+    location: Location,
+    showHidden: boolean,
+    signal?: AbortSignal,
+  ): Promise<readonly EntrySummary[]> {
+    return this.perform('listDirectoryChildren', signal, () => {
+      const fixtures = directories[location.uri] ?? [];
+      return fixtures
+        .map((fixture) => fixtureEntry(location.uri, fixture))
+        .filter((entry) => entry.kind === 'directory' && (showHidden || !entry.hidden));
+    });
   }
 
   getEntryMetadata(request: EntryMetadataRequest, signal?: AbortSignal): Promise<EntryMetadata> {

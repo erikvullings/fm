@@ -271,4 +271,10 @@ export const nl = {
     directoryContents: 'Mapinhoud',
     focusedEntry: 'Geselecteerd: {name}',
   },
+  tree: {
+    directoryTree: 'Mappenstructuur',
+    toggleSidebar: 'Mappenstructuur tonen/verbergen',
+    expand: '{name} uitklappen',
+    collapse: '{name} inklappen',
+  },
 } as const satisfies LocalisedCatalogue<EnglishCatalogue>;

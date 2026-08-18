@@ -15,18 +15,18 @@ use fm_transport_dto::{
     CalculateFolderSizeRequestDto, CalculateFolderSizeResponseDto, ChecksumFileDto,
     ChecksumPageDto, ComparisonPageDto, ConnectionDto, CreateConnectionRequestDto,
     CreateWorkspaceRequestDto, DirectorySnapshotDto, DuplicatePageDto, EntryMetadataDto,
-    EntryMetadataRequest, FinderTagsDto, GenerateSyncPlanRequestDto, GetFileGitHistoryRequestDto,
-    GetFileGitHistoryResponseDto, HostKeyProbeDto, InvokeActionRequestDto, ListDirectoryRequest,
-    LocationDto, NavigateRequest, OperationDto, PluginDescriptorDto, PluginLogEntryDto,
-    ReadFileRangeRequestDto, ReadFileRangeResponseDto, RenderChecksumFileRequestDto,
-    ResolveOperationConflictRequestDto, RuntimeCapabilitiesDto, SaveChecksumFileRequestDto,
-    SaveChecksumFileResponseDto, SearchInFileRequestDto, SearchInFileResponseDto,
-    SetPaneActivityRequest, SettingsDto, SpotlightCommentDto, StartChecksumRequestDto,
-    StartChecksumResponseDto, StartComparisonRequestDto, StartComparisonResponseDto,
-    StartDuplicateScanRequestDto, StartDuplicateScanResponseDto, StartOperationRequestDto,
-    StartSearchRequestDto, StartSearchResponseDto, SyncPlanDto, UpdateConnectionRequestDto,
-    VerificationReportDto, VerifyChecksumFileRequestDto, WorkspaceCommandDto, WorkspaceDto,
-    WorkspaceSummaryDto,
+    EntryMetadataRequest, EntrySummaryDto, FinderTagsDto, GenerateSyncPlanRequestDto,
+    GetFileGitHistoryRequestDto, GetFileGitHistoryResponseDto, HostKeyProbeDto,
+    InvokeActionRequestDto, ListDirectoryChildrenRequest, ListDirectoryRequest, LocationDto,
+    NavigateRequest, OperationDto, PluginDescriptorDto, PluginLogEntryDto, ReadFileRangeRequestDto,
+    ReadFileRangeResponseDto, RenderChecksumFileRequestDto, ResolveOperationConflictRequestDto,
+    RuntimeCapabilitiesDto, SaveChecksumFileRequestDto, SaveChecksumFileResponseDto,
+    SearchInFileRequestDto, SearchInFileResponseDto, SetPaneActivityRequest, SettingsDto,
+    SpotlightCommentDto, StartChecksumRequestDto, StartChecksumResponseDto,
+    StartComparisonRequestDto, StartComparisonResponseDto, StartDuplicateScanRequestDto,
+    StartDuplicateScanResponseDto, StartOperationRequestDto, StartSearchRequestDto,
+    StartSearchResponseDto, SyncPlanDto, UpdateConnectionRequestDto, VerificationReportDto,
+    VerifyChecksumFileRequestDto, WorkspaceCommandDto, WorkspaceDto, WorkspaceSummaryDto,
 };
 
 use crate::{
@@ -432,6 +432,20 @@ pub(crate) async fn refresh_directory(
     state
         .service
         .refresh_directory(request)
+        .await
+        .map_err(|error| error.into_dto(Uuid::new_v4()))
+}
+
+/// Lists the immediate child directories of a location through the same application service as
+/// Axum, for the directory-tree sidebar (task 0139).
+#[tauri::command]
+pub(crate) async fn list_directory_children(
+    state: State<'_, AppState>,
+    request: ListDirectoryChildrenRequest,
+) -> Result<Vec<EntrySummaryDto>, ApplicationErrorDto> {
+    state
+        .service
+        .list_directory_children(request)
         .await
         .map_err(|error| error.into_dto(Uuid::new_v4()))
 }

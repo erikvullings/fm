@@ -24,6 +24,7 @@ import type {
   EditableFileSave,
   EntryMetadata,
   EntryMetadataRequest,
+  EntrySummary,
   FileRangeChunk,
   FinderTags,
   GenerateSyncPlanRequest,
@@ -72,12 +73,13 @@ import type {
   WorkspaceSummary,
 } from '../../models';
 import { syncPlanItemToDto } from '../../models/comparison';
-import { entryMetadataFromDto } from '../../models/entry';
+import { entryMetadataFromDto, entrySummaryFromDto } from '../../models/entry';
 import { directorySnapshotFromDto } from '../../models/snapshot';
 import { workspaceProjectionFromDto } from '../../models/workspace';
 import { TauriEventStream } from '../events/tauri-event-stream';
 import type { DirectorySnapshotDto } from '../generated/models/directorySnapshotDto';
 import type { EntryMetadataDto } from '../generated/models/entryMetadataDto';
+import type { EntrySummaryDto } from '../generated/models/entrySummaryDto';
 import type { WorkspaceDto } from '../generated/models/workspaceDto';
 import type { FileManagerClient, NativeFileDrop } from './file-manager-client';
 
@@ -281,6 +283,17 @@ export class TauriFileManagerClient implements FileManagerClient {
     return directorySnapshotFromDto(
       await invoke<DirectorySnapshotDto>('list_directory', { request }),
     );
+  }
+
+  async listDirectoryChildren(
+    location: Location,
+    showHidden: boolean,
+    _signal?: AbortSignal,
+  ): Promise<readonly EntrySummary[]> {
+    const children = await invoke<EntrySummaryDto[]>('list_directory_children', {
+      request: { location, showHidden },
+    });
+    return children.map(entrySummaryFromDto);
   }
 
   async getEntryMetadata(

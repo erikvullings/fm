@@ -24,6 +24,7 @@ import type {
   DuplicatePageDto,
   EntryMetadataDto,
   EntryMetadataRequest,
+  EntrySummaryDto,
   FinderTagsDto,
   GenerateSyncPlanRequestDto,
   GetChecksumsParams,
@@ -39,6 +40,7 @@ import type {
   HealthDto,
   HostKeyProbeDto,
   InvokeActionRequestDto,
+  ListDirectoryChildrenRequest,
   ListDirectoryRequest,
   ListOperationsParams,
   LoadEditableFileRequestDto,
@@ -1224,6 +1226,60 @@ export const setPaneActivity = async (setPaneActivityRequest: SetPaneActivityReq
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
     body: JSON.stringify(setPaneActivityRequest)
+  }
+);}
+
+
+
+export type listDirectoryChildrenResponse200 = {
+  data: EntrySummaryDto[]
+  status: 200
+}
+
+export type listDirectoryChildrenResponse400 = {
+  data: ApplicationErrorDto
+  status: 400
+}
+
+export type listDirectoryChildrenResponse403 = {
+  data: ApplicationErrorDto
+  status: 403
+}
+
+export type listDirectoryChildrenResponse404 = {
+  data: ApplicationErrorDto
+  status: 404
+}
+
+export type listDirectoryChildrenResponseSuccess = (listDirectoryChildrenResponse200) & {
+  headers: Headers;
+};
+export type listDirectoryChildrenResponseError = (listDirectoryChildrenResponse400 | listDirectoryChildrenResponse403 | listDirectoryChildrenResponse404) & {
+  headers: Headers;
+};
+
+export type listDirectoryChildrenResponse = (listDirectoryChildrenResponseSuccess | listDirectoryChildrenResponseError)
+
+export const getListDirectoryChildrenUrl = () => {
+
+
+
+
+  return `/api/v1/directories/children`
+}
+
+/**
+ * @summary Lists the immediate child directories of a location, for the directory-tree sidebar (task
+0139). Not bound to a pane or workspace, unlike `list_directory`.
+ */
+export const listDirectoryChildren = async (listDirectoryChildrenRequest: ListDirectoryChildrenRequest, options?: Parameters<typeof fetchMutator>[1]): Promise<listDirectoryChildrenResponse> => {
+
+  return fetchMutator<listDirectoryChildrenResponse>(getListDirectoryChildrenUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(listDirectoryChildrenRequest)
   }
 );}
 

@@ -7,6 +7,13 @@
   height: 100%;
 }
 
+.fm-workspace-layout {
+  /* Fills the width left over beside the directory-tree sidebar (task 0139), same as it filled
+   * the whole `main.fm-workspace` row before the sidebar existed. */
+  flex: 1 1 auto;
+  width: 100%;
+}
+
 .fm-workspace-split {
   display: grid;
   overflow: hidden;

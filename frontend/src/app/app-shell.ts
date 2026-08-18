@@ -59,6 +59,16 @@ import { createDialogUIController } from '../features/dialogs/dialog-ui-controll
 import type { FinderTagsLoader } from '../features/directory-table/finder-tags-loader';
 import type { NativeIconLoader } from '../features/directory-table/native-icon-loader';
 import type { ThumbnailLoader } from '../features/directory-table/thumbnail-loader';
+import { DirectoryTree, type DirectoryTreeAttrs } from '../features/directory-tree/directory-tree';
+import {
+  ancestorChain,
+  createTreeChildrenState,
+  type TreeChildrenState,
+  withChildren,
+  withError,
+  withExpanded,
+  withLoading,
+} from '../features/directory-tree/directory-tree-state';
 import {
   createFileEditorController,
   type FileEditorController,
@@ -88,6 +98,7 @@ import {
   type NavigationController,
   type PaneDirectoryView,
 } from '../features/navigation/navigation';
+import { rootLocationFor } from '../features/navigation/root-location';
 import { createOperationsState, dismissOperation } from '../features/operations/operation-state';
 import {
   createOperationsController,
@@ -488,6 +499,15 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
   let focusTerminal: (() => boolean) | undefined;
   let commandPaletteOpen = false;
   const openTerminalLocations = new Set<string>();
+  /** Directory-tree sidebar (task 0139): open/closed, lazily-fetched expansion/children cache,
+   * the provider root it is currently rooted at, and the active-pane location it was last
+   * synced to (so `syncDirectoryTreeToActiveLocation` only does work when that location
+   * actually changes, regardless of which action changed it - navigate, breadcrumb, favourite,
+   * history, tab switch, or pane switch). */
+  let treeSidebarOpen = false;
+  let treeState: TreeChildrenState = createTreeChildrenState();
+  let treeRootLocation: Location | undefined;
+  let treeSyncedLocationUri: string | undefined;
   let openTerminalSupported = false;
   let nativeIconLoader: NativeIconLoader | undefined;
   let thumbnailLoader: ThumbnailLoader | undefined;
@@ -1116,6 +1136,78 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     return paneId === undefined || location === undefined ? undefined : { paneId, location };
   }
 
+  /** Fetches and caches a tree node's children (directory-tree sidebar, task 0139), unless
+   * already cached or already in flight. */
+  function ensureTreeChildrenLoaded(location: Location): void {
+    if (location.uri in treeState.childrenByUri || treeState.loadingUris.has(location.uri)) return;
+    treeState = withLoading(treeState, location.uri, true);
+    attrsClient
+      .listDirectoryChildren(location, false)
+      .then((children) => {
+        treeState = withChildren(treeState, location.uri, children);
+        m.redraw();
+      })
+      .catch((error: unknown) => {
+        treeState = withError(
+          treeState,
+          location.uri,
+          error instanceof Error ? error.message : 'Unable to load directory',
+        );
+        m.redraw();
+      });
+  }
+
+  /** Expands (fetching children if not cached) or collapses a tree node. */
+  function toggleTreeNode(location: Location): void {
+    if (treeState.expanded.has(location.uri)) {
+      treeState = withExpanded(treeState, location.uri, false);
+      return;
+    }
+    if (location.uri in treeState.childrenByUri) {
+      treeState = withExpanded(treeState, location.uri, true);
+      return;
+    }
+    ensureTreeChildrenLoaded(location);
+  }
+
+  /** Keeps the directory-tree sidebar's expanded/highlighted path in sync with the active
+   * pane's current location, in both directions: called on every render (cheap - a single
+   * string comparison when nothing changed), so it catches every way the active location can
+   * change - `navigate()`, breadcrumbs, favourites, history, a tab switch, or a pane switch -
+   * without needing a bespoke hook into each one. */
+  function syncDirectoryTreeToActiveLocation(): void {
+    const active = activeDirectory();
+    if (active === undefined || active.location.uri === treeSyncedLocationUri) return;
+    treeSyncedLocationUri = active.location.uri;
+    const root = rootLocationFor(active.location);
+    if (treeRootLocation === undefined || treeRootLocation.uri !== root.uri) {
+      treeRootLocation = root;
+      treeState = createTreeChildrenState();
+    }
+    // `ancestorChain` excludes `root` itself (a direct child of root yields an empty chain), but
+    // the root row still must be expanded for that child to appear at all - so expand+load it
+    // explicitly whenever the active location is anywhere below it.
+    if (active.location.uri !== root.uri) {
+      treeState = withExpanded(treeState, root.uri, true);
+      ensureTreeChildrenLoaded(root);
+    }
+    for (const ancestor of ancestorChain(root, active.location)) {
+      treeState = withExpanded(treeState, ancestor.uri, true);
+      ensureTreeChildrenLoaded(ancestor);
+    }
+  }
+
+  /** A short display label for the tree sidebar's root row - the host segment of a remote
+   * provider's URI (e.g. `sftp://my-server/` -> "my-server"), or "/" for a local root. */
+  function treeRootName(location: Location): string {
+    try {
+      const host = new URL(location.uri).host;
+      return host === '' ? '/' : host;
+    } catch {
+      return location.providerId;
+    }
+  }
+
   function clipboard() {
     return appState?.clipboard ?? emptyClipboard;
   }
@@ -1522,6 +1614,10 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
         openTerminalLocations.add(activeLocation.uri);
         requestAnimationFrame(() => focusTerminal?.());
       }
+    },
+    toggleDirectoryTree: () => {
+      treeSidebarOpen = !treeSidebarOpen;
+      if (treeSidebarOpen) syncDirectoryTreeToActiveLocation();
     },
     redraw: () => m.redraw(),
     setSort: (paneId, sort) => {
@@ -2120,6 +2216,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
 
     view: ({ attrs }) => {
       syncNativeMenu();
+      if (treeSidebarOpen) syncDirectoryTreeToActiveLocation();
       currentEntryFormatSettings = attrs.entryFormatSettings ?? loadedEntryFormatSettings;
       const pendingDelete = Object.values(operations.byId).find(
         (operation) =>
@@ -2480,6 +2577,27 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
             ),
           ]),
           m('main.fm-workspace', [
+            (() => {
+              if (!treeSidebarOpen || treeRootLocation === undefined) return undefined;
+              const treeRoot = treeRootLocation;
+              const activeLocationUri = activeDirectory()?.location.uri;
+              return m('.fm-directory-tree-sidebar', [
+                m(DirectoryTree, {
+                  root: { location: treeRoot, name: treeRootName(treeRoot) },
+                  state: treeState,
+                  ...(activeLocationUri === undefined ? {} : { activeLocationUri }),
+                  onToggleExpand: (location: Location) => {
+                    toggleTreeNode(location);
+                    m.redraw();
+                  },
+                  onActivate: (location: Location) => {
+                    const active = activeDirectory();
+                    if (active === undefined) return;
+                    void navigation?.navigate(active.paneId, location);
+                  },
+                } satisfies DirectoryTreeAttrs),
+              ]);
+            })(),
             workspace === undefined
               ? m('.fm-workspace-loading', workspaceError ?? t('shell', 'loading'))
               : m(WorkspaceLayoutView, {

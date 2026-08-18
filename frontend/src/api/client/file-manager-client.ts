@@ -21,6 +21,7 @@ import type {
   EditableFileSave,
   EntryMetadata,
   EntryMetadataRequest,
+  EntrySummary,
   FileRangeChunk,
   FinderTags,
   GenerateSyncPlanRequest,
@@ -153,6 +154,15 @@ export interface FileManagerClient {
   navigatePane(request: NavigateRequest, signal?: AbortSignal): Promise<DirectorySnapshot>;
 
   listDirectory(request: ListDirectoryRequest, signal?: AbortSignal): Promise<DirectorySnapshot>;
+
+  /** Lists the immediate child directories of a location, for the directory-tree sidebar (task
+   * 0139). Not bound to a pane, unlike {@link listDirectory}: expanding a tree node never
+   * disturbs a pane's own in-flight listing for the same location. */
+  listDirectoryChildren(
+    location: Location,
+    showHidden: boolean,
+    signal?: AbortSignal,
+  ): Promise<readonly EntrySummary[]>;
 
   getEntryMetadata(request: EntryMetadataRequest, signal?: AbortSignal): Promise<EntryMetadata>;
 

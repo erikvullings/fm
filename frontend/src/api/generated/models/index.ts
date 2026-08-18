@@ -139,6 +139,7 @@ export * from './invokeActionRequestDtoParameters';
 export * from './keyChordDto.ts';
 export * from './keyChordDto';
 export * from './languageDto.ts';
+export * from './listDirectoryChildrenRequest.ts';
 export * from './listDirectoryRequest.ts';
 export * from './listDirectoryRequest';
 export * from './listOperationsParams.ts';

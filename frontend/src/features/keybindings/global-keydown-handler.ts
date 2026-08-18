@@ -133,6 +133,8 @@ export interface GlobalKeydownContext {
   focusPane(paneId: PaneId): void;
   redraw(): void;
   toggleTerminal(): void;
+  /** Toggles the directory-tree sidebar (Alt+F10, Total Commander parity, task 0139). */
+  toggleDirectoryTree(): void;
   /** Applies a fixed sort to `paneId`'s active tab (Ctrl+F3..Ctrl+F7). */
   setSort(paneId: PaneId, sort: readonly SortDescriptor[]): void;
   /** Swaps `paneAId` and `paneBId`'s entire tab sets (Ctrl+Shift+U), not just their active locations. */
@@ -243,6 +245,15 @@ function canUseSystemTrash(locations: readonly Location[]): boolean {
   );
 }
 
+/** Total Commander's directory-tree shortcut (task 0139). Alt+F10 alone, since Ctrl+F10 is
+ * already `core.clearQuickFilter`. */
+export function isDirectoryTreeToggleShortcut(
+  event: Pick<KeyboardEvent, 'key' | 'code' | 'altKey' | 'ctrlKey' | 'metaKey' | 'shiftKey'>,
+): boolean {
+  const bareModifiers = !event.ctrlKey && !event.metaKey && !event.shiftKey;
+  return bareModifiers && event.altKey && (event.key === 'F10' || event.code === 'F10');
+}
+
 export function createGlobalKeydownHandler(
   context: GlobalKeydownContext,
 ): (event: KeyboardEvent) => void {
@@ -251,6 +262,12 @@ export function createGlobalKeydownHandler(
     if (terminalShortcut) {
       event.preventDefault();
       context.toggleTerminal();
+      context.redraw();
+      return;
+    }
+    if (isDirectoryTreeToggleShortcut(event)) {
+      event.preventDefault();
+      context.toggleDirectoryTree();
       context.redraw();
       return;
     }

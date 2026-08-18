@@ -369,6 +369,25 @@ impl DirectoryService {
             .map_err(Into::into)
     }
 
+    /// Lists immediate child directories of `location`, for the directory-tree sidebar (task
+    /// 0139). Unlike [`list`](Self::list), this is not bound to a pane: it keeps no
+    /// cancellation/revision/watch state in `self.panes`, so expanding a tree node can never
+    /// race with or cancel a pane's own in-flight listing for the same location (see
+    /// `list_children_does_not_disturb_a_pane_s_own_in_flight_listing` in
+    /// `fm-application/tests/directory_tree.rs`).
+    pub async fn list_children(
+        &self,
+        location: &fm_domain::Location,
+        show_hidden: bool,
+    ) -> Result<Vec<fm_domain::EntrySummary>, ApplicationError> {
+        let provider = self.providers.resolve(location)?;
+        let mut entries = list_all(provider, location, CancellationToken::new()).await?;
+        entries
+            .retain(|entry| entry.kind == EntryKind::Directory && (show_hidden || !entry.hidden));
+        entries.sort_by_key(|entry| entry.name.to_lowercase());
+        Ok(entries)
+    }
+
     /// Fetches a file's git commit history for the Alt+Space metadata panel's history section
     /// (task 0135). Local provider only; returns an empty list for non-local providers, files
     /// outside a git working tree, or files with no commits yet - never an error, since "no
