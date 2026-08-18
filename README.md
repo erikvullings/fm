@@ -409,6 +409,17 @@ production authentication mechanism.
 Filesystem access is isolated behind the `fm-vfs` provider contract. Providers advertise explicit
 capabilities, expose cancellable asynchronous operations and streaming reads/writes, and are
 resolved from provider-neutral locations through a typed registry.
+
+Alongside the static capability flags, every provider reports `TransferCapabilities` for a
+*concrete location*: an opaque `TransferEndpoint` naming the backend it lives on, plus whether that
+backend supports server-side copy, server-side move, resumable upload/download and random
+read/write. Two `sftp://` (or `ftp://`) locations on different saved connections report different
+endpoints, so they are never mistaken for one server. The operation planner - not the UI and not
+any individual command - selects the transfer strategy from those two capability sets: a
+provider-native server-side copy or rename when both sides share an endpoint and support it,
+otherwise a direct source-to-destination stream. Progress stays byte/item based and identical
+whichever strategy is chosen, and cancellation reaches both the source and the destination provider
+before the partially written destination is discarded.
 Cloud-synchronized folders discovered from macOS conventions and Windows OneDrive environment
 variables appear in the favourites menu under `CLOUD`; they remain ordinary `local` provider
 locations and require no vendor credentials. Mounted network volumes discovered from macOS volume
@@ -437,9 +448,12 @@ an unverified or changed key surfaces as a distinct connection status
 (and the equivalent Tauri commands) let a caller inspect the presented fingerprint and explicitly
 persist it before a later connect can succeed - accepted fingerprints are stored in a JSON
 known-hosts file beside the connection profiles. Clicking a connected server under `SERVERS` opens
-its root in the active pane; `local ↔ SFTP` and same-connection `SFTP ↔ SFTP` copies/moves stream
-through the same operation engine as local files, including server-native rename when source and
-destination share a connection. FTP/FTPS is implemented by `fm-vfs-ftp` (passive FTP and explicit
+its root in the active pane. Every direction pair among `local`, `SFTP` and `FTP/FTPS` -
+including `SFTP → FTP` and `FTP → SFTP` - streams through the same operation engine as local
+files, with no temporary local file: the bytes go straight from one server to the other and are
+staged only in a temporary the destination provider itself owns, which it then publishes
+atomically. Same-connection moves use the server-native rename instead of transferring anything.
+FTP/FTPS is implemented by `fm-vfs-ftp` (passive FTP and explicit
 FTPS, registered under the `ftp` scheme); plain FTP is labelled insecure in the connection editor.
 Native cloud/SMB providers remain unimplemented; their `connect`/`test` still validate configuration
 and credential only, without a live handshake.

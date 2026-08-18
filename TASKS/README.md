@@ -206,7 +206,7 @@ These are the quickest wins and deliberately do **not** depend on the remote con
 
 ## Milestone 9 — Remote transfer/runtime hardening
 
-- [ ] 0108 Cross-provider transfer planning *(needs 0104, 0106)*
+- [x] 0108 Cross-provider transfer planning *(needs 0104, 0106)*
 - [x] 0109 Remote change tracking *(needs 0104, 0106)*
 
 ## Milestone 10 — Optional native providers

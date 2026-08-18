@@ -146,7 +146,7 @@ Milestone boundaries follow specification §16. Update this file when a mileston
 | 0105 | SSH terminal actions | **Not started** |
 | 0106 | FTP and FTPS provider | **Not started** |
 | 0107 | External remote desktop launch | **Not started** |
-| 0108 | Cross-provider transfer planning | **Not started** |
+| 0108 | Cross-provider transfer planning | ✅ Done |
 | 0109 | Remote change tracking | **Not started** |
 | 0110 | Native OneDrive provider (optional) | **Not started** |
 | 0111 | Native SMB provider (optional) | **Not started** |

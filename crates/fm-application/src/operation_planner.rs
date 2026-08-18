@@ -24,7 +24,7 @@ use fm_transport_dto::{
 };
 use fm_vfs::{
     CopyCommitOptions, EntryRef, FileSystemProvider, ListOptions, ProviderCapabilities,
-    ProviderRegistry, RemoveOptions, WriteOptions,
+    ProviderRegistry, RemoveOptions, TransferCapabilities, WriteOptions,
 };
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio_util::sync::CancellationToken;
@@ -269,6 +269,12 @@ impl OperationPlanner {
                         .map_err(ApplicationError::from)?
                         .require(ProviderCapabilities::READ)
                         .map_err(ApplicationError::from)?;
+                    let transfer = TransferPlan::resolve(
+                        &source_provider,
+                        &source,
+                        &destination_provider,
+                        &destination_directory,
+                    )?;
                     copies.push(CopyExecutor {
                         source_provider,
                         destination_provider: Arc::clone(&destination_provider),
@@ -281,6 +287,7 @@ impl OperationPlanner {
                         source_override: Some(source),
                         continue_on_error: true,
                         completed_root_destination: Mutex::new(None),
+                        transfer,
                     });
                 }
                 Arc::new(CopyGroupExecutor {
@@ -308,6 +315,12 @@ impl OperationPlanner {
                         .providers
                         .resolve(&source)
                         .map_err(ApplicationError::from)?;
+                    let transfer = TransferPlan::resolve(
+                        &source_provider,
+                        &source,
+                        &destination_provider,
+                        &destination_directory,
+                    )?;
                     let copy = CopyExecutor {
                         source_provider: Arc::clone(&source_provider),
                         destination_provider: Arc::clone(&destination_provider),
@@ -320,6 +333,7 @@ impl OperationPlanner {
                         source_override: Some(source.clone()),
                         continue_on_error: false,
                         completed_root_destination: Mutex::new(None),
+                        transfer,
                     };
                     moves.push(MoveExecutor {
                         source,
@@ -329,6 +343,7 @@ impl OperationPlanner {
                         copy,
                         fallback: Mutex::new(false),
                         force_fallback: self.force_cross_volume_moves.load(Ordering::Relaxed),
+                        transfer,
                     });
                 }
                 Arc::new(MoveGroupExecutor {
@@ -357,6 +372,7 @@ impl OperationPlanner {
                         .providers
                         .resolve(&source)
                         .map_err(ApplicationError::from)?;
+                    let transfer = TransferPlan::resolve(&provider, &source, &provider, &parent)?;
                     copies.push(CopyExecutor {
                         source_provider: Arc::clone(&provider),
                         destination_provider: provider,
@@ -369,6 +385,7 @@ impl OperationPlanner {
                         source_override: Some(source),
                         continue_on_error: true,
                         completed_root_destination: Mutex::new(None),
+                        transfer,
                     });
                 }
                 Arc::new(DuplicateExecutor { copies })
@@ -445,6 +462,97 @@ impl OperationPlanner {
 }
 
 /* -------------------------------------------------------------------------- */
+/*  Cross-provider transfer strategy selection (task 0108)                    */
+/* -------------------------------------------------------------------------- */
+
+/// How one file's bytes reach the destination.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum TransferStrategy {
+    /// Both sides are the same backend and it can duplicate the bytes itself,
+    /// so nothing is streamed through this process at all.
+    ServerSideCopy,
+    /// The source's reader is piped straight into the destination's writer.
+    ///
+    /// This is what makes `SFTP -> FTP` and `FTP -> SFTP` work without a
+    /// temporary *local* file: the only staging area is the `.fm-copy-*`
+    /// temporary the destination provider itself owns, which
+    /// [`FileSystemProvider::commit_copy`] then publishes atomically.
+    DirectStream,
+}
+
+/// How an entry is relocated for a move.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum MoveStrategy {
+    /// One backend that can rename in place — no bytes are transferred.
+    ServerSideMove,
+    /// Different backends, or one that cannot rename: transfer the bytes, then
+    /// delete the source once the destination is verified.
+    CopyThenDelete,
+}
+
+/// The transfer decision for one source/destination pair.
+///
+/// Selection lives here, in the operation planner, and never in the UI or an
+/// individual command: it is derived purely from the two sides'
+/// [`TransferCapabilities`], so every operation kind that transfers bytes
+/// (copy, move, duplicate) reaches the same conclusion from the same inputs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct TransferPlan {
+    /// Chosen byte-transfer path.
+    pub(crate) strategy: TransferStrategy,
+    /// Chosen relocation path, used only by move.
+    pub(crate) move_strategy: MoveStrategy,
+    /// Whether both sides sit on the same backend. Provider-native metadata
+    /// preservation is only meaningful — and only attempted — when they do.
+    pub(crate) same_endpoint: bool,
+}
+
+impl TransferPlan {
+    /// Chooses the safest fast path both sides can honour.
+    ///
+    /// A provider-native path requires *both* sides to advertise it *and* to
+    /// name the same [`fm_vfs::TransferEndpoint`]; anything else falls back to
+    /// direct streaming, which every provider supports through
+    /// `open_read`/`open_write`.
+    fn select(source: &TransferCapabilities, destination: &TransferCapabilities) -> Self {
+        let same_endpoint = source.shares_endpoint_with(destination);
+        let strategy = if same_endpoint && source.server_side_copy && destination.server_side_copy {
+            TransferStrategy::ServerSideCopy
+        } else {
+            TransferStrategy::DirectStream
+        };
+        let move_strategy =
+            if same_endpoint && source.server_side_move && destination.server_side_move {
+                MoveStrategy::ServerSideMove
+            } else {
+                MoveStrategy::CopyThenDelete
+            };
+        Self {
+            strategy,
+            move_strategy,
+            same_endpoint,
+        }
+    }
+
+    /// Resolves both sides' capabilities from their providers and selects.
+    fn resolve(
+        source_provider: &Arc<dyn FileSystemProvider>,
+        source: &Location,
+        destination_provider: &Arc<dyn FileSystemProvider>,
+        destination: &Location,
+    ) -> Result<Self, ApplicationError> {
+        Ok(Self::select(
+            &source_provider
+                .transfer_capabilities(source)
+                .map_err(ApplicationError::from)?,
+            &destination_provider
+                .transfer_capabilities(destination)
+                .map_err(ApplicationError::from)?,
+        ))
+    }
+}
+
+/* -------------------------------------------------------------------------- */
 /*  Executor structs                                                          */
 /* -------------------------------------------------------------------------- */
 
@@ -493,6 +601,10 @@ struct CopyExecutor {
     source_override: Option<Location>,
     continue_on_error: bool,
     completed_root_destination: Mutex<Option<Location>>,
+    /// Strategy chosen by the planner for this source/destination pair
+    /// (task 0108). Decided once, up front, from both sides' capabilities —
+    /// execution only obeys it.
+    transfer: TransferPlan,
 }
 
 struct CopyGroupExecutor {
@@ -536,6 +648,7 @@ struct MoveExecutor {
     copy: CopyExecutor,
     fallback: Mutex<bool>,
     force_fallback: bool,
+    transfer: TransferPlan,
 }
 
 struct MoveGroupExecutor {
@@ -1120,9 +1233,15 @@ impl OperationExecutor for MoveExecutor {
             .map_err(|error| ExecutionError::Failed(error.to_string()))?;
         fm_operations::validate_paths(&source.location, &destination, cfg!(not(windows)))
             .map_err(|error| ExecutionError::Failed(error.to_string()))?;
-        let same_provider = self.source_provider.id() == self.destination_provider.id();
+        // Task 0108: the planner already decided, from both sides'
+        // `TransferCapabilities`, whether a server-native rename is even
+        // conceivable — crucially this is *endpoint* identity, so two
+        // different SFTP/FTP connections of the same provider type never
+        // qualify. `same_filesystem` then remains the final authority, which
+        // is what preserves the local provider's cross-volume semantics
+        // unchanged (a local rename still fails across devices).
         let same_filesystem = !self.force_fallback
-            && same_provider
+            && self.transfer.move_strategy == MoveStrategy::ServerSideMove
             && self
                 .source_provider
                 .same_filesystem(&source, &self.destination_directory, cancellation.clone())
@@ -1528,7 +1647,7 @@ impl OperationExecutor for CopyExecutor {
             .clone();
         directories.reverse();
         for (source, destination) in directories {
-            if source.location.provider_id == destination.location.provider_id
+            if self.transfer.same_endpoint
                 && self
                     .destination_provider
                     .capabilities_for(&destination.location)?
@@ -1626,17 +1745,19 @@ impl CopyExecutor {
             .join(&format!(".fm-copy-{}", Uuid::new_v4()))
             .map_err(|error| ExecutionError::Failed(error.to_string()))?;
         *self.temporary.lock().unwrap_or_else(|e| e.into_inner()) = Some(temporary.clone());
-        let cloned = self.source_provider.id() == self.destination_provider.id()
-            && self
-                .source_provider
-                .capabilities()
-                .contains(ProviderCapabilities::SERVER_SIDE_COPY)
+        // Task 0108: the planner picked the strategy from both sides'
+        // capabilities and endpoints; execution never re-derives it.
+        let cloned = self.transfer.strategy == TransferStrategy::ServerSideCopy
             && self
                 .source_provider
                 .server_side_copy(&item.entry, &temporary, cancellation.clone())
                 .await?;
         pause.checkpoint().await;
         if !cloned {
+            // Direct source -> destination streaming. Both handles belong to
+            // their own provider, so `SFTP -> FTP` (and the reverse) never
+            // stages bytes in a local temporary file: the reader pulls from
+            // one server while the writer pushes to the other.
             let mut reader = self
                 .source_provider
                 .open_read(&item.entry, cancellation.clone())
@@ -1646,25 +1767,43 @@ impl CopyExecutor {
                 .open_write(&temporary, WriteOptions::default(), cancellation.clone())
                 .await?;
             let mut buffer = vec![0_u8; 128 * 1024];
-            loop {
+            let transferred = loop {
                 pause.checkpoint().await;
                 if cancellation.is_cancelled() {
-                    return Err(fm_vfs::VfsError::Cancelled.into());
+                    break Err(ExecutionError::from(fm_vfs::VfsError::Cancelled));
                 }
                 let read = tokio::select! {
-                    () = cancellation.cancelled() => return Err(fm_vfs::VfsError::Cancelled.into()),
-                    result = reader.read(&mut buffer) => result.map_err(copy_stream_error)?,
+                    () = cancellation.cancelled() => break Err(fm_vfs::VfsError::Cancelled.into()),
+                    result = reader.read(&mut buffer) => match result {
+                        Ok(read) => read,
+                        Err(error) => break Err(copy_stream_error(error)),
+                    },
                 };
                 if read == 0 {
-                    break;
+                    break Ok(());
                 }
                 tokio::select! {
-                    () = cancellation.cancelled() => return Err(fm_vfs::VfsError::Cancelled.into()),
-                    result = writer.write_all(&buffer[..read]) => result.map_err(copy_stream_error)?,
+                    () = cancellation.cancelled() => break Err(fm_vfs::VfsError::Cancelled.into()),
+                    result = writer.write_all(&buffer[..read]) => {
+                        if let Err(error) = result {
+                            break Err(copy_stream_error(error));
+                        }
+                    }
                 }
-            }
-            writer.shutdown().await.map_err(copy_stream_error)?;
+            };
+            // Cancellation must reach *both* sides, not just this loop:
+            // dropping the reader releases the source provider's handle
+            // (closing the SFTP file / ending the FTP data connection), and
+            // shutting the writer down lets the destination provider finish
+            // and release its own transfer before `cleanup_partial` discards
+            // the temporary. Neither is best-effort noise: without them a
+            // cancelled remote transfer would keep streaming in the
+            // background and race the cleanup that follows.
+            drop(reader);
+            let shutdown = writer.shutdown().await;
             drop(writer);
+            transferred?;
+            shutdown.map_err(copy_stream_error)?;
         }
         pause.checkpoint().await;
         if cancellation.is_cancelled() {
@@ -1683,9 +1822,12 @@ impl CopyExecutor {
                     &temporary,
                     &destination,
                     CopyCommitOptions {
+                        // Only one backend can meaningfully carry its own
+                        // timestamps/permissions across (task 0108): between
+                        // two different backends the source's metadata is not
+                        // even expressible at the destination.
                         overwrite,
-                        preserve_metadata: self.source_provider.id()
-                            == self.destination_provider.id()
+                        preserve_metadata: self.transfer.same_endpoint
                             && self
                                 .destination_provider
                                 .capabilities_for(&destination)?
@@ -1981,6 +2123,7 @@ fn copy_stream_error(error: std::io::Error) -> ExecutionError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use fm_vfs::TransferEndpoint;
 
     struct NoTrashPlatform;
 
@@ -2019,6 +2162,165 @@ mod tests {
             permanent_delete_confirmed: false,
             destinations: Vec::new(),
         }
+    }
+
+    /* ---------------------------------------------------------------- */
+    /*  Task 0108: cross-provider transfer strategy selection            */
+    /* ---------------------------------------------------------------- */
+
+    /// Capabilities of a backend that can clone and rename entirely on its own
+    /// server (the local filesystem's shape).
+    fn native(endpoint: &str) -> TransferCapabilities {
+        TransferCapabilities {
+            endpoint: TransferEndpoint::new(endpoint),
+            server_side_copy: true,
+            server_side_move: true,
+            resumable_upload: false,
+            resumable_download: false,
+            random_read: true,
+            random_write: false,
+        }
+    }
+
+    /// Capabilities of a remote backend that can rename in place but has no
+    /// server-side clone (the SFTP/FTP shape).
+    fn remote(endpoint: &str) -> TransferCapabilities {
+        TransferCapabilities {
+            endpoint: TransferEndpoint::new(endpoint),
+            server_side_copy: false,
+            server_side_move: true,
+            resumable_upload: false,
+            resumable_download: false,
+            random_read: false,
+            random_write: false,
+        }
+    }
+
+    #[test]
+    fn same_backend_with_a_native_clone_uses_the_server_side_copy() {
+        let plan = TransferPlan::select(&native("local"), &native("local"));
+
+        assert_eq!(plan.strategy, TransferStrategy::ServerSideCopy);
+        assert_eq!(plan.move_strategy, MoveStrategy::ServerSideMove);
+        assert!(plan.same_endpoint);
+    }
+
+    #[test]
+    fn same_backend_without_a_native_clone_still_streams_but_moves_natively() {
+        let plan = TransferPlan::select(&remote("sftp:a"), &remote("sftp:a"));
+
+        assert_eq!(plan.strategy, TransferStrategy::DirectStream);
+        assert_eq!(plan.move_strategy, MoveStrategy::ServerSideMove);
+        assert!(plan.same_endpoint);
+    }
+
+    #[test]
+    fn two_connections_of_the_same_provider_type_are_never_one_backend() {
+        let plan = TransferPlan::select(&remote("sftp:a"), &remote("sftp:b"));
+
+        assert_eq!(plan.strategy, TransferStrategy::DirectStream);
+        assert_eq!(plan.move_strategy, MoveStrategy::CopyThenDelete);
+        assert!(!plan.same_endpoint);
+    }
+
+    #[test]
+    fn a_remote_to_remote_transfer_streams_directly_without_local_staging() {
+        for (source, destination) in [
+            (remote("sftp:a"), remote("ftp:x")),
+            (remote("ftp:x"), remote("sftp:a")),
+        ] {
+            let plan = TransferPlan::select(&source, &destination);
+            assert_eq!(plan.strategy, TransferStrategy::DirectStream);
+            assert_eq!(plan.move_strategy, MoveStrategy::CopyThenDelete);
+            assert!(!plan.same_endpoint);
+        }
+    }
+
+    /// A single scenario mixing every backend this workspace supports, rather
+    /// than one isolated pair per test: the selection must depend only on the
+    /// relationship between the two sides, never on the order in which pairs
+    /// are evaluated or on which provider type happens to be on the left.
+    #[test]
+    fn every_direction_pair_across_five_backends_resolves_consistently() {
+        let backends = [
+            ("local", native("local")),
+            ("sftp:a", remote("sftp:a")),
+            ("sftp:b", remote("sftp:b")),
+            ("ftp:x", remote("ftp:x")),
+            ("ftps:x", remote("ftps:x")),
+        ];
+
+        let mut server_side_copies = Vec::new();
+        let mut server_side_moves = Vec::new();
+        for (source_name, source) in &backends {
+            for (destination_name, destination) in &backends {
+                let plan = TransferPlan::select(source, destination);
+                let pair = format!("{source_name} -> {destination_name}");
+
+                // Symmetry: reversing the pair must never change whether the
+                // two sides are considered one backend.
+                let reversed = TransferPlan::select(destination, source);
+                assert_eq!(
+                    plan.same_endpoint, reversed.same_endpoint,
+                    "endpoint identity must be symmetric for {pair}"
+                );
+                assert_eq!(
+                    plan.same_endpoint,
+                    source_name == destination_name,
+                    "only identical backends may share an endpoint ({pair})"
+                );
+                // A fast path is never chosen across two different backends.
+                if !plan.same_endpoint {
+                    assert_eq!(plan.strategy, TransferStrategy::DirectStream, "{pair}");
+                    assert_eq!(plan.move_strategy, MoveStrategy::CopyThenDelete, "{pair}");
+                }
+                if plan.strategy == TransferStrategy::ServerSideCopy {
+                    server_side_copies.push(pair.clone());
+                }
+                if plan.move_strategy == MoveStrategy::ServerSideMove {
+                    server_side_moves.push(pair);
+                }
+            }
+        }
+
+        // Exactly one pair in the matrix can clone server-side (local -> local,
+        // the only backend advertising `server_side_copy`)...
+        assert_eq!(server_side_copies, vec!["local -> local".to_owned()]);
+        // ...while every same-backend pair can move server-side.
+        assert_eq!(
+            server_side_moves,
+            vec![
+                "local -> local".to_owned(),
+                "sftp:a -> sftp:a".to_owned(),
+                "sftp:b -> sftp:b".to_owned(),
+                "ftp:x -> ftp:x".to_owned(),
+                "ftps:x -> ftps:x".to_owned(),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_backend_that_cannot_move_natively_falls_back_to_copy_then_delete() {
+        let mut immobile = native("archive:/tmp/a.zip");
+        immobile.server_side_move = false;
+
+        let plan = TransferPlan::select(&immobile, &immobile);
+
+        assert!(plan.same_endpoint);
+        assert_eq!(plan.strategy, TransferStrategy::ServerSideCopy);
+        assert_eq!(plan.move_strategy, MoveStrategy::CopyThenDelete);
+    }
+
+    #[test]
+    fn a_destination_that_cannot_clone_forces_streaming_even_on_one_backend() {
+        let source = native("local");
+        let mut destination = native("local");
+        destination.server_side_copy = false;
+
+        let plan = TransferPlan::select(&source, &destination);
+
+        assert!(plan.same_endpoint);
+        assert_eq!(plan.strategy, TransferStrategy::DirectStream);
     }
 
     #[test]

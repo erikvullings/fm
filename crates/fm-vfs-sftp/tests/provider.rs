@@ -140,6 +140,50 @@ async fn id_and_capabilities_are_reported_accurately() {
     }
 }
 
+/// Task 0108: the endpoint must identify the *connection*, not the provider
+/// type, so that a copy between two different SFTP hosts never takes a
+/// same-backend fast path.
+#[tokio::test]
+async fn transfer_capabilities_identify_the_connection_rather_than_the_provider_type() {
+    let (provider, fixture) = provider_and_fixture().await;
+
+    let here = provider
+        .transfer_capabilities(&location(&fixture, "a.txt"))
+        .expect("transfer capabilities must resolve");
+    let same_connection = provider
+        .transfer_capabilities(&location(&fixture, "nested/b.txt"))
+        .expect("transfer capabilities must resolve");
+    let other_connection = provider
+        .transfer_capabilities(
+            &Location::parse("sftp://22222222-2222-4222-8222-222222222222/a.txt")
+                .expect("test location must parse"),
+        )
+        .expect("transfer capabilities must resolve");
+
+    assert!(here.shares_endpoint_with(&same_connection));
+    assert!(!here.shares_endpoint_with(&other_connection));
+    // SFTPv3 has no portable server-side clone, but `rename` within one
+    // connection is a genuine server-side move.
+    assert!(!here.server_side_copy);
+    assert!(here.server_side_move);
+    // Honestly under-advertised: this provider implements neither offset
+    // reads/writes nor resumable transfers (see the module documentation).
+    assert!(!here.random_read);
+    assert!(!here.random_write);
+    assert!(!here.resumable_upload);
+    assert!(!here.resumable_download);
+}
+
+#[tokio::test]
+async fn transfer_capabilities_reject_a_location_belonging_to_another_provider() {
+    let (provider, _fixture) = provider_and_fixture().await;
+
+    let result = provider
+        .transfer_capabilities(&Location::new(ProviderId::new("file"), "file:///tmp/a.txt"));
+
+    assert!(matches!(result, Err(VfsError::InvalidLocation { .. })));
+}
+
 #[tokio::test]
 async fn change_tracking_reports_conservative_polling_rather_than_the_native_watch_default() {
     let (provider, _fixture) = provider_and_fixture().await;

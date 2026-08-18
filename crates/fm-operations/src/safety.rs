@@ -117,6 +117,27 @@ fn normalized_path(location: &Location) -> Result<PathBuf, SafetyError> {
                 .strip_prefix("sftp://")
                 .ok_or(SafetyError::IncomparableLocations)?,
         )
+    } else if location.provider_id.as_str() == "ftp" {
+        // Same reasoning as the `sftp` branch (task 0108): `ftp://` and
+        // `ftps://` locations have no native path, so falling through to
+        // `Location::to_native_path` would report `IncomparableLocations` for
+        // every same-connection FTP copy/move. The scheme is kept in the
+        // comparison text because this provider treats `ftp://<id>/` and
+        // `ftps://<id>/` as different endpoints, and dropping it would make
+        // them compare as one entry.
+        PathBuf::from(
+            location
+                .uri
+                .strip_prefix("ftps://")
+                .map(|remainder| format!("ftps/{remainder}"))
+                .or_else(|| {
+                    location
+                        .uri
+                        .strip_prefix("ftp://")
+                        .map(|remainder| format!("ftp/{remainder}"))
+                })
+                .ok_or(SafetyError::IncomparableLocations)?,
+        )
     } else {
         location
             .to_native_path()

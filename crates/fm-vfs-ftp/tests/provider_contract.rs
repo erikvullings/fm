@@ -289,6 +289,54 @@ fn reports_only_implemented_ftp_capabilities() {
     }
 }
 
+/// Task 0108: the endpoint must identify the concrete connection (id *and*
+/// transport security), never just the `ftp` provider type.
+#[test]
+fn transfer_capabilities_identify_the_connection_rather_than_the_provider_type() {
+    let provider = provider(false);
+    let first = provider
+        .transfer_capabilities(
+            &Location::parse("ftp://11111111-1111-4111-8111-111111111111/a.txt").unwrap(),
+        )
+        .unwrap();
+    let same_connection = provider
+        .transfer_capabilities(
+            &Location::parse("ftp://11111111-1111-4111-8111-111111111111/nested/b.txt").unwrap(),
+        )
+        .unwrap();
+    let other_connection = provider
+        .transfer_capabilities(
+            &Location::parse("ftp://22222222-2222-4222-8222-222222222222/a.txt").unwrap(),
+        )
+        .unwrap();
+    let same_id_over_tls = provider
+        .transfer_capabilities(
+            &Location::parse("ftps://11111111-1111-4111-8111-111111111111/a.txt").unwrap(),
+        )
+        .unwrap();
+
+    assert!(first.shares_endpoint_with(&same_connection));
+    assert!(!first.shares_endpoint_with(&other_connection));
+    assert!(!first.shares_endpoint_with(&same_id_over_tls));
+    // FTP has no server-side copy, but `RNFR`/`RNTO` is a real server-side move.
+    assert!(!first.server_side_copy);
+    assert!(first.server_side_move);
+    assert!(!first.random_read);
+    assert!(!first.random_write);
+    assert!(!first.resumable_upload);
+    assert!(!first.resumable_download);
+}
+
+#[test]
+fn transfer_capabilities_reject_a_malformed_location() {
+    let result = provider(false).transfer_capabilities(&Location::new(
+        fm_domain::ProviderId::new("ftp"),
+        "ftp://not-a-uuid/a.txt",
+    ));
+
+    assert!(matches!(result, Err(VfsError::InvalidLocation { .. })));
+}
+
 #[test]
 fn change_tracking_reports_conservative_polling_rather_than_the_native_watch_default() {
     assert_eq!(

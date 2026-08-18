@@ -3,7 +3,8 @@ use fm_domain::{EntryId, EntryKind, EntryMetadata, EntrySummary, Location, Provi
 use fm_vfs::{
     CONSERVATIVE_POLL_INTERVAL, ChangeTracking, CopyCommitOptions, DirectoryPage, EntryRef,
     FileSystemProvider, ListOptions, ProviderCapabilities, ProviderChangeStream,
-    ProviderReadStream, ProviderWriteStream, RemoveOptions, VfsError, WriteOptions,
+    ProviderReadStream, ProviderWriteStream, RemoveOptions, TransferCapabilities, TransferEndpoint,
+    VfsError, WriteOptions,
 };
 use rustls_platform_verifier::ConfigVerifierExt;
 use std::{collections::BTreeMap, str::FromStr, sync::Arc};
@@ -153,6 +154,28 @@ impl FileSystemProvider for FtpFileSystemProvider {
             | ProviderCapabilities::RENAME
             | ProviderCapabilities::MOVE
             | ProviderCapabilities::DELETE
+    }
+    /// Task 0108. The endpoint identifies the concrete connection — its id
+    /// *and* its transport security, because `ftp://<id>/` and
+    /// `ftps://<id>/` are rejected against each other by
+    /// [`FtpFileSystemProvider::client`] and so are never one backend.
+    ///
+    /// `server_side_move` is `true` (`RNFR`/`RNTO` within one connection).
+    /// FTP has no server-side copy. `REST`-based resumption and offset
+    /// reads/writes are not implemented here, so they stay `false` rather than
+    /// tempting the planner into a fast path this provider cannot honour.
+    fn transfer_capabilities(&self, l: &Location) -> Result<TransferCapabilities, VfsError> {
+        let p = Parsed::parse(l)?;
+        let scheme = if p.secure { "ftps" } else { "ftp" };
+        Ok(TransferCapabilities {
+            endpoint: TransferEndpoint::new(format!("{scheme}:{}", p.id)),
+            server_side_copy: false,
+            server_side_move: true,
+            resumable_upload: false,
+            resumable_download: false,
+            random_read: false,
+            random_write: false,
+        })
     }
     /// FTP/FTPS has no native change-notification mechanism (task 0106
     /// deliberately does not fake `WATCH`); `fm-application`'s directory
@@ -371,9 +394,20 @@ impl FileSystemProvider for FtpFileSystemProvider {
         }
         self.rename(&entry(t.clone()), d, c).await
     }
+    /// Discarding a temporary that was never created must succeed: the
+    /// operation engine calls this on every cancellation and failure path,
+    /// including ones that abort before `STOR` ever ran, and turning a
+    /// missing temporary into an error would fail the *cleanup* of an
+    /// already-cancelled operation (task 0108). Matches the local and SFTP
+    /// providers, which both already swallow `NotFound` here.
     async fn discard_copy(&self, t: &Location, c: CancellationToken) -> Result<(), VfsError> {
-        self.remove(&entry(t.clone()), RemoveOptions::default(), c)
+        match self
+            .remove(&entry(t.clone()), RemoveOptions::default(), c)
             .await
+        {
+            Ok(()) | Err(VfsError::NotFound { .. }) => Ok(()),
+            Err(other) => Err(other),
+        }
     }
     async fn same_filesystem(
         &self,
