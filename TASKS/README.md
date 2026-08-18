@@ -177,7 +177,7 @@ cloud and network locations, and the connection framework underneath them.
 - [x] 0106 FTP and FTPS provider
 - [x] 0109 Remote change tracking *(needs 0104, 0106)*
 - [ ] 0107 External remote desktop launch
-- [ ] 0108 Cross-provider transfer planning *(needs 0104, 0106)*
+- [x] 0108 Cross-provider transfer planning *(needs 0104, 0106)*
 - [ ] 0138 OS-level "Mount share…" action *(needs 0102; low priority — only if OS-native mounting
   causes friction)*
 

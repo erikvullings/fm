@@ -4,8 +4,8 @@ use tokio_util::sync::CancellationToken;
 
 use crate::{
     ChangeTracking, CopyCommitOptions, DirectoryPage, EntryRef, ListOptions, ProviderCapabilities,
-    ProviderChangeStream, ProviderReadStream, ProviderWriteStream, RemoveOptions, VfsError,
-    WriteOptions,
+    ProviderChangeStream, ProviderReadStream, ProviderWriteStream, RemoveOptions,
+    TransferCapabilities, TransferEndpoint, VfsError, WriteOptions,
 };
 
 /// Provider-neutral asynchronous filesystem interface.
@@ -25,6 +25,24 @@ pub trait FileSystemProvider: Send + Sync {
     /// different support levels. Providers with uniform behavior inherit the static result.
     fn capabilities_for(&self, _location: &Location) -> Result<ProviderCapabilities, VfsError> {
         Ok(self.capabilities())
+    }
+
+    /// Reports the transfer-planning capabilities of a concrete location
+    /// (task 0108), including the [`TransferEndpoint`] identifying which
+    /// backend it lives on.
+    ///
+    /// The default derives them from [`Self::capabilities_for`] and uses the
+    /// provider id as the endpoint, which is only correct for providers with a
+    /// single backend (such as the local filesystem). Any provider that can
+    /// address more than one host, connection or volume **must** override this
+    /// so two different connections do not compare equal — otherwise the
+    /// operation planner would pick a same-backend fast path across
+    /// unrelated servers.
+    fn transfer_capabilities(&self, location: &Location) -> Result<TransferCapabilities, VfsError> {
+        Ok(TransferCapabilities::from_provider_capabilities(
+            TransferEndpoint::new(self.id().to_string()),
+            self.capabilities_for(location)?,
+        ))
     }
 
     /// Reports how this provider's directory contents can be tracked for

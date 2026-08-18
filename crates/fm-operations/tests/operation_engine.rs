@@ -163,6 +163,57 @@ fn safety_compares_sftp_locations_by_connection_and_path_not_native_path() {
 }
 
 #[test]
+fn safety_compares_ftp_locations_by_connection_and_path_not_native_path() {
+    // task 0108: `ftp://`/`ftps://` locations have no native path either, so
+    // without their own branch every same-connection FTP copy/move failed its
+    // planning safety check with `IncomparableLocations` — see this task's
+    // Agent Notes. Mirrors the SFTP case above.
+    let connection = "11111111-1111-4111-8111-111111111111";
+    let source = ftp_location("ftp", connection, "/pub/report.txt");
+    assert_eq!(
+        validate_paths(&source, &source, true),
+        Err(SafetyError::SameEntry)
+    );
+    assert_eq!(
+        validate_paths(
+            &ftp_location("ftp", connection, "/pub"),
+            &ftp_location("ftp", connection, "/pub/nested"),
+            true,
+        ),
+        Err(SafetyError::DestinationInsideSource)
+    );
+    // Two different connections are never the same or a nested entry, even
+    // with textually identical remote paths...
+    let other_connection = "22222222-2222-4222-8222-222222222222";
+    assert!(
+        validate_paths(
+            &ftp_location("ftp", connection, "/pub/report.txt"),
+            &ftp_location("ftp", other_connection, "/pub/report.txt"),
+            true,
+        )
+        .is_ok()
+    );
+    // ...and neither are the plain and TLS forms of one connection id, which
+    // this workspace's FTP provider refuses to mix.
+    assert!(
+        validate_paths(
+            &ftp_location("ftp", connection, "/pub/report.txt"),
+            &ftp_location("ftps", connection, "/pub/report.txt"),
+            true,
+        )
+        .is_ok()
+    );
+    assert!(
+        validate_paths(
+            &ftp_location("ftp", connection, "/pub/report.txt"),
+            &ftp_location("ftp", connection, "/pub/archive/report.txt"),
+            true,
+        )
+        .is_ok()
+    );
+}
+
+#[test]
 fn safety_rejects_symlink_cycles() {
     let mut detector = CycleDetector::default();
     detector.observe(8, 42).unwrap();
@@ -312,6 +363,15 @@ fn sftp_location(connection_id: &str, remote_path: &str) -> Location {
     Location::new(
         ProviderId::new("sftp"),
         format!("sftp://{connection_id}{remote_path}"),
+    )
+}
+
+/// Both `ftp://` and `ftps://` URIs carry the `ftp` provider id, so `scheme`
+/// varies independently of the provider.
+fn ftp_location(scheme: &str, connection_id: &str, remote_path: &str) -> Location {
+    Location::new(
+        ProviderId::new("ftp"),
+        format!("{scheme}://{connection_id}{remote_path}"),
     )
 }
 

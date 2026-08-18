@@ -51,7 +51,8 @@ use fm_ssh::{SshConnectionManager, SshConnectionParameters, SshError};
 use fm_vfs::{
     CONSERVATIVE_POLL_INTERVAL, ChangeTracking, CopyCommitOptions, DirectoryPage, EntryRef,
     FileSystemProvider, ListOptions, ProviderCapabilities, ProviderChangeStream,
-    ProviderReadStream, ProviderWriteStream, RemoveOptions, VfsError, WriteOptions,
+    ProviderReadStream, ProviderWriteStream, RemoveOptions, TransferCapabilities, TransferEndpoint,
+    VfsError, WriteOptions,
 };
 use futures::future::BoxFuture;
 use russh_sftp::client::SftpSession;
@@ -180,6 +181,30 @@ impl FileSystemProvider for SftpFileSystemProvider {
             // thing they need (task 0077, spec §6). Note this means the file
             // is transferred to be hashed: there is no server-side digest.
             | ProviderCapabilities::CHECKSUM
+    }
+
+    /// Task 0108. The endpoint is the *connection id*, not the provider id:
+    /// two `sftp://` locations on different saved connections are different
+    /// servers, and a server-side `rename` between them is impossible, so the
+    /// operation planner must never treat them as one backend.
+    ///
+    /// `server_side_move` is `true` (SFTPv3 `rename` within one connection);
+    /// `server_side_copy` stays `false` for the reason given in this module's
+    /// documentation. Resumable transfers and offset reads/writes are left
+    /// `false`: SFTPv3 can express them, but this provider implements neither,
+    /// and advertising an unimplemented fast path would make the planner pick
+    /// one that cannot work.
+    fn transfer_capabilities(&self, location: &Location) -> Result<TransferCapabilities, VfsError> {
+        let parsed = ParsedSftpLocation::parse(location)?;
+        Ok(TransferCapabilities {
+            endpoint: TransferEndpoint::new(format!("sftp:{}", parsed.connection_id)),
+            server_side_copy: false,
+            server_side_move: true,
+            resumable_upload: false,
+            resumable_download: false,
+            random_read: false,
+            random_write: false,
+        })
     }
 
     fn change_tracking(&self) -> ChangeTracking {

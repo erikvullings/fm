@@ -11,7 +11,7 @@ async-trait.workspace = true
 fm-domain.workspace = true
 fm-vfs.workspace = true
 suppaftp.workspace = true
-tokio = { workspace = true, features = ["io-util", "net"] }
+tokio = { workspace = true, features = ["io-util", "net", "rt", "sync"] }
 tokio-rustls.workspace = true
 tokio-util.workspace = true
 uuid.workspace = true

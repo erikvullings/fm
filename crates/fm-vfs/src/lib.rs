@@ -11,6 +11,7 @@ mod content;
 mod error;
 mod provider;
 mod registry;
+mod transfer;
 mod types;
 
 pub use capabilities::ProviderCapabilities;
@@ -22,6 +23,7 @@ pub use content::{
 pub use error::VfsError;
 pub use provider::FileSystemProvider;
 pub use registry::ProviderRegistry;
+pub use transfer::{TransferCapabilities, TransferEndpoint};
 pub use types::{
     CopyCommitOptions, DirectoryPage, EntryRef, ListOptions, ProviderChange, ProviderChangeStream,
     ProviderReadStream, ProviderWriteStream, RemoveOptions, WriteOptions,

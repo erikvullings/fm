@@ -7,7 +7,7 @@ use fm_domain::{EntryMetadata, Location, ProviderId};
 use fm_vfs::{
     ChangeTracking, DirectoryPage, EntryRef, FileSystemProvider, ListOptions, ProviderCapabilities,
     ProviderChangeStream, ProviderReadStream, ProviderRegistry, ProviderWriteStream, RemoveOptions,
-    VfsError, WriteOptions,
+    TransferCapabilities, TransferEndpoint, VfsError, WriteOptions,
 };
 use tokio_util::sync::CancellationToken;
 
@@ -216,6 +216,67 @@ fn a_provider_advertising_the_watch_capability_reports_native_watch_change_track
     };
 
     assert_eq!(provider.change_tracking(), ChangeTracking::NativeWatch);
+}
+
+#[test]
+fn transfer_capabilities_default_to_the_provider_id_as_endpoint_and_its_static_bits() {
+    let provider = StubProvider {
+        id: ProviderId::new("local"),
+        capabilities: ProviderCapabilities::READ
+            | ProviderCapabilities::WRITE
+            | ProviderCapabilities::MOVE
+            | ProviderCapabilities::SERVER_SIDE_COPY
+            | ProviderCapabilities::RANDOM_ACCESS,
+    };
+
+    let transfer = provider
+        .transfer_capabilities(&Location::new(ProviderId::new("local"), "file:///tmp"))
+        .expect("the default derivation must not fail");
+
+    assert_eq!(transfer.endpoint, TransferEndpoint::new("local"));
+    assert!(transfer.server_side_copy);
+    assert!(transfer.server_side_move);
+    assert!(transfer.random_read);
+    // Nothing in `ProviderCapabilities` implies these, so the conservative
+    // default is "no" until a provider explicitly overrides.
+    assert!(!transfer.random_write);
+    assert!(!transfer.resumable_upload);
+    assert!(!transfer.resumable_download);
+}
+
+#[test]
+fn transfer_capabilities_without_the_matching_bits_advertise_nothing() {
+    let provider = StubProvider {
+        id: ProviderId::new("search"),
+        capabilities: ProviderCapabilities::LIST | ProviderCapabilities::READ,
+    };
+
+    let transfer = provider
+        .transfer_capabilities(&Location::new(ProviderId::new("search"), "search:///q"))
+        .expect("the default derivation must not fail");
+
+    assert!(!transfer.server_side_copy);
+    assert!(!transfer.server_side_move);
+    assert!(!transfer.random_read);
+}
+
+#[test]
+fn transfer_endpoints_distinguish_two_connections_of_the_same_provider() {
+    let first = TransferCapabilities::from_provider_capabilities(
+        TransferEndpoint::new("sftp:connection-a"),
+        ProviderCapabilities::READ | ProviderCapabilities::WRITE,
+    );
+    let second = TransferCapabilities::from_provider_capabilities(
+        TransferEndpoint::new("sftp:connection-b"),
+        ProviderCapabilities::READ | ProviderCapabilities::WRITE,
+    );
+    let same_as_first = TransferCapabilities::from_provider_capabilities(
+        TransferEndpoint::new("sftp:connection-a"),
+        ProviderCapabilities::READ | ProviderCapabilities::WRITE,
+    );
+
+    assert!(!first.shares_endpoint_with(&second));
+    assert!(first.shares_endpoint_with(&same_as_first));
 }
 
 #[test]

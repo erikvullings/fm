@@ -5,7 +5,7 @@ use std::fs;
 use fm_domain::{EntryKind, Location, ProviderId};
 use fm_vfs::{
     CopyCommitOptions, EntryRef, FileSystemProvider, ListOptions, ProviderCapabilities,
-    ProviderChange, VfsError, WriteOptions,
+    ProviderChange, TransferEndpoint, VfsError, WriteOptions,
 };
 use fm_vfs_local::LocalFileSystemProvider;
 use futures::StreamExt;
@@ -536,6 +536,35 @@ async fn lists_hidden_unicode_shell_sensitive_empty_and_sparse_files() {
             .size,
         Some(1_000_000)
     );
+}
+
+/// Task 0108: the local filesystem is a single backend, so every local
+/// location shares one endpoint and same-backend fast paths stay available —
+/// preserving the existing local copy/move semantics exactly.
+#[tokio::test]
+async fn transfer_capabilities_report_one_shared_local_endpoint() {
+    let root = tempdir().expect("temporary directory");
+    let provider = LocalFileSystemProvider::new();
+    let first = provider
+        .transfer_capabilities(
+            &Location::from_native_path(&root.path().join("a.txt")).expect("local location"),
+        )
+        .expect("local transfer capabilities");
+    let second = provider
+        .transfer_capabilities(
+            &Location::from_native_path(&root.path().join("nested/b.txt")).expect("local location"),
+        )
+        .expect("local transfer capabilities");
+
+    assert!(first.shares_endpoint_with(&second));
+    assert_eq!(first.endpoint, TransferEndpoint::new("local"));
+    assert!(first.server_side_copy);
+    assert!(first.server_side_move);
+    // `read_range` is implemented; offset writes and resumption are not.
+    assert!(first.random_read);
+    assert!(!first.random_write);
+    assert!(!first.resumable_upload);
+    assert!(!first.resumable_download);
 }
 
 #[tokio::test]

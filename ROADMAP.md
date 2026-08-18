@@ -163,7 +163,11 @@ file ever disagree. Update this file when a task lands.
   verification (never auto-accepted), and an embedded terminal drawer that opens a real remote
   shell for SSH-backed locations
 - FTP and FTPS (passive FTP, explicit FTPS; plain FTP labelled insecure in the connection editor)
-- Local ↔ SFTP and SFTP ↔ SFTP transfers stream through the same operation engine as local files
+- Cross-provider transfer planning (`0108`) — the operation planner picks provider-native
+  server-side copy/move when both endpoints support it, otherwise streams source → destination
+  directly with no local temporary file; local ↔ SFTP, local ↔ FTP, SFTP ↔ SFTP, FTP ↔ FTP,
+  SFTP ↔ FTP and FTP ↔ SFTP all go through the same operation engine as local files, with
+  provider-neutral progress and cancellation reaching both endpoints
 - Remote change tracking (polling-based, since neither SFTP nor FTP has a native
   change-notification API)
 - OS-mediated cloud-synchronized folders (macOS/OneDrive conventions) and mounted network volumes,
@@ -172,7 +176,6 @@ file ever disagree. Update this file when a task lands.
 **Not yet implemented:**
 
 - External remote-desktop launch (`0107`)
-- Cross-provider transfer planning (`0108`)
 - OS-level "Mount share…" action (`0138`) — low priority, only if OS-native mounting causes
   friction
 
