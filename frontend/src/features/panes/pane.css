@@ -191,6 +191,12 @@
   transform: translateY(-1px);
 }
 
+/* The list/grid-dots glyphs read visually lower than the other toolbar icons even with the
+ * shared -1px nudge above - needs a touch more to sit level with its siblings. */
+.fm-pane-view-mode .fm-icon {
+  transform: translateY(-2px);
+}
+
 .fm-breadcrumb-row {
   display: flex;
   align-items: stretch;

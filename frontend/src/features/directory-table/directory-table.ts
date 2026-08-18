@@ -1,6 +1,6 @@
 import m, { type FactoryComponent, type VnodeDOM } from 'mithril';
 import { eyeOffIcon, linkIcon } from '../../components/tabler-icons';
-
+import { tooltip } from '../../components/tooltip';
 import { t } from '../../i18n';
 import type {
   EntryId,
@@ -324,10 +324,12 @@ const INITIAL_COLUMNS: readonly DirectoryColumnDescriptor[] = [
       const letter = GIT_STATUS_LETTERS[entry.gitStatus];
       return letter === ''
         ? ''
-        : m(
-            `span.fm-directory-git-status-badge.fm-directory-git-status-badge--${entry.gitStatus}`,
-            { title: GIT_STATUS_LABELS[entry.gitStatus] },
-            letter,
+        : tooltip(
+            GIT_STATUS_LABELS[entry.gitStatus],
+            m(
+              `span.fm-directory-git-status-badge.fm-directory-git-status-badge--${entry.gitStatus}`,
+              letter,
+            ),
           );
     },
   },
@@ -420,7 +422,7 @@ function headerView(
   return m(
     '.fm-directory-header',
     { role: 'row', style: { gridTemplateColumns: gridTemplate(columns, widths) } },
-    columns.map((column, index) =>
+    columns.map((column) =>
       m(
         `button.fm-directory-cell.${column.cellClass}`,
         {
@@ -458,7 +460,7 @@ function headerView(
                 }),
               )
             : undefined,
-          index === columns.length - 1 || attrs.onColumnWidthChange === undefined
+          attrs.onColumnWidthChange === undefined
             ? undefined
             : m('span.fm-directory-resize-handle', {
                 'aria-hidden': 'true',
@@ -486,17 +488,27 @@ function gridTemplate(
   columns: readonly DirectoryColumnDescriptor[],
   widths: ReadonlyMap<string, number> | undefined,
 ): string {
-  const fallbacks = [
-    'minmax(12rem, 1fr)',
-    'minmax(6rem, 0.25fr)',
-    'minmax(6rem, 0.2fr)',
-    'minmax(2.5rem, 0.08fr)',
-    'minmax(10rem, 0.35fr)',
-  ];
+  // Keyed by column id, not position: `columns` is a *filtered* view of `INITIAL_COLUMNS` (git
+  // status is hidden when there's no repo, other core columns are settings-gated, plugin columns
+  // are appended). Matching by array index against a fixed-order fallback list meant every column
+  // after a hidden one shift left and inherit the WRONG neighbour's fallback track - e.g. with the
+  // git-status column hidden, `core.modified` used to land on git-status's tiny
+  // `minmax(2.5rem, 0.08fr)` track instead of its own, rendering a few px wide with truncated text.
+  const fallbacks: Record<string, string> = {
+    'core.name': 'minmax(12rem, 1fr)',
+    'core.extension': 'minmax(6rem, 0.25fr)',
+    'core.size': 'minmax(6rem, 0.2fr)',
+    'core.gitStatus': 'minmax(2.5rem, 0.08fr)',
+    'core.modified': 'minmax(10rem, 0.35fr)',
+  };
   return columns
-    .map((column, index) => {
+    .map((column) => {
       const width = widths?.get(column.id);
-      return width === undefined ? (fallbacks[index] ?? 'minmax(5rem, 0.2fr)') : `${width}px`;
+      if (width === undefined) return fallbacks[column.id] ?? 'minmax(5rem, 0.2fr)';
+      // A stale/legacy persisted width (e.g. from before a column had a resize handle at all)
+      // must still be clamped here, not just at drag time - otherwise it renders below the
+      // column's minimum forever, with no handle wide enough to grab to fix it.
+      return `${Math.max(column.minWidth ?? MIN_COLUMN_WIDTH, width)}px`;
     })
     .join(' ');
 }
@@ -574,7 +586,11 @@ export const DirectoryTable: FactoryComponent<DirectoryTableAttrs> = () => {
     const minWidth = columns.find((column) => column.id === columnId)?.minWidth ?? MIN_COLUMN_WIDTH;
     let latestWidth = startWidth;
     const move = (moveEvent: PointerEvent): void => {
-      latestWidth = Math.max(minWidth, startWidth + (moveEvent.clientX - startX));
+      // Rounded to a whole pixel: the persisted setting is a `u32` on the backend, and a
+      // fractional width (from `getBoundingClientRect()`'s subpixel `startWidth`) fails that
+      // validation with a 422, silently discarding the resize before it ever reaches other
+      // panes/tabs that share this same global setting.
+      latestWidth = Math.round(Math.max(minWidth, startWidth + (moveEvent.clientX - startX)));
       const next = columnWidthMap(displayedColumnWidths ?? attrs.columnWidths);
       next.set(columnId, latestWidth);
       displayedColumnWidths = [...next].map(([id, width]) => ({ columnId: id, width }));

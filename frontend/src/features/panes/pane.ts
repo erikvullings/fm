@@ -1176,7 +1176,7 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
                   'aria-label': t('pane', 'newTab'),
                   onclick: () => attrs.onNewTab(),
                 },
-                plusIcon(),
+                plusIcon({ size: 16 }),
               ),
             ),
             m('.fm-view-mode-menu-wrapper', [
@@ -1192,7 +1192,9 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
                       viewMenuOpen = !viewMenuOpen;
                     },
                   },
-                  (attrs.tableConfig.viewMode ?? 'table') === 'table' ? listIcon() : gridDotsIcon(),
+                  (attrs.tableConfig.viewMode ?? 'table') === 'table'
+                    ? listIcon({ size: 16 })
+                    : gridDotsIcon({ size: 16 }),
                 ),
               ),
               viewMenuOpen && [
@@ -1325,7 +1327,9 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
                     m.redraw();
                   },
                 },
-                canAddCurrentFavourite(attrs.favourites) ? heartPlusIcon() : heartIcon(),
+                canAddCurrentFavourite(attrs.favourites)
+                  ? heartPlusIcon({ size: 16 })
+                  : heartIcon({ size: 16 }),
               ),
             ),
           ]),
