@@ -545,14 +545,20 @@ main.fm-workspace {
   border-top: 1px solid var(--fm-border);
 }
 
-.fm-settings-column-select {
+/* `.row .col.s12` (mm's grid CSS) sets `width: 100%`, sizing this to the full row like the other
+ * settings rows' `.input-field` wrappers - but those wrappers are invisible, so their own
+ * `.col` gutter padding reads as inset from the row edge around the *visible* input border.
+ * This fieldset draws its own visible border directly on that same full-width box, so without
+ * matching the inset via margin, it appears wider than its siblings. The extra class selectors
+ * raise specificity above `.row .col.s12` so the override takes effect. */
+.fm-settings-column-select.col.s12 {
   box-sizing: border-box;
-  width: 100%;
+  width: calc(100% - 1.5rem);
   min-width: 0;
   border: 1px solid var(--fm-border);
   border-radius: var(--fm-radius);
   padding: 0.5rem 0.75rem;
-  margin: 0;
+  margin: 0 0.75rem;
 }
 
 .fm-settings-column-select legend {

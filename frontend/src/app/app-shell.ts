@@ -1730,6 +1730,9 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     openFinderTagsDialog: (request) => dialogs.openFinderTagsDialog(request),
     openSpotlightCommentDialog: (request) => dialogs.openSpotlightCommentDialog(request),
     setArchiveCreateRequest: (request) => dialogs.openArchiveCreate(request),
+    calculateChecksums: () => checksumController.calculateChecksums(['sha256']),
+    findDuplicates: () => checksumController.findDuplicates(),
+    openPropertiesForActivePane: () => globalKeydownHandlerContext.openPropertiesForActivePane(),
     redraw: () => m.redraw(),
   };
 
