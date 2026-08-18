@@ -11,7 +11,7 @@ exclude = ["apps/fm-desktop"]
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.97"
-license = "MIT OR Apache-2.0"
+license = "MIT"
 
 # Line-tables-only debug info is enough for backtraces/line-level debugging
 # and is much cheaper to generate and link than full debug info, which

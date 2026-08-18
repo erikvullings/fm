@@ -1,10 +1,76 @@
-# fm
+# Procyon
 
 Dual-pane file manager: a Rust workspace (Axum server + Tauri shell) with a Mithril/TypeScript
 frontend. See [file-manager-coding-agent-spec.md](file-manager-coding-agent-spec.md) for the full
 specification and [TASKS/README.md](TASKS/README.md) for the implementation task index.
 
 [![CI](https://github.com/erikvullings/fm/actions/workflows/ci.yml/badge.svg)](https://github.com/erikvullings/fm/actions/workflows/ci.yml)
+
+## Features
+
+**Browsing & navigation**
+- Dual-pane layout with a draggable splitter, per-pane tabs, back/forward history, breadcrumb path
+  bar and Ctrl/Cmd+L path editing
+- Virtualized directory table (only visible rows rendered; verified to 1M entries) with sortable
+  Name/Extension/Size/Modified columns, folder grouping and a git-status column
+- Grid/icon view with three icon sizes, photo-day grouping, type filtering and a sort menu, plus
+  image, video, PDF and CBZ/CBR thumbnails and an F3 fullscreen preview
+- Type-to-select quick filter, recursive filename search and content search across files
+- Favourites/bookmarks and recent locations; cloud-synced folders (iCloud/OneDrive conventions) and
+  mounted network volumes surfaced automatically under `CLOUD`/`NETWORK`
+- Keyboard-first navigation (arrow/page/edge/range/toggle/select-all/pane-switch) with Total
+  Commander-parity shortcuts (see [Keyboard shortcuts](#keyboard-shortcuts) below) and selection
+  toggles (invert, select/deselect by glob mask)
+
+**File operations**
+- Copy, move, rename, duplicate, create directory, trash and permanent delete — all executed by the
+  Rust operation engine (never in TypeScript), with conflict detection (ask/overwrite/rename-new/skip)
+- Cancel, pause and resume in flight, with smoothed transfer-rate progress and a queue/history of up
+  to 100 completed jobs
+- In-app clipboard (copy/cut/paste) and native drag-and-drop, including drag-out to Finder/Explorer
+  and drag-in from them
+- Multi-rename tool (search/replace, prefix/suffix, sequence numbering, case conversion, live preview)
+- Checksums (SHA-256, BLAKE3, CRC32, MD5) and duplicate-file detection
+- Directory comparison and synchronization
+- Archive browsing and extraction (zip, tar, …), including mutation inside archives and password
+  support
+
+**Viewing & editing**
+- F3 Lister-style instant large-file viewer with lazy search
+- In-app text editor with Markdown preview (F4)
+- File/folder Properties dialog (byte-precise sizes, timestamps, permissions, aggregate totals for
+  multi-selection)
+- Mounted-volume capacity and directory aggregate totals (size/file count) independent of pagination
+- On macOS: Finder tags and Spotlight comments, read/write round-trip compatible with Finder itself
+
+**Remote & cloud**
+- SSH/SFTP with pooled, auto-reconnecting sessions and explicit host-key verification (never
+  auto-accepted)
+- FTP and FTPS (passive FTP, explicit FTPS)
+- Embedded terminal drawer (Ctrl+\`/F12) that opens a real remote shell for SSH-backed locations
+- Local ↔ SFTP and SFTP ↔ SFTP transfers stream through the same operation engine as local files
+
+**Customization & extensibility**
+- Light/dark/follow-system themes; configurable keyboard shortcuts via the action registry
+- Command palette (Ctrl/Cmd+P) with fuzzy filtering, ranking and parameter prompts
+- Plugins run in a restricted, resource-limited Lua sandbox with per-plugin diagnostics and
+  auto-disable on repeated failure; a management UI lists and toggles them
+- Sample/bundled plugins: Copy Markdown Path, File Age column, Catppuccin icon theme
+- Distributable icon-theme plugins; native file-icon overlay (macOS, Windows)
+- Frontend i18n (English + Dutch catalogues) via translate.js
+
+**Platform integration**
+- Native app menu bar, Trash/Recycle Bin, Reveal in Finder/Explorer, Open With…, and open-terminal-
+  at-location (macOS full support; Windows and Linux support tracked in [ROADMAP.md](ROADMAP.md))
+- Desktop packaging for macOS (`.app`/`.dmg`), Windows (`.msi`/`-setup.exe`) and Linux
+  (`.deb`/`.AppImage`) — see [Desktop releases](#desktop-releases)
+
+**Not yet implemented** — streaming CSV/Excel viewer, WinDirStat-style disk-usage treemap,
+cross-provider transfer planning, external remote-desktop launch, native OneDrive/SMB providers
+(frozen — OS-mounted locations already cover this), Services menu/"Send to" integration, directory
+tree sidebar. Full status per task lives in [TASKS/README.md](TASKS/README.md); note that
+[ROADMAP.md](ROADMAP.md) is a milestone-level summary and can lag behind individual task
+completions — each `TASKS/NNNN-*.md` file's own `Status:` header is authoritative.
 
 ## Prerequisites
 
@@ -655,3 +721,31 @@ cleans up. Before promoting a release, also perform this manual smoke on each su
 
 Auto-update is not included in the first-release packaging design; releases are downloaded and
 installed manually.
+
+## Troubleshooting
+
+### macOS: "Unable to show. Denied permissions" opening a mounted drive
+
+If Procyon can't open an otherwise-working mounted volume (an external/USB drive, for example) and
+shows **"Unable to show. Denied permissions"**, this is macOS's TCC privacy protection blocking the
+app from removable-volume access — Finder is exempt from this check, which is why the same drive
+opens fine there. Confirm with:
+
+```bash
+ls -la /Volumes/
+```
+
+`Operation not permitted` on a specific volume (rather than a normal `drwx` listing) is the
+signature of this block; unrelated to standard Unix file permissions.
+
+**Fix:** grant Procyon Full Disk Access.
+
+1. Open **System Settings → Privacy & Security → Full Disk Access**.
+2. Click **+**, select **Procyon.app** (in `/Applications`), and toggle it **on**.
+3. **Fully quit and relaunch Procyon** (Cmd+Q, not just close the window) — the grant only takes
+   effect after the app restarts.
+
+If it's still blocked, also check for a separate **Removable Volumes** entry in the same Privacy &
+Security pane (present on some macOS versions) and grant Procyon access there too. If the drive was
+last used on a different Mac or user account, right-click it in Finder → **Get Info** and confirm
+**"Ignore ownership on this volume"** is checked.
