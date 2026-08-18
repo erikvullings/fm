@@ -76,6 +76,12 @@ export interface ActionCommandControllerContext {
   openSpotlightCommentDialog(
     request: import('../dialogs/dialog-ui-controller').SpotlightCommentDialogRequest,
   ): void;
+  /** Starts a checksum job over the active pane's selection (task 0077). */
+  calculateChecksums(): void;
+  /** Starts a duplicate scan rooted at the active pane's directory (task 0077). */
+  findDuplicates(): void;
+  /** Opens the Properties dialog for the active pane's selection (task 0140). */
+  openPropertiesForActivePane(): void;
   redraw(): void;
 }
 
@@ -272,6 +278,23 @@ export function createActionCommandController(
     }
     if (action.id === 'core.createDirectory') {
       context.openCreateDirectory(undefined);
+      return;
+    }
+    // These three actions carry no default keybinding by design (spec §18/§35, tasks 0077/0140)
+    // - the command palette is their only entry point - so unlike keybinding dispatch they must be
+    // special-cased here too, rather than falling through to the generic `invokeActionById`, which
+    // hits the backend's synchronous action-invoke endpoint and can't drive their streamed job/
+    // dialog flows.
+    if (action.id === 'core.calculateChecksum') {
+      context.calculateChecksums();
+      return;
+    }
+    if (action.id === 'core.findDuplicates') {
+      context.findDuplicates();
+      return;
+    }
+    if (action.id === 'core.showProperties') {
+      context.openPropertiesForActivePane();
       return;
     }
     const paneId = contextParam.paneId;
