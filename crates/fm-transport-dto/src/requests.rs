@@ -19,7 +19,8 @@ use crate::workspace::SortDescriptorDto;
     "continuationToken": null,
     "sort": [{"columnId": "core.name", "direction": "ascending"}],
     "showHidden": false,
-    "foldersFirst": true
+    "foldersFirst": true,
+    "showGitStatus": false
 }))]
 pub struct ListDirectoryRequest {
     /// Workspace that owns the pane and receives its events.
@@ -42,6 +43,14 @@ pub struct ListDirectoryRequest {
     /// Whether directories should sort before non-directories.
     #[serde(default)]
     pub folders_first: bool,
+    /// Whether the pane's git-status column is visible, carried over from
+    /// the requesting tab's table configuration. The backend never computes
+    /// git working-tree status (a per-repository `git2` walk) when this is
+    /// `false` — most panes never show the column, so this keeps every
+    /// ordinary listing free of git2 work entirely rather than relying on
+    /// caching alone to hide its cost.
+    #[serde(default)]
+    pub show_git_status: bool,
 }
 
 /// Requests the immediate child directories of a location, for the directory-tree sidebar
@@ -72,7 +81,8 @@ pub struct ListDirectoryChildrenRequest {
     "location": {"providerId": "local", "uri": "file:///Users/erik/Documents"},
     "sort": [{"columnId": "core.name", "direction": "ascending"}],
     "showHidden": false,
-    "foldersFirst": true
+    "foldersFirst": true,
+    "showGitStatus": false
 }))]
 pub struct NavigateRequest {
     /// Workspace that owns the pane and receives its events.
@@ -98,6 +108,11 @@ pub struct NavigateRequest {
     /// reset it.
     #[serde(default)]
     pub folders_first: bool,
+    /// Whether the pane's git-status column is visible, carried over from
+    /// the navigating tab's table configuration so the backend can skip the
+    /// git2 status walk entirely when nothing will show it.
+    #[serde(default)]
+    pub show_git_status: bool,
 }
 
 /// Requests detailed metadata for a single entry
@@ -155,12 +170,14 @@ mod tests {
             sort: Vec::new(),
             show_hidden: false,
             folders_first: true,
+            show_git_status: true,
         };
         let json = serde_json::to_string(&request).expect("serialization must succeed");
         assert!(json.contains("\"paneId\""));
         assert!(json.contains("\"workspaceId\""));
         assert!(json.contains("\"requestId\""));
         assert!(json.contains("\"continuationToken\""));
+        assert!(json.contains("\"showGitStatus\""));
         let parsed: ListDirectoryRequest =
             serde_json::from_str(&json).expect("deserialization must succeed");
         assert_eq!(request, parsed);
@@ -176,6 +193,7 @@ mod tests {
             sort: Vec::new(),
             show_hidden: true,
             folders_first: true,
+            show_git_status: true,
         };
         let json = serde_json::to_string(&request).expect("serialization must succeed");
         assert!(json.contains("\"paneId\""));
@@ -183,6 +201,7 @@ mod tests {
         assert!(json.contains("\"requestId\""));
         assert!(json.contains("\"showHidden\""));
         assert!(json.contains("\"foldersFirst\""));
+        assert!(json.contains("\"showGitStatus\""));
         let parsed: NavigateRequest =
             serde_json::from_str(&json).expect("deserialization must succeed");
         assert_eq!(request, parsed);
@@ -202,6 +221,7 @@ mod tests {
         assert_eq!(parsed.sort, Vec::new());
         assert!(!parsed.show_hidden);
         assert!(!parsed.folders_first);
+        assert!(!parsed.show_git_status);
     }
 
     #[test]

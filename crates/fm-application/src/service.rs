@@ -916,7 +916,7 @@ impl FileManagerService {
     /// Fetches a file's git commit history for the Alt+Space metadata panel's history section
     /// (task 0135). Never errors: an empty commit list means the file has no history to show
     /// (non-local provider, outside a git working tree, or not yet committed).
-    pub fn git_file_history(
+    pub async fn git_file_history(
         &self,
         request: GetFileGitHistoryRequestDto,
     ) -> GetFileGitHistoryResponseDto {
@@ -924,6 +924,7 @@ impl FileManagerService {
         let commits = self
             .directories
             .git_history(&location)
+            .await
             .into_iter()
             .map(Into::into)
             .collect();
@@ -2702,6 +2703,7 @@ mod tests {
             sort: Vec::new(),
             show_hidden: false,
             folders_first: true,
+            show_git_status: false,
         }
     }
 

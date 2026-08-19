@@ -199,5 +199,5 @@ pub(crate) async fn get_file_git_history(
 ) -> Result<Json<GetFileGitHistoryResponseDto>, ApiError> {
     let request_id = extract_request_id(&request_id);
     crate::error::require_within_roots(&request.location, &state.accessible_roots, request_id)?;
-    Ok(Json(state.service.git_file_history(request)))
+    Ok(Json(state.service.git_file_history(request).await))
 }

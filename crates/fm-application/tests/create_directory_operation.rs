@@ -147,6 +147,7 @@ async fn creation_refreshes_an_open_directory_through_an_added_delta() {
             sort: Vec::new(),
             show_hidden: false,
             folders_first: true,
+            show_git_status: false,
         })
         .await
         .expect("open directory");
@@ -161,6 +162,7 @@ async fn creation_refreshes_an_open_directory_through_an_added_delta() {
             sort: Vec::new(),
             show_hidden: false,
             folders_first: true,
+            show_git_status: false,
         })
         .await
         .expect("open second directory pane");

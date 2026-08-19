@@ -2420,6 +2420,7 @@ dependencies = [
  "fm-domain",
  "git2",
  "tempfile",
+ "tokio",
 ]
 
 [[package]]

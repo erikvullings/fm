@@ -104,7 +104,7 @@ import {
   createOperationsController,
   type OperationsController,
 } from '../features/operations/operations-controller';
-import { isParentEntry } from '../features/panes/parent-entry';
+import { isParentEntry, withParentEntry } from '../features/panes/parent-entry';
 import {
   createTabController,
   type TabController,
@@ -156,6 +156,7 @@ import {
   type WorkspaceControllerContext,
 } from '../features/workspace/workspace-controller';
 import {
+  pathFromUri,
   WorkspaceLayoutView,
   type WorkspacePaneContent,
 } from '../features/workspace/workspace-layout';
@@ -2091,12 +2092,32 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
             m.redraw();
           });
         },
+        // Mirrors the same "on and the directory actually reports git status" gate
+        // `pane-content-builder.ts` uses to decide whether to render the column - here it
+        // decides whether to *ask the backend to compute* git status at all, so a hidden column
+        // costs nothing server-side either. Read fresh on every request rather than snapshotted,
+        // since `currentSettings` can change between navigations.
+        getShowGitStatusColumn: () =>
+          currentSettings?.defaultColumns.includes('core.gitStatus') ?? false,
         updatePane: (paneId, tabId, view, preferredCursorName) => {
           const key = tabKey(paneId, tabId);
           const previous = directories.get(key);
           directories.set(key, respectSystemLocationReadOnly(view, systemLocations));
           if (view.entries.length === 0) {
-            selections.set(key, emptySelection);
+            // The table still renders a synthetic ".." row (via `withParentEntry`) for any
+            // location that isn't a filesystem root, even when the directory itself is empty -
+            // so an empty directory must not be treated as "nothing to put the cursor on": the
+            // cursor still needs to land on that ".." row when one is rendered.
+            const parentEntry =
+              view.location === undefined
+                ? undefined
+                : withParentEntry(pathFromUri(view.location.uri), [])[0];
+            selections.set(key, {
+              selectedEntryIds: [],
+              ...(parentEntry === undefined
+                ? {}
+                : { cursorEntryId: parentEntry.id, anchorEntryId: parentEntry.id }),
+            });
           } else if (
             selections.get(key)?.cursorEntryId === undefined ||
             previous?.location?.uri !== view.location?.uri

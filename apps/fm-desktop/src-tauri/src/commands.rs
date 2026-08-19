@@ -564,7 +564,7 @@ pub(crate) async fn get_file_git_history(
     state: State<'_, AppState>,
     request: GetFileGitHistoryRequestDto,
 ) -> Result<GetFileGitHistoryResponseDto, ApplicationErrorDto> {
-    Ok(state.service.git_file_history(request))
+    Ok(state.service.git_file_history(request).await)
 }
 
 /// A fresh, unique window label for a new window on `workspace_id` (task 0143 sub-task (b)).

@@ -39,6 +39,7 @@ export interface ListDirectoryRequest {
   sort?: SortDescriptor[];
   showHidden?: boolean;
   foldersFirst?: boolean;
+  showGitStatus?: boolean;
 }
 
 /**
@@ -53,6 +54,7 @@ export interface NavigateRequest {
   sort?: SortDescriptor[];
   showHidden?: boolean;
   foldersFirst?: boolean;
+  showGitStatus?: boolean;
 }
 
 /**

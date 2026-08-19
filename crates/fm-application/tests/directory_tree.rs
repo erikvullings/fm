@@ -89,6 +89,7 @@ async fn list_children_does_not_disturb_a_pane_s_own_in_flight_listing() {
         sort: Vec::new(),
         show_hidden: false,
         folders_first: false,
+        show_git_status: false,
     };
     let pane_snapshot = service
         .list(pane_request.clone())

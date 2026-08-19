@@ -2492,6 +2492,7 @@
           },
           "paneId": "5b1b6b1e-9b1b-4b1b-8b1b-1b1b1b1b1b1b",
           "requestId": "e1ce66cc-64a8-4ae7-9cc1-2882bc80de4e",
+          "showGitStatus": false,
           "showHidden": false,
           "sort": [
             {
@@ -2526,6 +2527,10 @@
             "description": "Client-generated identifier, echoed back so a superseded request's\nlate response can be recognised and dropped.",
             "format": "uuid",
             "type": "string"
+          },
+          "showGitStatus": {
+            "description": "Whether the pane's git-status column is visible, carried over from\nthe requesting tab's table configuration. The backend never computes\ngit working-tree status (a per-repository `git2` walk) when this is\n`false` — most panes never show the column, so this keeps every\nordinary listing free of git2 work entirely rather than relying on\ncaching alone to hide its cost.",
+            "type": "boolean"
           },
           "showHidden": {
             "description": "Whether hidden entries should be included.",
@@ -2722,6 +2727,7 @@
           },
           "paneId": "5b1b6b1e-9b1b-4b1b-8b1b-1b1b1b1b1b1b",
           "requestId": "e1ce66cc-64a8-4ae7-9cc1-2882bc80de4e",
+          "showGitStatus": false,
           "showHidden": false,
           "sort": [
             {
@@ -2749,6 +2755,10 @@
             "description": "Client-generated identifier, echoed back so a superseded request's\nlate response can be recognised and dropped.",
             "format": "uuid",
             "type": "string"
+          },
+          "showGitStatus": {
+            "description": "Whether the pane's git-status column is visible, carried over from\nthe navigating tab's table configuration so the backend can skip the\ngit2 status walk entirely when nothing will show it.",
+            "type": "boolean"
           },
           "showHidden": {
             "description": "Whether hidden entries should be included, carried over from the\nnavigating tab's current view so navigation doesn't silently reset it.",
