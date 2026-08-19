@@ -56,7 +56,17 @@ impl GitStatusService {
     /// outside any git working tree; that fact is cached, so a directory
     /// tree with no `.git` anywhere never triggers more than one discovery
     /// probe per listed directory.
-    pub fn annotate(&self, dir: &Path, entries: &mut [EntrySummary]) {
+    ///
+    /// [`status_for`](Self::status_for) never walks into an ignored
+    /// directory's contents (a repo's `target/`/`node_modules/` can hold
+    /// hundreds of thousands of files — walking them eagerly on every
+    /// listing took over a minute on this repo's own `target/` and blocked
+    /// every other in-flight directory listing behind the shared git2 call).
+    /// So an entry inside an ignored directory is never found in the cached
+    /// status maps; for those, this falls back to a targeted
+    /// `git2::Repository::status_should_ignore` pattern-match per entry —
+    /// cheap (no directory walk) and only paid for entries actually shown.
+    pub async fn annotate(&self, dir: &Path, entries: &mut [EntrySummary]) {
         let dir = canonical(dir);
         let Some(repo_root) = self.repo_root_for(&dir) else {
             return;
@@ -64,8 +74,11 @@ impl GitStatusService {
         let Ok(rel_dir) = dir.strip_prefix(&repo_root) else {
             return;
         };
-        let status = self.status_for(&repo_root);
-        for entry in entries {
+        let status = self.status_for(&repo_root).await;
+
+        let mut resolved: Vec<Option<GitFileStatus>> = Vec::with_capacity(entries.len());
+        let mut unresolved: Vec<(usize, PathBuf)> = Vec::new();
+        for (index, entry) in entries.iter().enumerate() {
             let rel_path = if rel_dir.as_os_str().is_empty() {
                 PathBuf::from(&entry.name)
             } else {
@@ -75,7 +88,29 @@ impl GitStatusService {
                 EntryKind::Directory => status.dirs.get(&rel_path).copied(),
                 EntryKind::File | EntryKind::Symlink => status.files.get(&rel_path).copied(),
             };
-            entry.git_status = Some(found.unwrap_or(GitFileStatus::Clean));
+            if found.is_none() {
+                unresolved.push((index, rel_path));
+            }
+            resolved.push(found);
+        }
+
+        if !unresolved.is_empty() {
+            let repo_root = repo_root.clone();
+            let ignored =
+                tokio::task::spawn_blocking(move || resolve_ignored(&repo_root, unresolved))
+                    .await
+                    .unwrap_or_default();
+            for (index, is_ignored) in ignored {
+                resolved[index] = Some(if is_ignored {
+                    GitFileStatus::Ignored
+                } else {
+                    GitFileStatus::Clean
+                });
+            }
+        }
+
+        for (entry, status) in entries.iter_mut().zip(resolved) {
+            entry.git_status = Some(status.unwrap_or(GitFileStatus::Clean));
         }
     }
 
@@ -105,14 +140,20 @@ impl GitStatusService {
         root
     }
 
-    fn status_for(&self, repo_root: &Path) -> Arc<RepoStatus> {
+    async fn status_for(&self, repo_root: &Path) -> Arc<RepoStatus> {
         {
             let inner = self.inner.lock().expect("git status lock poisoned");
             if let Some(cached) = inner.statuses.get(repo_root) {
                 return Arc::clone(cached);
             }
         }
-        let computed = Arc::new(compute_repo_status(repo_root).unwrap_or_default());
+        let owned_root = repo_root.to_path_buf();
+        let computed = tokio::task::spawn_blocking(move || {
+            compute_repo_status(&owned_root).unwrap_or_default()
+        })
+        .await
+        .unwrap_or_default();
+        let computed = Arc::new(computed);
         let mut inner = self.inner.lock().expect("git status lock poisoned");
         inner
             .statuses
@@ -127,7 +168,7 @@ impl GitStatusService {
     /// whichever comes first, so a huge, mostly-unrelated history never turns one Alt+Space press
     /// into an unbounded walk.
     #[must_use]
-    pub fn file_history(
+    pub async fn file_history(
         &self,
         path: &Path,
         result_limit: usize,
@@ -143,7 +184,13 @@ impl GitStatusService {
         let Ok(rel_path) = path.strip_prefix(&repo_root) else {
             return Vec::new();
         };
-        compute_file_history(&repo_root, rel_path, result_limit, scan_limit).unwrap_or_default()
+        let rel_path = rel_path.to_path_buf();
+        tokio::task::spawn_blocking(move || {
+            compute_file_history(&repo_root, &rel_path, result_limit, scan_limit)
+                .unwrap_or_default()
+        })
+        .await
+        .unwrap_or_default()
     }
 
     #[cfg(test)]
@@ -174,14 +221,26 @@ fn discover_repo_root(dir: &Path) -> Option<PathBuf> {
 
 /// Walks the whole repository's status once via `git2` and aggregates it
 /// both per-file and per-ancestor-directory.
+///
+/// Deliberately does **not** set `recurse_ignored_dirs`: with it enabled,
+/// this produced one status entry per file *inside* every ignored directory
+/// (e.g. a Rust workspace's `target/`, or `node_modules/`), which on this
+/// repo's own `target/` (1.5M+ build artifacts) took upwards of two minutes
+/// and, since [`GitStatusService::status_for`] runs one call at a time under
+/// its cache-fill path, stalled every other pane's directory listing behind
+/// it too. `include_ignored(true)` still reports each ignored directory as a
+/// single collapsed entry (so, e.g., `target/` itself is flagged ignored
+/// without walking its contents); per-entry status for something *inside*
+/// an ignored directory is instead resolved on demand by
+/// [`GitStatusService::annotate`] via the cheap `status_should_ignore`
+/// pattern-match, only for entries actually being listed.
 fn compute_repo_status(repo_root: &Path) -> Option<RepoStatus> {
     let repo = git2::Repository::open(repo_root).ok()?;
     let mut options = git2::StatusOptions::new();
     options
         .include_untracked(true)
         .recurse_untracked_dirs(true)
-        .include_ignored(true)
-        .recurse_ignored_dirs(true);
+        .include_ignored(true);
     let statuses = repo.statuses(Some(&mut options)).ok()?;
 
     let mut files = HashMap::new();
@@ -209,6 +268,30 @@ fn compute_repo_status(repo_root: &Path) -> Option<RepoStatus> {
     }
 
     Some(RepoStatus { files, dirs })
+}
+
+/// Resolves whether each `(index, path relative to the repo root)` pair is
+/// git-ignored via a targeted `status_should_ignore` pattern-match — a
+/// single-path lookup, not a directory walk — used by
+/// [`GitStatusService::annotate`] for entries [`compute_repo_status`]'s
+/// non-recursive-into-ignored-dirs walk did not itself resolve. Opening the
+/// repository fails only if it was removed since discovery; every entry is
+/// then reported not-ignored rather than dropped; a per-path lookup failure
+/// (also effectively never on a valid path) does the same.
+fn resolve_ignored(repo_root: &Path, unresolved: Vec<(usize, PathBuf)>) -> Vec<(usize, bool)> {
+    let Ok(repo) = git2::Repository::open(repo_root) else {
+        return unresolved
+            .into_iter()
+            .map(|(index, _)| (index, false))
+            .collect();
+    };
+    unresolved
+        .into_iter()
+        .map(|(index, rel_path)| {
+            let ignored = repo.status_should_ignore(&rel_path).unwrap_or(false);
+            (index, ignored)
+        })
+        .collect()
 }
 
 /// Walks commits reachable from `HEAD`, newest first, collecting the ones whose tree-diff against
@@ -336,6 +419,7 @@ fn priority(status: GitFileStatus) -> u8 {
 #[cfg(test)]
 mod tests {
     use std::fs;
+    use std::time::Duration;
 
     use fm_domain::{EntryId, EntryKind, GitFileStatus, Location, ProviderId};
 
@@ -402,14 +486,14 @@ mod tests {
         .expect("commit");
     }
 
-    #[test]
-    fn non_git_directory_is_a_no_op_fast_path() {
+    #[tokio::test]
+    async fn non_git_directory_is_a_no_op_fast_path() {
         let dir = tempfile::tempdir().expect("tempdir");
         fs::write(dir.path().join("plain.txt"), b"hello").expect("write file");
 
         let service = GitStatusService::new();
         let mut entries = vec![entry(dir.path(), "plain.txt", EntryKind::File)];
-        service.annotate(dir.path(), &mut entries);
+        service.annotate(dir.path(), &mut entries).await;
 
         assert_eq!(entries[0].git_status, None);
         assert!(service.repo_root_is_cached(dir.path()));
@@ -418,12 +502,12 @@ mod tests {
         // disk to discover from) yet must still behave identically.
         fs::remove_dir_all(dir.path()).ok();
         let mut entries = vec![entry(dir.path(), "plain.txt", EntryKind::File)];
-        service.annotate(dir.path(), &mut entries);
+        service.annotate(dir.path(), &mut entries).await;
         assert_eq!(entries[0].git_status, None);
     }
 
-    #[test]
-    fn clean_tracked_file_has_clean_status() {
+    #[tokio::test]
+    async fn clean_tracked_file_has_clean_status() {
         let dir = tempfile::tempdir().expect("tempdir");
         fs::write(dir.path().join("a.txt"), b"a").expect("write file");
         let repo = init_repo(dir.path());
@@ -431,13 +515,13 @@ mod tests {
 
         let service = GitStatusService::new();
         let mut entries = vec![entry(dir.path(), "a.txt", EntryKind::File)];
-        service.annotate(dir.path(), &mut entries);
+        service.annotate(dir.path(), &mut entries).await;
 
         assert_eq!(entries[0].git_status, Some(GitFileStatus::Clean));
     }
 
-    #[test]
-    fn modified_tracked_file_is_reported_modified() {
+    #[tokio::test]
+    async fn modified_tracked_file_is_reported_modified() {
         let dir = tempfile::tempdir().expect("tempdir");
         fs::write(dir.path().join("a.txt"), b"a").expect("write file");
         let repo = init_repo(dir.path());
@@ -446,13 +530,13 @@ mod tests {
 
         let service = GitStatusService::new();
         let mut entries = vec![entry(dir.path(), "a.txt", EntryKind::File)];
-        service.annotate(dir.path(), &mut entries);
+        service.annotate(dir.path(), &mut entries).await;
 
         assert_eq!(entries[0].git_status, Some(GitFileStatus::Modified));
     }
 
-    #[test]
-    fn staged_file_is_reported_staged() {
+    #[tokio::test]
+    async fn staged_file_is_reported_staged() {
         let dir = tempfile::tempdir().expect("tempdir");
         fs::write(dir.path().join("a.txt"), b"a").expect("write file");
         let repo = init_repo(dir.path());
@@ -464,13 +548,13 @@ mod tests {
 
         let service = GitStatusService::new();
         let mut entries = vec![entry(dir.path(), "a.txt", EntryKind::File)];
-        service.annotate(dir.path(), &mut entries);
+        service.annotate(dir.path(), &mut entries).await;
 
         assert_eq!(entries[0].git_status, Some(GitFileStatus::Staged));
     }
 
-    #[test]
-    fn untracked_file_is_reported_untracked() {
+    #[tokio::test]
+    async fn untracked_file_is_reported_untracked() {
         let dir = tempfile::tempdir().expect("tempdir");
         let repo = init_repo(dir.path());
         commit_all(&repo, "empty");
@@ -478,13 +562,13 @@ mod tests {
 
         let service = GitStatusService::new();
         let mut entries = vec![entry(dir.path(), "new.txt", EntryKind::File)];
-        service.annotate(dir.path(), &mut entries);
+        service.annotate(dir.path(), &mut entries).await;
 
         assert_eq!(entries[0].git_status, Some(GitFileStatus::Untracked));
     }
 
-    #[test]
-    fn ignored_file_is_reported_ignored() {
+    #[tokio::test]
+    async fn ignored_file_is_reported_ignored() {
         let dir = tempfile::tempdir().expect("tempdir");
         fs::write(dir.path().join(".gitignore"), b"ignored.txt\n").expect("write gitignore");
         let repo = init_repo(dir.path());
@@ -493,13 +577,72 @@ mod tests {
 
         let service = GitStatusService::new();
         let mut entries = vec![entry(dir.path(), "ignored.txt", EntryKind::File)];
-        service.annotate(dir.path(), &mut entries);
+        service.annotate(dir.path(), &mut entries).await;
 
         assert_eq!(entries[0].git_status, Some(GitFileStatus::Ignored));
     }
 
-    #[test]
-    fn directory_aggregates_a_modified_descendant() {
+    /// Regression test for the "entering a large repo's own directory stalls
+    /// navigation for the whole app" bug: an ignored directory containing
+    /// many files (standing in for `target/`/`node_modules/`) must resolve
+    /// almost instantly — proving `compute_repo_status` no longer recurses
+    /// into it — while still being correctly reported ignored itself.
+    #[tokio::test]
+    async fn a_large_ignored_directory_resolves_quickly_without_walking_its_contents() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        fs::write(dir.path().join(".gitignore"), b"build/\n").expect("write gitignore");
+        fs::write(dir.path().join("tracked.txt"), b"a").expect("write tracked file");
+        let repo = init_repo(dir.path());
+        commit_all(&repo, "initial");
+        let build_dir = dir.path().join("build");
+        fs::create_dir(&build_dir).expect("mkdir build");
+        for index in 0..2_000 {
+            fs::write(build_dir.join(format!("artifact-{index}.o")), b"binary")
+                .expect("write build artifact");
+        }
+
+        let service = GitStatusService::new();
+        let mut entries = vec![
+            entry(dir.path(), "tracked.txt", EntryKind::File),
+            entry(dir.path(), "build", EntryKind::Directory),
+        ];
+
+        let started = std::time::Instant::now();
+        service.annotate(dir.path(), &mut entries).await;
+        let elapsed = started.elapsed();
+
+        assert_eq!(entries[0].git_status, Some(GitFileStatus::Clean));
+        assert_eq!(entries[1].git_status, Some(GitFileStatus::Ignored));
+        assert!(
+            elapsed < Duration::from_secs(2),
+            "annotating the parent directory must not walk into the ignored \
+             directory's 2,000 files: took {elapsed:?}"
+        );
+    }
+
+    /// A file actually browsed *inside* an ignored directory (e.g. the user
+    /// opens `target/`) must still be reported ignored, even though
+    /// `compute_repo_status`'s walk never enumerated it — this is what the
+    /// `status_should_ignore` fallback in `annotate` is for.
+    #[tokio::test]
+    async fn a_file_inside_an_ignored_directory_is_still_reported_ignored_when_browsed_into() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        fs::write(dir.path().join(".gitignore"), b"build/\n").expect("write gitignore");
+        let repo = init_repo(dir.path());
+        commit_all(&repo, "initial");
+        let build_dir = dir.path().join("build");
+        fs::create_dir(&build_dir).expect("mkdir build");
+        fs::write(build_dir.join("artifact.o"), b"binary").expect("write build artifact");
+
+        let service = GitStatusService::new();
+        let mut entries = vec![entry(&build_dir, "artifact.o", EntryKind::File)];
+        service.annotate(&build_dir, &mut entries).await;
+
+        assert_eq!(entries[0].git_status, Some(GitFileStatus::Ignored));
+    }
+
+    #[tokio::test]
+    async fn directory_aggregates_a_modified_descendant() {
         let dir = tempfile::tempdir().expect("tempdir");
         fs::create_dir(dir.path().join("sub")).expect("mkdir sub");
         fs::write(dir.path().join("sub/nested.txt"), b"a").expect("write nested");
@@ -513,14 +656,14 @@ mod tests {
             entry(dir.path(), "sub", EntryKind::Directory),
             entry(dir.path(), "clean-sub2.txt", EntryKind::File),
         ];
-        service.annotate(dir.path(), &mut entries);
+        service.annotate(dir.path(), &mut entries).await;
 
         assert_eq!(entries[0].git_status, Some(GitFileStatus::Modified));
         assert_eq!(entries[1].git_status, Some(GitFileStatus::Clean));
     }
 
-    #[test]
-    fn directory_aggregate_prefers_highest_priority_descendant_status() {
+    #[tokio::test]
+    async fn directory_aggregate_prefers_highest_priority_descendant_status() {
         let dir = tempfile::tempdir().expect("tempdir");
         fs::create_dir(dir.path().join("sub")).expect("mkdir sub");
         fs::write(dir.path().join("sub/tracked.txt"), b"a").expect("write tracked");
@@ -533,13 +676,13 @@ mod tests {
 
         let service = GitStatusService::new();
         let mut entries = vec![entry(dir.path(), "sub", EntryKind::Directory)];
-        service.annotate(dir.path(), &mut entries);
+        service.annotate(dir.path(), &mut entries).await;
 
         assert_eq!(entries[0].git_status, Some(GitFileStatus::Modified));
     }
 
-    #[test]
-    fn cached_status_is_reused_until_invalidated() {
+    #[tokio::test]
+    async fn cached_status_is_reused_until_invalidated() {
         let dir = tempfile::tempdir().expect("tempdir");
         fs::write(dir.path().join("a.txt"), b"a").expect("write file");
         let repo = init_repo(dir.path());
@@ -547,32 +690,32 @@ mod tests {
 
         let service = GitStatusService::new();
         let mut entries = vec![entry(dir.path(), "a.txt", EntryKind::File)];
-        service.annotate(dir.path(), &mut entries);
+        service.annotate(dir.path(), &mut entries).await;
         assert_eq!(entries[0].git_status, Some(GitFileStatus::Clean));
 
         fs::write(dir.path().join("a.txt"), b"changed").expect("modify file");
 
         // Without invalidation the stale, cached status is served.
         let mut entries = vec![entry(dir.path(), "a.txt", EntryKind::File)];
-        service.annotate(dir.path(), &mut entries);
+        service.annotate(dir.path(), &mut entries).await;
         assert_eq!(entries[0].git_status, Some(GitFileStatus::Clean));
 
         service.invalidate(dir.path());
 
         let mut entries = vec![entry(dir.path(), "a.txt", EntryKind::File)];
-        service.annotate(dir.path(), &mut entries);
+        service.annotate(dir.path(), &mut entries).await;
         assert_eq!(entries[0].git_status, Some(GitFileStatus::Modified));
     }
 
-    #[test]
-    fn invalidating_an_unknown_directory_is_a_no_op() {
+    #[tokio::test]
+    async fn invalidating_an_unknown_directory_is_a_no_op() {
         let dir = tempfile::tempdir().expect("tempdir");
         let service = GitStatusService::new();
         service.invalidate(dir.path());
     }
 
-    #[test]
-    fn file_history_returns_commits_touching_the_file_newest_first() {
+    #[tokio::test]
+    async fn file_history_returns_commits_touching_the_file_newest_first() {
         let dir = tempfile::tempdir().expect("tempdir");
         let file = dir.path().join("a.txt");
         fs::write(&file, b"one").expect("write v1");
@@ -582,7 +725,7 @@ mod tests {
         commit_all(&repo, "second");
 
         let service = GitStatusService::new();
-        let history = service.file_history(&file, 10, 100);
+        let history = service.file_history(&file, 10, 100).await;
 
         assert_eq!(history.len(), 2);
         assert_eq!(history[0].summary, "second");
@@ -593,8 +736,8 @@ mod tests {
         assert_eq!(history[0].author_email, "test@example.com");
     }
 
-    #[test]
-    fn file_history_excludes_commits_that_did_not_touch_the_file() {
+    #[tokio::test]
+    async fn file_history_excludes_commits_that_did_not_touch_the_file() {
         let dir = tempfile::tempdir().expect("tempdir");
         let target = dir.path().join("target.txt");
         let other = dir.path().join("other.txt");
@@ -606,14 +749,14 @@ mod tests {
         commit_all(&repo, "unrelated change");
 
         let service = GitStatusService::new();
-        let history = service.file_history(&target, 10, 100);
+        let history = service.file_history(&target, 10, 100).await;
 
         assert_eq!(history.len(), 1);
         assert_eq!(history[0].summary, "initial");
     }
 
-    #[test]
-    fn file_history_of_an_untracked_file_is_empty() {
+    #[tokio::test]
+    async fn file_history_of_an_untracked_file_is_empty() {
         let dir = tempfile::tempdir().expect("tempdir");
         let repo = init_repo(dir.path());
         commit_all(&repo, "empty");
@@ -621,25 +764,25 @@ mod tests {
         fs::write(&file, b"new").expect("write file");
 
         let service = GitStatusService::new();
-        let history = service.file_history(&file, 10, 100);
+        let history = service.file_history(&file, 10, 100).await;
 
         assert!(history.is_empty());
     }
 
-    #[test]
-    fn file_history_of_a_non_git_directory_is_empty() {
+    #[tokio::test]
+    async fn file_history_of_a_non_git_directory_is_empty() {
         let dir = tempfile::tempdir().expect("tempdir");
         let file = dir.path().join("plain.txt");
         fs::write(&file, b"hello").expect("write file");
 
         let service = GitStatusService::new();
-        let history = service.file_history(&file, 10, 100);
+        let history = service.file_history(&file, 10, 100).await;
 
         assert!(history.is_empty());
     }
 
-    #[test]
-    fn file_history_respects_result_limit() {
+    #[tokio::test]
+    async fn file_history_respects_result_limit() {
         let dir = tempfile::tempdir().expect("tempdir");
         let file = dir.path().join("a.txt");
         let repo = init_repo(dir.path());
@@ -649,7 +792,7 @@ mod tests {
         }
 
         let service = GitStatusService::new();
-        let history = service.file_history(&file, 2, 100);
+        let history = service.file_history(&file, 2, 100).await;
 
         assert_eq!(history.len(), 2);
         assert_eq!(history[0].summary, "revision 4");

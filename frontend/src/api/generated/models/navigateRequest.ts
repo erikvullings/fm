@@ -25,6 +25,12 @@ export interface NavigateRequest {
      */
   requestId: string;
   /**
+     * Whether the pane's git-status column is visible, carried over from
+     * the navigating tab's table configuration so the backend can skip the
+     * git2 status walk entirely when nothing will show it.
+     */
+  showGitStatus?: boolean;
+  /**
      * Whether hidden entries should be included, carried over from the
      * navigating tab's current view so navigation doesn't silently reset it.
      */

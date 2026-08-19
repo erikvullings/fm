@@ -25,6 +25,15 @@ export interface ListDirectoryRequest {
      * late response can be recognised and dropped.
      */
   requestId: string;
+  /**
+     * Whether the pane's git-status column is visible, carried over from
+     * the requesting tab's table configuration. The backend never computes
+     * git working-tree status (a per-repository `git2` walk) when this is
+     * `false` — most panes never show the column, so this keeps every
+     * ordinary listing free of git2 work entirely rather than relying on
+     * caching alone to hide its cost.
+     */
+  showGitStatus?: boolean;
   /** Whether hidden entries should be included. */
   showHidden?: boolean;
   /** Sort descriptors applied by the backend to the returned page. */

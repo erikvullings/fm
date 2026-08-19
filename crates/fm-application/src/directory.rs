@@ -59,6 +59,7 @@ struct PaneRequest {
     revision: u64,
     show_hidden: bool,
     folders_first: bool,
+    show_git_status: bool,
     sort: Vec<SortDescriptorDto>,
     snapshot: Option<DirectorySnapshot>,
     /// The complete, filtered, globally-sorted listing for the pane's current directory,
@@ -144,6 +145,7 @@ impl DirectoryService {
                         .is_some_and(|snapshot| snapshot.location == location)
                         && state.show_hidden == request.show_hidden
                         && state.folders_first == request.folders_first
+                        && state.show_git_status == request.show_git_status
                         && state.sort == request.sort
                 });
             let (watch_cancellation, snapshot, full_entries) = if continuing_same_listing {
@@ -166,6 +168,7 @@ impl DirectoryService {
                     revision,
                     show_hidden: request.show_hidden,
                     folders_first: request.folders_first,
+                    show_git_status: request.show_git_status,
                     sort: request.sort.clone(),
                     snapshot,
                     full_entries,
@@ -188,7 +191,14 @@ impl DirectoryService {
             None => {
                 let mut entries =
                     list_all(provider.clone(), &location, cancellation.clone()).await?;
-                annotate_git_status(&self.git_status, &location, &mut entries, false);
+                annotate_git_status(
+                    &self.git_status,
+                    &location,
+                    &mut entries,
+                    false,
+                    request.show_git_status,
+                )
+                .await;
                 if !request.show_hidden {
                     entries.retain(|entry| !entry.hidden);
                 }
@@ -256,6 +266,7 @@ impl DirectoryService {
                 pane_id,
                 show_hidden: request.show_hidden,
                 folders_first: request.folders_first,
+                show_git_status: request.show_git_status,
                 sort: request.sort,
                 cancellation: watch_cancellation,
                 receiver,
@@ -271,7 +282,7 @@ impl DirectoryService {
 
     /// Navigates a pane to a location, cancelling any older pane request.
     ///
-    /// The view options (`sort`/`show_hidden`/`folders_first`) are carried over
+    /// The view options (`sort`/`show_hidden`/`folders_first`/`show_git_status`) are carried over
     /// from the navigating tab's current view (the caller is expected to
     /// populate them from its own state) so that pushing a new location -
     /// e.g. via a favourite, breadcrumb, or opening a subfolder - doesn't
@@ -289,6 +300,7 @@ impl DirectoryService {
             sort: request.sort,
             show_hidden: request.show_hidden,
             folders_first: request.folders_first,
+            show_git_status: request.show_git_status,
         })
         .await
     }
@@ -323,6 +335,7 @@ impl DirectoryService {
                         pane_id: *pane_id,
                         show_hidden: state.show_hidden,
                         folders_first: state.folders_first,
+                        show_git_status: state.show_git_status,
                         sort: state.sort.clone(),
                         cancellation: state.cancellation.clone(),
                         receiver: broadcast::channel(1).1,
@@ -345,7 +358,14 @@ impl DirectoryService {
                 Ok(entries) => entries,
                 Err(_) => continue,
             };
-            annotate_git_status(&self.git_status, &refresh.location, &mut entries, true);
+            annotate_git_status(
+                &self.git_status,
+                &refresh.location,
+                &mut entries,
+                true,
+                refresh.show_git_status,
+            )
+            .await;
             publish_changes(&refresh, ProviderChange::ResetRequired, entries).await;
         }
     }
@@ -374,7 +394,7 @@ impl DirectoryService {
     /// outside a git working tree, or files with no commits yet - never an error, since "no
     /// history to show" is a normal, expected outcome, not a failure.
     #[must_use]
-    pub fn git_history(&self, location: &fm_domain::Location) -> Vec<fm_domain::GitLogEntry> {
+    pub async fn git_history(&self, location: &fm_domain::Location) -> Vec<fm_domain::GitLogEntry> {
         if location.provider_id.as_str() != "local" {
             return Vec::new();
         }
@@ -383,6 +403,7 @@ impl DirectoryService {
         };
         self.git_status
             .file_history(&path, GIT_HISTORY_RESULT_LIMIT, GIT_HISTORY_SCAN_LIMIT)
+            .await
     }
 
     /// Marks whether a pane is currently in the foreground, so a
@@ -589,6 +610,7 @@ struct PaneWatch {
     pane_id: PaneId,
     show_hidden: bool,
     folders_first: bool,
+    show_git_status: bool,
     sort: Vec<SortDescriptorDto>,
     cancellation: CancellationToken,
     receiver: broadcast::Receiver<ProviderChange>,
@@ -620,7 +642,14 @@ fn spawn_pane_watch(mut watch: PaneWatch) {
                 Err(VfsError::Cancelled) => break,
                 Err(_) => continue,
             };
-            annotate_git_status(&watch.git_status, &watch.location, &mut entries, true);
+            annotate_git_status(
+                &watch.git_status,
+                &watch.location,
+                &mut entries,
+                true,
+                watch.show_git_status,
+            )
+            .await;
             publish_changes(&watch, change, entries).await;
         }
         watch.watches.release(&watch.location).await;
@@ -635,13 +664,19 @@ fn spawn_pane_watch(mut watch: PaneWatch) {
 /// `force_refresh` drops any cached status for `location`'s working tree
 /// before recomputing; callers set it on a filesystem-watch-triggered
 /// relist, so a real change is never served stale.
-fn annotate_git_status(
+///
+/// A no-op entirely when `show_git_status` is `false` — most panes never
+/// show the git-status column (it's opt-in and hidden by default), so this
+/// keeps an ordinary listing free of any `git2` work rather than relying on
+/// [`GitStatusService`]'s caching alone to make that work cheap.
+async fn annotate_git_status(
     git_status: &GitStatusService,
     location: &fm_domain::Location,
     entries: &mut [fm_domain::EntrySummary],
     force_refresh: bool,
+    show_git_status: bool,
 ) {
-    if location.provider_id.as_str() != "local" {
+    if !show_git_status || location.provider_id.as_str() != "local" {
         return;
     }
     let Ok(dir) = location.to_native_path() else {
@@ -650,7 +685,7 @@ fn annotate_git_status(
     if force_refresh {
         git_status.invalidate(&dir);
     }
-    git_status.annotate(&dir, entries);
+    git_status.annotate(&dir, entries).await;
 }
 
 async fn list_all(
@@ -1025,6 +1060,7 @@ mod tests {
             sort: Vec::new(),
             show_hidden: true,
             folders_first: false,
+            show_git_status: true,
         }
     }
 
@@ -1687,6 +1723,7 @@ mod tests {
                 sort: Vec::new(),
                 show_hidden: true,
                 folders_first: false,
+                show_git_status: false,
             })
             .await
             .expect("navigate must succeed");
@@ -1928,8 +1965,8 @@ mod tests {
         assert_eq!(tracked.git_status, Some(fm_domain::GitFileStatus::Modified));
     }
 
-    #[test]
-    fn git_history_returns_commits_touching_a_tracked_file() {
+    #[tokio::test]
+    async fn git_history_returns_commits_touching_a_tracked_file() {
         let root = tempfile::tempdir().expect("temporary directory");
         std::fs::write(root.path().join("tracked.txt"), b"a").expect("write tracked file");
         init_git_repo(root.path());
@@ -1940,15 +1977,15 @@ mod tests {
         let location =
             Location::from_native_path(&root.path().join("tracked.txt")).expect("local location");
 
-        let history = service.git_history(&location);
+        let history = service.git_history(&location).await;
 
         assert_eq!(history.len(), 1);
         assert_eq!(history[0].summary, "initial");
         assert_eq!(history[0].author_name, "Test");
     }
 
-    #[test]
-    fn git_history_of_a_non_git_file_is_empty() {
+    #[tokio::test]
+    async fn git_history_of_a_non_git_file_is_empty() {
         let root = tempfile::tempdir().expect("temporary directory");
         std::fs::write(root.path().join("plain.txt"), b"a").expect("write plain file");
 
@@ -1958,15 +1995,15 @@ mod tests {
         let location =
             Location::from_native_path(&root.path().join("plain.txt")).expect("local location");
 
-        assert!(service.git_history(&location).is_empty());
+        assert!(service.git_history(&location).await.is_empty());
     }
 
-    #[test]
-    fn git_history_of_a_non_local_provider_is_empty() {
+    #[tokio::test]
+    async fn git_history_of_a_non_local_provider_is_empty() {
         let providers = ProviderRegistry::new();
         let service = DirectoryService::new(providers);
         let location = Location::new(ProviderId::new("sftp"), "sftp://host/tracked.txt");
 
-        assert!(service.git_history(&location).is_empty());
+        assert!(service.git_history(&location).await.is_empty());
     }
 }

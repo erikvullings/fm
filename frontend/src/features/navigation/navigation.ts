@@ -52,6 +52,13 @@ export interface NavigationControllerOptions {
   /** Prompts for a session-only archive password; resolves false when cancelled. */
   readonly requestArchivePassword?: (location: Location, invalid: boolean) => Promise<boolean>;
   /**
+   * Whether the git-status column is currently visible. The backend never computes git
+   * working-tree status (a `git2` walk that can be expensive on a large repository) when this
+   * is `false`, so most listings pay nothing for it at all. Omit to always send `false`
+   * (the column's own default).
+   */
+  readonly getShowGitStatusColumn?: () => boolean;
+  /**
    * `preferredCursorName`, when set, is the entry name the pane's cursor
    * should land on instead of the listing's first entry (e.g. the child
    * directory just navigated away from via `parent()`).
@@ -279,19 +286,20 @@ export function createNavigationController(
   }
 
   /**
-   * The subset of a tab's view (`sort`/`showHidden`/`foldersFirst`) that should be carried
-   * over into a fresh listing/navigation request, so pushing a new location - e.g. via a
-   * favourite, breadcrumb, or opening a subfolder - doesn't silently reset the tab back to
+   * The subset of a tab's view (`sort`/`showHidden`/`foldersFirst`/`showGitStatus`) that should
+   * be carried over into a fresh listing/navigation request, so pushing a new location - e.g.
+   * via a favourite, breadcrumb, or opening a subfolder - doesn't silently reset the tab back to
    * backend default view settings.
    */
   function viewOptionsFor(
     tab: TabProjection | undefined,
-  ): Pick<ListDirectoryRequest, 'sort' | 'showHidden' | 'foldersFirst'> {
+  ): Pick<ListDirectoryRequest, 'sort' | 'showHidden' | 'foldersFirst' | 'showGitStatus'> {
     return {
       ...(tab?.view.sort === undefined ? {} : { sort: tab.view.sort }),
       ...(tab === undefined
         ? {}
         : { showHidden: tab.view.showHidden, foldersFirst: tab.view.foldersFirst }),
+      showGitStatus: options.getShowGitStatusColumn?.() ?? false,
     };
   }
 

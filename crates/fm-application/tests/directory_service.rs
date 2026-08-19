@@ -113,6 +113,7 @@ fn request(pane_id: PaneId, location: &Location) -> ListDirectoryRequest {
         sort: Vec::new(),
         show_hidden: true,
         folders_first: false,
+        show_git_status: false,
     }
 }
 
