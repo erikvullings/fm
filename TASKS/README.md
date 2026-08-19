@@ -131,6 +131,9 @@ Looking at and editing file contents without leaving the app.
 - [ ] 0100 Streaming CSV and Excel file viewer subsystem
 - [ ] 0141 Archive summary preview *(split out of 0071)*
 - [ ] 0142 Plugin-contributed preview renderers *(split out of 0071)*
+- [ ] 0149 Saved Multi-Rename presets *(needs 0072; quick win layered on the existing rule engine)*
+- [ ] 0150 Video playback in the F3 Lister viewer *(needs 0088; native `<video>`, mirrors the
+  existing `<audio>` path — see the task for the large-file caveat)*
 
 ## Metadata, icons & views
 
@@ -180,6 +183,9 @@ cloud and network locations, and the connection framework underneath them.
 - [x] 0108 Cross-provider transfer planning *(needs 0104, 0106)*
 - [ ] 0138 OS-level "Mount share…" action *(needs 0102; low priority — only if OS-native mounting
   causes friction)*
+- [ ] 0146 S3-compatible object storage provider *(needs 0103, 0108, 0109 — unlike 0110/0111, no
+  OS mount covers this)*
+- [ ] 0147 WebDAV provider *(needs 0103, 0108, 0109 — same reasoning as 0146)*
 
 **Parked (freezer)** — not declined outright, just not planned near-term; revisit only if a
 concrete need surfaces:
@@ -211,6 +217,8 @@ behavior.
 - [ ] 0131 Windows native menu bar *(split out of 0060; hook-point-only, mirrors the macOS 0058
   implementation)*
 - [ ] 0137 Services menu (macOS) / "Send to" (Windows) integration
+- [ ] 0148 Application deleter (macOS) *(needs 0059, 0061; macOS-only — Windows/Linux already have
+  their own uninstall conventions)*
 
 ## Settings & workspace management
 
