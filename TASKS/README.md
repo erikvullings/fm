@@ -75,7 +75,7 @@ The dual-pane shell: layout, panes, tabs, sorting, selection, and finding things
 - [x] 0089 Content search across files
 - [x] 0090 Total Commander-style selection toggles (invert, select/deselect by mask)
 - [x] 0144 Volumes in Favourites/Go menu, plus Go menu Servers/Cloud/Network sections
-- [ ] 0139 Directory tree dialog / sidebar tree view *(split out of 0129)*
+- [x] 0139 Directory tree dialog / sidebar tree view *(split out of 0129)*
 
 ## File operations
 
