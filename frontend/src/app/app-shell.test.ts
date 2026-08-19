@@ -157,6 +157,26 @@ describe('AppShell', () => {
     expect(activePane?.querySelector('.fm-cursor-row')?.textContent).toContain('report.pdf');
   });
 
+  it('places the cursor on the ".." row when entering an empty directory', async () => {
+    mountShell('mock');
+
+    await vi.waitFor(() => expect(root.textContent).toContain('Empty'));
+    const empty = [...root.querySelectorAll<HTMLElement>('.fm-directory-row')].find((row) =>
+      row.textContent?.includes('Empty'),
+    );
+    empty?.click();
+    m.redraw.sync();
+    const activePane = empty?.closest<HTMLElement>('.fm-pane');
+    activePane?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+
+    // The directory itself has no entries, but the table still renders a synthetic ".." row
+    // (there's nothing else to land the keyboard cursor on) - regression test for the cursor
+    // silently disappearing instead of landing there.
+    await vi.waitFor(() =>
+      expect(activePane?.querySelector('.fm-cursor-row')?.textContent).toContain('..'),
+    );
+  });
+
   it('keeps keyboard focus and the active pane together after Tab', async () => {
     mountShell('mock');
     await vi.waitFor(() => expect(root.querySelectorAll('.fm-workspace-pane')).toHaveLength(2));
