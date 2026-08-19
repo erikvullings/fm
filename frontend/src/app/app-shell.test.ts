@@ -1355,6 +1355,56 @@ describe('AppShell', () => {
     expect(startNativeDrag).toHaveBeenCalledWith([{ providerId: 'file', uri: 'mock:///.env' }]);
   });
 
+  it('defaults an in-app drag to move even when routed through the native drag host', async () => {
+    const client = new MockFileManagerClient();
+    vi.spyOn(client, 'getRuntimeCapabilities').mockResolvedValue({
+      ...(await client.getRuntimeCapabilities()),
+      nativeDragOut: true,
+      platform: 'macos',
+      runtime: 'tauri',
+    });
+    let nativeDropListener:
+      | ((drop: {
+          locations: readonly Location[];
+          position: { readonly x: number; readonly y: number };
+        }) => void)
+      | undefined;
+    vi.spyOn(client, 'subscribeNativeFileDrops').mockImplementation(async (listener) => {
+      nativeDropListener = listener;
+      return () => undefined;
+    });
+    vi.spyOn(client, 'startNativeDrag').mockResolvedValue(undefined);
+    const startOperation = vi.spyOn(client, 'startOperation');
+    m.mount(root, { view: () => m(AppShell, { runtime: 'tauri', client }) });
+    await vi.waitFor(() => expect(root.textContent).toContain('report.pdf'));
+
+    const source = [...root.querySelectorAll<HTMLElement>('.fm-directory-row')].find((candidate) =>
+      candidate.textContent?.includes('.env'),
+    );
+    const target = [...root.querySelectorAll<HTMLElement>('.fm-directory-row')].find((candidate) =>
+      candidate.textContent?.includes('report.pdf'),
+    );
+    source?.click();
+    source?.dispatchEvent(new Event('dragstart', { bubbles: true, cancelable: true }));
+
+    Object.defineProperty(document, 'elementFromPoint', {
+      configurable: true,
+      value: vi.fn(() => target ?? null),
+    });
+    nativeDropListener?.({
+      locations: [{ providerId: 'file', uri: 'mock:///.env' }],
+      position: { x: 240, y: 120 },
+    });
+
+    await vi.waitFor(() => expect(startOperation).toHaveBeenCalledOnce());
+    expect(startOperation.mock.calls[0]?.[0]).toMatchObject({
+      type: 'move',
+      sources: [{ providerId: 'file', uri: 'mock:///.env' }],
+      destination: { uri: 'mock:///Documents' },
+      conflictPolicy: 'ask',
+    });
+  });
+
   it('copies a native file drop through the operation engine', async () => {
     const client = new MockFileManagerClient();
     vi.spyOn(client, 'getRuntimeCapabilities').mockResolvedValue({

@@ -66,3 +66,22 @@ from Finder/Explorer) and §33 step 10.
   and toolchain are absent (`lzma-sys`/`mlua-sys`). Interactive Finder and Explorer drag tests have
   not been performed in this non-interactive environment, so this task is returned to
   `in_progress` until both manual platform checks are recorded.
+- 2026-08-19 Claude: Fixed a bug found during manual verification: on desktop builds with
+  `nativeDragOut` enabled (macOS, Windows), every in-app drag — even a plain move between panes on
+  the same volume — was routed through the native OS drag session, and the drop handler forced
+  `copy` unconditionally for any drop that came back through that native round-trip, regardless of
+  modifier keys. In-app drags could never resolve to `move`. Root cause: `onDrop`/`onTabDrop` in
+  `frontend/src/features/workspace/pane-content-builder.ts` short-circuited on
+  `context.getNativeDropInProgress()` before consulting `operationForDrop`, and that flag was set
+  for every native-routed drop, not just genuine external ones. Fix: added a
+  `nativeDragSourceInternal` flag (set in `onDragStart` when a drag starts inside the app) and a
+  location-set comparison in `workspace-controller.ts`'s `subscribeNativeFileDrops` handler; the
+  drop is now only treated as external (forcing `copy`) when its locations don't match what this
+  window itself started dragging. In-app drags on native-drag-capable platforms now default to
+  `move`, matching non-native/browser builds; genuine drag-in from Finder/Explorer still forces
+  `copy` (existing behavior, still covered by the pre-existing "copies a native file drop" test).
+  Added a Vitest case ("defaults an in-app drag to move even when routed through the native drag
+  host") verifying `startOperation` receives `type: 'move'` for a same-window native-routed drag.
+  Full frontend Vitest: 1352 passed, 0 failed. `tsc --noEmit` clean. Manual Finder/Explorer
+  interactive drag tests still not recorded in this non-interactive environment; task remains
+  `in_progress` for that reason alone.

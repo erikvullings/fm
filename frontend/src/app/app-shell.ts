@@ -595,6 +595,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
   let platform: SelectionPlatform = 'unknown';
   let nativeDragOutSupported = false;
   let nativeDropInProgress = false;
+  let nativeDragSourceInternal = false;
   let draggedLocations: readonly Location[] = [];
   let workspaceRequest: AbortController | undefined;
   let unsubscribeEvents: (() => void) | undefined;
@@ -1420,6 +1421,11 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       unsubscribeNativeFileDrops = fn;
     },
     subscribeNativeFileDrops: (callback) => attrsClient.subscribeNativeFileDrops(callback),
+    getDraggedLocations: () => draggedLocations,
+    getNativeDragSourceInternal: () => nativeDragSourceInternal,
+    setNativeDragSourceInternal: (v) => {
+      nativeDragSourceInternal = v;
+    },
     setOpenTerminalSupported: (v) => {
       openTerminalSupported = v;
     },
@@ -1909,6 +1915,9 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     },
     setDraggedLocations: (locs) => {
       draggedLocations = locs;
+    },
+    setNativeDragSourceInternal: (v) => {
+      nativeDragSourceInternal = v;
     },
     setClipboardMessage: (msg) => {
       clipboardMessage = msg;

@@ -35,6 +35,9 @@ export interface WorkspaceControllerContext {
   getUnsubscribeNativeFileDrops(): (() => void) | undefined;
   setUnsubscribeNativeFileDrops(fn?: () => void): void;
   subscribeNativeFileDrops(callback: (drop: NativeFileDrop) => void): Promise<() => void>;
+  getDraggedLocations(): readonly Location[];
+  getNativeDragSourceInternal(): boolean;
+  setNativeDragSourceInternal(v: boolean): void;
   setOpenTerminalSupported(v: boolean): void;
   setNativeIconLoader(loader?: NativeIconLoader): void;
   setThumbnailLoader(loader?: ThumbnailLoader): void;
@@ -74,6 +77,13 @@ export interface WorkspaceController {
 
 function workspaceErrorMessage(error: unknown, fallback: string): string {
   return error instanceof Error ? error.message : fallback;
+}
+
+function locationsMatch(a: readonly Location[], b: readonly Location[]): boolean {
+  if (a.length !== b.length) return false;
+  const key = (location: Location): string => `${location.providerId} ${location.uri}`;
+  const remaining = new Set(a.map(key));
+  return b.every((location) => remaining.delete(key(location)));
 }
 
 export function createWorkspaceController(
@@ -160,6 +170,16 @@ export function createWorkspaceController(
       context.setNativeDragOutSupported(capabilities.nativeDragOut);
       if (capabilities.nativeDragOut && context.getUnsubscribeNativeFileDrops() === undefined) {
         const unsub = await context.subscribeNativeFileDrops((drop) => {
+          // A drag started in this window (dragging a selection between panes/tabs) still goes
+          // through the OS-level native drag session when `nativeDragOut` is on, so it round-trips
+          // through this same "native file drop" handler. Only a drop whose locations don't match
+          // what we ourselves started dragging is a genuine external drop (from Finder/Explorer),
+          // which forces `copy`; an in-app drag defaults to `move` like any other drag here.
+          const previousLocations = context.getDraggedLocations();
+          const wasInternalOrigin = context.getNativeDragSourceInternal();
+          context.setNativeDragSourceInternal(false);
+          const isInternalDrop =
+            wasInternalOrigin && locationsMatch(previousLocations, drop.locations);
           context.setDraggedLocations(drop.locations);
           const scale = window.devicePixelRatio || 1;
           const hit = document.elementFromPoint(drop.position.x / scale, drop.position.y / scale);
@@ -171,7 +191,7 @@ export function createWorkspaceController(
             context.redraw();
             return;
           }
-          context.setNativeDropInProgress(true);
+          context.setNativeDropInProgress(!isInternalDrop);
           try {
             target.dispatchEvent(new Event('drop', { bubbles: true, cancelable: true }));
           } finally {

@@ -99,7 +99,7 @@ engine, conflict handling, clipboard, drag-and-drop, comparison and checksums th
 - [x] 0075 Directory comparison and synchronization
 - [x] 0077 Checksums and duplicate-file detection
 - [x] 0093 Copy filename and path actions
-- [ ] 0062 Drag and drop within the app and with the OS *(in_progress — in-app and native
+- [x] 0062 Drag and drop within the app and with the OS *(in_progress — in-app and native
   drag-in/out implemented; interactive Finder/Explorer manual verification still outstanding)*
 
 ## Actions, shortcuts & command palette

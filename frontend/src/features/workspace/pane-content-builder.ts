@@ -133,6 +133,7 @@ export interface PaneContentContext {
   setAppState(state: AppState): void;
   setQuickFilterOpen(key: string, open: boolean): void;
   setDraggedLocations(locs: readonly Location[]): void;
+  setNativeDragSourceInternal(v: boolean): void;
   setClipboardMessage(msg: string | undefined): void;
   setMultiRenameOpen(open: boolean): void;
   setMultiRenameEntries(entries: readonly EntrySummary[]): void;
@@ -638,6 +639,7 @@ export function createPaneContentBuilder(
         context.setDraggedLocations(draggedEntries.map((entry) => entry.location));
         if (context.getNativeDragOutSupported()) {
           event.preventDefault();
+          context.setNativeDragSourceInternal(true);
           void client
             .startNativeDrag(draggedEntries.map((entry) => entry.location))
             .catch((error: unknown) => {
