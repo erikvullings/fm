@@ -602,13 +602,17 @@ pub(crate) async fn open_workspace_window(
 ) -> Result<(), String> {
     let label = workspace_window_label(workspace_id);
     let url = tauri::WebviewUrl::App(format!("index.html?workspaceId={workspace_id}").into());
-    tauri::WebviewWindowBuilder::new(&app, &label, url)
+    let builder = tauri::WebviewWindowBuilder::new(&app, &label, url)
         .title("Procyon")
-        .inner_size(1280.0, 800.0)
+        .inner_size(1280.0, 800.0);
+    // `title_bar_style`/`hidden_title` are macOS-only on `WebviewWindowBuilder` (mirrors the
+    // main window's `titleBarStyle`/`hiddenTitle` in tauri.conf.json, which Tauri itself only
+    // applies on macOS - this just replicates that for windows opened at runtime).
+    #[cfg(target_os = "macos")]
+    let builder = builder
         .title_bar_style(tauri::TitleBarStyle::Overlay)
-        .hidden_title(true)
-        .build()
-        .map_err(|error| error.to_string())?;
+        .hidden_title(true);
+    builder.build().map_err(|error| error.to_string())?;
     Ok(())
 }
 
