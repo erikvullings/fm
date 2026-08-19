@@ -1,4 +1,5 @@
 import m, { type FactoryComponent, type VnodeDOM } from 'mithril';
+import { chevronDownIcon, chevronRightIcon } from '../../components/tabler-icons';
 import { t } from '../../i18n';
 import type { Location } from '../../models';
 import { calculateVisibleWindow, scrollOffsetForIndex } from '../directory-table/windowing';
@@ -25,6 +26,13 @@ export interface DirectoryTreeAttrs {
   readonly onToggleExpand: (location: Location) => void;
   /** Navigates the active pane to `location`. */
   readonly onActivate: (location: Location) => void;
+  /** Tab (`direction: 1`) or Shift+Tab (`direction: -1`) pressed while the tree has focus - lets
+   * the caller move focus elsewhere (e.g. the next/previous pane) to complete a pane-tree cycle. */
+  readonly onTabOut?: (direction: -1 | 1) => void;
+  /** Registers a callback the caller can invoke to move DOM focus into the tree - e.g. right
+   * after Alt+F10 opens it, so arrow-key navigation works immediately without an extra click
+   * (mirrors `TerminalDrawer`'s `registerFocus`). Returns whether focus was actually moved. */
+  readonly registerFocus?: (focus: () => boolean) => void;
   readonly viewportHeight?: number;
   readonly overscan?: number;
   readonly label?: string;
@@ -43,6 +51,10 @@ export const DirectoryTree: FactoryComponent<DirectoryTreeAttrs> = () => {
   let scrollTop = 0;
   let focusedUri: string | undefined;
   let resizeObserver: ResizeObserver | undefined;
+
+  function clampIndex(index: number, length: number): number {
+    return Math.max(0, Math.min(length - 1, index));
+  }
 
   function moveFocusIntoView(
     rows: readonly FlatTreeNode[],
@@ -64,6 +76,13 @@ export const DirectoryTree: FactoryComponent<DirectoryTreeAttrs> = () => {
   }
 
   return {
+    oninit: ({ attrs }) => {
+      attrs.registerFocus?.(() => {
+        if (element === undefined) return false;
+        element.focus();
+        return true;
+      });
+    },
     view: ({ attrs }) => {
       const rows = flattenVisibleTree(attrs.root, attrs.state);
       const rowsByUri = new Map(rows.map((row, index) => [row.location.uri, index]));
@@ -114,21 +133,29 @@ export const DirectoryTree: FactoryComponent<DirectoryTreeAttrs> = () => {
               },
             },
             [
-              m(
-                'button.fm-tree-expand-toggle',
-                {
-                  type: 'button',
-                  tabindex: -1,
-                  'aria-hidden': 'true',
-                  disabled: !expandable,
-                  style: { visibility: expandable ? 'visible' : 'hidden' },
-                  onclick: (event: MouseEvent) => {
-                    event.stopPropagation();
-                    attrs.onToggleExpand(row.location);
-                  },
-                },
-                row.loading ? '…' : row.expanded ? '▾' : '▸',
-              ),
+              // The root has nothing to collapse into and no siblings to align with, so it skips
+              // the expand-toggle affordance entirely rather than reserving space for a hidden one.
+              row.depth === 0
+                ? undefined
+                : m(
+                    'button.fm-tree-expand-toggle',
+                    {
+                      type: 'button',
+                      tabindex: -1,
+                      'aria-hidden': 'true',
+                      disabled: !expandable,
+                      style: { visibility: expandable ? 'visible' : 'hidden' },
+                      onclick: (event: MouseEvent) => {
+                        event.stopPropagation();
+                        attrs.onToggleExpand(row.location);
+                      },
+                    },
+                    row.loading
+                      ? m('span.fm-tree-loading-spinner', { 'aria-hidden': 'true' })
+                      : row.expanded
+                        ? chevronDownIcon({ size: 14 })
+                        : chevronRightIcon({ size: 14 }),
+                  ),
               m('span.fm-tree-row-name', row.name),
               row.error === undefined
                 ? undefined
@@ -175,10 +202,11 @@ export const DirectoryTree: FactoryComponent<DirectoryTreeAttrs> = () => {
             event.preventDefault();
             switch (command.type) {
               case 'moveFocus': {
-                const next = rows[focusedIndex + command.offset];
+                const nextIndex = clampIndex(focusedIndex + command.offset, rows.length);
+                const next = rows[nextIndex];
                 if (next !== undefined) {
                   focusedUri = next.location.uri;
-                  moveFocusIntoView(rows, focusedIndex + command.offset, viewportHeight);
+                  moveFocusIntoView(rows, nextIndex, viewportHeight);
                 }
                 break;
               }
@@ -216,6 +244,13 @@ export const DirectoryTree: FactoryComponent<DirectoryTreeAttrs> = () => {
               }
               case 'activate':
                 attrs.onActivate(row.location);
+                break;
+              case 'moveFocusOut':
+                // Handled entirely here rather than relying on the event bubbling to a
+                // document-level listener - the tree sits outside any pane, so nothing else is
+                // listening for Tab on its behalf.
+                event.stopPropagation();
+                attrs.onTabOut?.(command.direction);
                 break;
             }
           },

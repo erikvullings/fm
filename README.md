@@ -356,7 +356,7 @@ even if Mission Control's own gesture isn't visibly triggered.
 | Focus Location bar | Ctrl+L | Cmd+L | |
 | Quick Filter | Ctrl+F | Cmd+F | |
 | Find Files | Alt+F7 | Option+F7 | |
-| Directory Tree sidebar | Alt+F10 | Option+F10 | Toggles a lazily-expanding tree of the active pane's provider, kept in sync with its current location in both directions. |
+| Directory Tree sidebar | Alt+F10 | Option+F10 | Toggles a lazily-expanding tree of the active pane's provider, kept in sync with its current location in both directions. Also available from the command palette. Tab/Shift+Tab cycle between the panes and the sidebar when it's open; the sidebar has its own close button too. |
 | New Tab | Ctrl+T | Cmd+T | Unavailable in browser runtime (browser reserves it). |
 | Close Tab | Ctrl+W | Cmd+W | Unavailable in browser runtime (browser reserves it). |
 | Close All Tabs | Ctrl+Shift+W | Cmd+Shift+W | |

@@ -21,20 +21,31 @@ export interface TreeFocusedRowState {
   readonly depth: number;
 }
 
+/** Rows moved per Page Up/Down, matching the directory table's own fixed page size
+ * (`pane.ts`'s `command.pages * 10`) rather than a viewport-height computation. */
+const PAGE_SIZE = 10;
+
 export type TreeKeyCommand =
-  | { readonly type: 'moveFocus'; readonly offset: -1 | 1 }
+  | { readonly type: 'moveFocus'; readonly offset: number }
   | { readonly type: 'moveFocusTo'; readonly edge: 'first' | 'last' }
   | { readonly type: 'expand' }
   | { readonly type: 'collapse' }
   | { readonly type: 'moveFocusToParent' }
   | { readonly type: 'moveFocusToFirstChild' }
-  | { readonly type: 'activate' };
+  | { readonly type: 'activate' }
+  /** Tab/Shift+Tab: leaves the tree entirely, e.g. to cycle into the next/previous pane. */
+  | { readonly type: 'moveFocusOut'; readonly direction: -1 | 1 };
 
 /** Converts a keyboard event into a semantic tree command without touching the DOM. */
 export function interpretTreeKey(
   event: TreeKeyEvent,
   row: TreeFocusedRowState,
 ): TreeKeyCommand | undefined {
+  // Tab/Shift+Tab is handled ahead of the general modifier guard below, since Shift is exactly
+  // what distinguishes its two directions.
+  if (event.key === 'Tab' && !event.ctrlKey && !event.metaKey && !event.altKey) {
+    return { type: 'moveFocusOut', direction: event.shiftKey ? -1 : 1 };
+  }
   if (event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) {
     return undefined;
   }
@@ -43,6 +54,10 @@ export function interpretTreeKey(
       return { type: 'moveFocus', offset: 1 };
     case 'ArrowUp':
       return { type: 'moveFocus', offset: -1 };
+    case 'PageDown':
+      return { type: 'moveFocus', offset: PAGE_SIZE };
+    case 'PageUp':
+      return { type: 'moveFocus', offset: -PAGE_SIZE };
     case 'Home':
       return { type: 'moveFocusTo', edge: 'first' };
     case 'End':

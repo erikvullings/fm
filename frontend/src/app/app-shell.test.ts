@@ -196,8 +196,15 @@ describe('AppShell', () => {
     // The active pane's current location (mock:///) is the tree's root itself here, so only the
     // root row is shown until it is expanded (lazy expansion) - it must be selected, though.
     expect(root.querySelector('.fm-directory-tree .fm-tree-row-selected')).not.toBeNull();
+    // Opening the sidebar moves DOM focus straight into it (scheduled via `requestAnimationFrame`,
+    // matching the terminal drawer's own focus-on-open pattern), so arrow-key navigation works
+    // immediately without an extra click.
+    const tree = root.querySelector<HTMLElement>('.fm-directory-tree');
+    await vi.waitFor(() => expect(document.activeElement).toBe(tree));
 
-    root.querySelector<HTMLButtonElement>('.fm-tree-expand-toggle')?.click();
+    // The root row has no expand-toggle affordance (it saves horizontal space instead), so
+    // expanding it goes through the keyboard, the same way any other node's ArrowRight would.
+    tree?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
     await vi.waitFor(() => {
       expect(root.querySelector('.fm-directory-tree')?.textContent).toContain('Documents');
     });
@@ -570,6 +577,33 @@ describe('AppShell', () => {
     m.redraw.sync();
     expect(root.querySelector('.fm-command-palette')).toBeNull();
     expect(document.activeElement).toBe(trigger);
+  });
+
+  it('toggles the directory-tree sidebar from the command palette (task 0139)', async () => {
+    const client = new MockFileManagerClient();
+    const invokeAction = vi.spyOn(client, 'invokeAction');
+    m.mount(root, { view: () => m(AppShell, { runtime: 'mock', client }) });
+    await vi.waitFor(() => expect(root.textContent).toContain('Documents'));
+
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'p', ctrlKey: true, bubbles: true }),
+    );
+    m.redraw.sync();
+
+    const input = root.querySelector<HTMLInputElement>('.fm-command-palette-input');
+    expect(input).not.toBeNull();
+    if (input !== null) {
+      input.value = 'directory tree';
+      input.dispatchEvent(new Event('input'));
+    }
+    m.redraw.sync();
+    input?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+    input?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+
+    // A purely frontend UI toggle - never reaches the backend action-invoke endpoint.
+    expect(invokeAction).not.toHaveBeenCalled();
+    await vi.waitFor(() => expect(root.querySelector('.fm-directory-tree')).not.toBeNull());
+    expect(root.querySelector('.fm-command-palette')).toBeNull();
   });
 
   it('opens F7 validation and selects the delta-added directory after creation', async () => {

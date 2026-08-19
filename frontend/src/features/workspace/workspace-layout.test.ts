@@ -240,6 +240,50 @@ describe('WorkspaceLayoutView keyboard navigation', () => {
     expect(document.activeElement).toBe(root.querySelector('[data-pane-id="right"] > .fm-pane'));
   });
 
+  it('offers onPaneCycleBoundary a chance to redirect focus when Tab wraps past the last pane', () => {
+    const onActivatePane = vi.fn<(paneId: PaneId) => void>();
+    const onPaneCycleBoundary = vi.fn(() => true);
+    mount(attrs({ onActivatePane, onPaneCycleBoundary }));
+    const right = root.querySelector<HTMLElement>('[data-pane-id="right"] > .fm-pane');
+    right?.focus();
+    onActivatePane.mockClear();
+
+    right?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }));
+
+    expect(onPaneCycleBoundary).toHaveBeenCalledOnce();
+    // The boundary handler claimed focus (e.g. the directory-tree sidebar), so the normal wrap
+    // back to the first pane must not also happen.
+    expect(onActivatePane).not.toHaveBeenCalled();
+  });
+
+  it('falls back to the normal wrap when onPaneCycleBoundary declines (or is unset)', () => {
+    const onActivatePane = vi.fn<(paneId: PaneId) => void>();
+    const onPaneCycleBoundary = vi.fn(() => false);
+    mount(attrs({ onActivatePane, onPaneCycleBoundary }));
+    const right = root.querySelector<HTMLElement>('[data-pane-id="right"] > .fm-pane');
+    right?.focus();
+    onActivatePane.mockClear();
+
+    right?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }));
+
+    expect(onPaneCycleBoundary).toHaveBeenCalledOnce();
+    expect(onActivatePane).toHaveBeenCalledExactlyOnceWith('left');
+  });
+
+  it('does not consult onPaneCycleBoundary for a Tab that stays within the pane cycle', () => {
+    const onActivatePane = vi.fn<(paneId: PaneId) => void>();
+    const onPaneCycleBoundary = vi.fn(() => true);
+    mount(attrs({ onActivatePane, onPaneCycleBoundary }));
+    const left = root.querySelector<HTMLElement>('[data-pane-id="left"] > .fm-pane');
+    left?.focus();
+    onActivatePane.mockClear();
+
+    left?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }));
+
+    expect(onPaneCycleBoundary).not.toHaveBeenCalled();
+    expect(onActivatePane).toHaveBeenCalledExactlyOnceWith('right');
+  });
+
   it('moves focus from a folder to an open terminal with Shift+Tab', () => {
     const onFocusTerminal = vi.fn(() => true);
     const onActivatePane = vi.fn<(paneId: PaneId) => void>();

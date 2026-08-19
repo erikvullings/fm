@@ -952,29 +952,37 @@ input[type="text"].fm-command-palette-input {
   opacity: 0.5;
 }
 
-.fm-pane[data-active="true"] .fm-selected-row {
+/* The filled/tinted treatment requires the pane to both be `activePaneId` (`data-active`) AND
+ * currently hold real DOM focus (`:focus-within`) - the two are usually in sync, except when
+ * focus moves to the directory-tree sidebar (task 0139) without changing which pane is "active"
+ * for command routing. In that case the pane below falls through to the outline-only rule
+ * further down, which is unconditional on focus - the same "not focused, but still showing
+ * where the cursor is" treatment used for the grid view's cursor tile. */
+.fm-pane[data-active="true"]:focus-within .fm-selected-row {
   background: color-mix(in srgb, var(--fm-selection) 18%, transparent);
   color: var(--fm-selected-row-text);
 }
 
-.fm-pane[data-active="true"] .fm-cursor-row:not(.fm-selected-row) {
+.fm-pane[data-active="true"]:focus-within .fm-cursor-row:not(.fm-selected-row) {
   background-color: color-mix(in srgb, var(--fm-accent) 48%, transparent);
   color: var(--fm-cursor-row-text);
 }
 
 /* The cursor row always gets a distinctive outline (Marta convention), regardless of whether
    it's also marked - so the cursor position stays visible without the tinted cursor background
-   above washing out the amber "selected" text color a marked row needs to keep. */
+   above washing out the amber "selected" text color a marked row needs to keep. Unlike the fill
+   rules above, this one is deliberately not gated on `:focus-within`: it is also what keeps the
+   cursor position visible in a pane that lost DOM focus to the directory-tree sidebar. */
 .fm-pane[data-active="true"] .fm-cursor-row {
   box-shadow: inset 0 0 0 1px var(--fm-accent);
 }
 
-[data-theme="dark"] .fm-pane[data-active="true"] .fm-selected-row {
+[data-theme="dark"] .fm-pane[data-active="true"]:focus-within .fm-selected-row {
   background: color-mix(in srgb, var(--fm-background) 55%, var(--fm-surface));
 }
 
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme]) .fm-pane[data-active="true"] .fm-selected-row {
+  :root:not([data-theme]) .fm-pane[data-active="true"]:focus-within .fm-selected-row {
     background: color-mix(in srgb, var(--fm-background) 55%, var(--fm-surface));
   }
 }

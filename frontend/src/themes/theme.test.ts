@@ -158,22 +158,27 @@ describe('theme stylesheet', () => {
   it('uses subtle selection backgrounds and a distinct brighter cursor highlight', () => {
     expect(themeCss).not.toMatch(/(?:^|\n)\.fm-selected-row\s*\{/);
     expect(themeCss).not.toMatch(/(?:^|\n)\.fm-cursor-row\s*\{/);
+    // The filled/tinted treatment additionally requires `:focus-within` (task 0139 follow-up):
+    // an "active" pane that lost real DOM focus to the directory-tree sidebar falls through to
+    // the unconditional box-shadow-only rule below instead.
     expect(themeCss).toMatch(
-      /\.fm-pane\[data-active="true"\]\s+\.fm-selected-row\s*\{[^}]*color:\s*var\(--fm-selected-row-text\)/s,
+      /\.fm-pane\[data-active="true"\]:focus-within\s+\.fm-selected-row\s*\{[^}]*color:\s*var\(--fm-selected-row-text\)/s,
     );
     expect(themeCss).toMatch(
-      /\.fm-pane\[data-active="true"\]\s+\.fm-selected-row\s*\{[^}]*background:[^}]*18%/s,
+      /\.fm-pane\[data-active="true"\]:focus-within\s+\.fm-selected-row\s*\{[^}]*background:[^}]*18%/s,
     );
     expect(themeCss).toMatch(
-      /\.fm-pane\[data-active="true"\]\s+\.fm-cursor-row:not\(\.fm-selected-row\)\s*\{[^}]*background-color:[^}]*48%[^}]*color:\s*var\(--fm-cursor-row-text\)/s,
+      /\.fm-pane\[data-active="true"\]:focus-within\s+\.fm-cursor-row:not\(\.fm-selected-row\)\s*\{[^}]*background-color:[^}]*48%[^}]*color:\s*var\(--fm-cursor-row-text\)/s,
     );
     // The cursor row keeps a distinctive outline even when it's also marked, so the mark's amber
-    // text color (above) isn't washed out by the cursor's own background/text override.
+    // text color (above) isn't washed out by the cursor's own background/text override - and,
+    // unlike the fill rules above, this one is deliberately not gated on `:focus-within`, so the
+    // cursor position stays visible in a pane that lost focus to the tree sidebar.
     expect(themeCss).toMatch(
       /\.fm-pane\[data-active="true"\]\s+\.fm-cursor-row\s*\{[^}]*box-shadow:[^}]*var\(--fm-accent\)/s,
     );
     expect(themeCss).toMatch(
-      /\[data-theme="dark"\][^}]*\.fm-pane\[data-active="true"\]\s+\.fm-selected-row\s*\{[^}]*background:/s,
+      /\[data-theme="dark"\][^}]*\.fm-pane\[data-active="true"\]:focus-within\s+\.fm-selected-row\s*\{[^}]*background:/s,
     );
   });
 

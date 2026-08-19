@@ -148,6 +148,18 @@ export const closeIcon = trustedStrokeIcon(
   'fm-icon-close',
 );
 
+/** "chevron-right" — collapsed expand/collapse state (directory-tree sidebar, task 0139). */
+export const chevronRightIcon = trustedStrokeIcon(
+  '<path d="M9 6l6 6l-6 6" />',
+  'fm-icon-chevron-right',
+);
+
+/** "chevron-down" — expanded expand/collapse state (directory-tree sidebar, task 0139). */
+export const chevronDownIcon = trustedStrokeIcon(
+  '<path d="M6 9l6 6l6 -6" />',
+  'fm-icon-chevron-down',
+);
+
 /** "eye-off" — hidden-entry indicator in the directory table's name column. */
 export const eyeOffIcon = trustedStrokeIcon(
   '<path d="M10.585 10.587a2 2 0 0 0 2.829 2.828" />' +

@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { EntrySummary, Location } from '../../models';
 import { DirectoryTree, type DirectoryTreeAttrs } from './directory-tree';
-import { createTreeChildrenState, withChildren, withExpanded } from './directory-tree-state';
+import { createTreeChildrenState, withChildren } from './directory-tree-state';
 
 let root: HTMLElement;
 
@@ -54,11 +54,14 @@ describe('DirectoryTree', () => {
     expect(rows[0]?.textContent).toContain('root');
   });
 
-  it('clicking the expand toggle on an unfetched node requests its children (lazy expansion)', () => {
+  it('clicking the expand toggle on an unfetched child node requests its children (lazy expansion)', () => {
     const onToggleExpand = vi.fn();
+    const state = withChildren(createTreeChildrenState(), 'file:///', [
+      directoryEntry('file:///alpha', 'alpha'),
+    ]);
     mount({
       root: TREE_ROOT,
-      state: createTreeChildrenState(),
+      state,
       onToggleExpand,
       onActivate: vi.fn(),
       viewportHeight: 200,
@@ -66,7 +69,19 @@ describe('DirectoryTree', () => {
 
     root.querySelector<HTMLButtonElement>('.fm-tree-expand-toggle')?.click();
 
-    expect(onToggleExpand).toHaveBeenCalledWith(location('file:///'));
+    expect(onToggleExpand).toHaveBeenCalledWith(location('file:///alpha'));
+  });
+
+  it('renders no expand-toggle affordance for the root row (task 0139 follow-up)', () => {
+    mount({
+      root: TREE_ROOT,
+      state: createTreeChildrenState(),
+      onToggleExpand: vi.fn(),
+      onActivate: vi.fn(),
+      viewportHeight: 200,
+    });
+
+    expect(root.querySelector('.fm-tree-expand-toggle')).toBeNull();
   });
 
   it('shows cached children once expanded, indented one level deeper', () => {
@@ -197,11 +212,12 @@ describe('DirectoryTree', () => {
     expect(rendered).toBeLessThan(501);
   });
 
-  it('shows a loading indicator for a node whose fetch is in flight', () => {
-    let state = createTreeChildrenState();
-    state = withExpanded(state, 'file:///', true);
+  it('shows a loading indicator for a child node whose fetch is in flight', () => {
+    let state = withChildren(createTreeChildrenState(), 'file:///', [
+      directoryEntry('file:///alpha', 'alpha'),
+    ]);
     // Simulate an in-flight fetch via the loading-uri path exercised by directory-tree-state.
-    state = { ...state, loadingUris: new Set(['file:///']) };
+    state = { ...state, loadingUris: new Set(['file:///alpha']) };
     mount({
       root: TREE_ROOT,
       state,
@@ -210,6 +226,69 @@ describe('DirectoryTree', () => {
       viewportHeight: 200,
     });
 
-    expect(root.querySelector('.fm-tree-expand-toggle')?.textContent).toBe('…');
+    expect(root.querySelector('.fm-tree-expand-toggle .fm-tree-loading-spinner')).not.toBeNull();
+  });
+
+  it('PageDown moves the cursor by a page, clamped to the last row, not just scrolling', () => {
+    const state = withChildren(
+      createTreeChildrenState(),
+      'file:///',
+      Array.from({ length: 3 }, (_, index) => directoryEntry(`file:///c${index}`, `c${index}`)),
+    );
+    mount({
+      root: TREE_ROOT,
+      state,
+      activeLocationUri: 'file:///',
+      onToggleExpand: vi.fn(),
+      onActivate: vi.fn(),
+      viewportHeight: 200,
+    });
+
+    const tree = root.querySelector<HTMLElement>('.fm-directory-tree');
+    tree?.dispatchEvent(new KeyboardEvent('keydown', { key: 'PageDown', bubbles: true }));
+    m.redraw.sync();
+
+    // Only 4 rows total (root + 3 children); a 10-row page jump clamps to the last one instead
+    // of doing nothing.
+    expect(tree?.getAttribute('aria-activedescendant')).toContain(encodeURIComponent('file:///c2'));
+  });
+
+  it('Tab/Shift+Tab calls onTabOut with the corresponding direction instead of scrolling focus', () => {
+    const onTabOut = vi.fn();
+    mount({
+      root: TREE_ROOT,
+      state: createTreeChildrenState(),
+      onToggleExpand: vi.fn(),
+      onActivate: vi.fn(),
+      onTabOut,
+      viewportHeight: 200,
+    });
+
+    const tree = root.querySelector<HTMLElement>('.fm-directory-tree');
+    tree?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }));
+    tree?.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Tab', shiftKey: true, bubbles: true }),
+    );
+
+    expect(onTabOut).toHaveBeenNthCalledWith(1, 1);
+    expect(onTabOut).toHaveBeenNthCalledWith(2, -1);
+  });
+
+  it('registerFocus lets the caller move DOM focus into the tree', () => {
+    let focus: (() => boolean) | undefined;
+    mount({
+      root: TREE_ROOT,
+      state: createTreeChildrenState(),
+      onToggleExpand: vi.fn(),
+      onActivate: vi.fn(),
+      registerFocus: (callback) => {
+        focus = callback;
+      },
+      viewportHeight: 200,
+    });
+
+    expect(document.activeElement).not.toBe(root.querySelector('.fm-directory-tree'));
+    expect(focus?.()).toBe(true);
+    expect(document.activeElement).toBe(root.querySelector('.fm-directory-tree'));
   });
 });

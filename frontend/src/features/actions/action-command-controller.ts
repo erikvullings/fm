@@ -82,6 +82,8 @@ export interface ActionCommandControllerContext {
   findDuplicates(): void;
   /** Opens the Properties dialog for the active pane's selection (task 0140). */
   openPropertiesForActivePane(): void;
+  /** Toggles the directory-tree sidebar (task 0139). */
+  toggleDirectoryTree(): void;
   redraw(): void;
 }
 
@@ -295,6 +297,10 @@ export function createActionCommandController(
     }
     if (action.id === 'core.showProperties') {
       context.openPropertiesForActivePane();
+      return;
+    }
+    if (action.id === 'client.toggleDirectoryTree') {
+      context.toggleDirectoryTree();
       return;
     }
     const paneId = contextParam.paneId;

@@ -145,3 +145,68 @@ Meaningfully sized (a new component, not a shortcut binding), and a commonly-exp
   for `list_children` specifically would be a reasonable follow-up. Type-ahead-select within the tree
   was not added (only arrow/expand/collapse/activate navigation, per the acceptance criteria's
   explicit list) - a plausible small follow-up mirroring `TypeaheadController` if wanted later.
+
+- 2026-08-19 claude: Follow-up pass on user-reported UX polish after manual testing.
+
+  **Frontend only, no backend changes.**
+  - **Focus-on-open + Page Up/Down**: `DirectoryTree` gained `registerFocus` (mirroring
+    `TerminalDrawer`'s pattern), called by `app-shell.ts`'s `toggleDirectoryTree()` via
+    `requestAnimationFrame` right after opening, so arrow keys work without an extra click.
+    `tree-keybindings.ts`'s `interpretTreeKey` now maps PageUp/PageDown to `moveFocus` with a
+    ±10 offset (matching `pane.ts`'s own fixed page size, not a viewport-height computation);
+    `directory-tree.ts` clamps the resulting index instead of no-op'ing past the list's ends.
+  - **No focus ring, dimmed originating pane**: `.fm-directory-tree` now sets `outline: none`
+    (matching `.fm-pane`'s convention - focus is conveyed by the focused/selected row instead).
+    Discovered via investigation that an inactive pane's cursor row previously had *no* visual
+    marker at all when a *different* pane held `workspace.activePaneId` - not something specific
+    to the tree. Fixed properly: `theme.css`'s filled/tinted cursor-row rules now additionally
+    require `:focus-within` on `.fm-pane[data-active="true"]`, so a pane that is still the
+    "active" pane for command routing but no longer holds real DOM focus (because focus moved to
+    the tree sidebar, or - as a side effect - to the other pane) falls through to the existing
+    unconditional outline-only `box-shadow` rule, the same "not focused, still showing the
+    cursor" treatment the grid view's cursor tile already used.
+  - **Tab/Shift+Tab 3-way loop**: `WorkspaceLayoutViewAttrs` gained `onPaneCycleBoundary?: () =>
+    boolean`, checked in `workspace-layout.ts`'s existing pane-to-pane Tab handler only when Tab
+    would wrap past the first/last pane in the split (not on every Tab) - if it returns `true`
+    (tree open, focus redirected there), the normal wrap is skipped. Leaving the tree is handled
+    entirely inside `DirectoryTree` itself (a new `moveFocusOut` `TreeKeyCommand`, since the tree
+    sits outside any pane and nothing else is listening for its Tab): Tab focuses
+    `workspace.paneOrder[0]`, Shift+Tab focuses the last pane, both via the existing
+    `globalKeydownHandlerContext.focusPane`.
+  - **Root row chrome**: root now renders no expand-toggle button at all (saves horizontal space
+    - it has nothing to collapse into). Non-root rows' expand/collapse glyph changed from a plain
+    text triangle character to two new vendored Tabler icons (`chevronRightIcon`/
+    `chevronDownIcon` in `components/tabler-icons.ts`, matching the existing
+    `trustedStrokeIcon` vendoring convention exactly); the loading state changed from a `'…'`
+    text glyph to a small CSS spinner (`.fm-tree-loading-spinner`).
+  - **Close button**: `app-shell.ts` now wraps `DirectoryTree` in a `.fm-directory-tree-sidebar`
+    with a small `.fm-directory-tree-header` above it (title + a `closeIcon` button calling the
+    same `toggleDirectoryTree()` used by Alt+F10), rather than adding sidebar chrome to the
+    presentational `DirectoryTree` component itself.
+  - **Command palette entry**: added a purely frontend-synthesized `ActionDescriptor`
+    (`id: 'client.toggleDirectoryTree'`, `defaultShortcuts: [{ key: 'F10', alt: true }]`) to
+    `actionsWithFavourites()`, following the exact precedent `favouriteActions()` already
+    established for non-backend palette entries - confirmed via investigation that neither the
+    Settings dialog nor the embedded-terminal toggle had ever been added to the palette this way,
+    so this establishes rather than follows an existing "keyboard-only toggle in the palette"
+    convention. Dispatch added as an early-return branch in `action-command-controller.ts`'s
+    `invokePaletteAction`, alongside the existing `core.favourite.*`/`core.showProperties`
+    special cases, via a new `ActionCommandControllerContext.toggleDirectoryTree()`.
+
+  **Verified**: `pnpm exec tsc --noEmit` clean; `biome check .` clean (same 3 pre-existing
+  `noDescendingSpecificity` warnings, none in touched files); full `pnpm exec vitest run`:
+  1351/1351 passing, zero flakes. Touched test files, each re-run individually and passing in
+  full: `tree-keybindings.test.ts` (15/15 — added PageUp/PageDown, Tab/Shift+Tab in both
+  directions, and modifier-guard rejection), `directory-tree.test.ts` (14/14 — root has no
+  toggle, lazy-expansion moved to a child fixture, PageDown clamping, `onTabOut` direction,
+  `registerFocus`), `workspace-layout.test.ts` (20/20 — added `onPaneCycleBoundary` claims
+  focus / declines / is not consulted mid-cycle), `app-shell.test.ts` (109/109 — extended the
+  existing Alt+F10 test with a focus-on-open assertion via `vi.waitFor` on
+  `document.activeElement`, added a new command-palette-toggle end-to-end test),
+  `theme.test.ts` (12/12 — updated the `:focus-within`-qualified selector regexes). Manual
+  browser verification was attempted again
+  (mock runtime) but blocked by the same unrelated dev server already holding the configured
+  port in this environment as during the original implementation pass - not safe to resolve by
+  killing another session's process. Relied on the DOM-level integration tests above (real
+  keyboard dispatch, `document.activeElement` assertions, full `AppShell` mount) instead of
+  eyes-on-screen confirmation - flagged here honestly, as before.

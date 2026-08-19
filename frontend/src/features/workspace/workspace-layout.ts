@@ -139,6 +139,11 @@ export interface WorkspaceLayoutViewAttrs {
   readonly onNewTab: (paneId: PaneId) => void;
   /** Moves focus into the terminal when it is visible for the active folder. */
   readonly onFocusTerminal?: () => boolean;
+  /** Called when Tab/Shift+Tab would otherwise wrap past the last/first pane in the split - lets
+   * the caller redirect focus to another UI surface (the directory-tree sidebar, task 0139)
+   * instead of wrapping directly back around the pane cycle. Returns whether it redirected
+   * focus; when it returns `false` (or is unset), the normal pane-to-pane wrap proceeds. */
+  readonly onPaneCycleBoundary?: () => boolean;
   /**
    * Lets the caller force-persist an in-flight debounced layout edit (e.g.
    * before switching workspaces) by handing it a callback registered once on
@@ -442,7 +447,14 @@ export const WorkspaceLayoutView: FactoryComponent<WorkspaceLayoutViewAttrs> = (
           const paneOrder = paneIdsInLayout(attrs.workspace.layout);
           const currentIndex = paneOrder.indexOf(paneId);
           const direction = event.shiftKey ? -1 : 1;
-          const nextIndex = (currentIndex + direction + paneOrder.length) % paneOrder.length;
+          const rawNextIndex = currentIndex + direction;
+          if (
+            (rawNextIndex < 0 || rawNextIndex >= paneOrder.length) &&
+            attrs.onPaneCycleBoundary?.() === true
+          ) {
+            return;
+          }
+          const nextIndex = (rawNextIndex + paneOrder.length) % paneOrder.length;
           const nextPaneId = paneOrder[nextIndex];
           if (nextPaneId !== undefined) {
             focusAndActivate(attrs, nextPaneId);

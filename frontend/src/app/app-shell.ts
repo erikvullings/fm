@@ -349,8 +349,25 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     }));
   }
 
+  /** Purely frontend UI toggles with no backend action-registry counterpart (task 0139),
+   * synthesized client-side the same way `favouriteActions` is - see `invokePaletteAction`'s
+   * `client.toggleDirectoryTree` branch for the dispatch side. */
+  function clientOnlyActions(): readonly ActionDescriptor[] {
+    return [
+      {
+        id: 'client.toggleDirectoryTree',
+        title: t('tree', 'toggleSidebar'),
+        description: t('tree', 'directoryTree'),
+        category: 'navigation',
+        defaultShortcuts: [{ key: 'F10', alt: true }],
+        contextRequirements: {},
+        source: { kind: 'core' },
+      },
+    ];
+  }
+
   function actionsWithFavourites(): readonly ActionDescriptor[] {
-    return [...localisedRegisteredActions(), ...favouriteActions()];
+    return [...localisedRegisteredActions(), ...clientOnlyActions(), ...favouriteActions()];
   }
 
   /** Every open tab across every pane, flattened for the native Window menu (task 0133). */
@@ -498,6 +515,8 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
    * cursor navigation works immediately, e.g. right after a filename search closes its dialog. */
   let focusPane: ((paneId: PaneId) => void) | undefined;
   let focusTerminal: (() => boolean) | undefined;
+  /** Registered by `DirectoryTree` (task 0139): moves DOM focus into the tree sidebar. */
+  let focusDirectoryTree: (() => boolean) | undefined;
   let commandPaletteOpen = false;
   const openTerminalLocations = new Set<string>();
   /** Directory-tree sidebar (task 0139): open/closed, lazily-fetched expansion/children cache,
@@ -1198,6 +1217,17 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     }
   }
 
+  /** Opens/closes the directory-tree sidebar (Alt+F10, and the command palette's "Toggle
+   * Directory Tree" entry, task 0139), moving DOM focus into it when it opens so arrow-key
+   * navigation works immediately without an extra click. */
+  function toggleDirectoryTree(): void {
+    treeSidebarOpen = !treeSidebarOpen;
+    if (treeSidebarOpen) {
+      syncDirectoryTreeToActiveLocation();
+      requestAnimationFrame(() => focusDirectoryTree?.());
+    }
+  }
+
   /** A short display label for the tree sidebar's root row - the host segment of a remote
    * provider's URI (e.g. `sftp://my-server/` -> "my-server"), or "/" for a local root. */
   function treeRootName(location: Location): string {
@@ -1616,10 +1646,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
         requestAnimationFrame(() => focusTerminal?.());
       }
     },
-    toggleDirectoryTree: () => {
-      treeSidebarOpen = !treeSidebarOpen;
-      if (treeSidebarOpen) syncDirectoryTreeToActiveLocation();
-    },
+    toggleDirectoryTree,
     redraw: () => m.redraw(),
     setSort: (paneId, sort) => {
       const liveWorkspace = workspace;
@@ -1830,6 +1857,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     calculateChecksums: () => checksumController.calculateChecksums(['sha256']),
     findDuplicates: () => checksumController.findDuplicates(),
     openPropertiesForActivePane: () => globalKeydownHandlerContext.openPropertiesForActivePane(),
+    toggleDirectoryTree,
     redraw: () => m.redraw(),
   };
 
@@ -2603,6 +2631,18 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
               const treeRoot = treeRootLocation;
               const activeLocationUri = activeDirectory()?.location.uri;
               return m('.fm-directory-tree-sidebar', [
+                m('.fm-directory-tree-header', [
+                  m('span', t('tree', 'directoryTree')),
+                  m(
+                    'button.fm-directory-tree-close',
+                    {
+                      type: 'button',
+                      'aria-label': t('tree', 'toggleSidebar'),
+                      onclick: toggleDirectoryTree,
+                    },
+                    closeIcon({ size: 13 }),
+                  ),
+                ]),
                 m(DirectoryTree, {
                   root: { location: treeRoot, name: treeRootName(treeRoot) },
                   state: treeState,
@@ -2615,6 +2655,17 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
                     const active = activeDirectory();
                     if (active === undefined) return;
                     void navigation?.navigate(active.paneId, location);
+                  },
+                  onTabOut: (direction) => {
+                    const paneOrder = workspace?.paneOrder;
+                    if (paneOrder === undefined || paneOrder.length === 0) return;
+                    const targetPaneId =
+                      direction === 1 ? paneOrder[0] : paneOrder[paneOrder.length - 1];
+                    if (targetPaneId !== undefined)
+                      globalKeydownHandlerContext.focusPane(targetPaneId);
+                  },
+                  registerFocus: (focus) => {
+                    focusDirectoryTree = focus;
                   },
                 } satisfies DirectoryTreeAttrs),
               ]);
@@ -2636,6 +2687,11 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
                   onCloseTab: (paneId, tabId) => tabController.requestCloseTab(paneId, tabId),
                   onNewTab: (paneId) => tabController.openTab(paneId),
                   onFocusTerminal: () => focusTerminal?.() ?? false,
+                  onPaneCycleBoundary: () => {
+                    if (!treeSidebarOpen) return false;
+                    focusDirectoryTree?.();
+                    return true;
+                  },
                   registerFlush: (flush) => {
                     flushPendingLayoutUpdate = flush;
                   },

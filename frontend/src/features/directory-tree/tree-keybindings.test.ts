@@ -21,6 +21,25 @@ describe('interpretTreeKey', () => {
     expect(interpretTreeKey(key('End'), row())).toEqual({ type: 'moveFocusTo', edge: 'last' });
   });
 
+  it('moves focus by a page on PageUp/PageDown, not just the scrollbar', () => {
+    expect(interpretTreeKey(key('PageDown'), row())).toEqual({ type: 'moveFocus', offset: 10 });
+    expect(interpretTreeKey(key('PageUp'), row())).toEqual({ type: 'moveFocus', offset: -10 });
+  });
+
+  it('leaves the tree on Tab/Shift+Tab, in the corresponding direction', () => {
+    expect(interpretTreeKey(key('Tab'), row())).toEqual({ type: 'moveFocusOut', direction: 1 });
+    expect(interpretTreeKey(key('Tab', { shiftKey: true }), row())).toEqual({
+      type: 'moveFocusOut',
+      direction: -1,
+    });
+  });
+
+  it('ignores Tab held with Ctrl/Cmd/Alt, since those are not the pane-cycle gesture', () => {
+    expect(interpretTreeKey(key('Tab', { ctrlKey: true }), row())).toBeUndefined();
+    expect(interpretTreeKey(key('Tab', { metaKey: true }), row())).toBeUndefined();
+    expect(interpretTreeKey(key('Tab', { altKey: true }), row())).toBeUndefined();
+  });
+
   describe('ArrowRight', () => {
     it('expands a collapsed node with unknown children', () => {
       expect(
