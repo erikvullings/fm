@@ -153,6 +153,9 @@ disk-usage visualization.
 - [ ] 0118 Integrate parallel-disk-usage with WinDirStat Treemap View
 - [ ] 0145 Surface Finder tags/Spotlight comment editing in the Properties dialog *(split out of
   0136; 0140 landed mid-task, after 0136's own standalone dialogs were already built)*
+- [ ] 0151 Fix Windows git-status/history: `canonicalize()` vs. `git2` path mismatch *(needs 0135;
+  surfaced 2026-08-19 once removing sccache from CI stopped masking real Windows test results —
+  diagnosed from source, needs verification on a real Windows machine)*
 
 ## Plugins & extensibility
 
