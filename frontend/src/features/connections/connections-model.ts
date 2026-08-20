@@ -12,15 +12,22 @@ import type {
 
 /** The `fm-domain` provider id every `sftp://` location carries (spec §6.5). */
 const SFTP_PROVIDER_ID = 'sftp';
+/** The `fm-domain` provider id every `webdav://` location carries (task 0147). */
+const WEBDAV_PROVIDER_ID = 'webdav';
 
 /**
  * Whether a connection can currently be browsed as a filesystem in a pane
- * (task 0104). SSH is the only kind with a real `FileSystemProvider`
- * (`fm-vfs-sftp`) so far - the other six kinds are honestly excluded rather
- * than offered as a dead click (spec §6, task 0103's Agent Notes).
+ * (task 0104, 0106, 0147). SSH, FTP/FTPS and WebDAV are the kinds with a real
+ * `FileSystemProvider` so far - the remaining kinds are honestly excluded
+ * rather than offered as a dead click (spec §6, task 0103's Agent Notes).
  */
 export function isBrowsable(connection: Connection): boolean {
-  return connection.kind === 'ssh' || connection.kind === 'ftp' || connection.kind === 'ftps';
+  return (
+    connection.kind === 'ssh' ||
+    connection.kind === 'ftp' ||
+    connection.kind === 'ftps' ||
+    connection.kind === 'webDav'
+  );
 }
 
 /** Builds the initial VFS location for any browsable remote connection. */
@@ -34,6 +41,14 @@ export function remoteRootLocation(connection: Connection): Location {
     return {
       providerId: 'ftp',
       uri: `${connection.configuration.kind}://${connection.id}${normalized}`,
+    };
+  }
+  if (connection.configuration.kind === 'webDav') {
+    const path = connection.configuration.pathPrefix?.trim() || '/';
+    const normalized = path.startsWith('/') ? path : `/${path}`;
+    return {
+      providerId: WEBDAV_PROVIDER_ID,
+      uri: `webdav://${connection.id}${normalized}`,
     };
   }
   throw new Error('connection is not browsable');

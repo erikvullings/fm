@@ -300,6 +300,7 @@ export * from './verificationStatusDto.ts';
 export * from './verifyChecksumFileRequestDto.ts';
 export * from './volumeCapacityDto.ts';
 export * from './volumeDto.ts';
+export * from './webDavAuthenticationSchemeDto.ts';
 export * from './webDavConnectionConfigurationDto.ts';
 export * from './webDavConnectionConfigurationDto';
 export * from './workspaceCommandDto.ts';

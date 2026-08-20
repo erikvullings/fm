@@ -21,6 +21,7 @@ import type {
   HostKeyPolicy,
   HostKeyProbe,
   SshAuthenticationMethod,
+  WebDavAuthenticationScheme,
 } from '../../models';
 import { defaultSshConfiguration } from '../../models/connection';
 import {
@@ -105,6 +106,13 @@ function authenticationOptions(): { id: SshAuthenticationMethod; label: string }
   ];
 }
 
+function webDavAuthenticationOptions(): { id: WebDavAuthenticationScheme; label: string }[] {
+  return [
+    { id: 'basic', label: 'Basic' },
+    { id: 'digest', label: 'Digest' },
+  ];
+}
+
 function hostKeyPolicyOptions(): { id: HostKeyPolicy; label: string }[] {
   return [
     { id: 'promptOnFirstUse', label: 'Prompt on first use' },
@@ -123,7 +131,13 @@ function defaultConfigurationFor(kind: ConnectionKind): ConnectionConfiguration 
     case 'oneDrive':
       return { kind: 'oneDrive', accountHint: null };
     case 'webDav':
-      return { kind: 'webDav', baseUrl: '' };
+      return {
+        kind: 'webDav',
+        baseUrl: '',
+        username: '',
+        authentication: 'basic',
+        pathPrefix: null,
+      };
     case 's3':
       return { kind: 's3', bucket: '', region: null, endpoint: null };
     case 'smb':
@@ -163,7 +177,11 @@ function formFromConnection(connection: Connection): FormState {
 
 /** Builds the write-only secret input for the current form state, or `undefined` if none was entered. */
 function secretInputFrom(form: FormState): ConnectionSecretInput | undefined {
-  if (form.configuration.kind === 'ftp' || form.configuration.kind === 'ftps') {
+  if (
+    form.configuration.kind === 'ftp' ||
+    form.configuration.kind === 'ftps' ||
+    form.configuration.kind === 'webDav'
+  ) {
     return form.secretPassword.length === 0
       ? undefined
       : { kind: 'password', password: form.secretPassword };
@@ -736,8 +754,40 @@ export const ConnectionsManager: FactoryComponent<ConnectionsManagerAttrs> = () 
         return m('.row', [
           m(TextInput, {
             label: 'Base URL',
+            placeholder: 'https://cloud.example.test/remote.php/dav/files/erik',
             value: configuration.baseUrl,
             oninput: (value: string) => updateConfiguration({ baseUrl: value }),
+            ...TECHNICAL_TEXT_ATTRS,
+          }),
+          m(TextInput, {
+            label: 'Username',
+            value: configuration.username,
+            oninput: (value: string) => updateConfiguration({ username: value }),
+            ...TECHNICAL_TEXT_ATTRS,
+          }),
+          m(Select<WebDavAuthenticationScheme>, {
+            label: 'Authentication',
+            checkedId: configuration.authentication,
+            options: webDavAuthenticationOptions(),
+            onchange: (value: WebDavAuthenticationScheme[]) => {
+              const next = value[0];
+              if (next !== undefined) updateConfiguration({ authentication: next });
+            },
+          }),
+          m(TextInput, {
+            label: 'Start folder (optional)',
+            value: configuration.pathPrefix ?? '',
+            oninput: (value: string) =>
+              updateConfiguration({ pathPrefix: value.length === 0 ? null : value }),
+            ...TECHNICAL_TEXT_ATTRS,
+          }),
+          m(PasswordInput, {
+            label: 'Password',
+            placeholder: 'Leave blank to keep the stored password',
+            value: form.secretPassword,
+            oninput: (value: string) => {
+              form.secretPassword = value;
+            },
             ...TECHNICAL_TEXT_ATTRS,
           }),
         ]);

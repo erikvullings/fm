@@ -2010,6 +2010,7 @@ dependencies = [
  "fm-vfs-ftp",
  "fm-vfs-local",
  "fm-vfs-sftp",
+ "fm-vfs-webdav",
  "futures",
  "git2",
  "image",
@@ -2486,6 +2487,32 @@ dependencies = [
  "tempfile",
  "tokio",
  "tokio-util",
+ "uuid",
+]
+
+[[package]]
+name = "fm-vfs-webdav"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "base64 0.22.1",
+ "bytes",
+ "chrono",
+ "fm-domain",
+ "fm-vfs",
+ "futures",
+ "md-5",
+ "percent-encoding",
+ "quick-xml",
+ "rand 0.10.2",
+ "rcgen",
+ "reqwest",
+ "rustls-platform-verifier",
+ "thiserror 2.0.20",
+ "tokio",
+ "tokio-rustls",
+ "tokio-util",
+ "url",
  "uuid",
 ]
 

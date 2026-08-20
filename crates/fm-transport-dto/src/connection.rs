@@ -125,12 +125,29 @@ pub struct OneDriveConnectionConfigurationDto {
     pub account_hint: Option<String>,
 }
 
-/// Minimal WebDAV configuration stub.
+/// WebDAV authentication scheme (mirrors
+/// `fm_connections::WebDavAuthenticationScheme`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub enum WebDavAuthenticationSchemeDto {
+    /// HTTP Basic authentication.
+    Basic,
+    /// HTTP Digest authentication.
+    Digest,
+}
+
+/// WebDAV (RFC 4918) configuration.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct WebDavConnectionConfigurationDto {
     /// The WebDAV collection's base URL.
     pub base_url: String,
+    /// Login name.
+    pub username: String,
+    /// Authentication scheme to use against the server.
+    pub authentication: WebDavAuthenticationSchemeDto,
+    /// Optional path prefix under `base_url` to open by default.
+    pub path_prefix: Option<String>,
 }
 
 /// Minimal S3-compatible configuration stub.

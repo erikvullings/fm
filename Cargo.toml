@@ -48,13 +48,16 @@ fm-vfs = { path = "crates/fm-vfs" }
 fm-vfs-local = { path = "crates/fm-vfs-local" }
 fm-vfs-ftp = { path = "crates/fm-vfs-ftp" }
 fm-vfs-sftp = { path = "crates/fm-vfs-sftp" }
+fm-vfs-webdav = { path = "crates/fm-vfs-webdav" }
 
 # External dependencies. Versions are coordinated here; member crates opt in
 # with `dependency.workspace = true`.
 async-trait = "0.1.91"
 axum = "0.8.9"
+base64 = "0.22.1"
 bitflags = "2.13.1"
 blake3 = "1.8.6"
+bytes = "1.12.1"
 crc32fast = "1.5.0"
 chrono = { version = "0.4.45", features = ["serde"] }
 clap = { version = "4.6.4", features = ["derive", "env"] }
@@ -81,6 +84,8 @@ mlua = { version = "0.12.0", features = [
 md-5 = "0.11.0"
 mp4 = "0.14.0"
 notify = "8.2.0"
+percent-encoding = "2.3.2"
+quick-xml = "0.41.0"
 objc2 = "0.6.4"
 objc2-app-kit = "0.3.2"
 objc2-foundation = "0.3.2"
@@ -91,6 +96,7 @@ regex = "1.11.3"
 reqwest = { version = "0.13.4", default-features = false, features = [
   "json",
   "rustls",
+  "stream",
 ] }
 russh = "0.62"
 russh-sftp = "2.4"
@@ -124,6 +130,7 @@ tokio = { version = "1.53.1", features = [
 tokio-util = "0.7.19"
 tower = "0.5.3"
 governor = "0.10.4"
+url = "2.5.8"
 axum-server = { version = "0.7", features = ["tls-rustls"] }
 tower-http = { version = "0.7.0", features = [
   "trace",

@@ -52,7 +52,7 @@ pub use connection::{
     FtpConnectionConfigurationDto, HostKeyPolicyDto, HostKeyProbeDto,
     OneDriveConnectionConfigurationDto, S3ConnectionConfigurationDto,
     SmbConnectionConfigurationDto, SshAuthenticationMethodDto, SshConnectionConfigurationDto,
-    UpdateConnectionRequestDto, WebDavConnectionConfigurationDto,
+    UpdateConnectionRequestDto, WebDavAuthenticationSchemeDto, WebDavConnectionConfigurationDto,
 };
 pub use diagnostics::{
     ConnectionStateDto, DiagnosticErrorDto, DiagnosticsDto, OperationQueueStatusDto,

@@ -39,7 +39,7 @@ distinct from the `WATCH` capability bit (which only says `watch` can be *called
   without another redesign of this abstraction.
 - `Poll { interval }` — no push notifications exist; `fm-application`'s `WatchHub` polls `list`
   itself and diffs the result, rather than the provider faking a `watch` stream it cannot honestly
-  implement. SFTP (task 0104) and FTP/FTPS (task 0106) both report this, at
+  implement. SFTP (task 0104), FTP/FTPS (task 0106) and WebDAV (task 0147) all report this, at
   `fm_vfs::CONSERVATIVE_POLL_INTERVAL` (20s).
 - `Unsupported` — no change tracking at all (e.g. search results, archives); the location is never
   watched or polled, matching the pre-0109 behavior for such providers.

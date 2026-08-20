@@ -13,6 +13,7 @@ import type { SmbConnectionConfigurationDto } from '../api/generated/models/smbC
 import type { SshAuthenticationMethodDto } from '../api/generated/models/sshAuthenticationMethodDto';
 import type { SshConnectionConfigurationDto } from '../api/generated/models/sshConnectionConfigurationDto';
 import type { UpdateConnectionRequestDto } from '../api/generated/models/updateConnectionRequestDto';
+import type { WebDavAuthenticationSchemeDto } from '../api/generated/models/webDavAuthenticationSchemeDto';
 import type { WebDavConnectionConfigurationDto } from '../api/generated/models/webDavConnectionConfigurationDto';
 
 // Re-exported as plain aliases (spec §5.2, task 0103): the backend DTOs are
@@ -51,6 +52,9 @@ export type OneDriveConnectionConfiguration = OneDriveConnectionConfigurationDto
 
 /** Minimal WebDAV connection configuration. */
 export type WebDavConnectionConfiguration = WebDavConnectionConfigurationDto;
+
+/** How a WebDAV connection authenticates (task 0147). */
+export type WebDavAuthenticationScheme = WebDavAuthenticationSchemeDto;
 
 /** Minimal S3-compatible connection configuration. */
 export type S3ConnectionConfiguration = S3ConnectionConfigurationDto;

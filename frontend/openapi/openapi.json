@@ -5141,16 +5141,41 @@
         ],
         "type": "object"
       },
+      "WebDavAuthenticationSchemeDto": {
+        "description": "WebDAV authentication scheme (mirrors\n`fm_connections::WebDavAuthenticationScheme`).",
+        "enum": [
+          "basic",
+          "digest"
+        ],
+        "type": "string"
+      },
       "WebDavConnectionConfigurationDto": {
-        "description": "Minimal WebDAV configuration stub.",
+        "description": "WebDAV (RFC 4918) configuration.",
         "properties": {
+          "authentication": {
+            "$ref": "#/components/schemas/WebDavAuthenticationSchemeDto",
+            "description": "Authentication scheme to use against the server."
+          },
           "baseUrl": {
             "description": "The WebDAV collection's base URL.",
+            "type": "string"
+          },
+          "pathPrefix": {
+            "description": "Optional path prefix under `base_url` to open by default.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "username": {
+            "description": "Login name.",
             "type": "string"
           }
         },
         "required": [
-          "baseUrl"
+          "baseUrl",
+          "username",
+          "authentication"
         ],
         "type": "object"
       },

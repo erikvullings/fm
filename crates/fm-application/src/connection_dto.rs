@@ -13,7 +13,7 @@ use fm_connections::{
     ConnectionConfiguration, ConnectionKind, ConnectionProfile, ConnectionStatus,
     FtpConnectionConfiguration, HostKeyPolicy, OneDriveConnectionConfiguration,
     S3ConnectionConfiguration, SmbConnectionConfiguration, SshAuthenticationMethod,
-    SshConnectionConfiguration, WebDavConnectionConfiguration,
+    SshConnectionConfiguration, WebDavAuthenticationScheme, WebDavConnectionConfiguration,
 };
 use fm_credentials::SecretMaterial;
 use fm_transport_dto::{
@@ -21,7 +21,7 @@ use fm_transport_dto::{
     ConnectionStatusDto, FtpConnectionConfigurationDto, HostKeyPolicyDto,
     OneDriveConnectionConfigurationDto, S3ConnectionConfigurationDto,
     SmbConnectionConfigurationDto, SshAuthenticationMethodDto, SshConnectionConfigurationDto,
-    WebDavConnectionConfigurationDto,
+    WebDavAuthenticationSchemeDto, WebDavConnectionConfigurationDto,
 };
 
 pub(crate) fn connection_kind_from_dto(kind: ConnectionKindDto) -> ConnectionKind {
@@ -91,6 +91,24 @@ fn host_key_policy_to_dto(policy: HostKeyPolicy) -> HostKeyPolicyDto {
     }
 }
 
+fn webdav_authentication_from_dto(
+    scheme: WebDavAuthenticationSchemeDto,
+) -> WebDavAuthenticationScheme {
+    match scheme {
+        WebDavAuthenticationSchemeDto::Basic => WebDavAuthenticationScheme::Basic,
+        WebDavAuthenticationSchemeDto::Digest => WebDavAuthenticationScheme::Digest,
+    }
+}
+
+fn webdav_authentication_to_dto(
+    scheme: WebDavAuthenticationScheme,
+) -> WebDavAuthenticationSchemeDto {
+    match scheme {
+        WebDavAuthenticationScheme::Basic => WebDavAuthenticationSchemeDto::Basic,
+        WebDavAuthenticationScheme::Digest => WebDavAuthenticationSchemeDto::Digest,
+    }
+}
+
 pub(crate) fn connection_configuration_from_dto(
     configuration: ConnectionConfigurationDto,
 ) -> ConnectionConfiguration {
@@ -130,6 +148,9 @@ pub(crate) fn connection_configuration_from_dto(
         ConnectionConfigurationDto::WebDav(config) => {
             ConnectionConfiguration::WebDav(WebDavConnectionConfiguration {
                 base_url: config.base_url,
+                username: config.username,
+                authentication: webdav_authentication_from_dto(config.authentication),
+                path_prefix: config.path_prefix,
             })
         }
         ConnectionConfigurationDto::S3(config) => {
@@ -187,6 +208,9 @@ fn connection_configuration_to_dto(
         ConnectionConfiguration::WebDav(config) => {
             ConnectionConfigurationDto::WebDav(WebDavConnectionConfigurationDto {
                 base_url: config.base_url.clone(),
+                username: config.username.clone(),
+                authentication: webdav_authentication_to_dto(config.authentication),
+                path_prefix: config.path_prefix.clone(),
             })
         }
         ConnectionConfiguration::S3(config) => {
@@ -262,6 +286,21 @@ mod tests {
             authentication: SshAuthenticationMethod::PrivateKey,
             host_key_policy: HostKeyPolicy::RequireKnownHost,
             keepalive: Some(Duration::from_secs(45)),
+        });
+
+        let dto = connection_configuration_to_dto(&configuration);
+        let back = connection_configuration_from_dto(dto);
+
+        assert_eq!(back, configuration);
+    }
+
+    #[test]
+    fn webdav_configuration_round_trips_through_dto_conversion() {
+        let configuration = ConnectionConfiguration::WebDav(WebDavConnectionConfiguration {
+            base_url: "https://cloud.example.test/remote.php/dav/files/erik".to_owned(),
+            username: "erik".to_owned(),
+            authentication: WebDavAuthenticationScheme::Digest,
+            path_prefix: Some("/Photos".to_owned()),
         });
 
         let dto = connection_configuration_to_dto(&configuration);

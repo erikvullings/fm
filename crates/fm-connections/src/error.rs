@@ -46,6 +46,9 @@ pub enum ConnectionValidationError {
     /// A WebDAV configuration's `base_url` is empty.
     #[error("webdav base url must not be empty")]
     EmptyWebDavBaseUrl,
+    /// A WebDAV configuration's `username` is empty.
+    #[error("webdav username must not be empty")]
+    EmptyWebDavUsername,
     /// An S3 configuration's `bucket` is empty.
     #[error("s3 bucket must not be empty")]
     EmptyS3Bucket,

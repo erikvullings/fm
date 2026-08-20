@@ -214,6 +214,45 @@ fn safety_compares_ftp_locations_by_connection_and_path_not_native_path() {
 }
 
 #[test]
+fn safety_compares_webdav_locations_by_connection_and_path_not_native_path() {
+    // task 0147: `webdav://` locations have no native path either, same
+    // reasoning as the SFTP/FTP branches above - without its own branch,
+    // every same-connection WebDAV copy/move would fail planning with
+    // `IncomparableLocations`.
+    let connection = "11111111-1111-4111-8111-111111111111";
+    let source = webdav_location(connection, "/Documents/report.txt");
+    assert_eq!(
+        validate_paths(&source, &source, true),
+        Err(SafetyError::SameEntry)
+    );
+    assert_eq!(
+        validate_paths(
+            &webdav_location(connection, "/Documents"),
+            &webdav_location(connection, "/Documents/nested"),
+            true,
+        ),
+        Err(SafetyError::DestinationInsideSource)
+    );
+    let other_connection = "22222222-2222-4222-8222-222222222222";
+    assert!(
+        validate_paths(
+            &webdav_location(connection, "/Documents/report.txt"),
+            &webdav_location(other_connection, "/Documents/report.txt"),
+            true,
+        )
+        .is_ok()
+    );
+    assert!(
+        validate_paths(
+            &webdav_location(connection, "/Documents/report.txt"),
+            &webdav_location(connection, "/Documents/archive/report.txt"),
+            true,
+        )
+        .is_ok()
+    );
+}
+
+#[test]
 fn safety_rejects_symlink_cycles() {
     let mut detector = CycleDetector::default();
     detector.observe(8, 42).unwrap();
@@ -372,6 +411,13 @@ fn ftp_location(scheme: &str, connection_id: &str, remote_path: &str) -> Locatio
     Location::new(
         ProviderId::new("ftp"),
         format!("{scheme}://{connection_id}{remote_path}"),
+    )
+}
+
+fn webdav_location(connection_id: &str, remote_path: &str) -> Location {
+    Location::new(
+        ProviderId::new("webdav"),
+        format!("webdav://{connection_id}{remote_path}"),
     )
 }
 

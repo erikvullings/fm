@@ -6,6 +6,7 @@ import {
   connectionStatusLabel,
   defaultSshStartPath,
   isBrowsable,
+  remoteRootLocation,
   saveConnection,
   sftpRootLocation,
   sftpStartPathForConnection,
@@ -90,10 +91,41 @@ describe('isBrowsable', () => {
     }
   });
 
+  it('is true for a WebDAV connection', () => {
+    expect(isBrowsable(sampleConnection({ kind: 'webDav' }))).toBe(true);
+  });
+
   it('is false for kinds without a provider', () => {
-    for (const kind of ['oneDrive', 'webDav', 's3', 'smb'] as const) {
+    for (const kind of ['oneDrive', 's3', 'smb'] as const) {
       expect(isBrowsable(sampleConnection({ kind }))).toBe(false);
     }
+  });
+});
+
+describe('remoteRootLocation for WebDAV', () => {
+  function webDavConnection(pathPrefix: string | null): Connection {
+    return sampleConnection({
+      id: '11111111-1111-4111-8111-111111111111',
+      kind: 'webDav',
+      configuration: {
+        kind: 'webDav',
+        baseUrl: 'https://cloud.example.test/dav',
+        username: 'erik',
+        authentication: 'basic',
+        pathPrefix,
+      },
+    });
+  }
+
+  it('builds a webdav:// root location at / when no path prefix is configured', () => {
+    const location = remoteRootLocation(webDavConnection(null));
+    expect(location.providerId).toBe('webdav');
+    expect(location.uri).toBe('webdav://11111111-1111-4111-8111-111111111111/');
+  });
+
+  it('builds a webdav:// location under the configured path prefix', () => {
+    const location = remoteRootLocation(webDavConnection('/Photos'));
+    expect(location.uri).toBe('webdav://11111111-1111-4111-8111-111111111111/Photos');
   });
 });
 
