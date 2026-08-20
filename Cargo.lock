@@ -2170,6 +2170,7 @@ dependencies = [
  "fm-platform-windows",
  "fm-transport-dto",
  "portable-pty",
+ "raw-window-handle",
  "serde",
  "serde_json",
  "tauri",
@@ -2183,6 +2184,7 @@ dependencies = [
  "tracing-appender",
  "tracing-subscriber",
  "uuid",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

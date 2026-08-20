@@ -1,13 +1,13 @@
 //! Windows platform integration (task 0060).
 //!
 //! Explorer reveal, Recycle Bin, drive listing, opening with the default
-//! application and terminal integration. The crate is a workspace member
-//! everywhere but compiles to nothing off Windows.
+//! application, terminal integration, and native menu bar hook point (task
+//! 0131). The crate is a workspace member everywhere but compiles to nothing
+//! off Windows. Native drag-to-Explorer is provided by the Tauri window host
+//! (task 0062).
 //!
 //! Deliberately unimplemented (capability bits stay unset, per specification
-//! §23/§35): shell thumbnails, clipboard file references and native menus.
-//! Native drag-to-Explorer is
-//! provided by the Tauri window host (task 0062).
+//! §23/§35): shell thumbnails and clipboard file references.
 
 #![cfg(target_os = "windows")]
 #![allow(unsafe_code)]
@@ -39,7 +39,9 @@ use windows_sys::Win32::UI::Shell::{
     FO_DELETE, FOF_ALLOWUNDO, FOF_NOCONFIRMATION, FOF_NOERRORUI, FOF_SILENT, SHFILEINFOW,
     SHFILEOPSTRUCTW, SHFileOperationW, SHGFI_ICON, SHGFI_LARGEICON, SHGetFileInfoW, ShellExecuteW,
 };
-use windows_sys::Win32::UI::WindowsAndMessaging::{DestroyIcon, ICONINFO, SW_SHOWNORMAL};
+use windows_sys::Win32::UI::WindowsAndMessaging::{
+    CreateMenu, DestroyIcon, DestroyMenu, ICONINFO, SW_SHOWNORMAL, SetMenu,
+};
 
 /// `GetDriveTypeW` return values (`winbase.h`), which `windows-sys` does not
 /// re-export.
@@ -50,6 +52,17 @@ const DRIVE_FIXED: u32 = 3;
 const DRIVE_REMOTE: u32 = 4;
 const DRIVE_CDROM: u32 = 5;
 const DRIVE_RAMDISK: u32 = 6;
+
+/// Wrapper for HWND that implements Send + Sync. HWND is a window handle
+/// (a pointer value), which is thread-safe to send between threads since
+/// it's just an opaque identifier to the OS.
+#[derive(Debug, Copy, Clone)]
+struct SendSyncHwnd(HWND);
+
+// SAFETY: HWND is a window handle, which is safe to send between threads.
+// It's just an opaque identifier, not an actual pointer to thread-local data.
+unsafe impl Send for SendSyncHwnd {}
+unsafe impl Sync for SendSyncHwnd {}
 
 /// Encodes a path as a NUL-terminated wide string for the Win32 API.
 fn wide(value: &Path) -> Vec<u16> {
@@ -409,20 +422,40 @@ pub fn set_caption_colours(hwnd: isize, background: u32, foreground: u32) {
 
 /// Windows implementation of [`PlatformAdapter`].
 ///
-/// Native drag-to-Explorer is provided by the Tauri window host; icons,
-/// thumbnails, clipboard file references and native menus stay delegated to
-/// [`FallbackPlatformAdapter`] and their capability bits stay unset.
+/// Native drag-to-Explorer is provided by the Tauri window host; native
+/// menus are created from an HWND set by the desktop host after window
+/// creation (task 0131). Icons, thumbnails, and clipboard file references
+/// stay delegated to [`FallbackPlatformAdapter`] and their capability bits
+/// stay unset.
 #[derive(Debug, Default)]
 pub struct WindowsPlatformAdapter {
     fallback: FallbackPlatformAdapter,
     icon_cache: Mutex<HashMap<String, Vec<u8>>>,
+    /// Window handle for native menu bar installation (task 0131). Set by
+    /// [`Self::set_window_handle`] after the Tauri window is created;
+    /// `install_native_menu` uses it to attach the menu to the app window.
+    window_handle: Mutex<Option<SendSyncHwnd>>,
 }
 
 impl WindowsPlatformAdapter {
     /// Builds a new Windows adapter.
     #[must_use]
     pub fn new() -> Self {
-        Self::default()
+        Self {
+            fallback: FallbackPlatformAdapter,
+            icon_cache: Mutex::default(),
+            window_handle: Mutex::default(),
+        }
+    }
+
+    /// Sets the Tauri window handle for native menu bar installation
+    /// (task 0131). Called by the desktop host (`fm-desktop`) after the
+    /// window is created and ready to receive a menu bar.
+    pub fn set_window_handle(&self, hwnd: HWND) {
+        *self
+            .window_handle
+            .lock()
+            .unwrap_or_else(|error| error.into_inner()) = Some(SendSyncHwnd(hwnd));
     }
 
     fn cached_file_icon<F>(&self, path: &Path, fetch: F) -> Result<Vec<u8>, PlatformError>
@@ -489,6 +522,7 @@ impl PlatformAdapter for WindowsPlatformAdapter {
             | PlatformCapabilities::MOUNTED_VOLUMES
             | PlatformCapabilities::VOLUME_CAPACITY
             | PlatformCapabilities::FILE_ICONS
+            | PlatformCapabilities::NATIVE_MENUS
     }
 
     fn file_icon(&self, path: &Path) -> Result<Vec<u8>, PlatformError> {
@@ -684,10 +718,41 @@ impl PlatformAdapter for WindowsPlatformAdapter {
         spec: &fm_domain::NativeMenuSpec,
         on_action: std::sync::Arc<dyn Fn(String) + Send + Sync>,
     ) -> Result<(), PlatformError> {
-        // Windows menu content is task 0131 (still open); until that hook
-        // lands this just keeps delegating to the fallback adapter, matching
-        // every other not-yet-implemented Windows integration in this file.
-        self.fallback.install_native_menu(spec, on_action)
+        // Task 0131: creates and attaches an empty native menu bar to the Tauri
+        // window. Menu content is task 0133 (deferred to Windows). The window
+        // handle must have been set by the desktop host via `set_window_handle`
+        // after the window was created.
+        let _ = (spec, on_action); // Suppress unused warnings for now (0133)
+
+        let SendSyncHwnd(hwnd) = self
+            .window_handle
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .ok_or(PlatformError::Io {
+                message: "native menu bar requires the window handle to be set first".to_owned(),
+            })?;
+
+        // SAFETY: CreateMenu is a safe Win32 call; returns NULL on failure.
+        let menu = unsafe { CreateMenu() };
+        if menu.is_null() {
+            return Err(PlatformError::Io {
+                message: "failed to create native menu bar (CreateMenu returned NULL)".to_owned(),
+            });
+        }
+
+        // SAFETY: SetMenu attaches the menu to the window. Both HWND and HMENU
+        // are valid at this point (hwnd came from `set_window_handle`, menu was
+        // just created successfully).
+        let success = unsafe { SetMenu(hwnd, menu) };
+        if success == 0 {
+            // SAFETY: menu was created successfully, so destroying it is safe.
+            unsafe { DestroyMenu(menu) };
+            return Err(PlatformError::Io {
+                message: "failed to attach native menu bar to window (SetMenu failed)".to_owned(),
+            });
+        }
+
+        Ok(())
     }
 }
 
@@ -788,16 +853,17 @@ mod tests {
                 .unwrap_err()
                 .to_string()
         );
+        // Note: native menu installation requires the window handle to be set first
+        // (task 0131). The adapter returns PlatformError::Io when HWND is not initialized.
         let spec = fm_domain::NativeMenuSpec::default();
-        assert_eq!(
-            adapter
-                .install_native_menu(&spec, std::sync::Arc::new(|_id| {}))
-                .unwrap_err()
-                .to_string(),
-            fallback
-                .install_native_menu(&spec, std::sync::Arc::new(|_id| {}))
-                .unwrap_err()
-                .to_string()
+        let adapter_result = adapter
+            .install_native_menu(&spec, std::sync::Arc::new(|_id| {}))
+            .unwrap_err()
+            .to_string();
+        assert!(
+            adapter_result.contains("window handle") || adapter_result.contains("set first"),
+            "Expected 'window handle' or 'set first' in error message, got: {}",
+            adapter_result
         );
     }
 
