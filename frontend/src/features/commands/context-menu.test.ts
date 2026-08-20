@@ -2,7 +2,7 @@ import m from 'mithril';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { AvailableAction } from './availability';
-import { ContextMenu } from './context-menu';
+import { ContextMenu, clampContextMenuPosition } from './context-menu';
 
 let root: HTMLElement;
 
@@ -43,6 +43,20 @@ afterEach(() => {
 });
 
 describe('ContextMenu', () => {
+  it('keeps the menu inside the viewport near the right and bottom edges', () => {
+    expect(clampContextMenuPosition(790, 590, 180, 120, 800, 600)).toEqual({
+      x: 612,
+      y: 472,
+    });
+  });
+
+  it('keeps a large menu inside the margin on the opposite edges', () => {
+    expect(clampContextMenuPosition(-20, -10, 180, 120, 800, 600)).toEqual({
+      x: 8,
+      y: 8,
+    });
+  });
+
   it('invokes available actions with Enter, disables unavailable ones, and returns focus', () => {
     const trigger = document.createElement('button');
     document.body.appendChild(trigger);
