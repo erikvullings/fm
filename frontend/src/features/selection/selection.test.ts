@@ -145,6 +145,53 @@ describe('selection reducer', () => {
     expect(state.cursorEntryId).toBe('4');
   });
 
+  it('Shift+Down selects the last row once the cursor can no longer move past it', () => {
+    const ordered = ids('0', '1', '2');
+    let state: SelectionState = { selectedEntryIds: ['0'], cursorEntryId: '0', anchorEntryId: '0' };
+    // Departed rows land in the selection one press behind the cursor; at the last row there's no
+    // further press to "catch up" and select it, so it must be included immediately instead.
+    state = reduceSelection(state, { type: 'extendRange', offset: 1 }, ordered);
+    state = reduceSelection(state, { type: 'extendRange', offset: 1 }, ordered);
+    expect(state.selectedEntryIds).toEqual(['0', '1']);
+    expect(state.cursorEntryId).toBe('2');
+
+    state = reduceSelection(state, { type: 'extendRange', offset: 1 }, ordered);
+    expect(state.selectedEntryIds).toEqual(['0', '1', '2']);
+    expect(state.cursorEntryId).toBe('2');
+
+    // Repeated presses at the boundary stay idempotent rather than dropping the selection.
+    state = reduceSelection(state, { type: 'extendRange', offset: 1 }, ordered);
+    expect(state.selectedEntryIds).toEqual(['0', '1', '2']);
+    expect(state.cursorEntryId).toBe('2');
+  });
+
+  it('Shift+Up selects the first row once the cursor can no longer move past it', () => {
+    const ordered = ids('0', '1', '2');
+    let state: SelectionState = { selectedEntryIds: ['2'], cursorEntryId: '2', anchorEntryId: '2' };
+    state = reduceSelection(state, { type: 'extendRange', offset: -1 }, ordered);
+    state = reduceSelection(state, { type: 'extendRange', offset: -1 }, ordered);
+    expect(state.selectedEntryIds).toEqual(['1', '2']);
+    expect(state.cursorEntryId).toBe('0');
+
+    state = reduceSelection(state, { type: 'extendRange', offset: -1 }, ordered);
+    expect(state.selectedEntryIds).toEqual(['0', '1', '2']);
+    expect(state.cursorEntryId).toBe('0');
+
+    state = reduceSelection(state, { type: 'extendRange', offset: -1 }, ordered);
+    expect(state.selectedEntryIds).toEqual(['0', '1', '2']);
+    expect(state.cursorEntryId).toBe('0');
+  });
+
+  it('Shift+Down selects a single-row list immediately, with no room to move at all', () => {
+    const state = reduceSelection(
+      { ...emptySelection, cursorEntryId: 'a', anchorEntryId: 'a' },
+      { type: 'extendRange', offset: 1 },
+      ids('a'),
+    );
+    expect(state.selectedEntryIds).toEqual(['a']);
+    expect(state.cursorEntryId).toBe('a');
+  });
+
   it('extends a range to a clicked entry and keeps the anchor when clicking back and forth', () => {
     const initial: SelectionState = {
       selectedEntryIds: ['b'],

@@ -184,7 +184,12 @@ export function reduceSelection(
         return state;
       }
       const currentIndex = cursorIndex(state, orderedEntryIds);
-      const nextIndex = clampedIndex(currentIndex + action.offset, orderedEntryIds) ?? currentIndex;
+      const requestedIndex = currentIndex + action.offset;
+      const nextIndex = clampedIndex(requestedIndex, orderedEntryIds) ?? currentIndex;
+      // The cursor can't move past the first/last row, so there's no future press left to "catch
+      // up" and select it via the departed-row mechanism below - select it immediately instead of
+      // leaving it a permanently-unreachable bare cursor (e.g. Shift+Down at the last row).
+      const clampedAtBoundary = requestedIndex !== nextIndex;
       const anchorEntryId =
         state.anchorEntryId ?? state.cursorEntryId ?? orderedEntryIds[currentIndex];
       const anchorIndex =
@@ -193,9 +198,15 @@ export function reduceSelection(
       // Shift+Arrow selects the row being departed and leaves the destination as a bare cursor.
       const rangeIds =
         nextIndex > resolvedAnchorIndex
-          ? orderedEntryIds.slice(resolvedAnchorIndex, nextIndex)
+          ? orderedEntryIds.slice(
+              resolvedAnchorIndex,
+              clampedAtBoundary ? nextIndex + 1 : nextIndex,
+            )
           : nextIndex < resolvedAnchorIndex
-            ? orderedEntryIds.slice(nextIndex + 1, resolvedAnchorIndex + 1)
+            ? orderedEntryIds.slice(
+                clampedAtBoundary ? nextIndex : nextIndex + 1,
+                resolvedAnchorIndex + 1,
+              )
             : orderedEntryIds.slice(resolvedAnchorIndex, resolvedAnchorIndex + 1);
       const base = state.baseSelectedEntryIds;
       const baseSet = base !== undefined ? new Set(base) : undefined;

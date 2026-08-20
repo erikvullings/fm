@@ -14,11 +14,14 @@ export interface TypeaheadController {
   /**
    * Processes a single printable character. Returns a selection action when a matching entry is
    * found, or undefined when no match exists (and internally starts the error-flash timer).
+   * `extend` (Shift+letter) selects the range from the current anchor through the match, instead
+   * of replacing the selection with just the match.
    */
   handleChar(
     char: string,
     entries: readonly EntrySummary[],
     now: number,
+    extend?: boolean,
   ): SelectionAction | undefined;
   /**
    * Handles a Backspace key against the active prefix. Returns true if the key was consumed
@@ -80,13 +83,15 @@ export function createTypeaheadController(onRedraw: () => void): TypeaheadContro
       _hasError = false;
     },
     clearTimer,
-    handleChar(char, entries, now) {
+    handleChar(char, entries, now, extend) {
       const result = reduceTypeahead(_state, char, entries, now, Number.POSITIVE_INFINITY);
       _state = result.state;
       if (result.matchedEntryId !== undefined) {
         clearTimer();
         _hasError = false;
-        return { type: 'selectOnly', entryId: result.matchedEntryId };
+        return extend === true
+          ? { type: 'extendRangeTo', entryId: result.matchedEntryId }
+          : { type: 'selectOnly', entryId: result.matchedEntryId };
       }
       flashError();
       return undefined;

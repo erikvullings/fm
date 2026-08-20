@@ -69,12 +69,36 @@ export interface AppDialogsContext {
   getTabController(): TabController;
   getOpsController(): OperationsController;
   getActiveDirectoryLocation(): Location | undefined;
+  getActivePaneId(): PaneId | undefined;
+  getFocusPane(): ((paneId: PaneId) => void) | undefined;
   /** Opens the just-created file (Shift+F4) in the active pane's editor. */
   openEditorForCreatedFile(location: Location, name: string): void;
   cancelAutoDismiss(operationId: OperationId): void;
   rememberDismissedOperation(operationId: OperationId): void;
   refetchAffectedPanes(): void;
   redraw(): void;
+}
+
+/**
+ * Restores keyboard focus to the active pane once the permanent-delete dialog closes (Shift+F8).
+ * The dialog's own confirm/cancel buttons hold DOM focus; closing the dialog leaves that focus
+ * nowhere useful rather than back in the pane, which broke the app's own Tab-to-other-pane
+ * shortcut afterwards (it starts from the pane's `.fm-pane` element carrying focus). Matches the
+ * explicit `focusPane` pattern already used after find-files navigation and pane switching.
+ *
+ * `ModalPanel`'s own generic focus-restore (`restoreFocusToInvoker` in mithril-materialized) also
+ * runs on close, one animation frame later, and can silently no-op or refocus the wrong thing: it
+ * restores whatever had focus when the dialog *opened* (often the row about to be deleted, whose
+ * DOM node is gone by the time the frame fires) rather than the pane container this app's Tab
+ * shortcut actually looks for. Deferred two frames so it runs strictly after that restore
+ * attempt, rather than racing it - see `restoreFocusToInvoker`'s single-rAF deferral.
+ */
+function focusActivePaneAfterDeleteDialog(ctx: AppDialogsContext): void {
+  const paneId = ctx.getActivePaneId();
+  if (paneId === undefined) return;
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => ctx.getFocusPane()?.(paneId));
+  });
 }
 
 export function renderAppDialogs(
@@ -274,6 +298,11 @@ export function renderAppDialogs(
       totalBytes: pendingDelete?.progress.totalBytes ?? 0,
       onCancel: () => {
         if (pendingDelete !== undefined) void client.cancelOperation(pendingDelete.id);
+        // The dialog closing leaves DOM focus on document.body (or a now-removed row) rather
+        // than back in the pane, which broke Tab-to-other-pane afterwards - restore it
+        // explicitly instead of relying on the generic modal's focus-restore, which isn't aware
+        // of this app's `.fm-pane` keyboard-target requirement.
+        focusActivePaneAfterDeleteDialog(ctx);
       },
       onConfirm: () => {
         if (pendingDelete !== undefined) {
@@ -297,6 +326,7 @@ export function renderAppDialogs(
               ctx.redraw();
             });
         }
+        focusActivePaneAfterDeleteDialog(ctx);
       },
     }),
     m(ConflictDialog, {

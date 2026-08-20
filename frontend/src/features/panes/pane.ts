@@ -770,7 +770,12 @@ export const Pane: FactoryComponent<PaneAttrs> = () => {
               !event.altKey
             ) {
               event.preventDefault();
-              const action = typeaheadCtrl.handleChar(event.key, attrs.entries, Date.now());
+              const action = typeaheadCtrl.handleChar(
+                event.key,
+                attrs.entries,
+                Date.now(),
+                event.shiftKey,
+              );
               if (action !== undefined) {
                 attrs.onSelectionAction(action);
               }

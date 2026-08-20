@@ -36,6 +36,13 @@ describe('createTypeaheadController', () => {
     expect(ctrl.prefix).toBe('d');
   });
 
+  it('returns an extendRangeTo action when Shift is held for the character', () => {
+    const ctrl = createTypeaheadController(() => undefined);
+    const action = ctrl.handleChar('d', entries, 1000, true);
+    expect(action).toEqual({ type: 'extendRangeTo', entryId: 'document' });
+    expect(ctrl.prefix).toBe('d');
+  });
+
   it('accumulates characters into a prefix', () => {
     const ctrl = createTypeaheadController(() => undefined);
     ctrl.handleChar('d', entries, 1000);

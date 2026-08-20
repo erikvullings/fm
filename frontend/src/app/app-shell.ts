@@ -2170,6 +2170,8 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     getTabController: () => tabController,
     getOpsController: () => opsController,
     getActiveDirectoryLocation: () => activeDirectory()?.location,
+    getActivePaneId: () => activeDirectory()?.paneId,
+    getFocusPane: () => focusPane,
     openEditorForCreatedFile: (location, name) => {
       const active = activeDirectory();
       if (active === undefined) return;
