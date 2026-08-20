@@ -1,7 +1,7 @@
 import m from 'mithril';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { ActionDescriptor, Settings } from '../../models';
+import type { ActionDescriptor, PluginDescriptor, Settings } from '../../models';
 import { SettingsEditor } from './settings-editor';
 
 let root: HTMLElement;
@@ -110,6 +110,20 @@ describe('SettingsEditor', () => {
 
     expect(numberInput('Font size (px)').value).toBe('17');
     expect(numberInput('Row height (px)').value).toBe('30');
+  });
+
+  it('renders without throwing when a plugin has no icon theme (backend sends null, not undefined)', () => {
+    // The JSON DTO serializes an absent Option<T> field as null, though `PluginDescriptor` models it as `undefined`.
+    const pluginWithNullIconTheme = {
+      id: 'sample.plugin',
+      name: 'Sample',
+      version: '1.0.0',
+      description: '',
+      enabled: true,
+      iconTheme: null,
+    } as unknown as PluginDescriptor;
+
+    expect(() => mountEditor({ plugins: [pluginWithNullIconTheme] })).not.toThrow();
   });
 
   it('previews an edited field immediately without saving', () => {

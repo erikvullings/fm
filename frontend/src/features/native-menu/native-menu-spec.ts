@@ -1,3 +1,4 @@
+import { t } from '../../i18n';
 import type {
   ActionDescriptor,
   Connection,
@@ -107,14 +108,14 @@ function appMenu(): NativeMenu {
     // The platform adapter also uses this as the process's displayed name (task 0133 follow-up),
     // so AppKit's bold app-menu title reads "Procyon" even in an unbundled `cargo tauri dev` run,
     // matching the title bar label elsewhere in this file.
-    title: 'Procyon',
+    title: t('menu', 'app'),
     items: [
       { kind: 'role', role: 'about' },
       { kind: 'separator' },
       {
         kind: 'action',
         id: 'ui.openSettings',
-        title: 'Preferences…',
+        title: t('menu', 'preferences'),
         shortcut: PREFERENCES_SHORTCUT,
         enabled: true,
         checked: false,
@@ -135,13 +136,13 @@ function fileMenu(actions: readonly ActionDescriptor[], canOpenNewWindow: boolea
   const newWindowItem: NativeMenuItem = {
     kind: 'action',
     id: NEW_WORKSPACE_WINDOW_MENU_ID,
-    title: 'New Window',
+    title: t('menu', 'newWindow'),
     shortcut: { key: 'n', meta: true, shift: true },
     enabled: true,
     checked: false,
   };
   return {
-    title: 'File',
+    title: t('menu', 'file'),
     items: [
       ...(canOpenNewWindow ? [newWindowItem] : []),
       ...actionItems(actions, ['core.newTab', 'core.closeTab']),
@@ -154,7 +155,7 @@ function fileMenu(actions: readonly ActionDescriptor[], canOpenNewWindow: boolea
  * Preferences dialog) for free via the standard responder chain - no menu wiring needed there. */
 function editMenu(actions: readonly ActionDescriptor[]): NativeMenu {
   return {
-    title: 'Edit',
+    title: t('menu', 'edit'),
     items: actionItems(actions, ['core.copy', 'core.paste', 'core.selectAll']),
   };
 }
@@ -164,7 +165,7 @@ function editMenu(actions: readonly ActionDescriptor[]): NativeMenu {
  * listing displays, not where it navigates). */
 function viewMenu(actions: readonly ActionDescriptor[]): NativeMenu {
   return {
-    title: 'View',
+    title: t('menu', 'view'),
     items: actionItems(actions, [
       'core.sortByName',
       'core.sortByExtension',
@@ -180,14 +181,25 @@ function viewMenu(actions: readonly ActionDescriptor[]): NativeMenu {
  * `"clipboard"` categories), surfaced as their own top-level menu for discoverability. */
 function toolsMenu(actions: readonly ActionDescriptor[]): NativeMenu {
   return {
-    title: 'Tools',
-    items: actionItems(actions, [
-      'core.copyName',
-      'core.copyPath',
-      'core.copyRelativePath',
-      'core.openTerminal',
-      'core.revealInSystemFileManager',
-    ]),
+    title: t('menu', 'tools'),
+    items: [
+      {
+        kind: 'action',
+        id: 'ui.openSettings',
+        title: t('menu', 'preferences'),
+        shortcut: PREFERENCES_SHORTCUT,
+        enabled: true,
+        checked: false,
+      },
+      { kind: 'separator' },
+      ...actionItems(actions, [
+        'core.copyName',
+        'core.copyPath',
+        'core.copyRelativePath',
+        'core.openTerminal',
+        'core.revealInSystemFileManager',
+      ]),
+    ],
   };
 }
 
@@ -218,7 +230,7 @@ function goMenu(
       items.push({
         kind: 'action',
         id: `ui.goMenu.volume.${index}`,
-        title: unavailable ? `${volume.name} (unavailable)` : volume.name,
+        title: unavailable ? `${volume.name} (${t('menu', 'unavailable')})` : volume.name,
         enabled: true,
         checked: false,
       });
@@ -256,7 +268,9 @@ function goMenu(
       items.push({
         kind: 'action',
         id: `ui.goMenu.systemLocation.${systemLocations.indexOf(systemLocation)}`,
-        title: unavailable ? `${systemLocation.name} (unavailable)` : systemLocation.name,
+        title: unavailable
+          ? `${systemLocation.name} (${t('menu', 'unavailable')})`
+          : systemLocation.name,
         enabled: true,
         checked: false,
       });
@@ -272,9 +286,9 @@ function goMenu(
         kind: 'action',
         id: `ui.goMenu.systemLocation.${systemLocations.indexOf(systemLocation)}`,
         title: unavailable
-          ? `${systemLocation.name} (unavailable)`
+          ? `${systemLocation.name} (${t('menu', 'unavailable')})`
           : systemLocation.readOnly === true
-            ? `${systemLocation.name} (read-only)`
+            ? `${systemLocation.name} (${t('menu', 'readOnly')})`
             : systemLocation.name,
         enabled: true,
         checked: false,
@@ -282,7 +296,7 @@ function goMenu(
     }
   }
 
-  return { title: 'Go', items };
+  return { title: t('menu', 'go'), items };
 }
 
 function windowMenu(
@@ -299,7 +313,7 @@ function windowMenu(
     items.push({ kind: 'separator' });
     items.push({
       kind: 'submenu',
-      title: 'Open Workspace',
+      title: t('menu', 'openWorkspace'),
       items: workspaces.map((workspace) => ({
         kind: 'action',
         id: `${WINDOW_OPEN_WORKSPACE_MENU_ID_PREFIX}${workspace.id}`,
@@ -321,11 +335,25 @@ function windowMenu(
       });
     }
   }
-  return { title: 'Window', items };
+  return { title: t('menu', 'window'), items };
 }
 
 function helpMenu(actions: readonly ActionDescriptor[]): NativeMenu {
-  return { title: 'Help', items: actionItems(actions, ['core.showShortcutsHelp']) };
+  return {
+    title: t('menu', 'help'),
+    items: [
+      { kind: 'role', role: 'about' },
+      {
+        kind: 'action',
+        id: 'ui.openDiagnostics',
+        title: t('shell', 'diagnostics'),
+        enabled: true,
+        checked: false,
+      },
+      { kind: 'separator' },
+      ...actionItems(actions, ['core.showShortcutsHelp']),
+    ],
+  };
 }
 
 /**

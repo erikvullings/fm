@@ -45,6 +45,13 @@ fn build_context<R: tauri::Runtime>() -> tauri::Context<R> {
 pub fn run() {
     init_tracing();
     tauri::Builder::default()
+        .setup(|app| {
+            #[cfg(target_os = "windows")]
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.set_decorations(false);
+            }
+            Ok(())
+        })
         // Registered first (per the plugin's own docs) so a second launch of the app is caught
         // before any other setup runs: rather than starting a second OS process that would race
         // this one over the same on-disk workspace store (task 0143), the second process hands its
@@ -177,6 +184,8 @@ pub fn run() {
             commands::write_embedded_terminal,
             commands::resize_embedded_terminal,
             commands::set_caption_colours,
+            commands::set_window_decorations,
+            commands::get_diagnostics,
             commands::subscribe_native_menu_actions,
             commands::initialize_window_handle,
             commands::set_native_menu,
@@ -339,6 +348,8 @@ mod tests {
                 commands::test_connection,
                 commands::probe_ssh_host_key,
                 commands::accept_ssh_host_key,
+                commands::set_window_decorations,
+                commands::get_diagnostics,
                 commands::subscribe_native_menu_actions,
                 commands::initialize_window_handle,
                 commands::set_native_menu,

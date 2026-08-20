@@ -1,4 +1,5 @@
 import { Channel, invoke } from '@tauri-apps/api/core';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import m, { type FactoryComponent } from 'mithril';
 import { IconButton, type Theme, ThemeManager, toast } from 'mithril-materialized';
 
@@ -93,6 +94,7 @@ import {
   type NativeMenuDispatchContext,
 } from '../features/native-menu/native-menu-dispatch';
 import { buildNativeMenuSpec, type NativeMenuTab } from '../features/native-menu/native-menu-spec';
+import { WindowsNativeMenu } from '../features/native-menu/windows-native-menu';
 import {
   createNavigationController,
   type NavigationController,
@@ -300,6 +302,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
   let settingsDisclosureElement: HTMLDetailsElement | undefined;
   let settingsDialogOpen = false;
   let diagnosticsDialogOpen = false;
+  let aboutDialogOpen = false;
   let diagnosticsDisclosureElement: HTMLDetailsElement | undefined;
   let workspaceDisclosureElement: HTMLDetailsElement | undefined;
   let registeredActions: readonly ActionDescriptor[] = [];
@@ -397,6 +400,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
    * desktop-only chrome, not app state, so a cheap `JSON.stringify` comparison is an acceptable
    * fallback given there is no existing deep-equal utility in this codebase to reuse). */
   let lastSentNativeMenuSpecJson: string | undefined;
+  let windowsNativeMenuSpec: NativeMenuSpec = { menus: [] };
 
   /** Set once `subscribe_native_menu_actions` has actually resolved. `syncNativeMenu` must not
    * push a spec before this: `set_native_menu` binds whatever channel is *currently* subscribed
@@ -412,7 +416,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
    * closures across this file) - safe and cheap because of the diff above, and it can never miss
    * a state change that affects the menu. */
   function syncNativeMenu(): void {
-    if (runtimeKind !== 'tauri' || !nativeMenuChannelReady) return;
+    if (runtimeKind !== 'tauri') return;
     const spec: NativeMenuSpec = buildNativeMenuSpec({
       actions: localisedRegisteredActions(),
       favouriteActions: favouriteActions(),
@@ -425,6 +429,8 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       systemLocations,
       unavailableLocations,
     });
+    windowsNativeMenuSpec = spec;
+    if (isWindowsTauriHost() || !nativeMenuChannelReady) return;
     const serialized = JSON.stringify(spec);
     if (serialized === lastSentNativeMenuSpecJson) return;
     lastSentNativeMenuSpecJson = serialized;
@@ -437,6 +443,16 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     findAction: (id) => actionsWithFavourites().find((candidate) => candidate.id === id),
     openSettingsDialog: () => {
       openSettingsDialog();
+    },
+    openDiagnostics: () => {
+      if (diagnosticsDisclosureElement === undefined) return;
+      diagnosticsDisclosureElement.open = true;
+      diagnosticsDialogOpen = true;
+      m.redraw();
+    },
+    openShortcutsHelp: () => {
+      shortcutsHelpOpen = true;
+      m.redraw();
     },
     activateTabByKey: (key) => {
       const separator = key.indexOf(':');
@@ -458,8 +474,35 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       tabController.activateTab(paneId, tabId);
     },
     activePaneId: () => activeDirectory()?.paneId,
+    openNewTab: (paneId) => tabController.openTab(paneId),
+    closeActiveTab: (paneId) => {
+      const activeTabId = workspace?.panesById[paneId]?.activeTabId;
+      if (activeTabId !== undefined) tabController.requestCloseTab(paneId, activeTabId);
+    },
     setSort: (paneId, sort) => globalKeydownHandlerContext.setSort(paneId, sort),
-    invokeAction: (action) => actionCommandController.invokePaletteAction(action),
+    invokeAction: (action) => {
+      const actionContext = actionCommandController.actionContext();
+      if (
+        (action.id === 'core.copyName' ||
+          action.id === 'core.copyPath' ||
+          action.id === 'core.copyRelativePath') &&
+        actionContext.selectedEntryIds === undefined
+      ) {
+        const active = activeDirectory();
+        const cursorEntryId =
+          active === undefined
+            ? undefined
+            : selections.get(activeTabKey(active.paneId))?.cursorEntryId;
+        if (cursorEntryId !== undefined) {
+          actionCommandController.invokePaletteAction(action, undefined, {
+            ...actionContext,
+            selectedEntryIds: [cursorEntryId],
+          });
+          return;
+        }
+      }
+      actionCommandController.invokePaletteAction(action, undefined, actionContext);
+    },
     openNewWorkspaceWindow: () => {
       if (workspace === undefined) return;
       void attrsClient.openWorkspaceWindow?.(workspace.id);
@@ -479,6 +522,22 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
   let installedIconThemeId: string | undefined;
   let keybindingRuntime: KeybindingRuntime = 'browser';
   let runtimeKind: RuntimeKind = 'http';
+  const isWindowsTauriHost = (): boolean =>
+    runtimeKind === 'tauri' && /Windows/i.test(navigator.userAgent);
+  /** Manual drag start (Tauri's "Manual Implementation of data-tauri-drag-region" pattern)
+   * instead of the declarative attribute: the declarative form left WebView2's mouse/pointer
+   * capture in a bad state after a drag, so titlebar menu clicks stopped registering until a
+   * second click. Starting the OS drag ourselves on primary-button mousedown (and toggling
+   * maximize on double-click, standard titlebar UX) avoids that stuck capture. */
+  function startWindowTitlebarDrag(event: MouseEvent): void {
+    if (event.buttons !== 1) return;
+    event.preventDefault();
+    if (event.detail === 2) {
+      void getCurrentWindow().toggleMaximize();
+      return;
+    }
+    void getCurrentWindow().startDragging();
+  }
   let loadedEntryFormatSettings: EntryFormatSettings = DEFAULT_ENTRY_FORMAT_SETTINGS;
   let currentEntryFormatSettings: EntryFormatSettings = DEFAULT_ENTRY_FORMAT_SETTINGS;
   let workspace: WorkspaceProjection | undefined;
@@ -530,6 +589,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
   let treeSyncedLocationUri: string | undefined;
   let openTerminalSupported = false;
   let nativeIconLoader: NativeIconLoader | undefined;
+  let nativeIconLoaderSource: NativeIconLoader | undefined;
   let thumbnailLoader: ThumbnailLoader | undefined;
   let finderTagsLoader: FinderTagsLoader | undefined;
   let contextMenu:
@@ -677,6 +737,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     if (settingsDisclosureElement === undefined || settingsDialogOpen) return;
     settingsDisclosureElement.open = true;
     settingsDialogOpen = true;
+    m.redraw();
   }
 
   function applyIconTheme(themeId: string): void {
@@ -1430,7 +1491,8 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       openTerminalSupported = v;
     },
     setNativeIconLoader: (loader) => {
-      nativeIconLoader = loader;
+      nativeIconLoaderSource = loader;
+      nativeIconLoader = currentSettings?.iconTheme === 'native' ? loader : undefined;
     },
     setThumbnailLoader: (loader) => {
       thumbnailLoader = loader;
@@ -1515,6 +1577,9 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     getInstalledIconThemeId: () => installedIconThemeId,
     setInstalledIconThemeId: (id) => {
       installedIconThemeId = id;
+    },
+    setNativeIconLoaderEnabled: (enabled) => {
+      nativeIconLoader = enabled ? nativeIconLoaderSource : undefined;
     },
     getRuntimeKind: () => runtimeKind,
     getWorkspace: () => workspace,
@@ -2191,25 +2256,31 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
         })
         .catch(() => undefined);
       if (attrs.runtime === 'tauri') {
-        try {
-          // `new Channel()` synchronously reaches for `window.__TAURI_INTERNALS__` (unlike plain
-          // `invoke()` calls, which are async and turn a missing host into a rejected promise
-          // instead), so this needs its own guard for runtime:'tauri' test mounts with no real
-          // Tauri host behind them.
-          const nativeMenuActions = new Channel<{ id: string }>();
-          nativeMenuActions.onmessage = (event) => {
-            dispatchNativeMenuAction(nativeMenuDispatchContext, event.id);
-            m.redraw();
-          };
-          void invoke('subscribe_native_menu_actions', { channel: nativeMenuActions })
+        void invoke('set_window_decorations', { decorations: false }).catch(() => undefined);
+        if (!isWindowsTauriHost())
+          void invoke('initialize_window_handle')
             .then(() => {
-              nativeMenuChannelReady = true;
-              m.redraw();
+              try {
+                // `new Channel()` synchronously reaches for `window.__TAURI_INTERNALS__` (unlike
+                // plain `invoke()` calls, which are async and turn a missing host into a rejected
+                // promise), so this needs its own guard for runtime:'tauri' test mounts with no
+                // real Tauri host behind them.
+                const nativeMenuActions = new Channel<{ id: string }>();
+                nativeMenuActions.onmessage = (event) => {
+                  dispatchNativeMenuAction(nativeMenuDispatchContext, event.id);
+                  m.redraw();
+                };
+                void invoke('subscribe_native_menu_actions', { channel: nativeMenuActions })
+                  .then(() => {
+                    nativeMenuChannelReady = true;
+                    m.redraw();
+                  })
+                  .catch(() => undefined);
+              } catch {
+                // No Tauri host available; the native menu bar is cosmetic desktop chrome.
+              }
             })
             .catch(() => undefined);
-        } catch {
-          // No Tauri host available; the native menu bar is cosmetic desktop chrome.
-        }
       }
       void attrs.client
         .listPlugins()
@@ -2290,6 +2361,66 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
         '.fm-app-shell',
         { 'data-mac-titlebar-overlay': isMacOverlay ? 'true' : undefined },
         [
+          isWindowsTauriHost()
+            ? m('.fm-windows-titlebar', [
+                m('span.fm-windows-titlebar-label', { onmousedown: startWindowTitlebarDrag }, [
+                  m('img.fm-windows-titlebar-icon', {
+                    src: '/favicon-96x96.png',
+                    alt: '',
+                    'aria-hidden': 'true',
+                  }),
+                  t('shell', 'title'),
+                ]),
+                m(WindowsNativeMenu, {
+                  spec: windowsNativeMenuSpec,
+                  onAction: (id) => dispatchNativeMenuAction(nativeMenuDispatchContext, id),
+                  onRole: (role) => {
+                    const win = getCurrentWindow();
+                    if (role === 'minimize') void win.minimize();
+                    if (role === 'zoom') void win.toggleMaximize();
+                    if (role === 'quit') void win.close();
+                    if (role === 'about') {
+                      aboutDialogOpen = true;
+                      m.redraw();
+                    }
+                  },
+                }),
+                // Fills the flex gap left by the menu bar's natural width so most of the bar is
+                // draggable, without tagging the whole titlebar - which would make the menu's
+                // absolutely-positioned dropdown popups (its DOM descendants) draggable too and
+                // swallow clicks on their items into a window-drag gesture instead.
+                m('.fm-windows-titlebar-spacer', { onmousedown: startWindowTitlebarDrag }),
+                m('.fm-windows-titlebar-controls', [
+                  m(
+                    'button',
+                    {
+                      type: 'button',
+                      'aria-label': 'Minimize',
+                      onclick: () => void getCurrentWindow().minimize(),
+                    },
+                    '−',
+                  ),
+                  m(
+                    'button',
+                    {
+                      type: 'button',
+                      'aria-label': 'Maximize',
+                      onclick: () => void getCurrentWindow().toggleMaximize(),
+                    },
+                    '□',
+                  ),
+                  m(
+                    'button.fm-windows-titlebar-close',
+                    {
+                      type: 'button',
+                      'aria-label': 'Close',
+                      onclick: () => void getCurrentWindow().close(),
+                    },
+                    '×',
+                  ),
+                ]),
+              ])
+            : undefined,
           isMacOverlay
             ? m('.fm-titlebar-spacer', { 'data-tauri-drag-region': '' }, [
                 m('span.fm-titlebar-label', t('shell', 'title')),
@@ -2525,7 +2656,11 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
                           closeIcon(),
                         ),
                       ]),
-                      diagnosticsDialogOpen ? m(DiagnosticsViewComponent) : undefined,
+                      diagnosticsDialogOpen
+                        ? m(DiagnosticsViewComponent, {
+                            desktop: runtimeKind === 'tauri',
+                          })
+                        : undefined,
                     ]),
                   ],
                 ),
@@ -2821,6 +2956,38 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
               shortcutsHelpOpen = false;
             },
           }),
+          aboutDialogOpen
+            ? m(
+                '.modal-overlay',
+                {
+                  role: 'presentation',
+                  onclick: (event: MouseEvent) => {
+                    if (event.target === event.currentTarget) aboutDialogOpen = false;
+                  },
+                },
+                [
+                  m(
+                    '.modal.fm-about-dialog',
+                    { role: 'dialog', 'aria-label': t('menu', 'about') },
+                    [
+                      m('h2', t('menu', 'about')),
+                      m('img.fm-about-icon', { src: '/favicon-96x96.png', alt: '' }),
+                      m('p', t('shell', 'title')),
+                      m(
+                        'button',
+                        {
+                          type: 'button',
+                          onclick: () => {
+                            aboutDialogOpen = false;
+                          },
+                        },
+                        t('button', 'close'),
+                      ),
+                    ],
+                  ),
+                ],
+              )
+            : undefined,
           ...renderAppDialogs(attrs.client, pendingDelete, appDialogsContext),
           m(
             '.fm-function-key-bar',

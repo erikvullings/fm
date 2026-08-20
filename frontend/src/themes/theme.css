@@ -381,6 +381,139 @@ main.fm-workspace {
   font-weight: 700;
 }
 
+.fm-windows-titlebar {
+  display: flex;
+  position: relative;
+  grid-row: 1;
+  z-index: 20;
+  height: 32px;
+  align-items: center;
+  background: var(--fm-surface-elevated);
+  color: var(--fm-text);
+  user-select: none;
+}
+
+.fm-windows-titlebar-label {
+  display: inline-flex;
+  height: 100%;
+  align-items: center;
+  gap: 6px;
+  width: 116px;
+  padding-left: 12px;
+  color: var(--fm-text-muted);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.fm-windows-titlebar-icon {
+  width: 16px;
+  height: 16px;
+}
+
+.fm-windows-native-menu {
+  display: flex;
+  height: 100%;
+  align-items: stretch;
+  gap: 2px;
+}
+
+.fm-windows-native-menu-group {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+}
+
+.fm-windows-native-menu-trigger,
+.fm-windows-titlebar-controls button {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+}
+
+.fm-windows-native-menu-trigger {
+  padding: 0 9px;
+  font-size: 0.82rem;
+}
+
+.fm-windows-native-menu-trigger:hover,
+.fm-windows-native-menu-trigger:focus-visible,
+.fm-windows-native-menu-item:hover:not(.is-disabled) {
+  outline: 0;
+  background: var(--mm-dropdown-hover);
+}
+
+.fm-windows-native-menu-popup {
+  position: absolute;
+  z-index: 100;
+  top: 100%;
+  left: 0;
+  display: grid;
+  min-width: 220px;
+  margin: 0;
+  border: 1px solid var(--fm-border);
+  border-radius: var(--fm-radius);
+  padding: 4px;
+  background: var(--fm-surface-elevated);
+  box-shadow: var(--fm-shadow);
+  list-style: none;
+}
+
+.fm-windows-native-menu-item,
+.fm-windows-native-menu-submenu {
+  display: flex;
+  min-height: 28px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 4px 10px;
+  border-radius: 2px;
+  cursor: default;
+  font-size: 0.86rem;
+  white-space: nowrap;
+}
+
+.fm-windows-native-menu-item.is-disabled {
+  color: var(--fm-text-muted);
+}
+
+.fm-windows-native-menu-item kbd {
+  color: var(--fm-text-muted);
+  font: inherit;
+}
+
+.fm-windows-native-menu-separator {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--fm-border);
+}
+
+.fm-windows-titlebar-spacer {
+  flex: 1 1 auto;
+  height: 100%;
+}
+
+.fm-windows-titlebar-controls {
+  display: flex;
+  height: 100%;
+}
+
+.fm-windows-titlebar-controls button {
+  width: 46px;
+  font-size: 1rem;
+}
+
+.fm-windows-titlebar-controls button:hover,
+.fm-windows-titlebar-controls button:focus-visible {
+  outline: 0;
+  background: var(--mm-dropdown-hover);
+}
+
+.fm-windows-titlebar-controls .fm-windows-titlebar-close:hover {
+  background: #c42b1c;
+  color: white;
+}
+
 /* Excludes `.fm-tooltip`: every toolbar icon button is now wrapped in a `span.fm-tooltip`
    (components/tooltip.ts), so an unscoped `> span` selector here would match each one and push
    every button to the far right instead of just the intended trailing status span. */

@@ -13,20 +13,22 @@ use fm_transport_dto::{
     AcceptSshHostKeyRequestDto, ActionDescriptorDto, ActionResultDto, ApplicationErrorDto,
     ApplySyncPlanRequestDto, ApplySyncPlanResponseDto, ArchiveCredentialRequestDto,
     CalculateFolderSizeRequestDto, CalculateFolderSizeResponseDto, ChecksumFileDto,
-    ChecksumPageDto, ComparisonPageDto, ConnectionDto, CreateConnectionRequestDto,
-    CreateWorkspaceRequestDto, DirectorySnapshotDto, DuplicatePageDto, EntryMetadataDto,
-    EntryMetadataRequest, EntrySummaryDto, FinderTagsDto, GenerateSyncPlanRequestDto,
-    GetFileGitHistoryRequestDto, GetFileGitHistoryResponseDto, HostKeyProbeDto,
-    InvokeActionRequestDto, ListDirectoryChildrenRequest, ListDirectoryRequest, LocationDto,
-    NavigateRequest, OperationDto, PluginDescriptorDto, PluginLogEntryDto, ReadFileRangeRequestDto,
-    ReadFileRangeResponseDto, RenderChecksumFileRequestDto, ResolveOperationConflictRequestDto,
-    RuntimeCapabilitiesDto, SaveChecksumFileRequestDto, SaveChecksumFileResponseDto,
-    SearchInFileRequestDto, SearchInFileResponseDto, SetPaneActivityRequest, SettingsDto,
-    SpotlightCommentDto, StartChecksumRequestDto, StartChecksumResponseDto,
-    StartComparisonRequestDto, StartComparisonResponseDto, StartDuplicateScanRequestDto,
-    StartDuplicateScanResponseDto, StartOperationRequestDto, StartSearchRequestDto,
-    StartSearchResponseDto, SyncPlanDto, UpdateConnectionRequestDto, VerificationReportDto,
-    VerifyChecksumFileRequestDto, WorkspaceCommandDto, WorkspaceDto, WorkspaceSummaryDto,
+    ChecksumPageDto, ComparisonPageDto, ConnectionDto, ConnectionStateDto,
+    CreateConnectionRequestDto, CreateWorkspaceRequestDto, DiagnosticErrorDto, DiagnosticsDto,
+    DirectorySnapshotDto, DuplicatePageDto, EntryMetadataDto, EntryMetadataRequest,
+    EntrySummaryDto, FinderTagsDto, GenerateSyncPlanRequestDto, GetFileGitHistoryRequestDto,
+    GetFileGitHistoryResponseDto, HostKeyProbeDto, InvokeActionRequestDto,
+    ListDirectoryChildrenRequest, ListDirectoryRequest, LocationDto, NavigateRequest, OperationDto,
+    OperationQueueStatusDto, PluginDescriptorDto, PluginLogEntryDto, PluginStatusDto,
+    ReadFileRangeRequestDto, ReadFileRangeResponseDto, RenderChecksumFileRequestDto,
+    ResolveOperationConflictRequestDto, RuntimeCapabilitiesDto, SaveChecksumFileRequestDto,
+    SaveChecksumFileResponseDto, SearchInFileRequestDto, SearchInFileResponseDto,
+    SetPaneActivityRequest, SettingsDto, SpotlightCommentDto, StartChecksumRequestDto,
+    StartChecksumResponseDto, StartComparisonRequestDto, StartComparisonResponseDto,
+    StartDuplicateScanRequestDto, StartDuplicateScanResponseDto, StartOperationRequestDto,
+    StartSearchRequestDto, StartSearchResponseDto, SyncPlanDto, UpdateConnectionRequestDto,
+    VerificationReportDto, VerifyChecksumFileRequestDto, WorkspaceCommandDto, WorkspaceDto,
+    WorkspaceSummaryDto,
 };
 
 #[cfg(target_os = "windows")]
@@ -229,6 +231,78 @@ pub(crate) fn set_caption_colours<R: Runtime>(
     #[cfg(not(target_os = "windows"))]
     {
         let _ = (window, background, foreground);
+    }
+}
+
+/// Switches Windows to the frontend-owned title bar, which lets the menu share the app's
+/// themed surface instead of occupying a separate native `HMENU` band.
+#[tauri::command]
+pub(crate) fn set_window_decorations<R: Runtime>(window: Window<R>, decorations: bool) {
+    #[cfg(target_os = "windows")]
+    {
+        let _ = window.set_decorations(decorations);
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = (window, decorations);
+    }
+}
+
+/// Returns the desktop diagnostics snapshot without requiring an HTTP server in the Tauri host.
+#[tauri::command]
+pub(crate) fn get_diagnostics(state: State<'_, AppState>) -> DiagnosticsDto {
+    let plugins = state.service.list_plugins();
+    let operations = state.service.list_operations();
+    let mut queued_count = 0;
+    let mut running_count = 0;
+    let mut paused_count = 0;
+    let mut completed_count = 0;
+    for operation in operations {
+        match operation.state {
+            fm_transport_dto::OperationStateDto::Queued => queued_count += 1,
+            fm_transport_dto::OperationStateDto::Running
+            | fm_transport_dto::OperationStateDto::Planning
+            | fm_transport_dto::OperationStateDto::Cancelling
+            | fm_transport_dto::OperationStateDto::WaitingForConflictResolution => {
+                running_count += 1
+            }
+            fm_transport_dto::OperationStateDto::Paused => paused_count += 1,
+            fm_transport_dto::OperationStateDto::Completed
+            | fm_transport_dto::OperationStateDto::CompletedWithWarnings => completed_count += 1,
+            _ => {}
+        }
+    }
+    DiagnosticsDto {
+        frontend_version: env!("CARGO_PKG_VERSION").to_owned(),
+        backend_version: env!("CARGO_PKG_VERSION").to_owned(),
+        tauri_version: None,
+        platform: "Windows".to_owned(),
+        runtime_capabilities: state.service.runtime_capabilities(),
+        connection_state: ConnectionStateDto {
+            connected: true,
+            last_event_received: None,
+            uptime_seconds: 0,
+            events_received: 0,
+            status_message: "Desktop channel active".to_owned(),
+        },
+        loaded_plugins: plugins
+            .into_iter()
+            .map(|plugin| PluginStatusDto {
+                plugin_id: plugin.id,
+                name: plugin.name,
+                enabled: plugin.enabled,
+                version: plugin.version,
+                error_count: 0,
+            })
+            .collect(),
+        recent_errors: Vec::<DiagnosticErrorDto>::new(),
+        operation_queue_status: OperationQueueStatusDto {
+            queued_count,
+            running_count,
+            paused_count,
+            completed_count,
+            total_pending_size: 0,
+        },
     }
 }
 

@@ -8,6 +8,7 @@ Area: platform
 Depends on: 0058, 0060
 
 ## Context
+
 Split out of 0060 ("Windows platform integration"). `PlatformAdapter::install_native_menu`
 (`crates/fm-platform/src/adapter.rs`) is a hook-point-only trait method — menu content/structure is
 deliberately out of scope (see its doc comment and task 0058's Implementation Notes) — and 0060's
@@ -22,6 +23,7 @@ called off the main thread rather than panicking. This task is the Windows analo
 not a full native menu with items, just the install point `apps/fm-desktop` can populate later.
 
 ## Acceptance Criteria
+
 - `fm-platform-windows`'s `PlatformAdapter::install_native_menu` creates/attaches an empty native
   menu (`HMENU` via `CreateMenu`/`SetMenu` against the app's window handle, through the `windows`
   crate) instead of returning `Unsupported`.
@@ -34,6 +36,7 @@ not a full native menu with items, just the install point `apps/fm-desktop` can 
 - Manually verified on Windows; the task notes record the OS version tested (§35).
 
 ## Implementation Notes
+
 - Content/structure of the menu stays out of scope here, matching 0058's original design — this is
   only the install hook.
 - `apps/fm-desktop/src-tauri` is the eventual caller; check whether Tauri's own window already owns
@@ -42,6 +45,7 @@ not a full native menu with items, just the install point `apps/fm-desktop` can 
   implementing).
 
 ## Agent Notes
+
 - **Status**: ✅ COMPLETE - Windows native menu bar hook point fully implemented and tested
 - **Platform Adapter (fm-platform-windows)**:
   - Added `SendSyncHwnd(HWND)` wrapper struct (lines 57-65) to satisfy Send+Sync trait bounds required by `PlatformAdapter`
@@ -83,13 +87,12 @@ not a full native menu with items, just the install point `apps/fm-desktop` can 
   - Safe transmute pattern (through Any trait) provides type-safe downcasting without unsafe code in caller
   - HWND is just an opaque pointer—SendSyncHwnd wrapper is safe because HWND can be freely sent/shared
 
-- **Next Steps (Task 0133)**:
-  - Populate the empty menu with File/Edit/View/Go/Window/Help sections
-  - Implement menu item callbacks routing to frontend
-  - Handle Role vs Action menu items (matching macOS pattern)
-  - Windows-specific menu styling and behavior
+- **Follow-up completed by Task 0133**:
+  - Populated File/Edit/View/Go/Window/Help sections from the frontend menu spec
+  - Added action callback routing through `WM_COMMAND`
+  - Added enabled/checked state and Windows shortcut-label rendering
+  - Added Windows-specific role labels and submenu handling
 
 - **Known Limitations**:
-  - Manual Windows verification not yet performed (automated tests only verify hook point)
-  - Menu content implementation (0133) required before menu bar appears to user
-  - Tested on Windows dev setup; real-world installer testing TBD during 0133
+  - Manual visual verification of the running Tauri menu bar remains outstanding
+  - Tested on the Windows development setup; real-world installer testing remains TBD

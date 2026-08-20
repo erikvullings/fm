@@ -14,6 +14,8 @@ import { SORT_SHORTCUT_DESCRIPTORS } from '../keybindings/global-keydown-handler
 /** Frontend-local id for the App menu's Preferences item; never an action-registry id (there is
  * no `core.preferences` backend action - Preferences is, and must remain, a pure UI toggle). */
 export const OPEN_SETTINGS_MENU_ID = 'ui.openSettings';
+export const OPEN_DIAGNOSTICS_MENU_ID = 'ui.openDiagnostics';
+export const OPEN_SHORTCUTS_MENU_ID = 'core.showShortcutsHelp';
 
 /** Prefix for a Window-menu tab item's id, followed by the tab's `${paneId}:${tabId}` key. */
 export const WINDOW_TAB_MENU_ID_PREFIX = 'ui.window.tab.';
@@ -22,6 +24,10 @@ export const WINDOW_TAB_MENU_ID_PREFIX = 'ui.window.tab.';
  * opening a workspace in a new OS window (task 0143) is desktop-window plumbing, not a backend
  * action. */
 export const NEW_WORKSPACE_WINDOW_MENU_ID = 'ui.newWorkspaceWindow';
+
+/** File-menu tab actions are frontend-owned, despite being registered in the shared action list. */
+export const NEW_TAB_MENU_ID = 'core.newTab';
+export const CLOSE_TAB_MENU_ID = 'core.closeTab';
 
 /** Prefix for the Window menu's "Open Workspace" submenu item ids, followed by the target
  * workspace's id - opens that workspace in its own OS window, mirroring the workspace switcher's
@@ -51,9 +57,13 @@ export interface NativeMenuDispatchContext {
    * the plain action registry. */
   readonly findAction: (id: string) => ActionDescriptor | undefined;
   readonly openSettingsDialog: () => void;
+  readonly openDiagnostics: () => void;
+  readonly openShortcutsHelp: () => void;
   /** Activates the tab encoded in a `ui.window.tab.<tabKey>` id (the `${paneId}:${tabId}` key
    * app-shell.ts's tab caches are keyed by). */
   readonly activateTabByKey: (tabKey: string) => void;
+  readonly openNewTab: (paneId: PaneId) => void;
+  readonly closeActiveTab: (paneId: PaneId) => void;
   /** The pane the sort-menu items apply to - same "active pane" concept the Ctrl+F3..Ctrl+F7
    * shortcuts use (`activeDirectory()`'s `paneId` in app-shell.ts). */
   readonly activePaneId: () => PaneId | undefined;
@@ -99,12 +109,27 @@ export function dispatchNativeMenuAction(context: NativeMenuDispatchContext, id:
     context.openSettingsDialog();
     return;
   }
+  if (id === OPEN_DIAGNOSTICS_MENU_ID) {
+    context.openDiagnostics();
+    return;
+  }
+  if (id === OPEN_SHORTCUTS_MENU_ID) {
+    context.openShortcutsHelp();
+    return;
+  }
   if (id.startsWith(WINDOW_TAB_MENU_ID_PREFIX)) {
     context.activateTabByKey(id.slice(WINDOW_TAB_MENU_ID_PREFIX.length));
     return;
   }
   if (id === NEW_WORKSPACE_WINDOW_MENU_ID) {
     context.openNewWorkspaceWindow?.();
+    return;
+  }
+  if (id === NEW_TAB_MENU_ID || id === CLOSE_TAB_MENU_ID) {
+    const paneId = context.activePaneId();
+    if (paneId === undefined) return;
+    if (id === NEW_TAB_MENU_ID) context.openNewTab(paneId);
+    else context.closeActiveTab(paneId);
     return;
   }
   if (id.startsWith(WINDOW_OPEN_WORKSPACE_MENU_ID_PREFIX)) {

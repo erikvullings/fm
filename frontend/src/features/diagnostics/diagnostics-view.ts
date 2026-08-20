@@ -1,6 +1,7 @@
 /** Diagnostics view component (spec §30). */
 
-import type { Vnode } from 'mithril';
+import { invoke } from '@tauri-apps/api/core';
+import type { FactoryComponent, Vnode } from 'mithril';
 import m from 'mithril';
 import type { DiagnosticsView } from './diagnostics';
 import { diagnosticsFromDto } from './diagnostics';
@@ -11,8 +12,13 @@ interface DiagnosticsState {
   error: string | null;
 }
 
+interface DiagnosticsAttrs {
+  readonly desktop?: boolean;
+}
+
 /** Diagnostics view component for troubleshooting and bug reports. */
-export const DiagnosticsViewComponent = () => {
+export const DiagnosticsViewComponent: FactoryComponent<DiagnosticsAttrs> = () => {
+  let attrs: DiagnosticsAttrs = {};
   const state: DiagnosticsState = {
     diagnostics: null,
     loading: true,
@@ -23,11 +29,9 @@ export const DiagnosticsViewComponent = () => {
     state.loading = true;
     state.error = null;
     try {
-      const response = await fetch('/api/v1/diagnostics');
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-      }
-      const dto: unknown = await response.json();
+      const dto: unknown = attrs.desktop
+        ? await invoke('get_diagnostics')
+        : await fetchDiagnostics();
       state.diagnostics = diagnosticsFromDto(dto);
     } catch (err) {
       state.error = err instanceof Error ? err.message : 'Unknown error';
@@ -41,7 +45,8 @@ export const DiagnosticsViewComponent = () => {
     oncreate: () => {
       void loadDiagnostics();
     },
-    view: (): Vnode => {
+    view: ({ attrs: nextAttrs }): Vnode => {
+      attrs = nextAttrs;
       if (state.loading) {
         return m('div.diagnostics-view', m('p', 'Loading diagnostics…'));
       }
@@ -193,6 +198,12 @@ export const DiagnosticsViewComponent = () => {
     },
   };
 };
+
+async function fetchDiagnostics(): Promise<unknown> {
+  const response = await fetch('/api/v1/diagnostics');
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return response.json();
+}
 
 function formatDuration(seconds: number): string {
   if (seconds < 60) return `${seconds}s`;
