@@ -1,7 +1,9 @@
 import { Channel, invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import m, { type FactoryComponent } from 'mithril';
-import { IconButton, type Theme, ThemeManager, toast } from 'mithril-materialized';
+import { IconButton, ModalPanel, type Theme, ThemeManager, toast } from 'mithril-materialized';
+
+import packageJson from '../../package.json' with { type: 'json' };
 
 import type { FileManagerClient } from '../api/client/file-manager-client';
 import {
@@ -2956,38 +2958,35 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
               shortcutsHelpOpen = false;
             },
           }),
-          aboutDialogOpen
-            ? m(
-                '.modal-overlay',
-                {
-                  role: 'presentation',
-                  onclick: (event: MouseEvent) => {
-                    if (event.target === event.currentTarget) aboutDialogOpen = false;
+          m(ModalPanel, {
+            title: t('menu', 'about'),
+            description: m('.fm-about-dialog', [
+              m('img.fm-about-icon', { src: '/favicon-96x96.png', alt: '' }),
+              m('p', t('shell', 'title')),
+              m('p.fm-about-version', t('shell', 'aboutVersion', { version: packageJson.version })),
+              m(
+                'p.fm-about-developer',
+                t('shell', 'aboutDeveloper', { developer: 'Erik Vullings' }),
+              ),
+              m(
+                'p.fm-about-repository',
+                m(
+                  'a',
+                  {
+                    href: 'https://github.com/erikvullings/fm',
+                    target: '_blank',
+                    rel: 'noopener noreferrer',
                   },
-                },
-                [
-                  m(
-                    '.modal.fm-about-dialog',
-                    { role: 'dialog', 'aria-label': t('menu', 'about') },
-                    [
-                      m('h2', t('menu', 'about')),
-                      m('img.fm-about-icon', { src: '/favicon-96x96.png', alt: '' }),
-                      m('p', t('shell', 'title')),
-                      m(
-                        'button',
-                        {
-                          type: 'button',
-                          onclick: () => {
-                            aboutDialogOpen = false;
-                          },
-                        },
-                        t('button', 'close'),
-                      ),
-                    ],
-                  ),
-                ],
-              )
-            : undefined,
+                  t('shell', 'aboutRepository'),
+                ),
+              ),
+            ]),
+            isOpen: aboutDialogOpen,
+            closeOnEsc: true,
+            onToggle: (open: boolean) => {
+              if (!open) aboutDialogOpen = false;
+            },
+          }),
           ...renderAppDialogs(attrs.client, pendingDelete, appDialogsContext),
           m(
             '.fm-function-key-bar',
