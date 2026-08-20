@@ -200,6 +200,7 @@ function renderGitHistorySection(
 function renderSearchBar(
   attrs: FileViewerAttrs,
   search: FileViewerSearchState | undefined,
+  onInputRef: (el: HTMLInputElement) => void,
 ): m.Children {
   const query = search?.query ?? '';
   const matches = search?.matches ?? [];
@@ -210,6 +211,7 @@ function renderSearchBar(
       placeholder: t('viewer', 'searchPlaceholder'),
       value: query,
       'aria-label': t('viewer', 'searchThisFile'),
+      oncreate: ({ dom }) => onInputRef(dom as HTMLInputElement),
       oninput: (event: InputEvent) =>
         attrs.onSearchQueryChange((event.currentTarget as HTMLInputElement).value),
       onkeydown: (event: KeyboardEvent) => {
@@ -290,6 +292,7 @@ function renderSearchBar(
 function renderTextBody(
   attrs: FileViewerAttrs,
   state: Extract<FileViewerState, { status: 'ready' }>,
+  onFindShortcut: () => void,
 ): m.Children {
   const content = state.content;
   if (content.kind !== 'text') return undefined;
@@ -317,6 +320,12 @@ function renderTextBody(
             content: content.text,
             readOnly: true,
             language: languageExtension(editableLanguage),
+            // The viewer only ever holds a lazily-loaded window of a large file in memory (see
+            // `TEXT_WINDOW_BYTES`), so CodeMirror's own find panel - which only searches that
+            // window - is disabled in favor of the toolbar search above, backed by a whole-file
+            // backend scan. Mod-F still does something useful: it focuses that search box.
+            enableBuiltInSearch: false,
+            onFindShortcut,
             ...(content.highlightOffset === undefined || content.highlightLength === undefined
               ? {}
               : {
@@ -528,6 +537,7 @@ function renderAudioBody(state: Extract<FileViewerState, { status: 'ready' }>): 
 }
 
 export const FileViewer: FactoryComponent<FileViewerAttrs> = () => {
+  let searchInput: HTMLInputElement | undefined;
   return {
     view: ({ attrs }) => {
       const state = attrs.state;
@@ -652,7 +662,9 @@ export const FileViewer: FactoryComponent<FileViewerAttrs> = () => {
             ),
           ]),
           state.status === 'ready' && state.content.kind === 'text'
-            ? renderSearchBar(attrs, search)
+            ? renderSearchBar(attrs, search, (el) => {
+                searchInput = el;
+              })
             : undefined,
           state.status === 'ready' && state.content.kind === 'pdf'
             ? renderPdfSearchBar(attrs, state.pdfSearch)
@@ -664,7 +676,7 @@ export const FileViewer: FactoryComponent<FileViewerAttrs> = () => {
               : state.status === 'error'
                 ? m('.fm-file-viewer-body', m('span', state.message))
                 : state.content.kind === 'text'
-                  ? renderTextBody(attrs, state)
+                  ? renderTextBody(attrs, state, () => searchInput?.focus())
                   : state.content.kind === 'audio'
                     ? renderAudioBody(state)
                     : state.content.kind === 'pdf'

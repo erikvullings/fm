@@ -31,6 +31,19 @@ export interface CodeMirrorEditorAttrs {
   readonly extensions?: readonly Extension[];
   readonly onChange?: (content: string) => void;
   readonly selection?: { readonly from: number; readonly to: number };
+  /**
+   * Whether CodeMirror's own find/replace panel (Mod-F, F3/Shift-F3) is active. Defaults to
+   * `true`, appropriate for the F4 editor, which always has the whole file loaded. The F3
+   * viewer sets this to `false`: it lazily loads large files in windows (see
+   * `TEXT_WINDOW_BYTES` in `file-viewer-controller.ts`), so CodeMirror's built-in search - which
+   * only searches the in-memory `EditorState.doc`, i.e. whatever's been scrolled into view so
+   * far - would silently shadow the viewer's own toolbar search, which is backed by a
+   * whole-file `search_in_file` backend scan.
+   */
+  readonly enableBuiltInSearch?: boolean;
+  /** Called for Mod-F when `enableBuiltInSearch` is `false`, so the caller can redirect the
+   * shortcut to its own whole-file-aware search UI instead of leaving it a dead keystroke. */
+  readonly onFindShortcut?: () => void;
 }
 
 export const CodeMirrorEditor: FactoryComponent<CodeMirrorEditorAttrs> = () => {
@@ -70,8 +83,7 @@ export const CodeMirrorEditor: FactoryComponent<CodeMirrorEditorAttrs> = () => {
     }),
     lineNumbers(),
     syntaxHighlighting(fmHighlightStyle, { fallback: true }),
-    search(),
-    keymap.of(searchKeymap),
+    ...(attrs.enableBuiltInSearch === false ? [] : [search(), keymap.of(searchKeymap)]),
     EditorState.readOnly.of(attrs.readOnly === true),
     // Always DOM-editable (contenteditable), even in read-only mode: `readOnly` above already
     // blocks every edit transaction, so this only controls whether the content is selectable.
@@ -91,12 +103,16 @@ export const CodeMirrorEditor: FactoryComponent<CodeMirrorEditorAttrs> = () => {
     ...(attrs.extensions ?? []),
     EditorView.domEventHandlers({
       keydown: (event) => {
+        const isMod = event.metaKey || event.ctrlKey;
+        if (isMod && event.key.toLowerCase() === 'f' && attrs.enableBuiltInSearch === false) {
+          event.preventDefault();
+          event.stopPropagation();
+          attrs.onFindShortcut?.();
+          return true;
+        }
         // Keeps these chords from bubbling to the app-wide keymap, which would otherwise
         // intercept them (save/undo/redo, and Mod-F for the in-editor find panel).
-        if (
-          (event.metaKey || event.ctrlKey) &&
-          ['s', 'z', 'y', 'f'].includes(event.key.toLowerCase())
-        )
+        if (isMod && ['s', 'z', 'y', 'f'].includes(event.key.toLowerCase()))
           event.stopPropagation();
         return false;
       },
