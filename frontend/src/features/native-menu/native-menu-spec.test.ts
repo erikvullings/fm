@@ -236,6 +236,8 @@ describe('buildNativeMenuSpec', () => {
       (menu) => menu.title === 'Tools',
     );
     expect(toolsMenu?.items.map((item) => (item.kind === 'action' ? item.id : item.kind))).toEqual([
+      'ui.openSettings',
+      'separator',
       'core.copyName',
       'core.copyPath',
       'core.copyRelativePath',
@@ -248,7 +250,10 @@ describe('buildNativeMenuSpec', () => {
     const toolsMenu = buildNativeMenuSpec(inputs({ actions: [] })).menus.find(
       (menu) => menu.title === 'Tools',
     );
-    expect(toolsMenu?.items).toEqual([]);
+    expect(toolsMenu?.items.map((item) => (item.kind === 'action' ? item.id : item.kind))).toEqual([
+      'ui.openSettings',
+      'separator',
+    ]);
   });
 
   it('builds the Go menu from favourite actions, not the plain registered actions', () => {
@@ -527,6 +532,15 @@ describe('buildNativeMenuSpec', () => {
       (menu) => menu.title === 'Help',
     );
     expect(helpMenu?.items).toEqual([
+      { kind: 'role', role: 'about' },
+      {
+        kind: 'action',
+        id: 'ui.openDiagnostics',
+        title: 'Diagnostics',
+        enabled: true,
+        checked: false,
+      },
+      { kind: 'separator' },
       {
         kind: 'action',
         id: 'core.showShortcutsHelp',

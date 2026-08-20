@@ -17,7 +17,7 @@ use std::ffi::OsString;
 use std::os::windows::ffi::{OsStrExt, OsStringExt};
 use std::os::windows::process::CommandExt;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex, OnceLock};
 
 use fm_platform::{
     FallbackPlatformAdapter, MountedVolume, PlatformAdapter, PlatformCapabilities, PlatformError,
@@ -40,8 +40,25 @@ use windows_sys::Win32::UI::Shell::{
     SHFILEOPSTRUCTW, SHFileOperationW, SHGFI_ICON, SHGFI_LARGEICON, SHGetFileInfoW, ShellExecuteW,
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    CreateMenu, DestroyIcon, DestroyMenu, ICONINFO, SW_SHOWNORMAL, SetMenu,
+    AppendMenuW, CallWindowProcW, CreateMenu, CreatePopupMenu, DefWindowProcW, DestroyIcon,
+    DestroyMenu, DrawMenuBar, GWLP_WNDPROC, GetWindowLongPtrW, ICONINFO, MF_CHECKED, MF_DISABLED,
+    MF_GRAYED, MF_POPUP, MF_SEPARATOR, MF_STRING, SW_SHOWNORMAL, SetMenu, SetWindowLongPtrW,
+    WM_COMMAND, WNDPROC,
 };
+
+type NativeMenuAction = Arc<dyn Fn(String) + Send + Sync>;
+
+struct WindowMenuState {
+    previous_proc: WNDPROC,
+    actions: HashMap<usize, String>,
+    callback: NativeMenuAction,
+}
+
+static WINDOW_MENU_STATES: OnceLock<Mutex<HashMap<isize, WindowMenuState>>> = OnceLock::new();
+
+fn window_menu_states() -> &'static Mutex<HashMap<isize, WindowMenuState>> {
+    WINDOW_MENU_STATES.get_or_init(|| Mutex::new(HashMap::new()))
+}
 
 /// `GetDriveTypeW` return values (`winbase.h`), which `windows-sys` does not
 /// re-export.
@@ -63,6 +80,164 @@ struct SendSyncHwnd(HWND);
 // It's just an opaque identifier, not an actual pointer to thread-local data.
 unsafe impl Send for SendSyncHwnd {}
 unsafe impl Sync for SendSyncHwnd {}
+
+fn shortcut_label(shortcut: Option<&fm_domain::KeyChord>) -> String {
+    let Some(shortcut) = shortcut else {
+        return String::new();
+    };
+    let mut modifiers = Vec::new();
+    if shortcut.ctrl || shortcut.meta {
+        modifiers.push("Ctrl");
+    }
+    if shortcut.alt {
+        modifiers.push("Alt");
+    }
+    if shortcut.shift {
+        modifiers.push("Shift");
+    }
+    if modifiers.is_empty() {
+        shortcut.key.clone()
+    } else {
+        format!("{}+{}", modifiers.join("+"), shortcut.key)
+    }
+}
+
+fn menu_label(title: &str, shortcut: Option<&fm_domain::KeyChord>) -> Vec<u16> {
+    let shortcut = shortcut_label(shortcut);
+    let label = if shortcut.is_empty() {
+        title.to_owned()
+    } else {
+        format!("{title}\t{shortcut}")
+    };
+    label.encode_utf16().chain(Some(0)).collect()
+}
+
+fn role_label(role: fm_domain::NativeMenuRole) -> &'static str {
+    use fm_domain::NativeMenuRole;
+    match role {
+        NativeMenuRole::About => "About",
+        NativeMenuRole::Services => "Services",
+        NativeMenuRole::HideApp => "Hide",
+        NativeMenuRole::HideOthers => "Hide Others",
+        NativeMenuRole::ShowAll => "Show All",
+        NativeMenuRole::Quit => "Exit",
+        NativeMenuRole::Minimize => "Minimize",
+        NativeMenuRole::Zoom => "Maximize",
+        NativeMenuRole::BringAllToFront => "Bring All to Front",
+    }
+}
+
+fn append_menu_items(
+    menu: isize,
+    items: &[fm_domain::NativeMenuItem],
+    actions: &mut HashMap<usize, String>,
+    next_id: &mut usize,
+) -> Result<(), PlatformError> {
+    for item in items {
+        match item {
+            fm_domain::NativeMenuItem::Separator => {
+                let ok = unsafe { AppendMenuW(menu as _, MF_SEPARATOR, 0, std::ptr::null()) };
+                if ok == 0 {
+                    return Err(PlatformError::Io {
+                        message: "failed to append native menu separator".to_owned(),
+                    });
+                }
+            }
+            fm_domain::NativeMenuItem::Action {
+                id,
+                title,
+                shortcut,
+                enabled,
+                checked,
+            } => {
+                let command_id = *next_id;
+                *next_id = next_id.saturating_add(1);
+                actions.insert(command_id, id.clone());
+                let mut flags = MF_STRING;
+                if !enabled {
+                    flags |= MF_DISABLED | MF_GRAYED;
+                }
+                if *checked {
+                    flags |= MF_CHECKED;
+                }
+                let label = menu_label(title, shortcut.as_ref());
+                let ok = unsafe { AppendMenuW(menu as _, flags, command_id, label.as_ptr()) };
+                if ok == 0 {
+                    return Err(PlatformError::Io {
+                        message: "failed to append native menu action".to_owned(),
+                    });
+                }
+            }
+            fm_domain::NativeMenuItem::Submenu { title, items } => {
+                let submenu = unsafe { CreatePopupMenu() };
+                if submenu.is_null() {
+                    return Err(PlatformError::Io {
+                        message: "failed to create native submenu".to_owned(),
+                    });
+                }
+                if let Err(error) = append_menu_items(submenu as isize, items, actions, next_id) {
+                    unsafe { DestroyMenu(submenu) };
+                    return Err(error);
+                }
+                let label = menu_label(title, None);
+                let ok =
+                    unsafe { AppendMenuW(menu as _, MF_POPUP, submenu as usize, label.as_ptr()) };
+                if ok == 0 {
+                    unsafe { DestroyMenu(submenu) };
+                    return Err(PlatformError::Io {
+                        message: "failed to append native submenu".to_owned(),
+                    });
+                }
+            }
+            fm_domain::NativeMenuItem::Role { role } => {
+                let label = menu_label(role_label(*role), None);
+                let ok = unsafe { AppendMenuW(menu as _, MF_STRING, 0, label.as_ptr()) };
+                if ok == 0 {
+                    return Err(PlatformError::Io {
+                        message: "failed to append native menu role".to_owned(),
+                    });
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+unsafe extern "system" fn native_menu_window_proc(
+    hwnd: HWND,
+    message: u32,
+    wparam: usize,
+    lparam: isize,
+) -> isize {
+    if message == WM_COMMAND && lparam == 0 {
+        let command_id = wparam & 0xffff;
+        let callback_and_action = window_menu_states()
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .get(&(hwnd as isize))
+            .and_then(|state| {
+                state
+                    .actions
+                    .get(&command_id)
+                    .cloned()
+                    .map(|action| (Arc::clone(&state.callback), action))
+            });
+        if let Some((callback, action)) = callback_and_action {
+            callback(action);
+            return 0;
+        }
+    }
+
+    let previous_proc = window_menu_states()
+        .lock()
+        .unwrap_or_else(|error| error.into_inner())
+        .get(&(hwnd as isize))
+        .and_then(|state| state.previous_proc);
+    previous_proc.map_or_else(
+        || unsafe { DefWindowProcW(hwnd, message, wparam, lparam) },
+        |proc| unsafe { CallWindowProcW(Some(proc), hwnd, message, wparam, lparam) },
+    )
+}
 
 /// Encodes a path as a NUL-terminated wide string for the Win32 API.
 fn wide(value: &Path) -> Vec<u16> {
@@ -718,12 +893,6 @@ impl PlatformAdapter for WindowsPlatformAdapter {
         spec: &fm_domain::NativeMenuSpec,
         on_action: std::sync::Arc<dyn Fn(String) + Send + Sync>,
     ) -> Result<(), PlatformError> {
-        // Task 0131: creates and attaches an empty native menu bar to the Tauri
-        // window. Menu content is task 0133 (deferred to Windows). The window
-        // handle must have been set by the desktop host via `set_window_handle`
-        // after the window was created.
-        let _ = (spec, on_action); // Suppress unused warnings for now (0133)
-
         let SendSyncHwnd(hwnd) = self
             .window_handle
             .lock()
@@ -740,6 +909,94 @@ impl PlatformAdapter for WindowsPlatformAdapter {
             });
         }
 
+        let mut actions = HashMap::new();
+        let mut next_id = 0x4000_usize;
+        for top_level in &spec.menus {
+            let submenu = unsafe { CreatePopupMenu() };
+            if submenu.is_null() {
+                unsafe { DestroyMenu(menu) };
+                return Err(PlatformError::Io {
+                    message: "failed to create native top-level submenu".to_owned(),
+                });
+            }
+            if let Err(error) = append_menu_items(
+                submenu as isize,
+                &top_level.items,
+                &mut actions,
+                &mut next_id,
+            ) {
+                unsafe {
+                    DestroyMenu(submenu);
+                    DestroyMenu(menu);
+                }
+                return Err(error);
+            }
+            let label = menu_label(&top_level.title, None);
+            let ok = unsafe { AppendMenuW(menu, MF_POPUP, submenu as usize, label.as_ptr()) };
+            if ok == 0 {
+                unsafe {
+                    DestroyMenu(submenu);
+                    DestroyMenu(menu);
+                }
+                return Err(PlatformError::Io {
+                    message: "failed to append native top-level menu".to_owned(),
+                });
+            }
+        }
+
+        // Rebuilds are expected as action availability and workspace state change. Once this
+        // window has been subclassed, `GetWindowLongPtrW` returns our own procedure; retaining
+        // that value as the previous procedure would make every later message recurse forever.
+        let previous_proc = window_menu_states()
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .get(&(hwnd as isize))
+            .and_then(|state| state.previous_proc)
+            .or_else(|| {
+                let current = unsafe { GetWindowLongPtrW(hwnd, GWLP_WNDPROC) };
+                if current == 0 {
+                    None
+                } else {
+                    Some(unsafe {
+                        std::mem::transmute::<
+                            isize,
+                            unsafe extern "system" fn(HWND, u32, usize, isize) -> isize,
+                        >(current)
+                    })
+                }
+            });
+        let Some(previous_proc) = previous_proc else {
+            unsafe { DestroyMenu(menu) };
+            return Err(PlatformError::Io {
+                message: "failed to read the window procedure for native menu routing".to_owned(),
+            });
+        };
+        let replaced = unsafe {
+            SetWindowLongPtrW(
+                hwnd,
+                GWLP_WNDPROC,
+                native_menu_window_proc as *const () as usize as isize,
+            )
+        };
+        if replaced == 0 {
+            unsafe { DestroyMenu(menu) };
+            return Err(PlatformError::Io {
+                message: "failed to install the native menu command handler".to_owned(),
+            });
+        }
+
+        window_menu_states()
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .insert(
+                hwnd as isize,
+                WindowMenuState {
+                    previous_proc: Some(previous_proc),
+                    actions,
+                    callback: on_action,
+                },
+            );
+
         // SAFETY: SetMenu attaches the menu to the window. Both HWND and HMENU
         // are valid at this point (hwnd came from `set_window_handle`, menu was
         // just created successfully).
@@ -747,10 +1004,23 @@ impl PlatformAdapter for WindowsPlatformAdapter {
         if success == 0 {
             // SAFETY: menu was created successfully, so destroying it is safe.
             unsafe { DestroyMenu(menu) };
+            window_menu_states()
+                .lock()
+                .unwrap_or_else(|error| error.into_inner())
+                .remove(&(hwnd as isize));
+            unsafe {
+                SetWindowLongPtrW(
+                    hwnd,
+                    GWLP_WNDPROC,
+                    previous_proc as *const () as usize as isize,
+                );
+            }
             return Err(PlatformError::Io {
                 message: "failed to attach native menu bar to window (SetMenu failed)".to_owned(),
             });
         }
+
+        unsafe { DrawMenuBar(hwnd) };
 
         Ok(())
     }
@@ -761,6 +1031,30 @@ mod tests {
     use std::path::Path;
 
     use super::*;
+
+    #[test]
+    fn windows_menu_shortcuts_use_windows_modifier_labels() {
+        let shortcut = fm_domain::KeyChord {
+            key: "c".to_owned(),
+            ctrl: true,
+            shift: true,
+            ..fm_domain::KeyChord::default()
+        };
+        assert_eq!(shortcut_label(Some(&shortcut)), "Ctrl+Shift+c");
+        assert_eq!(
+            String::from_utf16(&menu_label("Copy", Some(&shortcut))[..])
+                .expect("menu label is valid UTF-16")
+                .trim_end_matches('\0'),
+            "Copy\tCtrl+Shift+c"
+        );
+    }
+
+    #[test]
+    fn windows_menu_roles_use_windows_conventions() {
+        assert_eq!(role_label(fm_domain::NativeMenuRole::Quit), "Exit");
+        assert_eq!(role_label(fm_domain::NativeMenuRole::Zoom), "Maximize");
+        assert_eq!(role_label(fm_domain::NativeMenuRole::HideApp), "Hide");
+    }
 
     #[test]
     fn volume_capacity_reports_plausible_totals_for_the_system_drive() {

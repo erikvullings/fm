@@ -15,7 +15,8 @@ it as the app's main menu via `NSApplication::sharedApplication().setMainMenu(..
 is **empty**. There is no File/Edit/View/Go/Window/Help structure, no OS-level `Cmd+,` Preferences
 item, no populated Window menu (so Mission Control / Cmd+backtick window switching shows a generic
 app entry instead of real menu items), and no dynamic "Open Recent" in the Dock menu. On Windows,
-the hook doesn't exist yet at all — see 0131, still open.
+task 0131 now provides the HWND hook and this task supplies the equivalent HMENU content and
+action routing.
 
 Raised during a review of macOS integration gaps: fm's context menus and command palette (0051,
 0052) cover in-app discovery well, but the OS-level menu bar — which macOS users expect to reflect
@@ -23,6 +24,7 @@ the app's capabilities and which text fields/inputs rely on for their built-in E
 (cut/copy/paste/undo working in native text fields) — is currently a no-op.
 
 ## Acceptance Criteria
+
 - macOS: a real menu bar with standard sections — App menu (About, Preferences `Cmd+,`, Services,
   Hide/Quit), File (New window/tab, Close), Edit (Undo/Redo/Cut/Copy/Paste/Select All — wire to the
   same actions as 0049's action registry so behaviour matches the keyboard shortcuts already bound),
@@ -41,15 +43,17 @@ the app's capabilities and which text fields/inputs rely on for their built-in E
   assert against in CI).
 
 ## Implementation Notes
+
 - Reuse the action registry (0049) as the source of truth for menu item labels/shortcuts/enabled
   state rather than hand-maintaining a parallel list — the command palette (0051) already does this
   and is a good reference implementation.
 - Keep menu construction behind the existing `PlatformAdapter` trait; don't leak `NSMenu`/`HMENU`
   types outside `fm-platform-macos`/`fm-platform-windows`.
-- The Windows half is blocked on 0131 (hook point) landing first, or can be scoped together with it
-  in one PR if picked up jointly.
+- The Windows half depends on 0131's HWND hook point and is implemented behind the same platform
+  adapter boundary; menu content remains opaque to the desktop host.
 
 ## Agent Notes
+
 - 2026-08-15 claude: Implemented the macOS half end-to-end; Windows explicitly deferred (see
   below). Scope and two architectural decisions were confirmed with the user before implementation
   (not guessed): (1) macOS only in this task, Windows left as a documented gap pending 0131, which
@@ -245,3 +249,16 @@ the app's capabilities and which text fields/inputs rely on for their built-in E
 - 2026-08-15 claude: User confirmed via manual testing (`pnpm run dev:tauri`) that the macOS menu
   bar and all reported fixes work as expected. Marking done. Windows half remains explicitly out
   of scope, deferred to task 0131 (still open/unstarted) per this task's own acceptance criteria.
+- 2026-08-20 claude: Implemented the Windows half after task 0131 landed. `WindowsPlatformAdapter`
+  now recursively renders the frontend-provided `NativeMenuSpec` into top-level `HMENU` menus and
+  nested popup menus using `AppendMenuW`/`CreatePopupMenu`. Action items receive stable per-install
+  command ids, preserve enabled/checked state, and display Windows-style `Ctrl`/`Alt`/`Shift`
+  shortcut labels. Role items use Windows labels (`Exit`, `Maximize`, `Hide`, etc.) and do not route
+  through the application callback. A per-window subclass handles `WM_COMMAND`, maps command ids
+  back to action ids, invokes the existing callback channel, and delegates unrelated messages to
+  the original window procedure. Reinstalling a menu replaces the stored action map and callback.
+  - Added pure unit tests for shortcut-label formatting and Windows role labels. The full
+    `fm-platform-windows` suite (14 tests) and strict clippy pass on Windows.
+  - Manual visual verification of the running Tauri menu bar remains outstanding; this Windows
+    implementation is compile- and unit-tested here, but has not been exercised through an
+    installed desktop binary on a separate Windows machine.

@@ -11,6 +11,25 @@ export interface ContextMenuAttrs {
   readonly onInvoke: (actionId: string) => void;
 }
 
+const CONTEXT_MENU_VIEWPORT_MARGIN = 8;
+
+export function clampContextMenuPosition(
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  viewportWidth: number,
+  viewportHeight: number,
+  margin = CONTEXT_MENU_VIEWPORT_MARGIN,
+): { x: number; y: number } {
+  const maxX = Math.max(margin, viewportWidth - width - margin);
+  const maxY = Math.max(margin, viewportHeight - height - margin);
+  return {
+    x: Math.max(margin, Math.min(x, maxX)),
+    y: Math.max(margin, Math.min(y, maxY)),
+  };
+}
+
 /** Keyboard-navigable in-window menu styled with the app's Materialized theme tokens. */
 export const ContextMenu: FactoryComponent<ContextMenuAttrs> = () => {
   let activeIndex = 0;
@@ -45,6 +64,13 @@ export const ContextMenu: FactoryComponent<ContextMenuAttrs> = () => {
             tabindex: -1,
             'aria-label': 'Directory actions',
             style: { left: `${attrs.x}px`, top: `${attrs.y}px` },
+            oncreate: ({ dom }) => {
+              positionMenu(dom as HTMLElement, attrs);
+              if (previousFocus === undefined)
+                previousFocus = document.activeElement as HTMLElement;
+              (dom as HTMLElement).focus();
+            },
+            onupdate: ({ dom }) => positionMenu(dom as HTMLElement, attrs),
             onclick: (event: MouseEvent) => event.stopPropagation(),
             onkeydown: (event: KeyboardEvent) => {
               if (event.key === 'Escape') {
@@ -62,11 +88,6 @@ export const ContextMenu: FactoryComponent<ContextMenuAttrs> = () => {
                 event.preventDefault();
                 invoke(attrs, activeIndex);
               }
-            },
-            oncreate: ({ dom }) => {
-              if (previousFocus === undefined)
-                previousFocus = document.activeElement as HTMLElement;
-              (dom as HTMLElement).focus();
             },
           },
           attrs.actions.map((item, index) =>
@@ -89,3 +110,17 @@ export const ContextMenu: FactoryComponent<ContextMenuAttrs> = () => {
     },
   };
 };
+
+function positionMenu(menu: HTMLElement, attrs: ContextMenuAttrs): void {
+  const rect = menu.getBoundingClientRect();
+  const position = clampContextMenuPosition(
+    attrs.x,
+    attrs.y,
+    rect.width,
+    rect.height,
+    window.innerWidth,
+    window.innerHeight,
+  );
+  menu.style.left = `${position.x}px`;
+  menu.style.top = `${position.y}px`;
+}

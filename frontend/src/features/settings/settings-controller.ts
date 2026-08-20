@@ -27,6 +27,7 @@ export interface SettingsControllerContext {
   getPlugins(): readonly PluginDescriptor[];
   getInstalledIconThemeId(): string | undefined;
   setInstalledIconThemeId(id: string | undefined): void;
+  setNativeIconLoaderEnabled(enabled: boolean): void;
   getRuntimeKind(): RuntimeKind;
   getWorkspace(): WorkspaceProjection | undefined;
   setWorkspace(ws: WorkspaceProjection): void;
@@ -154,6 +155,13 @@ export function createSettingsController(context: SettingsControllerContext): Se
     },
 
     applyIconTheme(themeId: string): void {
+      if (themeId === 'native') {
+        restoreDefaultIconTheme();
+        context.setInstalledIconThemeId(themeId);
+        context.setNativeIconLoaderEnabled(true);
+        return;
+      }
+      context.setNativeIconLoaderEnabled(false);
       if (themeId === 'generic') {
         if (context.getInstalledIconThemeId() !== themeId) {
           restoreDefaultIconTheme();

@@ -153,9 +153,8 @@ disk-usage visualization.
 - [ ] 0118 Integrate parallel-disk-usage with WinDirStat Treemap View
 - [ ] 0145 Surface Finder tags/Spotlight comment editing in the Properties dialog *(split out of
   0136; 0140 landed mid-task, after 0136's own standalone dialogs were already built)*
-- [ ] 0151 Fix Windows git-status/history: `canonicalize()` vs. `git2` path mismatch *(needs 0135;
-  surfaced 2026-08-19 once removing sccache from CI stopped masking real Windows test results —
-  diagnosed from source, needs verification on a real Windows machine)*
+- [x] 0151 Fix Windows git-status/history: `canonicalize()` vs. `git2` path mismatch *(needs 0135;
+  uses `dunce::canonicalize()` to keep filesystem and libgit2 paths comparable on Windows)*
 
 ## Plugins & extensibility
 
@@ -213,12 +212,12 @@ behavior.
 - [x] 0126 Embedded terminal drawer
 - [x] 0132 Windows defect: operation routes return 500 / deadlock *(pre-existing, found while
   verifying 0060; blocked the Windows pre-commit hook)*
-- [x] 0133 Populate native menu bar content (macOS + Windows) *(macOS done; Windows half deferred,
-  still needs 0131)*
+- [x] 0133 Populate native menu bar content (macOS + Windows) *(frontend-driven spec rendered by
+  AppKit and Win32 HMENU; manual Windows visual verification remains outstanding)*
 - [ ] 0127 External terminal application choice *(pick a specific app, e.g. ghostty/Warp, from the
   context menu)*
-- [ ] 0131 Windows native menu bar *(split out of 0060; hook-point-only, mirrors the macOS 0058
-  implementation)*
+- [x] 0131 Windows native menu bar *(split out of 0060; HWND hook point and HMENU attachment
+  implemented, with content completed by 0133)*
 - [ ] 0137 Services menu (macOS) / "Send to" (Windows) integration
 - [ ] 0148 Application deleter (macOS) *(needs 0059, 0061; macOS-only — Windows/Linux already have
   their own uninstall conventions)*

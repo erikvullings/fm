@@ -11,13 +11,17 @@ import type {
   WorkspaceId,
 } from '../../models';
 import {
+  CLOSE_TAB_MENU_ID,
   dispatchNativeMenuAction,
   GO_MENU_CONNECTION_ID_PREFIX,
   GO_MENU_SYSTEM_LOCATION_ID_PREFIX,
   GO_MENU_VOLUME_ID_PREFIX,
   type NativeMenuDispatchContext,
+  NEW_TAB_MENU_ID,
   NEW_WORKSPACE_WINDOW_MENU_ID,
+  OPEN_DIAGNOSTICS_MENU_ID,
   OPEN_SETTINGS_MENU_ID,
+  OPEN_SHORTCUTS_MENU_ID,
   WINDOW_OPEN_WORKSPACE_MENU_ID_PREFIX,
 } from './native-menu-dispatch';
 
@@ -35,7 +39,11 @@ function action(id: string): ActionDescriptor {
 interface ContextMocks {
   readonly findAction: ReturnType<typeof vi.fn<(id: string) => ActionDescriptor | undefined>>;
   readonly openSettingsDialog: ReturnType<typeof vi.fn<() => void>>;
+  readonly openDiagnostics: ReturnType<typeof vi.fn<() => void>>;
+  readonly openShortcutsHelp: ReturnType<typeof vi.fn<() => void>>;
   readonly activateTabByKey: ReturnType<typeof vi.fn<(tabKey: string) => void>>;
+  readonly openNewTab: ReturnType<typeof vi.fn<(paneId: PaneId) => void>>;
+  readonly closeActiveTab: ReturnType<typeof vi.fn<(paneId: PaneId) => void>>;
   readonly activePaneId: ReturnType<typeof vi.fn<() => PaneId | undefined>>;
   readonly setSort: ReturnType<
     typeof vi.fn<(paneId: PaneId, sort: readonly SortDescriptor[]) => void>
@@ -59,7 +67,11 @@ function contextMocks(
 ): ContextMocks & { readonly context: NativeMenuDispatchContext } {
   const findAction = vi.fn<(id: string) => ActionDescriptor | undefined>(() => undefined);
   const openSettingsDialog = vi.fn<() => void>();
+  const openDiagnostics = vi.fn<() => void>();
+  const openShortcutsHelp = vi.fn<() => void>();
   const activateTabByKey = vi.fn<(tabKey: string) => void>();
+  const openNewTab = vi.fn<(paneId: PaneId) => void>();
+  const closeActiveTab = vi.fn<(paneId: PaneId) => void>();
   const activePaneId = vi.fn<() => PaneId | undefined>(() => paneId);
   const setSort = vi.fn<(paneId: PaneId, sort: readonly SortDescriptor[]) => void>();
   const invokeAction = vi.fn<(action: ActionDescriptor) => void>();
@@ -74,7 +86,11 @@ function contextMocks(
   return {
     findAction,
     openSettingsDialog,
+    openDiagnostics,
+    openShortcutsHelp,
     activateTabByKey,
+    openNewTab,
+    closeActiveTab,
     activePaneId,
     setSort,
     invokeAction,
@@ -87,7 +103,11 @@ function contextMocks(
     context: {
       findAction,
       openSettingsDialog,
+      openDiagnostics,
+      openShortcutsHelp,
       activateTabByKey,
+      openNewTab,
+      closeActiveTab,
       activePaneId,
       setSort,
       invokeAction,
@@ -102,6 +122,32 @@ function contextMocks(
 }
 
 describe('dispatchNativeMenuAction', () => {
+  it('opens keyboard shortcut help through the frontend path', () => {
+    const mocks = contextMocks();
+    dispatchNativeMenuAction(mocks.context, OPEN_SHORTCUTS_MENU_ID);
+    expect(mocks.openShortcutsHelp).toHaveBeenCalledOnce();
+    expect(mocks.invokeAction).not.toHaveBeenCalled();
+  });
+
+  it('opens diagnostics for the frontend-local Help menu id', () => {
+    const mocks = contextMocks();
+    dispatchNativeMenuAction(mocks.context, OPEN_DIAGNOSTICS_MENU_ID);
+    expect(mocks.openDiagnostics).toHaveBeenCalledOnce();
+    expect(mocks.invokeAction).not.toHaveBeenCalled();
+  });
+  it('opens a new tab in the active pane through the local tab controller', () => {
+    const mocks = contextMocks('pane-1' as PaneId);
+    dispatchNativeMenuAction(mocks.context, NEW_TAB_MENU_ID);
+    expect(mocks.openNewTab).toHaveBeenCalledExactlyOnceWith('pane-1');
+    expect(mocks.invokeAction).not.toHaveBeenCalled();
+  });
+
+  it('closes the active tab through the local tab controller', () => {
+    const mocks = contextMocks('pane-1' as PaneId);
+    dispatchNativeMenuAction(mocks.context, CLOSE_TAB_MENU_ID);
+    expect(mocks.closeActiveTab).toHaveBeenCalledExactlyOnceWith('pane-1');
+    expect(mocks.invokeAction).not.toHaveBeenCalled();
+  });
   it('opens Settings for the frontend-local ui.openSettings id without touching the registry', () => {
     const mocks = contextMocks();
     dispatchNativeMenuAction(mocks.context, OPEN_SETTINGS_MENU_ID);

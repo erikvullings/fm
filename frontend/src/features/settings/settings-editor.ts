@@ -214,8 +214,14 @@ export const SettingsEditor: FactoryComponent<SettingsEditorAttrs> = () => {
               label: t('settings', 'iconTheme'),
               options: [
                 { id: 'generic', label: t('settings', 'iconThemeGeneric') },
+                { id: 'native', label: t('settings', 'iconThemeNative') },
                 ...current.plugins
-                  .filter((plugin) => plugin.iconTheme !== undefined)
+                  .filter(
+                    (plugin) =>
+                      // Backend DTOs serialize absent Option<T> fields as JSON null, not undefined.
+                      plugin.iconTheme != null &&
+                      Object.keys(plugin.iconTheme.iconDefinitions).length > 0,
+                  )
                   .map((plugin) => ({
                     id: plugin.id,
                     label: plugin.enabled ? plugin.name : `${plugin.name} (plugin disabled)`,
