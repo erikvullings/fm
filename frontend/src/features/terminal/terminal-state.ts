@@ -1,9 +1,7 @@
-import type { Location } from '../../models';
-
-/** A drawer is visible only while its terminal still belongs to the active folder. */
+/** A drawer is visible only while its terminal still belongs to the active tab. */
 export function isTerminalVisible(
-  openLocations: ReadonlySet<string>,
-  activeLocation: Location | undefined,
+  openTabKeys: ReadonlySet<string>,
+  activeTabKey: string | undefined,
 ): boolean {
-  return activeLocation !== undefined && openLocations.has(activeLocation.uri);
+  return activeTabKey !== undefined && openTabKeys.has(activeTabKey);
 }

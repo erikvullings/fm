@@ -23,6 +23,7 @@ import type {
   ConnectionId,
   CreateConnectionRequest,
   CreateWorkspaceRequest,
+  DiagnosticsResult,
   DirectorySnapshot,
   DuplicateGroup,
   DuplicatePage,
@@ -117,8 +118,10 @@ const THUMBNAILABLE_MOCK_EXTENSIONS = new Set([
 
 export type MockClientMethod =
   | 'getRuntimeCapabilities'
+  | 'getDiagnostics'
   | 'getSystemLocations'
   | 'getVolumes'
+  | 'getHomeDirectory'
   | 'startNativeDrag'
   | 'getSettings'
   | 'updateSettings'
@@ -697,11 +700,54 @@ export class MockFileManagerClient implements FileManagerClient {
     return this.perform('getSystemLocations', signal, () => []);
   }
 
+  getDiagnostics(signal?: AbortSignal): Promise<DiagnosticsResult> {
+    return this.perform('getDiagnostics', signal, () => ({
+      frontendVersion: '0.1.0',
+      backendVersion: '0.1.0',
+      platform: 'Mock',
+      runtimeCapabilities: {
+        clipboard: false,
+        extendedAttributes: true,
+        finderTags: true,
+        nativeDragOut: false,
+        nativeFileIcons: this.nativeIconExtensions.size > 0,
+        nativeMenus: false,
+        nativeThumbnails: false,
+        openTerminal: false,
+        platform: 'linux',
+        plugins: true,
+        revealInSystemFileManager: false,
+        runtime: 'mock',
+        serverAdministration: false,
+        systemTrash: false,
+      },
+      connectionState: {
+        connected: true,
+        uptimeSeconds: 0,
+        eventsReceived: 0,
+        statusMessage: 'Mock',
+      },
+      loadedPlugins: [],
+      recentErrors: [],
+      operationQueueStatus: {
+        queuedCount: 0,
+        runningCount: 0,
+        pausedCount: 0,
+        completedCount: 0,
+        totalPendingSize: 0,
+      },
+    }));
+  }
+
   getVolumes(signal?: AbortSignal): Promise<Volume[]> {
     return this.perform('getVolumes', signal, () => [
       { name: 'Macintosh HD', location: { providerId: 'file', uri: 'mock:///' } },
       { name: 'Empty Drive', location: { providerId: 'file', uri: 'mock:///Empty' } },
     ]);
+  }
+
+  getHomeDirectory(signal?: AbortSignal): Promise<string | undefined> {
+    return this.perform('getHomeDirectory', signal, () => '/Users/mock');
   }
 
   startNativeDrag(_locations: readonly Location[], signal?: AbortSignal): Promise<void> {

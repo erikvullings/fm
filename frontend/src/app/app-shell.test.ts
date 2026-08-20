@@ -54,6 +54,37 @@ describe('locationForPath', () => {
       uri: 'archive:///home/erik/My%20Comic.zip!/chapter',
     });
   });
+
+  const local = { providerId: 'local', uri: 'file:///Users/erik/projects' } as const;
+
+  it('expands a bare ~ to the home directory when known', () => {
+    expect(locationForPath(local, '~', '/Users/erik')).toEqual({
+      providerId: 'local',
+      uri: 'file:///Users/erik',
+    });
+  });
+
+  it('expands ~/... to a path under the home directory', () => {
+    expect(locationForPath(local, '~/.codex', '/Users/erik')).toEqual({
+      providerId: 'local',
+      uri: 'file:///Users/erik/.codex',
+    });
+  });
+
+  it('leaves a leading ~ untouched when the home directory is unknown', () => {
+    expect(locationForPath(local, '~/.codex')).toEqual({
+      providerId: 'local',
+      uri: 'file:///~/.codex',
+    });
+  });
+
+  it('does not expand ~ for a non-local provider, which may have its own convention', () => {
+    const sftp = { providerId: 'sftp', uri: 'sftp://host/home/erik' } as const;
+    expect(locationForPath(sftp, '~/uploads', '/Users/erik')).toEqual({
+      providerId: 'sftp',
+      uri: 'sftp://host/~/uploads',
+    });
+  });
 });
 
 let root: HTMLElement;

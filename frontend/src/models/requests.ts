@@ -1,5 +1,6 @@
 import type { CalculateFolderSizeResponseDto } from '../api/generated/models/calculateFolderSizeResponseDto';
 import type { ComparisonPageDto } from '../api/generated/models/comparisonPageDto';
+import type { DiagnosticsDto } from '../api/generated/models/diagnosticsDto';
 import type { GetFileGitHistoryResponseDto } from '../api/generated/models/getFileGitHistoryResponseDto';
 import type { GitLogEntryDto } from '../api/generated/models/gitLogEntryDto';
 import type { LoadEditableFileResponseDto } from '../api/generated/models/loadEditableFileResponseDto';
@@ -210,6 +211,14 @@ export interface CalculateFolderSizeRequest {
 
 /** The result of a {@link CalculateFolderSizeRequest}. */
 export type CalculateFolderSizeResult = CalculateFolderSizeResponseDto;
+
+/**
+ * The result of `getDiagnostics()` (`GET /api/v1/diagnostics`, spec §30), mirroring
+ * `fm_transport_dto::DiagnosticsDto`. `diagnosticsFromDto` (features/diagnostics/diagnostics.ts)
+ * still does its own defensive parsing on top of this, since the DTO is also the input to that
+ * conversion from untyped JSON in older call sites.
+ */
+export type DiagnosticsResult = DiagnosticsDto;
 
 /**
  * Requests a file's git commit history (`POST /api/v1/files/git-history`), for the Alt+Space

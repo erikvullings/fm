@@ -18,6 +18,7 @@ import type {
   ConnectionId,
   CreateConnectionRequest,
   CreateWorkspaceRequest,
+  DiagnosticsResult,
   DirectorySnapshot,
   DuplicatePage,
   EditableFile,
@@ -101,12 +102,20 @@ export class TauriFileManagerClient implements FileManagerClient {
     return invoke<RuntimeCapabilities>('get_runtime_capabilities');
   }
 
+  async getDiagnostics(_signal?: AbortSignal): Promise<DiagnosticsResult> {
+    return invoke<DiagnosticsResult>('get_diagnostics');
+  }
+
   async getSystemLocations(_signal?: AbortSignal): Promise<SystemLocation[]> {
     return invoke<SystemLocation[]>('get_system_locations');
   }
 
   async getVolumes(_signal?: AbortSignal): Promise<Volume[]> {
     return invoke<Volume[]>('get_volumes');
+  }
+
+  async getHomeDirectory(_signal?: AbortSignal): Promise<string | undefined> {
+    return (await invoke<string | null>('get_home_directory')) ?? undefined;
   }
 
   startNativeDrag(locations: readonly Location[], _signal?: AbortSignal): Promise<void> {

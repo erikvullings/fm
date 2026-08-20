@@ -125,6 +125,13 @@ export interface BackendEventContext {
   /** Returns IDs of panes whose active tab is showing `uri`. */
   findPanesWithUri(uri: string): readonly PaneId[];
   loadPane(paneId: PaneId, options?: { background?: boolean }): Promise<void>;
+  /**
+   * Called once a search has finished (`isComplete`) and `paneId` has reloaded its listing for
+   * it. Lets the caller tell the user when a completed search turned up nothing, since that can
+   * only be known once results have actually streamed in and been applied - not from the initial
+   * `startSearch` response nor from any single batch's `entries` (batches may be partial).
+   */
+  reportSearchCompletion(paneId: PaneId, searchId: string): void;
 
   // Redraw
   redraw(): void;
@@ -286,7 +293,9 @@ export function createBackendEventHandler(ctx: BackendEventContext): (event: Bac
       const inFlight = ctx.getSearchBatchReloadInFlight();
       for (const paneId of ctx.findPanesWithUri(searchUri)) {
         if (payload.isComplete) {
-          void ctx.loadPane(paneId);
+          void ctx
+            .loadPane(paneId)
+            .then(() => ctx.reportSearchCompletion(paneId, payload.searchId));
           continue;
         }
         if (inFlight.has(paneId)) continue;

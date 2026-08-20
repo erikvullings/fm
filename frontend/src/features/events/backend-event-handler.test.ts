@@ -98,6 +98,7 @@ function makeContext(overrides: Partial<BackendEventContext> = {}): BackendEvent
     cacheContentMatches: vi.fn(),
     findPanesWithUri: vi.fn(() => []),
     loadPane: vi.fn(() => Promise.resolve()),
+    reportSearchCompletion: vi.fn(),
     redraw: vi.fn(),
     ...overrides,
   };
@@ -274,7 +275,7 @@ describe('createBackendEventHandler', () => {
   });
 
   describe('search.resultsBatch', () => {
-    it('caches content matches and triggers a reload for the matching pane', async () => {
+    it('caches content matches, triggers a reload, and reports completion for the matching pane', async () => {
       const searchId = 'search-42';
       const ctx = makeContext({
         getFindFilesSearchId: vi.fn(() => searchId),
@@ -312,6 +313,39 @@ describe('createBackendEventHandler', () => {
       ]);
       expect(ctx.loadPane).toHaveBeenCalledWith(PANE_ID);
       expect(ctx.redraw).toHaveBeenCalled();
+
+      // `reportSearchCompletion` must only run after the reload settles, not before - the
+      // pane's listing needs to actually reflect the streamed-in results before anyone can
+      // tell whether the search came up empty.
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(ctx.reportSearchCompletion).toHaveBeenCalledWith(PANE_ID, searchId);
+    });
+
+    it('does not report completion for a batch that is not yet complete', async () => {
+      const searchId = 'search-42';
+      const ctx = makeContext({
+        getFindFilesSearchId: vi.fn(() => searchId),
+        findPanesWithUri: vi.fn(() => [PANE_ID]),
+      });
+      const handler = createBackendEventHandler(ctx);
+
+      handler(
+        makeEvent(
+          {
+            type: 'search.resultsBatch',
+            searchId,
+            entries: [],
+            isComplete: false,
+            warningsCount: 0,
+          },
+          WS_ID,
+        ),
+      );
+
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(ctx.reportSearchCompletion).not.toHaveBeenCalled();
     });
 
     it('ignores batches belonging to a different search', () => {

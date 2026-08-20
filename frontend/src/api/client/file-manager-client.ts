@@ -15,6 +15,7 @@ import type {
   ConnectionId,
   CreateConnectionRequest,
   CreateWorkspaceRequest,
+  DiagnosticsResult,
   DirectorySnapshot,
   DuplicatePage,
   EditableFile,
@@ -100,6 +101,10 @@ export interface FileManagerClient {
   getRuntimeCapabilities(signal?: AbortSignal): Promise<RuntimeCapabilities>;
   getSystemLocations(signal?: AbortSignal): Promise<SystemLocation[]>;
   getVolumes(signal?: AbortSignal): Promise<Volume[]>;
+  /** The current user's home directory as a native path, for expanding a leading `~` typed
+   * into an address bar. `undefined` where the host can't determine one (e.g. networked/browser
+   * hosting). */
+  getHomeDirectory(signal?: AbortSignal): Promise<string | undefined>;
 
   /** Starts an OS file-reference drag from the desktop host. */
   startNativeDrag(locations: readonly Location[], signal?: AbortSignal): Promise<void>;
@@ -333,6 +338,9 @@ export interface FileManagerClient {
   listActions(signal?: AbortSignal): Promise<ActionDescriptor[]>;
 
   invokeAction(request: InvokeActionRequest, signal?: AbortSignal): Promise<ActionResult>;
+
+  /** Diagnostics view for troubleshooting and bug reports (spec §30). */
+  getDiagnostics(signal?: AbortSignal): Promise<DiagnosticsResult>;
 
   listPlugins(signal?: AbortSignal): Promise<PluginDescriptor[]>;
 

@@ -269,8 +269,16 @@ function isAutoDismissibleState(state: OperationState): boolean {
   );
 }
 
-/** Converts a displayed breadcrumb path back to its provider-specific location. */
-export function locationForPath(current: Location, path: string): Location {
+/**
+ * Converts a displayed breadcrumb path back to its provider-specific location.
+ *
+ * `homeDirectory` (the native home-directory path, when known - see `getHomeDirectory` on
+ * `FileManagerClient`) lets a leading `~`/`~/...` expand the same way a shell would, for the
+ * local provider only: other providers (e.g. SFTP) may have their own, server-side `~`
+ * convention keyed to a different home directory, so a bare/unexpandable `~` is passed through
+ * unchanged rather than guessing.
+ */
+export function locationForPath(current: Location, path: string, homeDirectory?: string): Location {
   if (current.providerId === 'archive') {
     const archiveSeparator = path.indexOf('!');
     const outerPath = archiveSeparator < 0 ? path : path.slice(0, archiveSeparator);
@@ -286,7 +294,16 @@ export function locationForPath(current: Location, path: string): Location {
     };
   }
   const url = new URL(current.uri);
-  url.pathname = path.startsWith('~') ? path : path.replaceAll('\\', '/');
+  const canExpandTilde = current.providerId === 'local' && homeDirectory !== undefined;
+  const expandedPath =
+    canExpandTilde && path === '~'
+      ? homeDirectory
+      : canExpandTilde && path.startsWith('~/')
+        ? `${homeDirectory.replace(/\/+$/, '')}/${path.slice(2)}`
+        : path.startsWith('~')
+          ? path
+          : path.replaceAll('\\', '/');
+  url.pathname = expandedPath.replaceAll('\\', '/');
   return { ...current, uri: url.toString() };
 }
 
@@ -307,6 +324,8 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
   let systemLocationsError: string | undefined;
   let volumes: readonly Volume[] = [];
   let volumesError: string | undefined;
+  /** Native home-directory path, for expanding a leading `~` typed into an address bar. */
+  let homeDirectory: string | undefined;
   const unavailableLocations = new Set<string>();
   let plugins: readonly PluginDescriptor[] = [];
   let connections: readonly Connection[] = [];
@@ -518,7 +537,10 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
   /** Registered by `DirectoryTree` (task 0139): moves DOM focus into the tree sidebar. */
   let focusDirectoryTree: (() => boolean) | undefined;
   let commandPaletteOpen = false;
-  const openTerminalLocations = new Set<string>();
+  /** Composite `paneId:tabId` keys of tabs with an open terminal drawer; a terminal stays bound
+   * to the tab that opened it, not the folder it happened to be showing at the time. */
+  const openTerminalTabKeys = new Set<string>();
+  let disposeTerminalTab: ((tabKey: string) => void) | undefined;
   /** Directory-tree sidebar (task 0139): open/closed, lazily-fetched expansion/children cache,
    * the provider root it is currently rooted at, and the active-pane location it was last
    * synced to (so `syncDirectoryTreeToActiveLocation` only does work when that location
@@ -1022,6 +1044,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       appState = applyAppPatches(appState, deleteQuickFilterDraftPatch(key));
     quickFilterOpen.delete(key);
     filteredEntries.delete(key);
+    if (openTerminalTabKeys.delete(key)) disposeTerminalTab?.(key);
   }
 
   /** Releases every per-tab cache belonging to a workspace being switched away from. */
@@ -1155,6 +1178,12 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     const location =
       paneId === undefined ? undefined : directories.get(activeTabKey(paneId))?.location;
     return paneId === undefined || location === undefined ? undefined : { paneId, location };
+  }
+
+  /** The composite `paneId:tabId` key of the active pane's active tab, for terminal binding. */
+  function activeTerminalTabKey(): string | undefined {
+    const active = activeDirectory();
+    return active === undefined ? undefined : activeTabKey(active.paneId);
   }
 
   /** Fetches and caches a tree node's children (directory-tree sidebar, task 0139), unless
@@ -1372,6 +1401,20 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
             .filter(([, pane]) => pane.tabsById[pane.activeTabId]?.location.uri === uri)
             .map(([paneId]) => paneId),
     loadPane: (paneId, options) => navigation.load(paneId, options),
+    reportSearchCompletion: (paneId, searchId) => {
+      const searchUri = `search://local/${searchId}`;
+      const active = activeDirectory();
+      // Only react while the pane is still showing this exact search: the user may have already
+      // navigated elsewhere, or started a newer search, by the time results finish streaming in.
+      if (active === undefined || active.paneId !== paneId || active.location.uri !== searchUri) {
+        return;
+      }
+      const entries = directories.get(activeTabKey(paneId))?.entries ?? [];
+      if (entries.length > 0) return;
+      toast({ html: 'No results found for this search.' });
+      const root = findFilesRootsByLocationUri.get(searchUri);
+      if (root !== undefined) void navigation.navigate(paneId, root);
+    },
     redraw: () => m.redraw(),
   };
   const handleBackendEvent = createBackendEventHandler(backendEventContext);
@@ -1451,6 +1494,9 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     },
     setVolumesError: (msg) => {
       volumesError = msg;
+    },
+    setHomeDirectory: (path) => {
+      homeDirectory = path;
     },
     getConnections: () => connections,
     setConnections: (conns) => {
@@ -1643,12 +1689,12 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     },
     toggleTerminal: () => {
       if (runtimeKind !== 'tauri') return;
-      const activeLocation = activeDirectory()?.location;
-      if (activeLocation === undefined) return;
-      if (openTerminalLocations.has(activeLocation.uri)) {
-        openTerminalLocations.delete(activeLocation.uri);
+      const key = activeTerminalTabKey();
+      if (key === undefined) return;
+      if (openTerminalTabKeys.has(key)) {
+        openTerminalTabKeys.delete(key);
       } else {
-        openTerminalLocations.add(activeLocation.uri);
+        openTerminalTabKeys.add(key);
         requestAnimationFrame(() => focusTerminal?.());
       }
     },
@@ -1944,7 +1990,7 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     quickFilterOpenFor,
     contentSearchInitialQuery,
     workspaceErrorMessage,
-    locationForPath,
+    locationForPath: (current, path) => locationForPath(current, path, homeDirectory),
     activeDirectory,
     getNavigation: () => navigation,
     getWorkspaceController: () => workspaceController,
@@ -2525,7 +2571,9 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
                           closeIcon(),
                         ),
                       ]),
-                      diagnosticsDialogOpen ? m(DiagnosticsViewComponent) : undefined,
+                      diagnosticsDialogOpen
+                        ? m(DiagnosticsViewComponent, { client: attrsClient })
+                        : undefined,
                     ]),
                   ],
                 ),
@@ -2754,7 +2802,8 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
           ]),
           runtimeKind === 'tauri'
             ? m(TerminalDrawer, {
-                open: isTerminalVisible(openTerminalLocations, activeDirectory()?.location),
+                open: isTerminalVisible(openTerminalTabKeys, activeTerminalTabKey()),
+                tabKey: activeTerminalTabKey(),
                 location: activeDirectory()?.location,
                 client: tauriTerminalClient,
                 onToggle: globalKeydownHandlerContext.toggleTerminal,
@@ -2775,6 +2824,9 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
                 },
                 registerFocus: (focus) => {
                   focusTerminal = focus;
+                },
+                registerDisposeTab: (dispose) => {
+                  disposeTerminalTab = dispose;
                 },
               })
             : undefined,

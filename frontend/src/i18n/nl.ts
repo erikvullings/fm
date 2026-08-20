@@ -277,4 +277,18 @@ export const nl = {
     expand: '{name} uitklappen',
     collapse: '{name} inklappen',
   },
+  nativeMenu: {
+    fileMenu: 'Bestand',
+    editMenu: 'Bewerken',
+    viewMenu: 'Beeld',
+    toolsMenu: 'Extra',
+    goMenu: 'Ga naar',
+    windowMenu: 'Venster',
+    helpMenu: 'Help',
+    preferences: 'Voorkeuren…',
+    newWindow: 'Nieuw venster',
+    openWorkspace: 'Werkruimte openen',
+    unavailable: '{name} (niet beschikbaar)',
+    readOnly: '{name} (alleen-lezen)',
+  },
 } as const satisfies LocalisedCatalogue<EnglishCatalogue>;

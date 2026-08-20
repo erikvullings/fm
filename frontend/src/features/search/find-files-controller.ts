@@ -125,7 +125,11 @@ export function createFindFilesController(
           contentQuery: params.contentQuery,
           contentRegex: params.contentRegex,
           contentCaseSensitive: false,
-          contentWholeWord: true,
+          // The dialog has no whole-word toggle, so a plain substring search is the only
+          // sensible default here - `true` silently made every content search miss any
+          // match that wasn't its own punctuation/space-bounded "word" (e.g. searching
+          // "gortex" wouldn't find "GortexClient").
+          contentWholeWord: false,
           recurse: params.recurse,
           showHidden: searchPaneId === undefined ? false : this.activeShowHidden(searchPaneId),
           roots: [root],
@@ -149,6 +153,12 @@ export function createFindFilesController(
           const paneId = context.getActiveDirectory()?.paneId ?? workspace?.activePaneId;
           if (paneId === undefined) return;
 
+          // Search results stream in asynchronously via `search.resultsBatch` events, which are
+          // only delivered to panes already showing the search location (see
+          // `BackendEventContext.findPanesWithUri`), so navigating here - before any results are
+          // known - is required, not just a convenience. Whether the search actually turned up
+          // nothing is decided later, once the backend reports completion; see
+          // `backend-event-handler.ts`'s `search.resultsBatch` handling.
           this.dismissFindFiles();
           void context
             .getNavigation()

@@ -1,5 +1,6 @@
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
 import { HighlightStyle, syntaxHighlighting } from '@codemirror/language';
+import { search, searchKeymap } from '@codemirror/search';
 import { EditorSelection, EditorState, type Extension, StateEffect } from '@codemirror/state';
 import {
   EditorView,
@@ -55,9 +56,22 @@ export const CodeMirrorEditor: FactoryComponent<CodeMirrorEditorAttrs> = () => {
       },
       '.cm-activeLine, .cm-activeLineGutter': { backgroundColor: 'var(--fm-hover)' },
       '.cm-activeLineGutter': { color: 'var(--fm-text)' },
+      '.cm-panels': {
+        backgroundColor: 'var(--fm-surface-elevated)',
+        color: 'var(--fm-text)',
+      },
+      '.cm-panel input, .cm-panel button': {
+        color: 'var(--fm-text)',
+        backgroundColor: 'var(--fm-surface)',
+        border: '1px solid var(--fm-border)',
+      },
+      '.cm-searchMatch': { backgroundColor: 'var(--fm-selection)' },
+      '.cm-searchMatch-selected': { backgroundColor: 'var(--fm-accent)' },
     }),
     lineNumbers(),
     syntaxHighlighting(fmHighlightStyle, { fallback: true }),
+    search(),
+    keymap.of(searchKeymap),
     EditorState.readOnly.of(attrs.readOnly === true),
     // Always DOM-editable (contenteditable), even in read-only mode: `readOnly` above already
     // blocks every edit transaction, so this only controls whether the content is selectable.
@@ -77,7 +91,12 @@ export const CodeMirrorEditor: FactoryComponent<CodeMirrorEditorAttrs> = () => {
     ...(attrs.extensions ?? []),
     EditorView.domEventHandlers({
       keydown: (event) => {
-        if ((event.metaKey || event.ctrlKey) && ['s', 'z', 'y'].includes(event.key.toLowerCase()))
+        // Keeps these chords from bubbling to the app-wide keymap, which would otherwise
+        // intercept them (save/undo/redo, and Mod-F for the in-editor find panel).
+        if (
+          (event.metaKey || event.ctrlKey) &&
+          ['s', 'z', 'y', 'f'].includes(event.key.toLowerCase())
+        )
           event.stopPropagation();
         return false;
       },

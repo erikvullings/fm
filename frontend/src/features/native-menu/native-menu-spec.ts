@@ -1,3 +1,4 @@
+import { actionTitle, t } from '../../i18n';
 import type {
   ActionDescriptor,
   Connection,
@@ -81,7 +82,7 @@ function actionItem(action: ActionDescriptor): NativeMenuItem {
   return {
     kind: 'action',
     id: action.id,
-    title: action.title,
+    title: actionTitle(action.id, action.title),
     ...(shortcut === undefined ? {} : { shortcut }),
     enabled: true,
     checked: false,
@@ -114,7 +115,7 @@ function appMenu(): NativeMenu {
       {
         kind: 'action',
         id: 'ui.openSettings',
-        title: 'Preferences…',
+        title: t('nativeMenu', 'preferences'),
         shortcut: PREFERENCES_SHORTCUT,
         enabled: true,
         checked: false,
@@ -135,13 +136,13 @@ function fileMenu(actions: readonly ActionDescriptor[], canOpenNewWindow: boolea
   const newWindowItem: NativeMenuItem = {
     kind: 'action',
     id: NEW_WORKSPACE_WINDOW_MENU_ID,
-    title: 'New Window',
+    title: t('nativeMenu', 'newWindow'),
     shortcut: { key: 'n', meta: true, shift: true },
     enabled: true,
     checked: false,
   };
   return {
-    title: 'File',
+    title: t('nativeMenu', 'fileMenu'),
     items: [
       ...(canOpenNewWindow ? [newWindowItem] : []),
       ...actionItems(actions, ['core.newTab', 'core.closeTab']),
@@ -154,7 +155,7 @@ function fileMenu(actions: readonly ActionDescriptor[], canOpenNewWindow: boolea
  * Preferences dialog) for free via the standard responder chain - no menu wiring needed there. */
 function editMenu(actions: readonly ActionDescriptor[]): NativeMenu {
   return {
-    title: 'Edit',
+    title: t('nativeMenu', 'editMenu'),
     items: actionItems(actions, ['core.copy', 'core.paste', 'core.selectAll']),
   };
 }
@@ -164,7 +165,7 @@ function editMenu(actions: readonly ActionDescriptor[]): NativeMenu {
  * listing displays, not where it navigates). */
 function viewMenu(actions: readonly ActionDescriptor[]): NativeMenu {
   return {
-    title: 'View',
+    title: t('nativeMenu', 'viewMenu'),
     items: actionItems(actions, [
       'core.sortByName',
       'core.sortByExtension',
@@ -180,7 +181,7 @@ function viewMenu(actions: readonly ActionDescriptor[]): NativeMenu {
  * `"clipboard"` categories), surfaced as their own top-level menu for discoverability. */
 function toolsMenu(actions: readonly ActionDescriptor[]): NativeMenu {
   return {
-    title: 'Tools',
+    title: t('nativeMenu', 'toolsMenu'),
     items: actionItems(actions, [
       'core.copyName',
       'core.copyPath',
@@ -218,7 +219,7 @@ function goMenu(
       items.push({
         kind: 'action',
         id: `ui.goMenu.volume.${index}`,
-        title: unavailable ? `${volume.name} (unavailable)` : volume.name,
+        title: unavailable ? t('nativeMenu', 'unavailable', { name: volume.name }) : volume.name,
         enabled: true,
         checked: false,
       });
@@ -256,7 +257,9 @@ function goMenu(
       items.push({
         kind: 'action',
         id: `ui.goMenu.systemLocation.${systemLocations.indexOf(systemLocation)}`,
-        title: unavailable ? `${systemLocation.name} (unavailable)` : systemLocation.name,
+        title: unavailable
+          ? t('nativeMenu', 'unavailable', { name: systemLocation.name })
+          : systemLocation.name,
         enabled: true,
         checked: false,
       });
@@ -272,9 +275,9 @@ function goMenu(
         kind: 'action',
         id: `ui.goMenu.systemLocation.${systemLocations.indexOf(systemLocation)}`,
         title: unavailable
-          ? `${systemLocation.name} (unavailable)`
+          ? t('nativeMenu', 'unavailable', { name: systemLocation.name })
           : systemLocation.readOnly === true
-            ? `${systemLocation.name} (read-only)`
+            ? t('nativeMenu', 'readOnly', { name: systemLocation.name })
             : systemLocation.name,
         enabled: true,
         checked: false,
@@ -282,7 +285,7 @@ function goMenu(
     }
   }
 
-  return { title: 'Go', items };
+  return { title: t('nativeMenu', 'goMenu'), items };
 }
 
 function windowMenu(
@@ -299,7 +302,7 @@ function windowMenu(
     items.push({ kind: 'separator' });
     items.push({
       kind: 'submenu',
-      title: 'Open Workspace',
+      title: t('nativeMenu', 'openWorkspace'),
       items: workspaces.map((workspace) => ({
         kind: 'action',
         id: `${WINDOW_OPEN_WORKSPACE_MENU_ID_PREFIX}${workspace.id}`,
@@ -321,11 +324,14 @@ function windowMenu(
       });
     }
   }
-  return { title: 'Window', items };
+  return { title: t('nativeMenu', 'windowMenu'), items };
 }
 
 function helpMenu(actions: readonly ActionDescriptor[]): NativeMenu {
-  return { title: 'Help', items: actionItems(actions, ['core.showShortcutsHelp']) };
+  return {
+    title: t('nativeMenu', 'helpMenu'),
+    items: actionItems(actions, ['core.showShortcutsHelp']),
+  };
 }
 
 /**

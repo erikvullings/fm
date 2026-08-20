@@ -1,9 +1,14 @@
 /** Diagnostics view component (spec §30). */
 
-import type { Vnode } from 'mithril';
+import type { FactoryComponent, Vnode } from 'mithril';
 import m from 'mithril';
+import type { FileManagerClient } from '../../api/client/file-manager-client';
 import type { DiagnosticsView } from './diagnostics';
 import { diagnosticsFromDto } from './diagnostics';
+
+interface DiagnosticsViewAttrs {
+  readonly client: FileManagerClient;
+}
 
 interface DiagnosticsState {
   diagnostics: DiagnosticsView | null;
@@ -11,8 +16,11 @@ interface DiagnosticsState {
   error: string | null;
 }
 
-/** Diagnostics view component for troubleshooting and bug reports. */
-export const DiagnosticsViewComponent = () => {
+/** Diagnostics view component for troubleshooting and bug reports. Goes through the
+ * runtime-selected {@link FileManagerClient} (Tauri IPC on desktop, HTTP elsewhere) rather than a
+ * raw `fetch`, so it works when there's no separately-running `fm-server` to proxy to. */
+export const DiagnosticsViewComponent: FactoryComponent<DiagnosticsViewAttrs> = ({ attrs }) => {
+  const { client } = attrs;
   const state: DiagnosticsState = {
     diagnostics: null,
     loading: true,
@@ -23,11 +31,7 @@ export const DiagnosticsViewComponent = () => {
     state.loading = true;
     state.error = null;
     try {
-      const response = await fetch('/api/v1/diagnostics');
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-      }
-      const dto: unknown = await response.json();
+      const dto = await client.getDiagnostics();
       state.diagnostics = diagnosticsFromDto(dto);
     } catch (err) {
       state.error = err instanceof Error ? err.message : 'Unknown error';

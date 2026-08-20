@@ -31,6 +31,11 @@
   "[rust]": {
     "editor.defaultFormatter": "rust-lang.rust-analyzer"
   },
+  // Keep rust-analyzer's background `cargo check` out of the same `target/`
+  // dir used by `cargo run`/`cargo build`/`pnpm dev:tauri` — sharing it means
+  // every manual cargo invocation blocks on rust-analyzer's build-directory
+  // file lock (and vice versa).
+  "rust-analyzer.cargo.targetDir": true,
   "[markdown]": {
     "editor.defaultFormatter": "DavidAnson.vscode-markdownlint"
   },

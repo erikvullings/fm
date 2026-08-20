@@ -15,6 +15,7 @@ import type {
   ConnectionId,
   CreateConnectionRequest,
   CreateWorkspaceRequest,
+  DiagnosticsResult,
   DirectorySnapshot,
   DuplicatePage,
   EditableFile,
@@ -103,6 +104,7 @@ import {
   listConnections as requestConnections,
   testConnection as requestConnectionTest,
   updateConnection as requestConnectionUpdate,
+  getDiagnostics as requestDiagnostics,
   listDirectory as requestDirectory,
   listDirectoryChildren as requestDirectoryChildren,
   cancelDuplicateScan as requestDuplicateScanCancel,
@@ -201,6 +203,11 @@ export class HttpFileManagerClient implements FileManagerClient {
     return response.data;
   }
 
+  async getDiagnostics(signal?: AbortSignal): Promise<DiagnosticsResult> {
+    const response = await requestDiagnostics(signal === undefined ? undefined : { signal });
+    return response.data;
+  }
+
   async getSystemLocations(signal?: AbortSignal): Promise<SystemLocation[]> {
     const response = await requestSystemLocations(signal === undefined ? undefined : { signal });
     if (response.status !== 200) {
@@ -224,6 +231,13 @@ export class HttpFileManagerClient implements FileManagerClient {
       throw new Error(`Unexpected getVolumes response status: ${response.status}`);
     }
     return response.data.map((item) => ({ name: item.name, location: { ...item.location } }));
+  }
+
+  // Home-directory expansion (`~` in an address bar) is a convenience for the desktop host; the
+  // networked server has no notion of "the user's" home directory to report, so `~` simply isn't
+  // expanded in this mode instead of guessing at a server-side path.
+  async getHomeDirectory(_signal?: AbortSignal): Promise<string | undefined> {
+    return undefined;
   }
 
   async getFileIcon(

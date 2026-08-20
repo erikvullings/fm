@@ -139,6 +139,14 @@ impl FileManagerService {
         Arc::clone(&self.platform)
     }
 
+    /// Returns the current user's home directory as a native path, or `None` if it cannot be
+    /// determined. Lets the frontend expand a leading `~` typed into an address bar, mirroring
+    /// the `~` convention `ssh.rs` already honors for SFTP connection dialogs - the local
+    /// filesystem provider otherwise has no such expansion at any layer.
+    pub fn home_directory(&self) -> Option<String> {
+        dirs::home_dir().map(|path| path.to_string_lossy().into_owned())
+    }
+
     /// Builds a service for the given host runtime, persisting workspaces
     /// under `workspace_directory`.
     pub fn new(

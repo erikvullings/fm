@@ -8,6 +8,9 @@ import type { TerminalClient } from './terminal-client';
 
 export interface TerminalDrawerAttrs {
   readonly open: boolean;
+  /** Composite `paneId:tabId` key the terminal is bound to; a tab keeps its terminal across
+   * folder navigation and only loses it when the tab itself closes. */
+  readonly tabKey: string | undefined;
   readonly location: Location | undefined;
   readonly client: TerminalClient;
   readonly onResize?: (height: number) => void;
@@ -16,6 +19,8 @@ export interface TerminalDrawerAttrs {
   readonly onCycleTab?: (direction: 1 | -1) => void;
   readonly onFocusFolder?: () => void;
   readonly registerFocus?: (focus: () => boolean) => void;
+  /** Lets the owner tear down a specific tab's terminal when that tab closes. */
+  readonly registerDisposeTab?: (dispose: (tabKey: string) => void) => void;
 }
 
 type LiveTerminal = {
@@ -33,7 +38,13 @@ export interface TerminalKeyHandlers {
   readonly onFocusFolder?: () => void;
 }
 
-/** Returns file-manager navigation chords to the application while xterm owns DOM focus. */
+/**
+ * Returns file-manager navigation chords to the application while xterm owns DOM focus.
+ *
+ * Plain Tab / Shift+Tab are deliberately left alone (`return true`) so xterm forwards them
+ * to the PTY for shell auto-completion. Pane/tab navigation instead requires a modifier
+ * (Ctrl+Tab to cycle tabs, Alt+Tab to switch panes) so it never steals the shell's Tab key.
+ */
 export function handleTerminalKeyEvent(
   event: KeyboardEvent,
   handlers: TerminalKeyHandlers,
@@ -45,7 +56,8 @@ export function handleTerminalKeyEvent(
       (event.ctrlKey && (event.key === '`' || event.code === 'Backquote')));
   if (event.type !== 'keydown') return true;
   const tabKey = event.key === 'Tab' || event.code === 'Tab';
-  const handled = toggleKey || (tabKey && !event.altKey && !event.metaKey);
+  const navTabKey = tabKey && !event.metaKey && (event.ctrlKey || event.altKey);
+  const handled = toggleKey || navTabKey;
   if (!handled) return true;
   event.preventDefault();
   event.stopPropagation();
@@ -72,8 +84,9 @@ export const TerminalDrawer: FactoryComponent<TerminalDrawerAttrs> = () => {
   function ensure(attrs: TerminalDrawerAttrs, element: HTMLElement): void {
     if (!attrs.open) return;
     const location = attrs.location;
-    if (location === undefined) return;
-    let live = terminals.get(location.uri);
+    const key = attrs.tabKey;
+    if (location === undefined || key === undefined) return;
+    let live = terminals.get(key);
     if (live === undefined) {
       const inheritedFontSize = Number.parseFloat(getComputedStyle(element).fontSize);
       const style = getComputedStyle(element);
@@ -97,7 +110,7 @@ export const TerminalDrawer: FactoryComponent<TerminalDrawerAttrs> = () => {
       const surface = document.createElement('div');
       surface.className = 'fm-terminal-surface';
       live = { terminal, fit, surface };
-      terminals.set(location.uri, live);
+      terminals.set(key, live);
       terminal.attachCustomKeyEventHandler((event) =>
         handleTerminalKeyEvent(event, {
           onToggle: () => {
@@ -149,11 +162,17 @@ export const TerminalDrawer: FactoryComponent<TerminalDrawerAttrs> = () => {
     oninit: ({ attrs }) => {
       currentAttrs = attrs;
       attrs.registerFocus?.(() => {
-        const uri = currentAttrs?.location?.uri;
-        const live = uri === undefined ? undefined : terminals.get(uri);
+        const key = currentAttrs?.tabKey;
+        const live = key === undefined ? undefined : terminals.get(key);
         if (currentAttrs?.open !== true || live === undefined) return false;
         live.terminal.focus();
         return true;
+      });
+      attrs.registerDisposeTab?.((key) => {
+        const live = terminals.get(key);
+        if (live === undefined) return;
+        live.terminal.dispose();
+        terminals.delete(key);
       });
     },
     onremove: () => {
@@ -176,8 +195,7 @@ export const TerminalDrawer: FactoryComponent<TerminalDrawerAttrs> = () => {
               );
               drawer.style.height = `${height}px`;
               attrs.onResize?.(height);
-              const live =
-                attrs.location === undefined ? undefined : terminals.get(attrs.location.uri);
+              const live = attrs.tabKey === undefined ? undefined : terminals.get(attrs.tabKey);
               live?.fit.fit();
               if (live?.sessionId !== undefined)
                 void attrs.client.resize(live.sessionId, live.terminal.cols, live.terminal.rows);

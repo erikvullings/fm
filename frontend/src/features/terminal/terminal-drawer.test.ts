@@ -28,6 +28,7 @@ describe('TerminalDrawer', () => {
         view: () =>
           m(TerminalDrawer, {
             open: false,
+            tabKey: 'pane-1:tab-1',
             location: { providerId: 'local', uri: 'file:///home' },
             client,
             onToggle: vi.fn(),
@@ -57,6 +58,7 @@ describe('TerminalDrawer', () => {
       view: () =>
         m(TerminalDrawer, {
           open: true,
+          tabKey: 'pane-1:tab-1',
           location,
           client,
           onToggle: vi.fn(),
@@ -95,44 +97,72 @@ describe('TerminalDrawer', () => {
     expect(toggle).toHaveBeenCalledOnce();
   });
 
-  it('returns pane and tab navigation keys to the file manager while xterm has focus', () => {
+  it('leaves plain Tab and Shift+Tab for the shell to use as completion keys', () => {
     const switchPane = vi.fn();
     const cycleTab = vi.fn();
     const focusFolder = vi.fn();
+    const handlers = {
+      onToggle: vi.fn(),
+      onSwitchPane: switchPane,
+      onCycleTab: cycleTab,
+      onFocusFolder: focusFolder,
+    };
 
     expect(
-      handleTerminalKeyEvent(new KeyboardEvent('keydown', { key: 'Tab', cancelable: true }), {
-        onToggle: vi.fn(),
-        onSwitchPane: switchPane,
-        onCycleTab: cycleTab,
-        onFocusFolder: focusFolder,
-      }),
-    ).toBe(false);
-    expect(
       handleTerminalKeyEvent(
-        new KeyboardEvent('keydown', { key: 'Tab', ctrlKey: true, cancelable: true }),
-        {
-          onToggle: vi.fn(),
-          onSwitchPane: switchPane,
-          onCycleTab: cycleTab,
-          onFocusFolder: focusFolder,
-        },
+        new KeyboardEvent('keydown', { key: 'Tab', cancelable: true }),
+        handlers,
       ),
-    ).toBe(false);
+    ).toBe(true);
     expect(
       handleTerminalKeyEvent(
         new KeyboardEvent('keydown', { key: 'Tab', shiftKey: true, cancelable: true }),
-        {
-          onToggle: vi.fn(),
-          onSwitchPane: switchPane,
-          onCycleTab: cycleTab,
-          onFocusFolder: focusFolder,
-        },
+        handlers,
+      ),
+    ).toBe(true);
+
+    expect(switchPane).not.toHaveBeenCalled();
+    expect(cycleTab).not.toHaveBeenCalled();
+    expect(focusFolder).not.toHaveBeenCalled();
+  });
+
+  it('returns modified Tab chords to the file manager for pane/tab navigation', () => {
+    const switchPane = vi.fn();
+    const cycleTab = vi.fn();
+    const focusFolder = vi.fn();
+    const handlers = {
+      onToggle: vi.fn(),
+      onSwitchPane: switchPane,
+      onCycleTab: cycleTab,
+      onFocusFolder: focusFolder,
+    };
+
+    expect(
+      handleTerminalKeyEvent(
+        new KeyboardEvent('keydown', { key: 'Tab', ctrlKey: true, cancelable: true }),
+        handlers,
+      ),
+    ).toBe(false);
+    expect(
+      handleTerminalKeyEvent(
+        new KeyboardEvent('keydown', { key: 'Tab', altKey: true, cancelable: true }),
+        handlers,
+      ),
+    ).toBe(false);
+    expect(
+      handleTerminalKeyEvent(
+        new KeyboardEvent('keydown', {
+          key: 'Tab',
+          altKey: true,
+          shiftKey: true,
+          cancelable: true,
+        }),
+        handlers,
       ),
     ).toBe(false);
 
-    expect(switchPane).toHaveBeenCalledOnce();
     expect(cycleTab).toHaveBeenCalledExactlyOnceWith(1);
+    expect(switchPane).toHaveBeenCalledOnce();
     expect(focusFolder).toHaveBeenCalledOnce();
   });
 

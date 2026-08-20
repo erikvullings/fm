@@ -137,7 +137,7 @@ describe('buildNativeMenuSpec', () => {
       {
         kind: 'action',
         id: 'core.newTab',
-        title: 'New Tab',
+        title: 'New tab',
         shortcut: { key: 't', meta: true },
         enabled: true,
         checked: false,
@@ -145,7 +145,7 @@ describe('buildNativeMenuSpec', () => {
       {
         kind: 'action',
         id: 'core.closeTab',
-        title: 'Close Tab',
+        title: 'Close tab',
         shortcut: { key: 'w', meta: true },
         enabled: true,
         checked: false,

@@ -48,6 +48,7 @@ export interface WorkspaceControllerContext {
   getVolumes(): readonly Volume[];
   setVolumes(volumes: readonly Volume[]): void;
   setVolumesError(msg?: string): void;
+  setHomeDirectory(path: string | undefined): void;
   getConnections(): readonly Connection[];
   setConnections(conns: readonly Connection[]): void;
   setDraggedLocations(locs: readonly Location[]): void;
@@ -67,6 +68,7 @@ export interface WorkspaceController {
   loadWorkspace(): Promise<void>;
   loadSystemLocations(signal?: AbortSignal): Promise<void>;
   loadVolumes(signal?: AbortSignal): Promise<void>;
+  loadHomeDirectory(signal?: AbortSignal): Promise<void>;
   switchWorkspace(workspaceId: WorkspaceId): Promise<void>;
   refreshWorkspaceSummaries(): void;
   revisionForWorkspace(workspaceId: WorkspaceId): number;
@@ -149,6 +151,14 @@ export function createWorkspaceController(
     context.redraw();
   }
 
+  async function loadHomeDirectory(signal?: AbortSignal): Promise<void> {
+    try {
+      context.setHomeDirectory(await client.getHomeDirectory(signal));
+    } catch {
+      context.setHomeDirectory(undefined);
+    }
+  }
+
   async function loadConnectionsList(signal?: AbortSignal): Promise<void> {
     try {
       context.setConnections(await loadConnections(client, signal));
@@ -165,6 +175,7 @@ export function createWorkspaceController(
       const capabilities = await client.getRuntimeCapabilities(request.signal);
       await loadSystemLocations(request.signal);
       await loadVolumes(request.signal);
+      await loadHomeDirectory(request.signal);
       await loadConnectionsList(request.signal);
       context.setPlatform(capabilities.platform);
       context.setNativeDragOutSupported(capabilities.nativeDragOut);
@@ -324,6 +335,7 @@ export function createWorkspaceController(
     recoverActiveWorkspace,
     loadWorkspace,
     loadSystemLocations,
+    loadHomeDirectory,
     loadVolumes,
     switchWorkspace,
     refreshWorkspaceSummaries,

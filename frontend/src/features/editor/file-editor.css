@@ -78,6 +78,15 @@
   overflow: auto;
 }
 
+/* The editor is the deliberate exception to the app-wide `user-select: none` (see
+ * `frontend/src/themes/theme.css`): without this, WebKit (Tauri's WKWebView) fails to place the
+ * text-insertion caret on click inside a `user-select: none` contenteditable region, even though
+ * keyboard navigation still works - so clicking another line silently left the caret unmoved. */
+.fm-code-mirror .cm-content {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
 .fm-file-editor-preview {
   flex: 1;
   min-width: 0;

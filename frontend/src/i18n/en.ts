@@ -275,6 +275,20 @@ export const en = {
     expand: 'Expand {name}',
     collapse: 'Collapse {name}',
   },
+  nativeMenu: {
+    fileMenu: 'File',
+    editMenu: 'Edit',
+    viewMenu: 'View',
+    toolsMenu: 'Tools',
+    goMenu: 'Go',
+    windowMenu: 'Window',
+    helpMenu: 'Help',
+    preferences: 'Preferences…',
+    newWindow: 'New Window',
+    openWorkspace: 'Open Workspace',
+    unavailable: '{name} (unavailable)',
+    readOnly: '{name} (read-only)',
+  },
 } as const satisfies CatalogueShape;
 
 /** Canonical translation groups and keys. Values remain locale-specific. */

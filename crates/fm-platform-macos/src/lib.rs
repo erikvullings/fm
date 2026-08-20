@@ -851,25 +851,42 @@ const MODIFIER_SHIFT_BIT: usize = 1 << 17;
 const MODIFIER_CONTROL_BIT: usize = 1 << 18;
 const MODIFIER_OPTION_BIT: usize = 1 << 19;
 const MODIFIER_COMMAND_BIT: usize = 1 << 20;
+/// `NSEventModifierFlagFunction`. AppKit requires this bit set (in addition to whatever other
+/// modifiers apply) whenever `keyEquivalent` is one of the `NSF1FunctionKey`.. private-use-area
+/// characters below, or the shortcut silently fails to display/register on the menu item.
+const MODIFIER_FUNCTION_BIT: usize = 1 << 23;
+
+/// `NSF1FunctionKey`'s Unicode code point; `NSF2FunctionKey`.."NSF35FunctionKey" follow it
+/// sequentially, one per function key.
+const NS_F1_FUNCTION_KEY: u32 = 0xF704;
+const MAX_FUNCTION_KEY_NUMBER: u32 = 35;
+
+/// Maps `"F1"`..`"F35"` to the `NSF1FunctionKey`.. private-use-area character AppKit expects as
+/// a function-key equivalent (e.g. `"F1"` -> `'\u{F704}'`), or `None` for anything else.
+fn function_key_char(key: &str) -> Option<char> {
+    let number: u32 = key.strip_prefix('F')?.parse().ok()?;
+    if number == 0 || number > MAX_FUNCTION_KEY_NUMBER {
+        return None;
+    }
+    char::from_u32(NS_F1_FUNCTION_KEY + (number - 1))
+}
 
 /// Maps a [`fm_domain::KeyChord`] to the `(key equivalent, modifier mask)`
-/// pair an `NSMenuItem` needs (task 0133). Only a lowercased single
-/// character is handled, enough for the common cases ("c", "v", "a", ","),
-/// so function-key equivalents (e.g. `"F2"`) are deliberately left blank
-/// (no key equivalent shown at all) rather than over-engineered, matching
-/// this task's scope. Blank, not truncated: taking just the first character
-/// of a multi-character key name (e.g. "F3".."F7") would silently collide
-/// every one of them onto the same displayed "^F" equivalent instead of
-/// leaving them untranslated, which is worse than showing nothing.
+/// pair an `NSMenuItem` needs (task 0133). A lowercased single character is
+/// handled directly ("c", "v", "a", ","), and `"F1"`..`"F35"` map to the
+/// corresponding `NSF1FunctionKey`.. private-use-area character (with
+/// `MODIFIER_FUNCTION_BIT` set) so function-key shortcuts like the Help
+/// menu's F1 actually display. Any other multi-character key name (e.g.
+/// `"Escape"`, `"Enter"`) is deliberately left blank (no key equivalent
+/// shown at all) rather than over-engineered, matching this task's scope.
+/// Blank, not truncated: taking just the first character of a
+/// multi-character key name would silently collide distinct shortcuts onto
+/// the same displayed equivalent instead of leaving them untranslated,
+/// which is worse than showing nothing.
 /// The returned mask mirrors `NSEventModifierFlags`'s own bit positions 1:1,
 /// so the only remaining step at the call site is widening it into that
 /// real type.
 fn key_equivalent(chord: &fm_domain::KeyChord) -> (String, usize) {
-    let key = if chord.key.chars().count() == 1 {
-        chord.key.to_ascii_lowercase()
-    } else {
-        String::new()
-    };
     let mut mask = 0usize;
     if chord.shift {
         mask |= MODIFIER_SHIFT_BIT;
@@ -883,6 +900,16 @@ fn key_equivalent(chord: &fm_domain::KeyChord) -> (String, usize) {
     if chord.meta {
         mask |= MODIFIER_COMMAND_BIT;
     }
+
+    if let Some(function_char) = function_key_char(&chord.key) {
+        return (function_char.to_string(), mask | MODIFIER_FUNCTION_BIT);
+    }
+
+    let key = if chord.key.chars().count() == 1 {
+        chord.key.to_ascii_lowercase()
+    } else {
+        String::new()
+    };
     (key, mask)
 }
 
@@ -1528,10 +1555,11 @@ mod tests {
     /// A regression test for a real bug (task 0133 follow-up): taking just the first character of
     /// a multi-character key name collided every one of `core.sortByName`..`core.sortUnsorted`'s
     /// distinct `"F3"`..`"F7"` shortcuts onto the same displayed "^F" key equivalent in the View
-    /// menu. Multi-character key names must produce a blank key equivalent instead.
+    /// menu. Multi-character key names that aren't function keys must produce a blank key
+    /// equivalent instead.
     #[test]
     fn key_equivalent_leaves_multi_character_key_names_blank_instead_of_colliding() {
-        for key in ["F3", "F4", "F5", "F6", "F7", "Escape", "Enter", "Tab"] {
+        for key in ["Escape", "Enter", "Tab"] {
             assert_eq!(
                 key_equivalent(&fm_domain::KeyChord {
                     key: key.to_owned(),
@@ -1542,6 +1570,40 @@ mod tests {
                 "key {key:?} must produce a blank key equivalent, not a truncated one"
             );
         }
+    }
+
+    /// A regression test for a real bug: the native Help menu's F1 shortcut
+    /// (`core.showShortcutsHelp`) never displayed in the macOS menu bar because every
+    /// multi-character key name, including function keys, was blanked out.
+    #[test]
+    fn key_equivalent_maps_function_keys_to_the_private_use_area_character() {
+        assert_eq!(
+            key_equivalent(&fm_domain::KeyChord {
+                key: "F1".to_owned(),
+                ..fm_domain::KeyChord::default()
+            }),
+            ("\u{F704}".to_owned(), MODIFIER_FUNCTION_BIT)
+        );
+        assert_eq!(
+            key_equivalent(&fm_domain::KeyChord {
+                key: "F6".to_owned(),
+                shift: true,
+                ..fm_domain::KeyChord::default()
+            }),
+            (
+                "\u{F709}".to_owned(),
+                MODIFIER_FUNCTION_BIT | MODIFIER_SHIFT_BIT
+            )
+        );
+        // Out of the supported F1..F35 range: falls back to blank, like any other
+        // multi-character key name.
+        assert_eq!(
+            key_equivalent(&fm_domain::KeyChord {
+                key: "F36".to_owned(),
+                ..fm_domain::KeyChord::default()
+            }),
+            (String::new(), 0)
+        );
     }
 
     #[test]
