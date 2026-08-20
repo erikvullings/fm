@@ -2417,6 +2417,7 @@ name = "fm-vcs-status"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "dunce",
  "fm-domain",
  "git2",
  "tempfile",

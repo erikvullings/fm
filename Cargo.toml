@@ -4,14 +4,14 @@ resolver = "3"
 # nests the Rust crate under `<app>/src-tauri`, one level deeper than the
 # `apps/*` glob reaches. `apps/fm-desktop` itself holds no Cargo.toml (only
 # `src-tauri` does), so it is excluded from the glob match.
-members = ["crates/*", "apps/*", "apps/fm-desktop/src-tauri"]
 exclude = ["apps/fm-desktop"]
+members = ["crates/*", "apps/*", "apps/fm-desktop/src-tauri"]
 
 [workspace.package]
-version = "0.1.0"
 edition = "2024"
-rust-version = "1.97"
 license = "MIT"
+rust-version = "1.97"
+version = "0.1.0"
 
 # Line-tables-only debug info is enough for backtraces/line-level debugging
 # and is much cheaper to generate and link than full debug info, which
@@ -22,63 +22,68 @@ debug = "line-tables-only"
 [workspace.dependencies]
 
 # Internal crates, versioned together with the rest of the workspace.
-fm-application = { path = "crates/fm-application" }
-fm-archive = { path = "crates/fm-archive" }
-fm-checksum = { path = "crates/fm-checksum" }
-fm-comparison = { path = "crates/fm-comparison" }
-fm-connections = { path = "crates/fm-connections" }
-fm-credentials = { path = "crates/fm-credentials" }
-fm-credentials-macos = { path = "crates/fm-credentials-macos" }
-fm-credentials-windows = { path = "crates/fm-credentials-windows" }
-fm-domain = { path = "crates/fm-domain" }
-fm-events = { path = "crates/fm-events" }
-fm-metadata = { path = "crates/fm-metadata" }
-fm-operations = { path = "crates/fm-operations" }
-fm-platform = { path = "crates/fm-platform" }
-fm-platform-macos = { path = "crates/fm-platform-macos" }
-fm-platform-windows = { path = "crates/fm-platform-windows" }
-fm-plugin-api = { path = "crates/fm-plugin-api" }
-fm-plugin-runtime = { path = "crates/fm-plugin-runtime" }
-fm-search = { path = "crates/fm-search" }
-fm-settings = { path = "crates/fm-settings" }
-fm-ssh = { path = "crates/fm-ssh" }
-fm-transport-dto = { path = "crates/fm-transport-dto" }
-fm-vcs-status = { path = "crates/fm-vcs-status" }
-fm-vfs = { path = "crates/fm-vfs" }
-fm-vfs-local = { path = "crates/fm-vfs-local" }
-fm-vfs-ftp = { path = "crates/fm-vfs-ftp" }
-fm-vfs-sftp = { path = "crates/fm-vfs-sftp" }
+fm-application = {path = "crates/fm-application"}
+fm-archive = {path = "crates/fm-archive"}
+fm-checksum = {path = "crates/fm-checksum"}
+fm-comparison = {path = "crates/fm-comparison"}
+fm-connections = {path = "crates/fm-connections"}
+fm-credentials = {path = "crates/fm-credentials"}
+fm-credentials-macos = {path = "crates/fm-credentials-macos"}
+fm-credentials-windows = {path = "crates/fm-credentials-windows"}
+fm-domain = {path = "crates/fm-domain"}
+fm-events = {path = "crates/fm-events"}
+fm-metadata = {path = "crates/fm-metadata"}
+fm-operations = {path = "crates/fm-operations"}
+fm-platform = {path = "crates/fm-platform"}
+fm-platform-macos = {path = "crates/fm-platform-macos"}
+fm-platform-windows = {path = "crates/fm-platform-windows"}
+fm-plugin-api = {path = "crates/fm-plugin-api"}
+fm-plugin-runtime = {path = "crates/fm-plugin-runtime"}
+fm-search = {path = "crates/fm-search"}
+fm-settings = {path = "crates/fm-settings"}
+fm-ssh = {path = "crates/fm-ssh"}
+fm-transport-dto = {path = "crates/fm-transport-dto"}
+fm-vcs-status = {path = "crates/fm-vcs-status"}
+fm-vfs = {path = "crates/fm-vfs"}
+fm-vfs-ftp = {path = "crates/fm-vfs-ftp"}
+fm-vfs-local = {path = "crates/fm-vfs-local"}
+fm-vfs-sftp = {path = "crates/fm-vfs-sftp"}
 
 # External dependencies. Versions are coordinated here; member crates opt in
 # with `dependency.workspace = true`.
 async-trait = "0.1.91"
 axum = "0.8.9"
+axum-server = {version = "0.7", features = ["tls-rustls"]}
 bitflags = "2.13.1"
 blake3 = "1.8.6"
+bzip2 = "0.6"
+chrono = {version = "0.4.45", features = ["serde"]}
+clap = {version = "4.6.4", features = ["derive", "env"]}
 crc32fast = "1.5.0"
-chrono = { version = "0.4.45", features = ["serde"] }
-clap = { version = "4.6.4", features = ["derive", "env"] }
-criterion = { version = "0.5.1", features = ["html_reports"] }
+criterion = {version = "0.5.1", features = ["html_reports"]}
 dirs = "6.0.0"
 drag = "2.1.1"
-futures = "0.3.31"
+dunce = "1.0.5"
+flate2 = "1"
 fs2 = "0.4.3"
-git2 = { version = "0.20.4", default-features = false, features = ["vendored-libgit2"] }
+futures = "0.3.31"
+git2 = {version = "0.20.4", default-features = false, features = ["vendored-libgit2"]}
+governor = "0.10.4"
 ignore = "0.4.23"
-image = { version = "0.25.10", default-features = false, features = [
+image = {version = "0.25.10", default-features = false, features = [
   "jpeg",
   "png",
   "gif",
   "webp",
-] }
-lopdf = { version = "0.44.0", default-features = false }
-mlua = { version = "0.12.0", features = [
+]}
+lopdf = {version = "0.44.0", default-features = false}
+md-5 = "0.11.0"
+mlua = {version = "0.12.0", features = [
   "lua54",
   "vendored",
   "send",
   "serialize",
-] }
-md-5 = "0.11.0"
+]}
 mp4 = "0.14.0"
 notify = "8.2.0"
 objc2 = "0.6.4"
@@ -87,71 +92,67 @@ objc2-foundation = "0.3.2"
 openh264 = "0.9.8"
 plist = "1.10.0"
 rand = "0.10"
+rars = "0.4.8"
 regex = "1.11.3"
-reqwest = { version = "0.13.4", default-features = false, features = [
+reqwest = {version = "0.13.4", default-features = false, features = [
   "json",
   "rustls",
-] }
+]}
 russh = "0.62"
 russh-sftp = "2.4"
-suppaftp = { version = "10.0.1", default-features = false, features = ["tokio-rustls-ring"] }
 rustls-platform-verifier = "0.7.0"
-tokio-rustls = "0.26.4"
 security-framework = "3.7.0"
-serde = { version = "1.0.229", features = ["derive"] }
+serde = {version = "1.0.229", features = ["derive"]}
 serde_json = "1.0.151"
-sha2 = "0.11.0"
-sevenz-rust2 = { version = "0.21.3", default-features = false, features = [
+sevenz-rust2 = {version = "0.21.3", default-features = false, features = [
   "aes256",
   "compress",
   "util",
-] }
-rars = "0.4.8"
+]}
+sha2 = "0.11.0"
+suppaftp = {version = "10.0.1", default-features = false, features = ["tokio-rustls-ring"]}
 tar = "0.4"
-tempfile = "3.15.0"
-thiserror = "2.0.19"
 tauri = "2"
 tauri-build = "2"
 tauri-plugin-single-instance = "2"
 tauri-plugin-window-state = "2"
-tokio = { version = "1.53.1", features = [
+tempfile = "3.15.0"
+thiserror = "2.0.19"
+tokio = {version = "1.53.1", features = [
   "rt-multi-thread",
   "macros",
   "net",
   "fs",
   "time",
-] }
+]}
+tokio-rustls = "0.26.4"
 tokio-util = "0.7.19"
+toml = "1.0.6"
 tower = "0.5.3"
-governor = "0.10.4"
-axum-server = { version = "0.7", features = ["tls-rustls"] }
-tower-http = { version = "0.7.0", features = [
+tower-http = {version = "0.7.0", features = [
   "trace",
   "limit",
   "cors",
   "request-id",
   "util",
-] }
+]}
 tracing = "0.1.44"
 tracing-appender = "0.2.5"
-tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
-utoipa = { version = "5.5.0", features = ["chrono", "uuid"] }
+tracing-subscriber = {version = "0.3.23", features = ["env-filter"]}
+utoipa = {version = "5.5.0", features = ["chrono", "uuid"]}
 utoipa-axum = "0.2.0"
-utoipa-swagger-ui = { version = "9.0.2", features = ["axum", "vendored"] }
-uuid = { version = "1.24.0", features = ["serde", "v4", "v5"] }
+utoipa-swagger-ui = {version = "9.0.2", features = ["axum", "vendored"]}
+uuid = {version = "1.24.0", features = ["serde", "v4", "v5"]}
+walkdir = "2.5.0"
 xattr = "1.6.1"
-zip = { version = "8.6.0", default-features = false, features = [
+xz2 = "0.1"
+zeroize = "1.8.2"
+zip = {version = "8.6.0", default-features = false, features = [
   "aes-crypto",
   "deflate",
   "deflate64",
   "time",
-] }
-zeroize = "1.8.2"
-flate2 = "1"
-bzip2 = "0.6"
-xz2 = "0.1"
-toml = "1.0.6"
-walkdir = "2.5.0"
+]}
 
 # `anyhow` is reserved for executables in `apps/`; libraries use `thiserror`.
 # This is enforced by the architecture fitness test in `fm-test-support`.
@@ -159,11 +160,11 @@ anyhow = "1.0.104"
 
 [workspace.lints.rust]
 missing_docs = "warn"
-unsafe_code = "deny"
 unreachable_pub = "warn"
+unsafe_code = "deny"
 
 [workspace.lints.clippy]
-all = { level = "warn", priority = -1 }
+all = {level = "warn", priority = -1}
 dbg_macro = "warn"
 todo = "warn"
 unwrap_used = "warn"
