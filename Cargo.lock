@@ -2171,6 +2171,7 @@ dependencies = [
  "fm-platform-windows",
  "fm-transport-dto",
  "portable-pty",
+ "raw-window-handle",
  "serde",
  "serde_json",
  "tauri",
@@ -2184,6 +2185,7 @@ dependencies = [
  "tracing-appender",
  "tracing-subscriber",
  "uuid",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -2418,6 +2420,7 @@ name = "fm-vcs-status"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "dunce",
  "fm-domain",
  "git2",
  "tempfile",

@@ -1,20 +1,21 @@
 [package]
-name = "fm-vcs-status"
 description = "Per-directory git working-tree status computation and caching (git2-backed)."
-version.workspace = true
 edition.workspace = true
-rust-version.workspace = true
 license.workspace = true
+name = "fm-vcs-status"
+rust-version.workspace = true
+version.workspace = true
 
 [dependencies]
 chrono.workspace = true
+dunce.workspace = true
 fm-domain.workspace = true
 git2.workspace = true
-tokio = { workspace = true, features = ["rt"] }
+tokio = {workspace = true, features = ["rt"]}
 
 [dev-dependencies]
 tempfile.workspace = true
-tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+tokio = {workspace = true, features = ["macros", "rt-multi-thread"]}
 
 [lints]
 workspace = true

@@ -133,6 +133,12 @@ impl FileManagerService {
         discover_volumes(Arc::clone(&self.platform)).await
     }
 
+    /// Returns a reference to the platform adapter, for platform-specific
+    /// operations like native menu installation (task 0131, Windows).
+    pub fn platform_adapter(&self) -> Arc<dyn PlatformAdapter> {
+        Arc::clone(&self.platform)
+    }
+
     /// Builds a service for the given host runtime, persisting workspaces
     /// under `workspace_directory`.
     pub fn new(

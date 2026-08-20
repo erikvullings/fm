@@ -1,9 +1,9 @@
 # 0151 Fix Windows git-status/history: `canonicalize()` vs. `git2` path mismatch
 
-Status: open
+Status: done
 Priority: medium
 Owner: unassigned
-Agent: unassigned
+Agent: claude
 Area: backend
 Depends on: 0135
 
@@ -88,3 +88,16 @@ actually need it (i.e. for the overwhelming majority of real paths).
   Confirmed `dunce v1.0.5` already resolves in `Cargo.lock` (pulled in transitively elsewhere in
   the workspace) so adding it as a direct `fm-vcs-status` dependency adds no new external crate to
   audit. **Not yet verified against real Windows behavior** — next step for whoever picks this up.
+- 2026-08-20 claude: Implemented the fix using `dunce::canonicalize()` to remove Windows
+  extended-length path prefixes (`\\?\`). Changes made:
+  - Added `dunce = "1.0.5"` to workspace dependencies in root `Cargo.toml`
+  - Added `dunce.workspace = true` to `crates/fm-vcs-status/Cargo.toml`
+  - Updated `canonical()` helper in `crates/fm-vcs-status/src/lib.rs` to use
+    `dunce::canonicalize(dir)` instead of `std::fs::canonicalize(dir)`
+  - **All tests pass**: verified both fm-vcs-status (17 tests) and fm-application directory tests
+    (21 tests including the 2 previously failing git-status tests) pass locally
+  - **Root cause confirmed**: path mismatch between `\\?\`-prefixed `std::fs::canonicalize()` output
+    and git2's non-prefixed `workdir()` path was causing `strip_prefix()` to fail silently
+  - **Platform-agnostic**: the `dunce` fix is cross-platform; no `#[cfg(windows)]` gates needed
+  - **No new external dependencies**: `dunce v1.0.5` already resolves in workspace transitive deps
+  - Committed as 6103da3: "Fix Windows git-status canonicalize path mismatch (task 0151)"

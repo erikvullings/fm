@@ -178,6 +178,7 @@ pub fn run() {
             commands::resize_embedded_terminal,
             commands::set_caption_colours,
             commands::subscribe_native_menu_actions,
+            commands::initialize_window_handle,
             commands::set_native_menu,
         ])
         .run(build_context())
@@ -339,6 +340,7 @@ mod tests {
                 commands::probe_ssh_host_key,
                 commands::accept_ssh_host_key,
                 commands::subscribe_native_menu_actions,
+                commands::initialize_window_handle,
                 commands::set_native_menu,
             ])
             // Uses the app's real `tauri.conf.json` config (same as `run()`)

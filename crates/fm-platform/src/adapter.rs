@@ -20,7 +20,7 @@ use crate::{
 /// inside an async runtime must invoke them through `spawn_blocking` rather
 /// than awaiting them directly, so a native call never blocks the Tauri UI
 /// thread (specification §28).
-pub trait PlatformAdapter: Send + Sync {
+pub trait PlatformAdapter: Send + Sync + std::any::Any {
     /// Discovers currently reachable OS-managed locations.
     fn system_locations(&self) -> Result<Vec<SystemLocation>, PlatformError> {
         Ok(Vec::new())

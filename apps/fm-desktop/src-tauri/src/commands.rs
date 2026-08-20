@@ -29,6 +29,9 @@ use fm_transport_dto::{
     VerifyChecksumFileRequestDto, WorkspaceCommandDto, WorkspaceDto, WorkspaceSummaryDto,
 };
 
+#[cfg(target_os = "windows")]
+use std::any::Any;
+
 use crate::{
     AppState,
     event_stream::EventSubscriptionRegistry,
@@ -1279,6 +1282,46 @@ fn native_menu_action_callback(
         }),
         None => Arc::new(|_id: String| {}),
     }
+}
+
+/// Initializes the platform-specific window handle for native integrations
+/// (task 0131, Windows). Called by the frontend during app initialization
+/// to set up the native menu bar hook point.
+#[tauri::command]
+#[cfg(target_os = "windows")]
+pub(crate) fn initialize_window_handle<R: Runtime>(
+    state: State<'_, AppState>,
+    window: Window<R>,
+) -> Result<(), ApplicationErrorDto> {
+    use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+    use windows_sys::Win32::Foundation::HWND;
+
+    let adapter = state.service.platform_adapter();
+    if let Ok(window_handle) = window.window_handle()
+        && let RawWindowHandle::Win32(handle) = window_handle.as_raw()
+    {
+        // Downcast the adapter to Windows adapter using Any trait
+        let adapter_any: &dyn Any = adapter.as_ref();
+        if let Some(win_adapter) =
+            adapter_any.downcast_ref::<fm_platform_windows::WindowsPlatformAdapter>()
+        {
+            // SAFETY: handle.hwnd is a valid window handle provided by Tauri.
+            // Convert the opaque NonZeroIsize from raw_window_handle to windows-sys HWND.
+            let hwnd = handle.hwnd.get() as HWND;
+            win_adapter.set_window_handle(hwnd);
+        }
+    }
+    Ok(())
+}
+
+/// No-op on non-Windows platforms.
+#[tauri::command]
+#[cfg(not(target_os = "windows"))]
+pub(crate) fn initialize_window_handle<R: Runtime>(
+    _state: State<'_, AppState>,
+    _window: Window<R>,
+) -> Result<(), ApplicationErrorDto> {
+    Ok(())
 }
 
 /// Installs (or replaces) the native menu bar (task 0133) from `spec`, built

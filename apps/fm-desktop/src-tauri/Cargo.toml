@@ -60,6 +60,8 @@ fm-platform-macos.workspace = true
 drag.workspace = true
 fm-credentials-windows.workspace = true
 fm-platform-windows.workspace = true
+raw-window-handle = "0.6"
+windows-sys = { version = "0.61", features = ["Win32_Foundation"] }
 
 [dev-dependencies]
 tauri = { workspace = true, features = ["test"] }

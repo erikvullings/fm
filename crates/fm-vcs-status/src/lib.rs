@@ -207,8 +207,9 @@ impl GitStatusService {
 /// listed directory's path matches the realpath `git2` reports as a
 /// repository's working directory. Falls back to the original path if it no
 /// longer exists (e.g. it was just deleted).
+/// Uses `dunce::canonicalize` to avoid Windows `\\?\` verbatim-path prefix issues.
 fn canonical(dir: &Path) -> PathBuf {
-    dir.canonicalize().unwrap_or_else(|_| dir.to_path_buf())
+    dunce::canonicalize(dir).unwrap_or_else(|_| dir.to_path_buf())
 }
 
 /// Finds the working tree that owns `dir`, if any. Bare repositories (no
