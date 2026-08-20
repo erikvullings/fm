@@ -138,6 +138,15 @@ fn normalized_path(location: &Location) -> Result<PathBuf, SafetyError> {
                 })
                 .ok_or(SafetyError::IncomparableLocations)?,
         )
+    } else if location.provider_id.as_str() == "webdav" {
+        // `webdav://<connection-id>/<remote-path>` has no native path (task
+        // 0147), same reasoning as the `sftp` branch above.
+        PathBuf::from(
+            location
+                .uri
+                .strip_prefix("webdav://")
+                .ok_or(SafetyError::IncomparableLocations)?,
+        )
     } else {
         location
             .to_native_path()

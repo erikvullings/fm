@@ -31,7 +31,8 @@ mod status;
 pub use configuration::{
     ConnectionConfiguration, FtpConnectionConfiguration, HostKeyPolicy,
     OneDriveConnectionConfiguration, S3ConnectionConfiguration, SmbConnectionConfiguration,
-    SshAuthenticationMethod, SshConnectionConfiguration, WebDavConnectionConfiguration,
+    SshAuthenticationMethod, SshConnectionConfiguration, WebDavAuthenticationScheme,
+    WebDavConnectionConfiguration,
 };
 pub use dialer::ConnectionDialer;
 pub use error::{ConnectionError, ConnectionValidationError};

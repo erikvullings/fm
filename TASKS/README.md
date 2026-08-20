@@ -187,7 +187,7 @@ cloud and network locations, and the connection framework underneath them.
   causes friction)*
 - [ ] 0146 S3-compatible object storage provider *(needs 0103, 0108, 0109 — unlike 0110/0111, no
   OS mount covers this)*
-- [ ] 0147 WebDAV provider *(needs 0103, 0108, 0109 — same reasoning as 0146)*
+- [x] 0147 WebDAV provider *(needs 0103, 0108, 0109 — same reasoning as 0146)*
 
 **Parked (freezer)** — not declined outright, just not planned near-term; revisit only if a
 concrete need surfaces:

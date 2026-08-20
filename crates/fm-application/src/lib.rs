@@ -26,6 +26,7 @@ mod service;
 mod settings_mapping;
 mod ssh;
 mod thumbnails;
+mod webdav;
 pub mod workspace;
 
 pub use action::{ActionRegistry, DuplicateActionId};

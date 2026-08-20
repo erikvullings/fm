@@ -101,11 +101,31 @@ pub struct OneDriveConnectionConfiguration {
     pub account_hint: Option<String>,
 }
 
-/// Minimal WebDAV configuration stub (later task).
+/// How a WebDAV connection authenticates (task 0147). WebDAV has no single
+/// standard auth scheme, so both must be supported: `Basic` sends the
+/// password in every request (only ever over TLS in practice), `Digest`
+/// (RFC 7616/2617) never sends the password itself, only a challenge-response
+/// hash. Either way, the password is resolved from a
+/// [`crate::ConnectionProfile`]'s `credential_ref`, never carried here.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum WebDavAuthenticationScheme {
+    /// HTTP Basic authentication.
+    Basic,
+    /// HTTP Digest authentication.
+    Digest,
+}
+
+/// WebDAV (RFC 4918) configuration (task 0147).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WebDavConnectionConfiguration {
-    /// The WebDAV collection's base URL.
+    /// The WebDAV collection's base URL, e.g. `https://cloud.example.test/remote.php/dav/files/erik`.
     pub base_url: String,
+    /// Login name.
+    pub username: String,
+    /// Authentication scheme to use against the server.
+    pub authentication: WebDavAuthenticationScheme,
+    /// Optional path prefix under `base_url` to open by default.
+    pub path_prefix: Option<String>,
 }
 
 /// Minimal S3-compatible object store configuration stub (later task).
@@ -174,8 +194,8 @@ impl ConnectionConfiguration {
             // authentication shape lands with 0106/0108+); assume no stored
             // credential is required rather than guessing at a policy for a
             // protocol not yet implemented.
-            Self::Ftp(_) | Self::Ftps(_) => true,
-            Self::OneDrive(_) | Self::WebDav(_) | Self::S3(_) | Self::Smb(_) => false,
+            Self::Ftp(_) | Self::Ftps(_) | Self::WebDav(_) => true,
+            Self::OneDrive(_) | Self::S3(_) | Self::Smb(_) => false,
         }
     }
 
@@ -210,6 +230,9 @@ impl ConnectionConfiguration {
             Self::WebDav(config) => {
                 if config.base_url.trim().is_empty() {
                     errors.push(ConnectionValidationError::EmptyWebDavBaseUrl);
+                }
+                if config.username.trim().is_empty() {
+                    errors.push(ConnectionValidationError::EmptyWebDavUsername);
                 }
             }
             Self::S3(config) => {
@@ -323,5 +346,30 @@ mod tests {
             config.validate(),
             vec![ConnectionValidationError::EmptyFtpHost]
         );
+    }
+
+    #[test]
+    fn webdav_configuration_validates_its_own_fields() {
+        let config = ConnectionConfiguration::WebDav(WebDavConnectionConfiguration {
+            base_url: String::new(),
+            username: String::new(),
+            authentication: WebDavAuthenticationScheme::Basic,
+            path_prefix: None,
+        });
+        let errors = config.validate();
+        assert!(errors.contains(&ConnectionValidationError::EmptyWebDavBaseUrl));
+        assert!(errors.contains(&ConnectionValidationError::EmptyWebDavUsername));
+        assert_eq!(errors.len(), 2);
+    }
+
+    #[test]
+    fn webdav_authentication_requires_a_stored_credential() {
+        let config = ConnectionConfiguration::WebDav(WebDavConnectionConfiguration {
+            base_url: "https://cloud.example.test/dav".to_owned(),
+            username: "erik".to_owned(),
+            authentication: WebDavAuthenticationScheme::Basic,
+            path_prefix: None,
+        });
+        assert!(config.requires_stored_credential());
     }
 }

@@ -118,6 +118,8 @@ crates/
   fm-vfs/               VFS provider trait and capability flags
   fm-vfs-local/         local filesystem provider
   fm-vfs-sftp/          SFTP provider (fm-ssh session layer)
+  fm-vfs-ftp/           FTP/FTPS provider
+  fm-vfs-webdav/        WebDAV (RFC 4918) provider
   fm-connections/       remote connection profiles
   fm-credentials/       credential store abstraction
   fm-credentials-macos/ macOS Keychain backend
@@ -497,8 +499,8 @@ metadata or Windows mapped drives appear separately under `NETWORK`. They also u
 `local` provider, preserve optional protocol/server/share and read-only metadata, and require no
 embedded SMB client or vendor credentials.
 
-Application-managed remote connections (SSH today; FTP/FTPS and native cloud/SMB in later tasks)
-are kept separate from both, in `fm-connections` and `fm-credentials`, and appear in the favourites
+Application-managed remote connections (SSH, FTP/FTPS and WebDAV today; native cloud/SMB in later
+tasks) are kept separate from both, in `fm-connections` and `fm-credentials`, and appear in the favourites
 menu under `SERVERS` with a `●`/`○` status dot. A connection profile never stores a password,
 passphrase or token directly - only an opaque reference into a `CredentialStore`, backed by the
 macOS Keychain or Windows Credential Manager (an in-memory store is used on other hosts and in
@@ -525,12 +527,20 @@ staged only in a temporary the destination provider itself owns, which it then p
 atomically. Same-connection moves use the server-native rename instead of transferring anything.
 FTP/FTPS is implemented by `fm-vfs-ftp` (passive FTP and explicit
 FTPS, registered under the `ftp` scheme); plain FTP is labelled insecure in the connection editor.
-Native cloud/SMB providers remain unimplemented; their `connect`/`test` still validate configuration
-and credential only, without a live handshake.
+WebDAV (RFC 4918) is implemented by `fm-vfs-webdav`, registered under the `webdav` scheme:
+directory listing uses `PROPFIND` (depth 1), file operations dispatch through `MKCOL`/`PUT`/`GET`/
+`DELETE`/`MOVE`/`COPY`, both Basic and Digest (RFC 2617/7616, `MD5`/`MD5-sess`) authentication are
+supported, TLS certificate validation is real (no accept-invalid option exists anywhere in the
+crate), and a `423 Locked` response surfaces as a distinct `locked` error rather than a generic
+failure. `server_side_copy`/`server_side_move` report `true` (native `COPY`/`MOVE`); `random_read`
+reflects whether the connected server has been observed advertising `Accept-Ranges: bytes`, probed
+lazily per connection rather than assumed. Native cloud/SMB providers remain unimplemented; their
+`connect`/`test` still validate configuration and credential only, without a live handshake.
 
-Neither SFTP nor FTP/FTPS has a native change-notification API, so unlike the local provider's real
-filesystem watch, `fm-application`'s directory service keeps an open SFTP/FTP directory fresh by
-conservatively polling it (every 20s, backing off further on repeated failures) and diffing the
+Neither SFTP, FTP/FTPS nor WebDAV has a native change-notification API, so unlike the local
+provider's real filesystem watch, `fm-application`'s directory service keeps an open remote
+directory fresh by conservatively polling it (every 20s, backing off further on repeated failures)
+and diffing the
 result - see `docs/architecture/filesystem-watching.md` for the full `ChangeTracking` design. A
 backgrounded pane can be marked inactive (`POST /api/v1/directories/activity`) to poll such a
 location four times less often.

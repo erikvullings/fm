@@ -59,6 +59,7 @@ const CRATE_LAYERS: &[(&str, u8)] = &[
     ("fm-vfs-local", 2),
     ("fm-vfs-ftp", 2),
     ("fm-vfs-sftp", 2),
+    ("fm-vfs-webdav", 2),
     // Layer 3 - composite engines built from the layer-2 primitives.
     ("fm-comparison", 3),
     // Layer 4 - application services, plus the test-support crate which may

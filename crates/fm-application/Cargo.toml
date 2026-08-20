@@ -31,6 +31,7 @@ fm-vfs.workspace = true
 fm-vfs-local.workspace = true
 fm-vfs-ftp.workspace = true
 fm-vfs-sftp.workspace = true
+fm-vfs-webdav.workspace = true
 futures.workspace = true
 serde.workspace = true
 serde_json.workspace = true

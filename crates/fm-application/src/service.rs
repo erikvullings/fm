@@ -257,6 +257,12 @@ impl FileManagerService {
                 credential_store.clone(),
             ),
         ))));
+        providers.register(Arc::new(fm_vfs_webdav::WebDavFileSystemProvider::new(
+            Arc::new(crate::webdav::WebDavResolver::new(
+                JsonFileConnectionRepository::new(settings_directory.join("connections")),
+                credential_store.clone(),
+            )),
+        )));
         // A second, independently-constructed `SshResolver` for the embedded
         // terminal's remote shell channel (task 0105) - safe to construct
         // separately for the same reason `SshResolver::new` above is: a
@@ -346,6 +352,10 @@ impl FileManagerService {
                 .with_dialer(
                     fm_connections::ConnectionKind::Ftps,
                     Arc::new(crate::ftp::FtpDialer),
+                )
+                .with_dialer(
+                    fm_connections::ConnectionKind::WebDav,
+                    Arc::new(crate::webdav::WebDavDialer),
                 ),
                 ssh_connections,
             ),
