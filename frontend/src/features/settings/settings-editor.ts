@@ -99,6 +99,30 @@ export const SettingsEditor: FactoryComponent<SettingsEditorAttrs> = () => {
     current.onCancel();
   }
 
+  /**
+   * Plugin Management's enable/disable toggle persists directly to the backend (unlike every
+   * other field here, which only writes on Save), so it doesn't go through `update()`. Without
+   * this, `draft.enabledPlugins` stays whatever it was when the dialog opened, and Save would
+   * send that stale snapshot back to the backend, silently re-disabling a plugin the user just
+   * enabled (and reverting any icon theme install still in flight for it).
+   */
+  function handleTogglePlugin(
+    current: SettingsEditorAttrs,
+    pluginId: PluginId,
+    enabled: boolean,
+  ): Promise<void> {
+    return current.onTogglePlugin(pluginId, enabled).then(() => {
+      if (draft === undefined) return;
+      const nextEnabled = new Set(draft.enabledPlugins);
+      if (enabled) {
+        nextEnabled.add(pluginId);
+      } else {
+        nextEnabled.delete(pluginId);
+      }
+      draft = { ...draft, enabledPlugins: [...nextEnabled] };
+    });
+  }
+
   function handleSave(current: SettingsEditorAttrs): void {
     if (draft === undefined) return;
     saving = true;
@@ -422,7 +446,7 @@ export const SettingsEditor: FactoryComponent<SettingsEditorAttrs> = () => {
           m('.row', m('h4.fm-settings-section-heading.col.s12', t('settings', 'plugins'))),
           m(PluginManagement, {
             plugins: current.plugins,
-            onToggle: current.onTogglePlugin,
+            onToggle: (pluginId, enabled) => handleTogglePlugin(current, pluginId, enabled),
             onRequestLogs: current.onRequestPluginLogs,
           }),
 

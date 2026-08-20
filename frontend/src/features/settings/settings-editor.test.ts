@@ -157,6 +157,34 @@ describe('SettingsEditor', () => {
     expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ fontSize: 20 }));
   });
 
+  it('saves a plugin enabled via Plugin Management instead of reverting it (regression)', async () => {
+    // Plugin Management's toggle persists directly to the backend, bypassing the draft entirely
+    // (see handleTogglePlugin's doc comment) - so this must not send the dialog's stale opening
+    // snapshot of `enabledPlugins` back to the backend and silently re-disable the plugin.
+    const onTogglePlugin = vi.fn().mockResolvedValue(undefined);
+    const plugin: PluginDescriptor = {
+      id: 'catppuccin.icons',
+      name: 'Catppuccin Icons',
+      version: '1.0.0',
+      description: '',
+      enabled: false,
+    };
+    const { onSave } = mountEditor({ plugins: [plugin], onTogglePlugin });
+
+    root.querySelector<HTMLInputElement>('.fm-plugin-toggle input')?.click();
+    await Promise.resolve();
+    await Promise.resolve();
+    m.redraw.sync();
+    expect(onTogglePlugin).toHaveBeenCalledWith('catppuccin.icons', true);
+
+    root.querySelector<HTMLButtonElement>('.fm-settings-save')?.click();
+    m.redraw.sync();
+
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({ enabledPlugins: ['catppuccin.icons'] }),
+    );
+  });
+
   it('keeps the draft visible and shows an error when saving fails', async () => {
     const onSave = vi.fn().mockRejectedValue(new Error('backend refused the request'));
     mountEditor({ onSave });
