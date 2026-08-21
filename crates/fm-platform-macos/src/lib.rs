@@ -945,10 +945,6 @@ const MODIFIER_SHIFT_BIT: usize = 1 << 17;
 const MODIFIER_CONTROL_BIT: usize = 1 << 18;
 const MODIFIER_OPTION_BIT: usize = 1 << 19;
 const MODIFIER_COMMAND_BIT: usize = 1 << 20;
-/// `NSEventModifierFlagFunction`. AppKit requires this bit set (in addition to whatever other
-/// modifiers apply) whenever `keyEquivalent` is one of the `NSF1FunctionKey`.. private-use-area
-/// characters below, or the shortcut silently fails to display/register on the menu item.
-const MODIFIER_FUNCTION_BIT: usize = 1 << 23;
 
 /// `NSF1FunctionKey`'s Unicode code point; `NSF2FunctionKey`.."NSF35FunctionKey" follow it
 /// sequentially, one per function key.
@@ -968,11 +964,14 @@ fn function_key_char(key: &str) -> Option<char> {
 /// Maps a [`fm_domain::KeyChord`] to the `(key equivalent, modifier mask)`
 /// pair an `NSMenuItem` needs (task 0133). A lowercased single character is
 /// handled directly ("c", "v", "a", ","), and `"F1"`..`"F35"` map to the
-/// corresponding `NSF1FunctionKey`.. private-use-area character (with
-/// `MODIFIER_FUNCTION_BIT` set) so function-key shortcuts like the Help
-/// menu's F1 actually display. Any other multi-character key name (e.g.
-/// `"Escape"`, `"Enter"`) is deliberately left blank (no key equivalent
-/// shown at all) rather than over-engineered, matching this task's scope.
+/// corresponding `NSF1FunctionKey`.. private-use-area character, which
+/// AppKit renders as e.g. "F1" on its own without needing
+/// `NSEventModifierFlagFunction` in the mask - that flag is reserved for
+/// system-provided menu items and AppKit logs a warning and ignores it if
+/// an app sets it on its own items. Any other multi-character key name
+/// (e.g. `"Escape"`, `"Enter"`) is deliberately left blank (no key
+/// equivalent shown at all) rather than over-engineered, matching this
+/// task's scope.
 /// Blank, not truncated: taking just the first character of a
 /// multi-character key name would silently collide distinct shortcuts onto
 /// the same displayed equivalent instead of leaving them untranslated,
@@ -996,7 +995,7 @@ fn key_equivalent(chord: &fm_domain::KeyChord) -> (String, usize) {
     }
 
     if let Some(function_char) = function_key_char(&chord.key) {
-        return (function_char.to_string(), mask | MODIFIER_FUNCTION_BIT);
+        return (function_char.to_string(), mask);
     }
 
     let key = if chord.key.chars().count() == 1 {
@@ -1676,7 +1675,7 @@ mod tests {
                 key: "F1".to_owned(),
                 ..fm_domain::KeyChord::default()
             }),
-            ("\u{F704}".to_owned(), MODIFIER_FUNCTION_BIT)
+            ("\u{F704}".to_owned(), 0)
         );
         assert_eq!(
             key_equivalent(&fm_domain::KeyChord {
@@ -1684,10 +1683,7 @@ mod tests {
                 shift: true,
                 ..fm_domain::KeyChord::default()
             }),
-            (
-                "\u{F709}".to_owned(),
-                MODIFIER_FUNCTION_BIT | MODIFIER_SHIFT_BIT
-            )
+            ("\u{F709}".to_owned(), MODIFIER_SHIFT_BIT)
         );
         // Out of the supported F1..F35 range: falls back to blank, like any other
         // multi-character key name.

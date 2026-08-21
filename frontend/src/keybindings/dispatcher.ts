@@ -52,7 +52,8 @@ function effectiveChords(
   return chord === undefined ? [] : [chord];
 }
 
-function normalizedShortcut(chord: KeyChord): string {
+/** Formats a `KeyChord` the way live bindings and the shortcuts-help lookup display it. */
+export function normalizedShortcut(chord: KeyChord): string {
   return [
     ...(chord.ctrl || chord.meta ? ['CTRL'] : []),
     ...(chord.alt ? ['ALT'] : []),

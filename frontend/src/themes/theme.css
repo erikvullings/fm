@@ -975,6 +975,57 @@ input[type="text"].fm-command-palette-input {
   font: inherit;
 }
 
+input[type="text"].fm-shortcuts-help-search {
+  box-sizing: border-box;
+  width: 100%;
+  border: 1px solid var(--fm-border);
+  border-radius: var(--fm-radius);
+  outline: 0;
+  padding: 0.5rem 0.75rem;
+  margin-bottom: 0.75rem;
+  background: var(--fm-surface);
+  color: var(--fm-text);
+  font: inherit;
+}
+
+.fm-shortcuts-help-capture {
+  display: grid;
+  gap: 0.35rem;
+  margin-bottom: 1rem;
+}
+
+.fm-shortcuts-help-capture label {
+  color: var(--fm-text-muted);
+  font-size: 0.85rem;
+}
+
+input[type="text"].fm-shortcuts-help-capture-input {
+  box-sizing: border-box;
+  width: 100%;
+  border: 1px solid var(--fm-border);
+  border-radius: var(--fm-radius);
+  outline: 0;
+  padding: 0.5rem 0.75rem;
+  background: var(--fm-surface);
+  color: var(--fm-text);
+  font: inherit;
+  cursor: default;
+}
+
+.fm-shortcuts-help-capture-result {
+  color: var(--fm-text-muted);
+  font-size: 0.85rem;
+}
+
+.fm-shortcuts-help-table td:last-child {
+  white-space: nowrap;
+}
+
+.fm-shortcuts-help-table small {
+  display: block;
+  color: var(--fm-text-muted);
+}
+
 .fm-context-menu-backdrop {
   position: fixed;
   z-index: 90;
