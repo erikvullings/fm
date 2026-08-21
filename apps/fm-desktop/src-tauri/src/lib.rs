@@ -50,6 +50,17 @@ pub fn run() {
             if let Some(window) = _app.get_webview_window("main") {
                 let _ = window.set_decorations(false);
             }
+            // Dock icon right/long-click "New Window" item, mirroring the File menu's own item
+            // (task 0133) - sends the frontend's `NEW_WORKSPACE_WINDOW_MENU_ID` through the same
+            // native-menu-action channel a click on that File menu item uses, so both paths land
+            // on `openNewWorkspaceWindow()`. Not localized: this installs once, before the
+            // frontend has loaded any translations.
+            #[cfg(target_os = "macos")]
+            fm_platform_macos::install_dock_menu(
+                "Dock Menu",
+                "New Window",
+                "ui.newWorkspaceWindow",
+            );
             Ok(())
         })
         // Registered first (per the plugin's own docs) so a second launch of the app is caught

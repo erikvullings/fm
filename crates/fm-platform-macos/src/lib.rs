@@ -39,6 +39,7 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
 
 use fm_platform::{
@@ -47,7 +48,7 @@ use fm_platform::{
     cloud_provider_hint,
 };
 use objc2::rc::Retained;
-use objc2::runtime::{AnyObject, NSObject};
+use objc2::runtime::{AnyClass, AnyObject, Imp, NSObject, Sel};
 use objc2::{MainThreadMarker, MainThreadOnly, define_class, msg_send, sel};
 use objc2_app_kit::{
     NSApplication, NSBitmapImageFileType, NSBitmapImageRep, NSControlStateValueOff,
@@ -766,6 +767,99 @@ impl PlatformAdapter for MacosPlatformAdapter {
     ) -> Result<(), PlatformError> {
         write_spotlight_comment(path, comment)
     }
+}
+
+/// Installs a Dock-icon context menu with a single "New Window" item, so right/long-clicking
+/// Procyon's Dock icon offers the same "open another window" shortcut as the File menu's own
+/// "New Window" item, without switching to the app first.
+///
+/// AppKit builds the Dock menu by calling `-applicationDockMenu:` on `NSApp`'s delegate - but
+/// Tauri/tao's own delegate class never implements that selector, so this adds it at runtime via
+/// `class_addMethod`. That only ever *adds* a selector to a class; it can't override one that
+/// already exists, so none of tao's own delegate behaviour (window/lifecycle events) is touched.
+///
+/// The added method ignores its arguments and always returns the one menu built here, wired
+/// through the exact same [`MenuActionTarget`]/[`MENU_ACTION_CALLBACK`] plumbing as the main menu
+/// bar (task 0133): a click sends `new_window_action_id` through whichever channel
+/// [`MacosPlatformAdapter::install_native_menu`]'s `on_action` last installed - the frontend's
+/// `NEW_WORKSPACE_WINDOW_MENU_ID`, so it lands on the exact same handler as the File menu's own
+/// item.
+///
+/// A no-op off the main thread, or if `NSApp` has no delegate yet - both unreachable in practice
+/// since this is called once from Tauri's `setup` hook, which runs on the main thread after
+/// `NSApp`'s delegate is set.
+pub fn install_dock_menu(menu_title: &str, new_window_title: &str, new_window_action_id: &str) {
+    let Some(mtm) = MainThreadMarker::new() else {
+        return;
+    };
+    let app = NSApplication::sharedApplication(mtm);
+    let Some(delegate) = app.delegate() else {
+        return;
+    };
+
+    let target = MenuActionTarget::shared(mtm);
+    let menu = NSMenu::new(mtm);
+    menu.setTitle(&NSString::from_str(menu_title));
+    let item = unsafe {
+        NSMenuItem::initWithTitle_action_keyEquivalent(
+            mtm.alloc(),
+            &NSString::from_str(new_window_title),
+            Some(sel!(handleMenuItem:)),
+            &NSString::from_str(""),
+        )
+    };
+    let target_ref: &AnyObject = &target;
+    let action_id = NSString::from_str(new_window_action_id);
+    let action_id_ref: &AnyObject = &action_id;
+    unsafe {
+        item.setTarget(Some(target_ref));
+        item.setRepresentedObject(Some(action_id_ref));
+    }
+    menu.addItem(&item);
+
+    // Leaked for the process's lifetime: `applicationDockMenu:` must keep returning a live menu
+    // for as long as the app runs, and there is no natural point at which a Tauri app would want
+    // to tear this down early.
+    let menu_ptr = Retained::into_raw(menu);
+    DOCK_MENU.store(menu_ptr as *mut AnyObject as usize, Ordering::SeqCst);
+
+    let delegate_object: &AnyObject = delegate.as_ref();
+    let delegate_class: *mut AnyClass = delegate_object.class() as *const AnyClass as *mut AnyClass;
+    let sel = sel!(applicationDockMenu:);
+    // SAFETY: `types` describes an Objective-C method returning an object (`@`), taking the
+    // implicit `self`/`_cmd` pair plus one object argument (the sender) - matching
+    // `dock_menu_imp`'s actual signature below. `class_addMethod` is a no-op (returns false,
+    // which this ignores) if the delegate's class already implements the selector, so calling
+    // this function twice (e.g. a hot-reloaded `setup`) never clobbers an earlier install.
+    unsafe {
+        objc2::ffi::class_addMethod(
+            delegate_class,
+            sel,
+            core::mem::transmute::<
+                unsafe extern "C-unwind" fn(*mut AnyObject, Sel, *mut AnyObject) -> *mut AnyObject,
+                Imp,
+            >(dock_menu_imp),
+            c"@@:@".as_ptr(),
+        );
+    }
+}
+
+/// Process-wide slot for the menu [`install_dock_menu`] built, read back by [`dock_menu_imp`].
+/// Stored as a raw pointer (rather than `Retained<NSMenu>`) because `NSMenu` isn't `Send`/`Sync`
+/// and both are only ever touched from the main thread anyway - see [`install_dock_menu`]'s doc
+/// comment for why leaking it is fine.
+static DOCK_MENU: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+/// The `-applicationDockMenu:` implementation [`install_dock_menu`] attaches to `NSApp`'s
+/// delegate class. Ignores `_this`/`_cmd`/`_sender` - there is only ever one Dock menu for the
+/// process - and returns whichever menu is currently in [`DOCK_MENU`], or a null pointer (AppKit
+/// falls back to no Dock menu) if none has been installed yet.
+unsafe extern "C-unwind" fn dock_menu_imp(
+    _this: *mut AnyObject,
+    _cmd: Sel,
+    _sender: *mut AnyObject,
+) -> *mut AnyObject {
+    DOCK_MENU.load(Ordering::SeqCst) as *mut AnyObject
 }
 
 /// The callback most recently installed by
