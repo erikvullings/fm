@@ -2846,9 +2846,15 @@ mod tests {
         fn mounted_volumes(
             &self,
         ) -> Result<Vec<fm_platform::MountedVolume>, fm_platform::PlatformError> {
+            // Platform-native root: `from_native_path` rejects `/` on Windows (no drive letter).
+            #[cfg(windows)]
+            let mount_point = PathBuf::from(r"C:\");
+            #[cfg(not(windows))]
+            let mount_point = PathBuf::from("/");
+
             Ok(vec![fm_platform::MountedVolume {
                 name: "Macintosh HD".to_owned(),
-                mount_point: PathBuf::from("/"),
+                mount_point,
             }])
         }
     }
