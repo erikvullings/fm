@@ -133,7 +133,10 @@ async fn await_terminal(
     service: &FileManagerService,
     id: uuid::Uuid,
 ) -> fm_transport_dto::OperationDto {
-    for _ in 0..600 {
+    // 30s budget: generous headroom for a slow/contended CI machine rather than
+    // a tight bound on expected duration - these fixtures run entirely over
+    // loopback, so a real hang always shows up long before this expires.
+    for _ in 0..3_000 {
         let current = service
             .get_operation(id.into())
             .expect("operation must be queryable");
@@ -530,10 +533,19 @@ async fn cancelling_an_sftp_to_ftp_copy_leaves_no_partial_destination() {
     let sftp_id = register_sftp(&service, "Fixture SFTP", &ssh).await;
     let ftp_id = register_ftp(&service, "Fixture FTP", &ftp).await;
     // Large enough that the transfer is reliably still running when the
-    // cancellation lands, mirroring `ssh_sftp_operations.rs`.
+    // cancellation lands, mirroring `ssh_sftp_operations.rs`. This observed
+    // flaky under the scheduling contention of the full workspace test suite
+    // running concurrently (many test binaries competing for CPU can delay
+    // this test's own task long enough that a same-sized transfer finishes
+    // before it gets a turn to observe the `Running` state and request
+    // cancellation). Doubling from the original 64 MiB widens that margin
+    // without pushing the transfer itself into multi-second territory (this
+    // fixture pairing streams over loopback with no real disk I/O on the FTP
+    // side, so going much larger just makes every run slower without making
+    // the race any more deterministic).
     fs::File::create(ssh.path("large.bin"))
         .expect("create the remote source")
-        .set_len(64 * 1024 * 1024)
+        .set_len(128 * 1024 * 1024)
         .expect("size the remote source");
 
     let operation = service

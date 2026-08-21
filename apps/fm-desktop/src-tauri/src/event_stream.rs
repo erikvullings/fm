@@ -161,8 +161,17 @@ mod tests {
         assert_eq!(bus.subscriber_count(), 1);
 
         registry.unsubscribe(id);
-        tokio::time::sleep(std::time::Duration::from_millis(1)).await;
         assert_eq!(registry.len(), 0);
+        // `abort()` only requests cancellation; the aborted task's subscriber-count-decrementing
+        // drop runs whenever the runtime next polls it, which under load (e.g. the full workspace
+        // suite running many test binaries concurrently) can take longer than a fixed short sleep.
+        // Poll on a wall-clock budget instead, matching the sibling test below.
+        for _ in 0..2_000 {
+            if bus.subscriber_count() == 0 {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(1)).await;
+        }
         assert_eq!(bus.subscriber_count(), 0);
     }
 
