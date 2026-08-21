@@ -528,24 +528,24 @@ async fn a_cross_provider_conflict_waits_for_a_decision_without_touching_the_des
 async fn cancelling_an_sftp_to_ftp_copy_leaves_no_partial_destination() {
     let root = tempfile::tempdir().expect("temporary root");
     let service = service(&root);
-    let ssh = SshFixture::start().await;
+    // This test races another task (the poll loop below) against a transfer
+    // that streams over loopback with no real disk I/O, so a large enough
+    // file was not by itself a reliable way to keep the transfer "still
+    // running" when cancellation lands - under CI scheduling contention the
+    // whole thing can complete within a single scheduling turn regardless of
+    // size. A small per-read delay on the SFTP source forces a real,
+    // timer-driven yield on every chunk instead, giving the runtime a
+    // guaranteed opportunity to run the poll loop between chunks.
+    let ssh = SshFixture::start_with_read_delay(Duration::from_millis(1)).await;
     let ftp = FtpFixture::start().await;
     let sftp_id = register_sftp(&service, "Fixture SFTP", &ssh).await;
     let ftp_id = register_ftp(&service, "Fixture FTP", &ftp).await;
-    // Large enough that the transfer is reliably still running when the
-    // cancellation lands, mirroring `ssh_sftp_operations.rs`. This observed
-    // flaky under the scheduling contention of the full workspace test suite
-    // running concurrently (many test binaries competing for CPU can delay
-    // this test's own task long enough that a same-sized transfer finishes
-    // before it gets a turn to observe the `Running` state and request
-    // cancellation). Doubling from the original 64 MiB widens that margin
-    // without pushing the transfer itself into multi-second territory (this
-    // fixture pairing streams over loopback with no real disk I/O on the FTP
-    // side, so going much larger just makes every run slower without making
-    // the race any more deterministic).
+    // Large enough (combined with the read delay above) that the transfer is
+    // reliably still running when the cancellation lands, mirroring
+    // `ssh_sftp_operations.rs`.
     fs::File::create(ssh.path("large.bin"))
         .expect("create the remote source")
-        .set_len(128 * 1024 * 1024)
+        .set_len(64 * 1024 * 1024)
         .expect("size the remote source");
 
     let operation = service

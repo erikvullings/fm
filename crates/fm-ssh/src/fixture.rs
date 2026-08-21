@@ -92,6 +92,21 @@ impl SshFixture {
     /// generated host key and one authorized client key (for public-key
     /// authentication tests).
     pub async fn start() -> Self {
+        Self::start_with_read_delay(std::time::Duration::ZERO).await
+    }
+
+    /// Like [`Self::start`], but with an artificial delay inserted before
+    /// every SFTP `read` response.
+    ///
+    /// The fixture otherwise streams over loopback with no real disk I/O
+    /// wait, so a client reading a large file can complete a transfer within
+    /// a single scheduling turn - too fast for a test racing another task
+    /// against "is this still in progress" (e.g. requesting cancellation
+    /// mid-transfer) to reliably win under CI scheduling contention. A small
+    /// per-read delay forces a real, timer-driven yield on every chunk,
+    /// giving the rest of the runtime a guaranteed opportunity to run
+    /// between chunks regardless of system load.
+    pub async fn start_with_read_delay(read_delay: std::time::Duration) -> Self {
         let host_key = PrivateKey::random(&mut rand::rng(), Algorithm::Ed25519)
             .expect("generating a fixture host key must succeed");
         let host_key_fingerprint = crate::fingerprint::fingerprint_of(host_key.public_key());
@@ -117,6 +132,7 @@ impl SshFixture {
             root: root.path().to_path_buf(),
             authorized_public_key,
             last_exec_command: last_exec_command.clone(),
+            read_delay,
         };
 
         let accept_task = tokio::spawn(async move {
@@ -154,6 +170,7 @@ struct FixtureServer {
     root: PathBuf,
     authorized_public_key: PublicKey,
     last_exec_command: Arc<std::sync::Mutex<Option<Vec<u8>>>>,
+    read_delay: std::time::Duration,
 }
 
 impl ServerTrait for FixtureServer {
@@ -165,6 +182,7 @@ impl ServerTrait for FixtureServer {
             authorized_public_key: self.authorized_public_key.clone(),
             channels: Arc::new(AsyncMutex::new(HashMap::new())),
             last_exec_command: self.last_exec_command.clone(),
+            read_delay: self.read_delay,
         }
     }
 }
@@ -174,6 +192,7 @@ struct FixtureSshHandler {
     authorized_public_key: PublicKey,
     channels: Arc<AsyncMutex<HashMap<ChannelId, Channel<Msg>>>>,
     last_exec_command: Arc<std::sync::Mutex<Option<Vec<u8>>>>,
+    read_delay: std::time::Duration,
 }
 
 impl ServerHandler for FixtureSshHandler {
@@ -227,7 +246,7 @@ impl ServerHandler for FixtureSshHandler {
         session.channel_success(channel_id)?;
         russh_sftp::server::run(
             channel.into_stream(),
-            FixtureSftpHandler::new(self.root.clone()),
+            FixtureSftpHandler::new(self.root.clone(), self.read_delay),
         )
         .await;
         Ok(())
@@ -318,14 +337,16 @@ struct FixtureSftpHandler {
     root: PathBuf,
     handles: HashMap<String, FixtureHandle>,
     next_handle_id: u64,
+    read_delay: std::time::Duration,
 }
 
 impl FixtureSftpHandler {
-    fn new(root: PathBuf) -> Self {
+    fn new(root: PathBuf, read_delay: std::time::Duration) -> Self {
         Self {
             root,
             handles: HashMap::new(),
             next_handle_id: 0,
+            read_delay,
         }
     }
 
@@ -411,6 +432,9 @@ impl russh_sftp::server::Handler for FixtureSftpHandler {
         offset: u64,
         len: u32,
     ) -> Result<Data, Self::Error> {
+        if !self.read_delay.is_zero() {
+            tokio::time::sleep(self.read_delay).await;
+        }
         let Some(FixtureHandle::File(file)) = self.handles.get_mut(&handle) else {
             return Err(StatusCode::Failure);
         };
