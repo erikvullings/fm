@@ -445,8 +445,16 @@
 
 .fm-file-viewer-body-image {
   display: flex;
-  align-items: center;
-  justify-content: center;
+}
+
+/* `margin: auto` (rather than `align-items`/`justify-content: center` on the flex container)
+ * centers the image when it's smaller than the container while keeping it fully reachable via
+ * scroll once zoomed past the container's size - `justify-content`/`align-items: center` on an
+ * `overflow: auto` flex container clips the overflow on the leading edge instead of scrolling to
+ * it (flexbug #12), which would make Arrow-key panning unable to reach the top/left of a zoomed
+ * image. */
+.fm-file-viewer-body-image img {
+  margin: auto;
 }
 
 .fm-file-viewer-body-image img.fm-file-viewer-image-fit {
@@ -455,6 +463,15 @@
   width: 100%;
   height: 100%;
   object-fit: contain;
+}
+
+/* Search-match highlight for rendered markdown (`<mark>`, injected by
+ * `renderMarkdownWithHighlight` in `markdown-search-highlight.ts`). Matches the CodeMirror text
+ * viewer's own selection color for consistency (`code-mirror-editor.ts`'s
+ * `.cm-selectionBackground` theme rule). */
+.fm-file-viewer-highlight {
+  background-color: var(--fm-selection);
+  color: inherit;
 }
 
 .fm-file-viewer-body-audio {

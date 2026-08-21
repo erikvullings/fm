@@ -1364,6 +1364,59 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
     paneElement?.dispatchEvent(new KeyboardEvent('keydown', { key: shortcut, bubbles: true }));
   }
 
+  /** The pane currently showing an open F3 viewer, if any - mirrors `globalKeydownHandlerContext
+   * .getViewer`'s per-pane lookup, just scanning every pane instead of one. There is only ever one
+   * viewer open app-wide (`openViewer` reuses/replaces the existing one). */
+  function openViewerPaneId(): PaneId | undefined {
+    if (workspace === undefined) return undefined;
+    for (const paneId of workspace.paneOrder) {
+      const tabId = workspace.panesById[paneId]?.activeTabId;
+      if (tabId !== undefined && viewerByTab.get(tabKey(paneId, tabId)) !== undefined) {
+        return paneId;
+      }
+    }
+    return undefined;
+  }
+
+  /** Moves keyboard focus into `paneId`'s open F3 viewer - see `GlobalKeydownContext.focusViewer`. */
+  function focusViewer(paneId: PaneId): void {
+    const root = document.querySelector<HTMLElement>(`[data-pane-id="${paneId}"]`);
+    const searchInput = root?.querySelector<HTMLInputElement>('.fm-file-viewer-search-input');
+    const section = root?.querySelector<HTMLElement>('.fm-pane-viewer');
+    (searchInput ?? section)?.focus();
+  }
+
+  /** One `scrollViewer('line', ...)` step, in CSS pixels - roughly a text line or a comfortable
+   * image-pan increment. */
+  const VIEWER_SCROLL_LINE_STEP_PX = 48;
+  /** Fraction of the viewer body's own size scrolled per `scrollViewer('page', ...)` step - kept
+   * just under a full screenful (rather than exactly 1) so a little of the previous page stays
+   * visible as a reading anchor, matching most text editors' Page Up/Down. */
+  const VIEWER_SCROLL_PAGE_FRACTION = 0.9;
+
+  /** Scrolls/pages `paneId`'s open F3 viewer's scrollable body - see
+   * `GlobalKeydownContext.scrollViewer`. */
+  function scrollViewer(
+    paneId: PaneId,
+    dx: -1 | 0 | 1,
+    dy: -1 | 0 | 1,
+    unit: 'line' | 'page',
+  ): void {
+    const container = document.querySelector<HTMLElement>(
+      `[data-pane-id="${paneId}"] .fm-file-viewer-body`,
+    );
+    if (container === null) return;
+    const stepX =
+      unit === 'page'
+        ? container.clientWidth * VIEWER_SCROLL_PAGE_FRACTION
+        : VIEWER_SCROLL_LINE_STEP_PX;
+    const stepY =
+      unit === 'page'
+        ? container.clientHeight * VIEWER_SCROLL_PAGE_FRACTION
+        : VIEWER_SCROLL_LINE_STEP_PX;
+    container.scrollBy({ left: dx * stepX, top: dy * stepY });
+  }
+
   const backendEventContext: BackendEventContext = {
     getWorkspaceId: () => workspace?.id,
     getWorkspaceRevision: () => workspace?.revision,
@@ -1754,6 +1807,8 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
       if (focusPane !== undefined) focusPane(paneId);
       else void activatePane(attrsClient, paneId);
     },
+    focusViewer,
+    scrollViewer,
     toggleTerminal: () => {
       if (runtimeKind !== 'tauri') return;
       const key = activeTerminalTabKey();
@@ -2879,6 +2934,13 @@ export const AppShell: FactoryComponent<AppShellAttrs> = () => {
                   onCloseTab: (paneId, tabId) => tabController.requestCloseTab(paneId, tabId),
                   onNewTab: (paneId) => tabController.openTab(paneId),
                   onFocusTerminal: () => focusTerminal?.() ?? false,
+                  onFocusViewer: () => {
+                    const paneId = openViewerPaneId();
+                    if (paneId === undefined) return false;
+                    focusViewer(paneId);
+                    m.redraw();
+                    return true;
+                  },
                   onPaneCycleBoundary: () => {
                     if (!treeSidebarOpen) return false;
                     focusDirectoryTree?.();

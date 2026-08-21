@@ -102,28 +102,50 @@ impl SftpFileSystemProvider {
     }
 
     /// Runs `operation` against a live SFTP session for `connection_id`,
-    /// retrying exactly once with a freshly reconnected session if the first
-    /// attempt fails with a transport-shaped error (spec §6.8 "reconnect for
-    /// browsing") - a protocol-level response (file not found, permission
-    /// denied, ...) is never retried.
+    /// reconnecting and retrying with a short backoff if an attempt fails
+    /// with a transport-shaped error (spec §6.8 "reconnect for browsing") -
+    /// a protocol-level response (file not found, permission denied, ...) is
+    /// never retried. A flaky link (e.g. dropping over VPN) often recovers
+    /// within a second or two, so this absorbs a couple of those drops
+    /// before surfacing anything to the caller, rather than the previous
+    /// single-retry behaviour that gave up as soon as one reconnect failed.
     async fn with_sftp<T, F, Fut>(&self, connection_id: &str, operation: F) -> Result<T, VfsError>
     where
         F: Fn(Arc<SftpSession>) -> Fut,
         Fut: std::future::Future<Output = Result<T, russh_sftp::client::error::Error>>,
     {
+        const RECONNECT_BACKOFF: [std::time::Duration; 2] = [
+            std::time::Duration::from_millis(200),
+            std::time::Duration::from_millis(600),
+        ];
+
         let params = self.resolver.resolve(connection_id).await?;
         let sftp = self.acquire_sftp(connection_id, &params).await?;
-        match operation(sftp).await {
-            Ok(value) => Ok(value),
-            Err(error) if is_transport_error(&error) => {
-                self.connections.invalidate(connection_id).await;
-                let sftp = self.acquire_sftp(connection_id, &params).await?;
-                operation(sftp)
-                    .await
-                    .map_err(|error| map_sftp_error(error, connection_id))
+        let mut last_error = match operation(sftp).await {
+            Ok(value) => return Ok(value),
+            Err(error) if is_transport_error(&error) => map_sftp_error(error, connection_id),
+            Err(error) => return Err(map_sftp_error(error, connection_id)),
+        };
+
+        for backoff in RECONNECT_BACKOFF {
+            self.connections.invalidate(connection_id).await;
+            tokio::time::sleep(backoff).await;
+            let sftp = match self.acquire_sftp(connection_id, &params).await {
+                Ok(sftp) => sftp,
+                Err(error) => {
+                    last_error = error;
+                    continue;
+                }
+            };
+            match operation(sftp).await {
+                Ok(value) => return Ok(value),
+                Err(error) if is_transport_error(&error) => {
+                    last_error = map_sftp_error(error, connection_id);
+                }
+                Err(error) => return Err(map_sftp_error(error, connection_id)),
             }
-            Err(error) => Err(map_sftp_error(error, connection_id)),
         }
+        Err(last_error)
     }
 
     fn remove_directory_recursive<'a>(

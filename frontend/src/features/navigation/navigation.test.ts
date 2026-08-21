@@ -328,6 +328,62 @@ describe('navigation controller', () => {
     expect(context.views.at(-1)?.entries[0]?.name).toBe('Documents');
   });
 
+  it('retries a failing background refresh silently instead of surfacing an error immediately', async () => {
+    vi.useFakeTimers();
+    try {
+      const context = setup();
+      vi.mocked(context.client.listDirectory)
+        .mockRejectedValueOnce(new Error('connection dropped'))
+        .mockRejectedValueOnce(new Error('connection dropped'))
+        .mockImplementationOnce(async (request) =>
+          snapshot(request.requestId, 'file:///home/erik', ['Documents']),
+        );
+      const controller = createNavigationController({
+        client: context.client,
+        getWorkspace: context.getWorkspace,
+        replaceWorkspace: context.replaceWorkspace,
+        updatePane: (_paneId, _tabId, view) => context.views.push(view),
+      });
+
+      await controller.load('left', { background: true });
+      expect(context.client.listDirectory).toHaveBeenCalledOnce();
+      // No error published yet: the failed background refresh leaves the current view untouched.
+      expect(context.views).toHaveLength(0);
+
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(context.client.listDirectory).toHaveBeenCalledTimes(3);
+      expect(context.views.at(-1)?.state).toEqual({ type: 'loaded' });
+      expect(context.views.at(-1)?.entries[0]?.name).toBe('Documents');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('surfaces the error once a background refresh fails repeatedly in a row', async () => {
+    vi.useFakeTimers();
+    try {
+      const context = setup();
+      vi.mocked(context.client.listDirectory).mockRejectedValue(new Error('connection dropped'));
+      const controller = createNavigationController({
+        client: context.client,
+        getWorkspace: context.getWorkspace,
+        replaceWorkspace: context.replaceWorkspace,
+        updatePane: (_paneId, _tabId, view) => context.views.push(view),
+      });
+
+      await controller.load('left', { background: true });
+      await vi.advanceTimersByTimeAsync(10_000);
+
+      expect(vi.mocked(context.client.listDirectory).mock.calls.length).toBeGreaterThan(3);
+      expect(context.views.at(-1)?.state).toEqual({
+        type: 'error',
+        message: 'connection dropped',
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('uses UUID request identifiers accepted by the transport DTO', async () => {
     const context = setup();
     echoingSnapshot(context.client, 'file:///home/erik', []);

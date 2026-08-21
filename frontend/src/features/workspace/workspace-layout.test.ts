@@ -298,6 +298,35 @@ describe('WorkspaceLayoutView keyboard navigation', () => {
     expect(onActivatePane).not.toHaveBeenCalledWith('right');
   });
 
+  it('moves focus into an open F3 viewer instead of cycling panes when Tab is pressed', () => {
+    const onFocusViewer = vi.fn(() => true);
+    const onActivatePane = vi.fn<(paneId: PaneId) => void>();
+    mount(attrs({ onFocusViewer, onActivatePane }));
+    const left = root.querySelector<HTMLElement>('[data-pane-id="left"] > .fm-pane');
+    left?.focus();
+    onActivatePane.mockClear();
+
+    left?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }));
+
+    expect(onFocusViewer).toHaveBeenCalledOnce();
+    // The viewer claimed focus, so the normal pane-to-pane cycle must not also run.
+    expect(onActivatePane).not.toHaveBeenCalled();
+  });
+
+  it('falls back to the normal pane cycle when onFocusViewer declines (or is unset)', () => {
+    const onFocusViewer = vi.fn(() => false);
+    const onActivatePane = vi.fn<(paneId: PaneId) => void>();
+    mount(attrs({ onFocusViewer, onActivatePane }));
+    const left = root.querySelector<HTMLElement>('[data-pane-id="left"] > .fm-pane');
+    left?.focus();
+    onActivatePane.mockClear();
+
+    left?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }));
+
+    expect(onFocusViewer).toHaveBeenCalledOnce();
+    expect(onActivatePane).toHaveBeenCalledExactlyOnceWith('right');
+  });
+
   it('renders and traverses a future three-pane tree in layout order', () => {
     const threePane = projection();
     const right = threePane.panesById.right;

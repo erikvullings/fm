@@ -19,6 +19,7 @@ import type {
   FileViewerSearchState,
   FileViewerState,
 } from './file-viewer-controller';
+import { renderMarkdownWithHighlight } from './markdown-search-highlight';
 import { type PDFDocumentProxy, renderPdfPageToCanvas } from './pdf-preview';
 import './file-viewer.css';
 
@@ -61,6 +62,43 @@ export interface FileViewerAttrs {
 }
 
 const LOAD_MORE_THRESHOLD_PX = 200;
+
+/** Renders markdown as sanitized HTML and, whenever a search match is highlighted, wraps it in a
+ * `<mark>` and scrolls it into view via `renderMarkdownWithHighlight` - see that module's doc
+ * comment for how it locates a match inside the rendered HTML. This owns the container's DOM
+ * entirely and imperatively (like `code-mirror-editor.ts` owns its own) - `view()` below never
+ * gives Mithril an `innerHTML` attribute to diff, so nothing here fights a Mithril redraw. A key
+ * of `text`/`highlightOffset`/`highlightLength` skips re-rendering (and so re-scrolling) when
+ * none of those actually changed since the last render (e.g. the user typed further in the
+ * search box without navigating), mirroring `code-mirror-editor.ts`'s own guard against fighting
+ * the user's manual scrolling. */
+interface MarkdownPreviewAttrs {
+  readonly text: string;
+  readonly highlightOffset: number | undefined;
+  readonly highlightLength: number | undefined;
+}
+
+const MarkdownPreview: FactoryComponent<MarkdownPreviewAttrs> = () => {
+  let lastKey: string | undefined;
+  function render(vnode: m.VnodeDOM<MarkdownPreviewAttrs>): void {
+    const { text, highlightOffset, highlightLength } = vnode.attrs;
+    const key = `${highlightOffset}:${highlightLength}:${text}`;
+    if (key === lastKey) return;
+    lastKey = key;
+    renderMarkdownWithHighlight(
+      vnode.dom as HTMLElement,
+      safeMarkdownHtml(text),
+      text,
+      highlightOffset,
+      highlightLength,
+    );
+  }
+  return {
+    oncreate: render,
+    onupdate: render,
+    view: () => m('.fm-file-viewer-markdown.browser-default'),
+  };
+};
 
 /** Normalizes the paged content kinds' differing field names (PDF's 1-based `currentPage`;
  * comic/EPUB's 0-based `currentPage`/`currentChapter`) into a single 1-based `{current, total}`
@@ -313,8 +351,10 @@ function renderTextBody(
     },
     [
       editableLanguage === 'markdown'
-        ? m('.fm-file-viewer-markdown.browser-default', {
-            innerHTML: safeMarkdownHtml(content.text),
+        ? m(MarkdownPreview, {
+            text: content.text,
+            highlightOffset: content.highlightOffset,
+            highlightLength: content.highlightLength,
           })
         : m(CodeMirrorEditor, {
             content: content.text,

@@ -131,6 +131,14 @@ export interface GlobalKeydownContext {
   /** Moves DOM focus into `paneId`'s directory table, activating it as a side effect. Undefined
    * before the workspace layout has mounted and registered its focus callback. */
   focusPane(paneId: PaneId): void;
+  /** Moves keyboard focus into `paneId`'s open F3 viewer: its find-in-file search input for text
+   * content (Total Commander Lister's Tab-to-search convention), or the viewer's own focusable
+   * section for content kinds without a search bar (image/pdf/...). No-op if no viewer is open. */
+  focusViewer(paneId: PaneId): void;
+  /** Scrolls (`unit: 'line'`, Arrow keys) or pages (`unit: 'page'`, Page Up/Down) `paneId`'s open
+   * viewer's scrollable body by one step in the `(dx, dy)` direction - used both for vertical text
+   * scrolling and (both-axis) image panning. No-op if no viewer is open. */
+  scrollViewer(paneId: PaneId, dx: -1 | 0 | 1, dy: -1 | 0 | 1, unit: 'line' | 'page'): void;
   redraw(): void;
   toggleTerminal(): void;
   /** Toggles the directory-tree sidebar (Alt+F10, Total Commander parity, task 0139). */
@@ -239,6 +247,45 @@ function findOpenViewer(
   return undefined;
 }
 
+/** Same lookup as `findOpenViewer`, but returns the pane it was found in - needed to target
+ * `focusViewer`/`scrollViewer` (which act on a specific pane's DOM) rather than just the
+ * viewer's own state/controller. */
+function findOpenViewerPaneId(context: GlobalKeydownContext): PaneId | undefined {
+  const workspace = context.getWorkspace();
+  if (workspace === undefined) return undefined;
+  for (const paneId of workspace.paneOrder) {
+    if (context.getViewer(paneId) !== undefined) return paneId;
+  }
+  return undefined;
+}
+
+/** Whether `target` is inside an open F3 viewer's DOM subtree (`.fm-pane-viewer`, set on the
+ * pane's own section - see `pane.ts`). Gates viewer-scoped Arrow/Page/zoom keys so they only take
+ * over once focus has actually moved into the viewer (e.g. via Tab - see the `core.switchPane`
+ * override below), rather than firing from anywhere in the app just because a viewer happens to be
+ * open somewhere - unlike `findOpenViewer`'s PDF/comic/EPUB paging, ArrowUp/Down are already bound
+ * to move the cursor in a focused directory table, so this must not compete with that. */
+function isWithinViewer(target: EventTarget | null): boolean {
+  return target instanceof HTMLElement && target.closest('.fm-pane-viewer') !== null;
+}
+
+/** Whether Arrow/Page/zoom keys should drive an open F3 viewer's content from `target`: true
+ * anywhere inside the viewer (`isWithinViewer`) *except* where that would steal real text editing
+ * - e.g. Left/Right moving the text cursor while renaming a tab in the viewer's own `TabStrip`.
+ * The viewer's find-in-file search input and the (read-only, but DOM-`contenteditable` for text
+ * selection) CodeMirror body are allowed through despite `isEditableTarget` flagging them: Arrow
+ * Up/Down/Page keys have no text-editing meaning in a single-line search box, and the CodeMirror
+ * body is exactly where focus lands while reading the file - blocking navigation there would
+ * defeat the point of Tab moving focus into the viewer in the first place. */
+function isViewerNavigationTarget(target: EventTarget | null): boolean {
+  if (!isWithinViewer(target)) return false;
+  if (!isEditableTarget(target)) return true;
+  return (
+    target instanceof HTMLElement &&
+    (target.matches('.fm-file-viewer-search-input') || target.closest('.cm-editor') !== null)
+  );
+}
+
 function canUseSystemTrash(locations: readonly Location[]): boolean {
   return locations.every(
     (location) => location.providerId === 'file' || location.providerId === 'local',
@@ -336,6 +383,107 @@ export function createGlobalKeydownHandler(
         event.preventDefault();
         if (event.key === 'ArrowLeft') activeViewer?.controller.previousPage();
         else activeViewer?.controller.nextPage();
+        context.redraw();
+        return;
+      }
+    }
+    // Arrow/Page keys inside an open F3 viewer: scroll (Arrow Up/Down) and page (Page Up/Down)
+    // text content, or pan (Arrow keys, any direction) and zoom (Page Up/Down) image content.
+    // Gated on `isViewerNavigationTarget` - see its doc comment for why this must not fire from
+    // just anywhere the way ArrowLeft/Right paging above does.
+    if (
+      !event.altKey &&
+      !event.ctrlKey &&
+      !event.metaKey &&
+      !event.shiftKey &&
+      isViewerNavigationTarget(event.target) &&
+      (event.key === 'ArrowUp' ||
+        event.key === 'ArrowDown' ||
+        event.key === 'ArrowLeft' ||
+        event.key === 'ArrowRight' ||
+        event.key === 'PageUp' ||
+        event.key === 'PageDown')
+    ) {
+      const viewerPaneId = findOpenViewerPaneId(context);
+      const activeViewer = viewerPaneId === undefined ? undefined : context.getViewer(viewerPaneId);
+      const content =
+        activeViewer !== undefined && activeViewer.state.status === 'ready'
+          ? activeViewer.state.content
+          : undefined;
+      if (viewerPaneId !== undefined && content?.kind === 'text') {
+        if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+          event.preventDefault();
+          context.scrollViewer(viewerPaneId, 0, event.key === 'ArrowUp' ? -1 : 1, 'line');
+          return;
+        }
+        if (event.key === 'PageUp' || event.key === 'PageDown') {
+          event.preventDefault();
+          context.scrollViewer(viewerPaneId, 0, event.key === 'PageUp' ? -1 : 1, 'page');
+          return;
+        }
+      }
+      if (viewerPaneId !== undefined && content?.kind === 'image') {
+        if (event.key === 'PageUp' || event.key === 'PageDown') {
+          event.preventDefault();
+          if (event.key === 'PageUp') activeViewer?.controller.zoomIn();
+          else activeViewer?.controller.zoomOut();
+          context.redraw();
+          return;
+        }
+        const dx = event.key === 'ArrowLeft' ? -1 : event.key === 'ArrowRight' ? 1 : 0;
+        const dy = event.key === 'ArrowUp' ? -1 : event.key === 'ArrowDown' ? 1 : 0;
+        if (dx !== 0 || dy !== 0) {
+          event.preventDefault();
+          context.scrollViewer(viewerPaneId, dx, dy, 'line');
+          return;
+        }
+      }
+    }
+    // +/- zoom an open F3 viewer's image content. Matched on `event.key` alone (not gated on
+    // `!event.shiftKey`) since '+' itself requires Shift on most keyboard layouts.
+    if (
+      !event.altKey &&
+      !event.ctrlKey &&
+      !event.metaKey &&
+      isViewerNavigationTarget(event.target) &&
+      (event.key === '+' || event.key === '=' || event.key === '-')
+    ) {
+      const viewerPaneId = findOpenViewerPaneId(context);
+      const activeViewer = viewerPaneId === undefined ? undefined : context.getViewer(viewerPaneId);
+      const content =
+        activeViewer !== undefined && activeViewer.state.status === 'ready'
+          ? activeViewer.state.content
+          : undefined;
+      if (content?.kind === 'image') {
+        event.preventDefault();
+        if (event.key === '-') activeViewer?.controller.zoomOut();
+        else activeViewer?.controller.zoomIn();
+        context.redraw();
+        return;
+      }
+    }
+    // F3/Shift+F3 navigate search matches once focus is inside an open F3 viewer showing text
+    // content - the standard browser/Lister find-next/previous convention, and the one reliable
+    // way to do this once Tab has moved focus into the viewer (see `isViewerNavigationTarget`):
+    // `core.view`'s own "F3 repeats as next match" below only fires when `activePaneId` itself is
+    // the viewer's pane, which Tab-into-search deliberately never changes.
+    if (
+      !event.ctrlKey &&
+      !event.metaKey &&
+      !event.altKey &&
+      event.key === 'F3' &&
+      isViewerNavigationTarget(event.target)
+    ) {
+      const viewerPaneId = findOpenViewerPaneId(context);
+      const activeViewer = viewerPaneId === undefined ? undefined : context.getViewer(viewerPaneId);
+      const content =
+        activeViewer !== undefined && activeViewer.state.status === 'ready'
+          ? activeViewer.state.content
+          : undefined;
+      if (content?.kind === 'text') {
+        event.preventDefault();
+        if (event.shiftKey) activeViewer?.controller.goToPreviousMatch();
+        else activeViewer?.controller.goToNextMatch();
         context.redraw();
         return;
       }

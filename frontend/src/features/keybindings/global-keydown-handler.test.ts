@@ -201,6 +201,8 @@ function makeContext(overrides: Partial<GlobalKeydownContext> = {}): GlobalKeydo
     platformActionParameters: () => undefined,
     activatePane: vi.fn(),
     focusPane: vi.fn(),
+    focusViewer: vi.fn(),
+    scrollViewer: vi.fn(),
     redraw: vi.fn(),
     toggleTerminal: vi.fn(),
     toggleDirectoryTree: vi.fn(),
@@ -218,6 +220,26 @@ function makeContext(overrides: Partial<GlobalKeydownContext> = {}): GlobalKeydo
 
 function keydown(key: string, modifiers: Partial<KeyboardEventInit> = {}): KeyboardEvent {
   return new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, ...modifiers });
+}
+
+/** Dispatches a keydown as if it originated from inside an open F3 viewer's DOM subtree (see
+ * `isWithinViewer`), by actually firing it on a `.fm-pane-viewer` element rather than just
+ * constructing it - a plain `keydown()` event's `target` stays `null` until dispatched. `target`
+ * lets a test fire from a specific descendant, e.g. the search input or the CodeMirror body,
+ * instead of the section itself. */
+function viewerKeydown(
+  key: string,
+  modifiers: Partial<KeyboardEventInit> = {},
+  target?: (section: HTMLElement) => HTMLElement,
+): KeyboardEvent {
+  const section = document.createElement('section');
+  section.className = 'fm-pane-viewer';
+  document.body.append(section);
+  const dispatchTarget = target?.(section) ?? section;
+  const event = keydown(key, modifiers);
+  dispatchTarget.dispatchEvent(event);
+  section.remove();
+  return event;
 }
 
 describe('createGlobalKeydownHandler - task 0128 shortcuts', () => {
@@ -582,6 +604,177 @@ describe('createGlobalKeydownHandler - task 0128 shortcuts', () => {
     createGlobalKeydownHandler(context)(event);
     expect(nextPage).not.toHaveBeenCalled();
     expect(preventDefault).not.toHaveBeenCalled();
+  });
+
+  it('ArrowUp/Down and PageUp/Down scroll/page a text viewer once focus is inside it', () => {
+    const scrollViewer = vi.fn();
+    const context = makeContext({
+      getViewer: (paneId) =>
+        paneId === PANE_B
+          ? ({
+              controller: {} as never,
+              state: { status: 'ready', content: { kind: 'text' } } as never,
+            } as never)
+          : undefined,
+      scrollViewer,
+    });
+    createGlobalKeydownHandler(context)(viewerKeydown('ArrowDown'));
+    createGlobalKeydownHandler(context)(viewerKeydown('ArrowUp'));
+    createGlobalKeydownHandler(context)(viewerKeydown('PageDown'));
+    createGlobalKeydownHandler(context)(viewerKeydown('PageUp'));
+    expect(scrollViewer).toHaveBeenNthCalledWith(1, PANE_B, 0, 1, 'line');
+    expect(scrollViewer).toHaveBeenNthCalledWith(2, PANE_B, 0, -1, 'line');
+    expect(scrollViewer).toHaveBeenNthCalledWith(3, PANE_B, 0, 1, 'page');
+    expect(scrollViewer).toHaveBeenNthCalledWith(4, PANE_B, 0, -1, 'page');
+  });
+
+  it('does not scroll a text viewer from Arrow/Page keys outside the viewer (would otherwise fight the directory table cursor)', () => {
+    const scrollViewer = vi.fn();
+    const context = makeContext({
+      getViewer: (paneId) =>
+        paneId === PANE_B
+          ? ({
+              controller: {} as never,
+              state: { status: 'ready', content: { kind: 'text' } } as never,
+            } as never)
+          : undefined,
+      scrollViewer,
+    });
+    createGlobalKeydownHandler(context)(keydown('ArrowDown'));
+    expect(scrollViewer).not.toHaveBeenCalled();
+  });
+
+  it('still scrolls a text viewer when focus is in its own search input or read-only CodeMirror body', () => {
+    const scrollViewer = vi.fn();
+    const context = makeContext({
+      getViewer: (paneId) =>
+        paneId === PANE_B
+          ? ({
+              controller: {} as never,
+              state: { status: 'ready', content: { kind: 'text' } } as never,
+            } as never)
+          : undefined,
+      scrollViewer,
+    });
+    createGlobalKeydownHandler(context)(
+      viewerKeydown('ArrowDown', {}, (section) => {
+        const input = document.createElement('input');
+        input.className = 'fm-file-viewer-search-input';
+        section.append(input);
+        return input;
+      }),
+    );
+    createGlobalKeydownHandler(context)(
+      viewerKeydown('ArrowDown', {}, (section) => {
+        const editor = document.createElement('div');
+        editor.className = 'cm-editor';
+        const content = document.createElement('div');
+        content.className = 'cm-content';
+        content.contentEditable = 'true';
+        editor.append(content);
+        section.append(editor);
+        return content;
+      }),
+    );
+    expect(scrollViewer).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not hijack Arrow keys from an unrelated editable field inside the viewer (e.g. renaming a tab)', () => {
+    const scrollViewer = vi.fn();
+    const context = makeContext({
+      getViewer: (paneId) =>
+        paneId === PANE_B
+          ? ({
+              controller: {} as never,
+              state: { status: 'ready', content: { kind: 'text' } } as never,
+            } as never)
+          : undefined,
+      scrollViewer,
+    });
+    createGlobalKeydownHandler(context)(
+      viewerKeydown('ArrowDown', {}, (section) => {
+        const renameInput = document.createElement('input');
+        renameInput.className = 'fm-tab-rename-input';
+        section.append(renameInput);
+        return renameInput;
+      }),
+    );
+    expect(scrollViewer).not.toHaveBeenCalled();
+  });
+
+  it('Arrow keys pan an image viewer once focus is inside it', () => {
+    const scrollViewer = vi.fn();
+    const context = makeContext({
+      getViewer: (paneId) =>
+        paneId === PANE_B
+          ? ({
+              controller: {} as never,
+              state: { status: 'ready', content: { kind: 'image' } } as never,
+            } as never)
+          : undefined,
+      scrollViewer,
+    });
+    createGlobalKeydownHandler(context)(viewerKeydown('ArrowUp'));
+    createGlobalKeydownHandler(context)(viewerKeydown('ArrowDown'));
+    createGlobalKeydownHandler(context)(viewerKeydown('ArrowLeft'));
+    createGlobalKeydownHandler(context)(viewerKeydown('ArrowRight'));
+    expect(scrollViewer).toHaveBeenNthCalledWith(1, PANE_B, 0, -1, 'line');
+    expect(scrollViewer).toHaveBeenNthCalledWith(2, PANE_B, 0, 1, 'line');
+    expect(scrollViewer).toHaveBeenNthCalledWith(3, PANE_B, -1, 0, 'line');
+    expect(scrollViewer).toHaveBeenNthCalledWith(4, PANE_B, 1, 0, 'line');
+  });
+
+  it('PageUp/PageDown and +/- zoom an image viewer once focus is inside it', () => {
+    const zoomIn = vi.fn();
+    const zoomOut = vi.fn();
+    const context = makeContext({
+      getViewer: (paneId) =>
+        paneId === PANE_B
+          ? ({
+              controller: { zoomIn, zoomOut } as never,
+              state: { status: 'ready', content: { kind: 'image' } } as never,
+            } as never)
+          : undefined,
+    });
+    createGlobalKeydownHandler(context)(viewerKeydown('PageUp'));
+    createGlobalKeydownHandler(context)(viewerKeydown('PageDown'));
+    createGlobalKeydownHandler(context)(viewerKeydown('+'));
+    createGlobalKeydownHandler(context)(viewerKeydown('-'));
+    expect(zoomIn).toHaveBeenCalledTimes(2);
+    expect(zoomOut).toHaveBeenCalledTimes(2);
+  });
+
+  it('F3/Shift+F3 navigate search matches once focus is inside a text viewer', () => {
+    const goToNextMatch = vi.fn();
+    const goToPreviousMatch = vi.fn();
+    const context = makeContext({
+      getViewer: (paneId) =>
+        paneId === PANE_B
+          ? ({
+              controller: { goToNextMatch, goToPreviousMatch } as never,
+              state: { status: 'ready', content: { kind: 'text' } } as never,
+            } as never)
+          : undefined,
+    });
+    createGlobalKeydownHandler(context)(viewerKeydown('F3'));
+    createGlobalKeydownHandler(context)(viewerKeydown('F3', { shiftKey: true }));
+    expect(goToNextMatch).toHaveBeenCalledTimes(1);
+    expect(goToPreviousMatch).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not intercept F3 for search navigation outside the viewer, or for non-text content', () => {
+    const goToNextMatch = vi.fn();
+    const context = makeContext({
+      getViewer: (paneId) =>
+        paneId === PANE_B
+          ? ({
+              controller: { goToNextMatch } as never,
+              state: { status: 'ready', content: { kind: 'text' } } as never,
+            } as never)
+          : undefined,
+    });
+    createGlobalKeydownHandler(context)(keydown('F3'));
+    expect(goToNextMatch).not.toHaveBeenCalled();
   });
 
   it('Alt+Space opens a viewer (with the info panel shown) for the cursor file when none is open yet', () => {

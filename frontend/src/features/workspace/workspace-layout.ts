@@ -139,6 +139,12 @@ export interface WorkspaceLayoutViewAttrs {
   readonly onNewTab: (paneId: PaneId) => void;
   /** Moves focus into the terminal when it is visible for the active folder. */
   readonly onFocusTerminal?: () => boolean;
+  /** Moves focus into an open F3 viewer (its find-in-file search input for text content) instead
+   * of cycling `activePaneId` - Total Commander's Lister convention. Returns whether a viewer was
+   * open and focus was redirected there; when it returns `false` (or is unset), the normal
+   * pane-to-pane Tab cycle proceeds. Checked before `onPaneCycleBoundary` so it applies on every
+   * Tab press while a viewer is open, not only at the ends of the pane cycle. */
+  readonly onFocusViewer?: () => boolean;
   /** Called when Tab/Shift+Tab would otherwise wrap past the last/first pane in the split - lets
    * the caller redirect focus to another UI surface (the directory-tree sidebar, task 0139)
    * instead of wrapping directly back around the pane cycle. Returns whether it redirected
@@ -444,6 +450,9 @@ export const WorkspaceLayoutView: FactoryComponent<WorkspaceLayoutViewAttrs> = (
           // This layout handler also moves DOM focus. Letting the same Tab reach the document
           // handler would switch workspace.activePaneId a second time, back to the old pane.
           event.stopPropagation();
+          if (attrs.onFocusViewer?.() === true) {
+            return;
+          }
           const paneOrder = paneIdsInLayout(attrs.workspace.layout);
           const currentIndex = paneOrder.indexOf(paneId);
           const direction = event.shiftKey ? -1 : 1;

@@ -122,8 +122,19 @@ function applicationErrorCode(error: unknown): string | undefined {
 
 function isRetryableNavigationError(error: unknown): boolean {
   const code = applicationErrorCode(error);
-  return code === 'platformOperationFailed' || code === 'providerUnavailable';
+  return (
+    code === 'platformOperationFailed' || code === 'providerUnavailable' || code === 'internal'
+  );
 }
+
+/**
+ * Consecutive background-refresh failures a tab absorbs silently (e.g. an SSH connection
+ * dropping over VPN while the pane is idle) before the error is actually shown to the user.
+ * Each attempt is retried with `BACKGROUND_RETRY_BACKOFF_MS` backoff; a success at any point
+ * resets the count without disturbing the currently-published view.
+ */
+const BACKGROUND_RETRY_THRESHOLD = 3;
+const BACKGROUND_RETRY_BACKOFF_MS = [500, 1500, 3000];
 
 function activeTab(workspace: WorkspaceProjection, paneId: PaneId) {
   const pane = workspace.panesById[paneId];
@@ -202,6 +213,18 @@ export function createNavigationController(
   // via `begin()` and restarting from scratch — otherwise a fast scroll can cancel-and-restart
   // the fetch forever, so it never completes.
   const pendingNextPage = new Map<string, Promise<void>>();
+  // Consecutive background-load failures per tab, and any pending silent-retry timer for it.
+  // Cleared on success or on `dispose()`; see `BACKGROUND_RETRY_THRESHOLD`.
+  const backgroundFailureCounts = new Map<string, number>();
+  const backgroundRetryTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+  function clearBackgroundRetry(key: string): void {
+    const timer = backgroundRetryTimers.get(key);
+    if (timer !== undefined) {
+      clearTimeout(timer);
+      backgroundRetryTimers.delete(key);
+    }
+  }
 
   async function withArchiveCredential<T>(
     location: Location,
@@ -227,6 +250,7 @@ export function createNavigationController(
   function begin(paneId: PaneId, tabId: TabId, kind: RequestKind): ActiveRequest {
     const key = tabKey(paneId, tabId);
     activeRequests.get(key)?.controller.abort();
+    clearBackgroundRetry(key);
     const request = {
       id: crypto.randomUUID(),
       controller: new AbortController(),
@@ -420,16 +444,41 @@ export function createNavigationController(
       if (isCurrent(paneId, tab.id, request) && snapshot.requestId === request.id) {
         publish(paneId, tab.id, viewFromSnapshot(snapshot));
       }
+      const key = tabKey(paneId, tab.id);
+      backgroundFailureCounts.delete(key);
+      clearBackgroundRetry(key);
     } catch (error: unknown) {
-      if (isCurrent(paneId, tab.id, request)) {
-        publish(paneId, tab.id, {
-          state: { type: 'error', message: errorMessage(error) },
-          entries: [],
-          location: tab.location,
-          requestId: request.id,
-          hasMore: false,
-        });
+      if (!isCurrent(paneId, tab.id, request)) {
+        return;
       }
+      if (loadOptions?.background) {
+        const key = tabKey(paneId, tab.id);
+        const failures = (backgroundFailureCounts.get(key) ?? 0) + 1;
+        backgroundFailureCounts.set(key, failures);
+        // A connection drop while the pane is merely idle (no user activity) shouldn't be
+        // obvious: retry silently in the background a few times with backoff, and only fall
+        // through to the visible error state once it's genuinely failed repeatedly in a row.
+        if (failures <= BACKGROUND_RETRY_THRESHOLD) {
+          clearBackgroundRetry(key);
+          const delay =
+            BACKGROUND_RETRY_BACKOFF_MS[
+              Math.min(failures - 1, BACKGROUND_RETRY_BACKOFF_MS.length - 1)
+            ];
+          const timer = setTimeout(() => {
+            backgroundRetryTimers.delete(key);
+            void load(paneId, { background: true });
+          }, delay);
+          backgroundRetryTimers.set(key, timer);
+          return;
+        }
+      }
+      publish(paneId, tab.id, {
+        state: { type: 'error', message: errorMessage(error) },
+        entries: [],
+        location: tab.location,
+        requestId: request.id,
+        hasMore: false,
+      });
     }
   }
 
@@ -663,13 +712,20 @@ export function createNavigationController(
     loadNextPage,
     loadAllPages,
     abort: (paneId, tabId) => {
-      activeRequests.get(tabKey(paneId, tabId))?.controller.abort();
+      const key = tabKey(paneId, tabId);
+      activeRequests.get(key)?.controller.abort();
+      clearBackgroundRetry(key);
     },
     dispose: () => {
       for (const request of activeRequests.values()) {
         request.controller.abort();
       }
       activeRequests.clear();
+      for (const timer of backgroundRetryTimers.values()) {
+        clearTimeout(timer);
+      }
+      backgroundRetryTimers.clear();
+      backgroundFailureCounts.clear();
     },
   };
 }
